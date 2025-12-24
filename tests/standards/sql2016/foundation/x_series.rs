@@ -110,13 +110,17 @@ fn x025_01_xmlelement_basic() {
 #[test]
 fn x025_02_xmlelement_with_attributes() {
     // SQL:2016 X025: XMLELEMENT with attributes - NOT YET IMPLEMENTED
-    verified_standard_stmt("SELECT XMLELEMENT(NAME 'customer', XMLATTRIBUTES(id AS 'id'), name) FROM t");
+    verified_standard_stmt(
+        "SELECT XMLELEMENT(NAME 'customer', XMLATTRIBUTES(id AS 'id'), name) FROM t",
+    );
 }
 
 #[test]
 fn x025_03_xmlelement_nested() {
     // SQL:2016 X025: Nested XMLELEMENT - NOT YET IMPLEMENTED
-    verified_standard_stmt("SELECT XMLELEMENT(NAME 'order', XMLELEMENT(NAME 'item', product_name)) FROM t");
+    verified_standard_stmt(
+        "SELECT XMLELEMENT(NAME 'order', XMLELEMENT(NAME 'item', product_name)) FROM t",
+    );
 }
 
 #[test]
@@ -231,13 +235,17 @@ fn x065_02_xmlserialize_content() {
 #[test]
 fn x065_03_xmlserialize_with_encoding() {
     // SQL:2016 X065: XMLSERIALIZE with encoding - NOT YET IMPLEMENTED
-    verified_standard_stmt("SELECT XMLSERIALIZE(DOCUMENT xml_col AS VARCHAR(1000) ENCODING UTF8) FROM t");
+    verified_standard_stmt(
+        "SELECT XMLSERIALIZE(DOCUMENT xml_col AS VARCHAR(1000) ENCODING UTF8) FROM t",
+    );
 }
 
 #[test]
 fn x065_04_xmlserialize_version() {
     // SQL:2016 X065: XMLSERIALIZE with version - NOT YET IMPLEMENTED
-    verified_standard_stmt("SELECT XMLSERIALIZE(DOCUMENT xml_col AS VARCHAR(1000) VERSION '1.0') FROM t");
+    verified_standard_stmt(
+        "SELECT XMLSERIALIZE(DOCUMENT xml_col AS VARCHAR(1000) VERSION '1.0') FROM t",
+    );
 }
 
 #[test]
@@ -249,7 +257,9 @@ fn x070_01_xmlserialize_indent() {
 #[test]
 fn x070_02_xmlserialize_no_indent() {
     // SQL:2016 X070: XMLSERIALIZE with NO INDENT - NOT YET IMPLEMENTED
-    verified_standard_stmt("SELECT XMLSERIALIZE(DOCUMENT xml_col AS VARCHAR(1000) NO INDENT) FROM t");
+    verified_standard_stmt(
+        "SELECT XMLSERIALIZE(DOCUMENT xml_col AS VARCHAR(1000) NO INDENT) FROM t",
+    );
 }
 
 // ==================== X090: XML Document Predicate ====================
@@ -401,7 +411,9 @@ fn x_series_xml_in_select() {
 #[test]
 fn x_series_xml_construction() {
     // SQL:2016 X-series: Complex XML construction - NOT YET IMPLEMENTED
-    verified_standard_stmt("SELECT XMLELEMENT(NAME 'customer', XMLFOREST(id, name, address)) FROM t");
+    verified_standard_stmt(
+        "SELECT XMLELEMENT(NAME 'customer', XMLFOREST(id, name, address)) FROM t",
+    );
 }
 
 #[test]
@@ -413,7 +425,9 @@ fn x_series_xml_aggregation() {
 #[test]
 fn x_series_xml_parse_serialize_chain() {
     // SQL:2016 X-series: Parse and serialize chain - NOT YET IMPLEMENTED
-    verified_standard_stmt("SELECT XMLSERIALIZE(CONTENT XMLPARSE(CONTENT xml_string) AS VARCHAR(1000)) FROM t");
+    verified_standard_stmt(
+        "SELECT XMLSERIALIZE(CONTENT XMLPARSE(CONTENT xml_string) AS VARCHAR(1000)) FROM t",
+    );
 }
 
 #[test]
@@ -425,7 +439,9 @@ fn x_series_xml_with_cte() {
 #[test]
 fn x_series_xml_subquery() {
     // SQL:2016 X-series: XML in subquery - NOT YET IMPLEMENTED
-    verified_standard_stmt("SELECT * FROM t WHERE EXISTS (SELECT 1 FROM docs WHERE doc IS DOCUMENT)");
+    verified_standard_stmt(
+        "SELECT * FROM t WHERE EXISTS (SELECT 1 FROM docs WHERE doc IS DOCUMENT)",
+    );
 }
 
 #[test]
@@ -470,7 +486,9 @@ fn x_series_xml_cast() {
 #[test]
 fn x_series_xml_null_handling() {
     // SQL:2016 X-series: XML with NULL handling - NOT YET IMPLEMENTED
-    verified_standard_stmt("SELECT XMLELEMENT(NAME 'item', XMLATTRIBUTES(NULL AS 'attr'), name) FROM t");
+    verified_standard_stmt(
+        "SELECT XMLELEMENT(NAME 'item', XMLATTRIBUTES(NULL AS 'attr'), name) FROM t",
+    );
 }
 
 #[test]

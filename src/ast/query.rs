@@ -2185,7 +2185,7 @@ impl fmt::Display for TableFactor {
     }
 }
 
-#[derive(Debug, Clone, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct TableAlias {
@@ -2193,7 +2193,7 @@ pub struct TableAlias {
     pub columns: Vec<TableAliasColumnDef>,
     /// Whether the alias was specified without the `AS` keyword (implicit alias).
     /// When true, display will omit `AS` for round-trip compatibility.
-    /// Note: This field is excluded from PartialEq to allow `table t` and `table AS t`
+    /// Note: This field is excluded from PartialEq and Hash to allow `table t` and `table AS t`
     /// to compare as equal for AST comparison purposes.
     #[cfg_attr(feature = "serde", serde(default))]
     pub implicit: bool,
@@ -2208,6 +2208,15 @@ impl PartialEq for TableAlias {
 }
 
 impl Eq for TableAlias {}
+
+impl core::hash::Hash for TableAlias {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        // Note: `implicit` is intentionally excluded from hash computation
+        // to match the PartialEq implementation
+        self.name.hash(state);
+        self.columns.hash(state);
+    }
+}
 
 impl TableAlias {
     /// Create a new table alias with explicit AS (implicit=false)

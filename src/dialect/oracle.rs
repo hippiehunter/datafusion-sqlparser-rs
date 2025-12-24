@@ -14,7 +14,27 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-pub mod attached_token;
-pub mod key_value_options;
-pub mod stmt_create_database;
-pub mod stmt_create_table;
+
+use crate::dialect::Dialect;
+
+/// A [`Dialect`] for [Oracle Database](https://www.oracle.com/database/)
+#[derive(Debug, Default)]
+pub struct OracleDialect;
+
+impl Dialect for OracleDialect {
+    fn is_identifier_start(&self, ch: char) -> bool {
+        ch.is_ascii_alphabetic() || ch == '_'
+    }
+
+    fn is_identifier_part(&self, ch: char) -> bool {
+        ch.is_ascii_alphanumeric() || ch == '_' || ch == '$' || ch == '#'
+    }
+
+    fn is_delimited_identifier_start(&self, ch: char) -> bool {
+        ch == '"'
+    }
+
+    fn identifier_quote_style(&self, _identifier: &str) -> Option<char> {
+        Some('"')
+    }
+}

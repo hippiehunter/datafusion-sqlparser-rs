@@ -21,36 +21,34 @@ use crate::standards::common::verified_standard_stmt;
 
 #[test]
 fn path_function_element_id() {
-    verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (n) COLUMNS (element_id(n) AS id))"
-    );
+    verified_standard_stmt("SELECT * FROM GRAPH_TABLE (g MATCH (n) COLUMNS (element_id(n) AS id))");
 }
 
 #[test]
 fn path_function_vertices() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH p = (a)-[*]->(b) COLUMNS (vertices(p) AS nodes))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH p = (a)-[*]->(b) COLUMNS (vertices(p) AS nodes))",
     );
 }
 
 #[test]
 fn path_function_edges() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH p = (a)-[*]->(b) COLUMNS (edges(p) AS rels))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH p = (a)-[*]->(b) COLUMNS (edges(p) AS rels))",
     );
 }
 
 #[test]
 fn path_function_path_length() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH p = (a)-[*]->(b) COLUMNS (path_length(p) AS len))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH p = (a)-[*]->(b) COLUMNS (path_length(p) AS len))",
     );
 }
 
 #[test]
 fn path_function_is_source_of() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[e]->(b) WHERE is_source_of(a, e) COLUMNS (a.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[e]->(b) WHERE is_source_of(a, e) COLUMNS (a.id))",
     );
 }
 

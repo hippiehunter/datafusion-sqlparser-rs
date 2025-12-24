@@ -22,21 +22,21 @@ use crate::standards::common::verified_standard_stmt;
 #[test]
 fn predicate_is_labeled() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (n) WHERE n IS LABELED Person COLUMNS (n.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (n) WHERE n IS LABELED Person COLUMNS (n.id))",
     );
 }
 
 #[test]
 fn predicate_is_not_labeled() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (n) WHERE n IS NOT LABELED Inactive COLUMNS (n.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (n) WHERE n IS NOT LABELED Inactive COLUMNS (n.id))",
     );
 }
 
 #[test]
 fn predicate_is_source_of() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[e]->(b) WHERE a IS SOURCE OF e COLUMNS (a.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[e]->(b) WHERE a IS SOURCE OF e COLUMNS (a.id))",
     );
 }
 

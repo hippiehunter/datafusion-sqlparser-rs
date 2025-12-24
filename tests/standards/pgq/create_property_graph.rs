@@ -23,7 +23,7 @@ use crate::standards::common::verified_standard_stmt;
 fn create_property_graph_basic() {
     verified_standard_stmt(
         "CREATE PROPERTY GRAPH my_graph \
-         VERTEX TABLES (person)"
+         VERTEX TABLES (person)",
     );
 }
 
@@ -31,7 +31,7 @@ fn create_property_graph_basic() {
 fn create_property_graph_with_key() {
     verified_standard_stmt(
         "CREATE PROPERTY GRAPH my_graph \
-         VERTEX TABLES (person KEY (id))"
+         VERTEX TABLES (person KEY (id))",
     );
 }
 
@@ -39,7 +39,7 @@ fn create_property_graph_with_key() {
 fn create_property_graph_with_label() {
     verified_standard_stmt(
         "CREATE PROPERTY GRAPH my_graph \
-         VERTEX TABLES (person LABEL Person)"
+         VERTEX TABLES (person LABEL Person)",
     );
 }
 
@@ -47,7 +47,7 @@ fn create_property_graph_with_label() {
 fn create_property_graph_with_properties() {
     verified_standard_stmt(
         "CREATE PROPERTY GRAPH my_graph \
-         VERTEX TABLES (person PROPERTIES (name, age))"
+         VERTEX TABLES (person PROPERTIES (name, age))",
     );
 }
 
@@ -55,7 +55,7 @@ fn create_property_graph_with_properties() {
 fn create_property_graph_full_vertex() {
     verified_standard_stmt(
         "CREATE PROPERTY GRAPH my_graph \
-         VERTEX TABLES (person KEY (id) LABEL Person PROPERTIES (name, age))"
+         VERTEX TABLES (person KEY (id) LABEL Person PROPERTIES (name, age))",
     );
 }
 
@@ -63,7 +63,7 @@ fn create_property_graph_full_vertex() {
 fn create_property_graph_multiple_vertices() {
     verified_standard_stmt(
         "CREATE PROPERTY GRAPH social_network \
-         VERTEX TABLES (person KEY (id) LABEL Person, company KEY (id) LABEL Company)"
+         VERTEX TABLES (person KEY (id) LABEL Person, company KEY (id) LABEL Company)",
     );
 }
 
@@ -113,7 +113,7 @@ fn create_property_graph_complex() {
 fn create_or_replace_property_graph() {
     verified_standard_stmt(
         "CREATE OR REPLACE PROPERTY GRAPH my_graph \
-         VERTEX TABLES (person)"
+         VERTEX TABLES (person)",
     );
 }
 
@@ -121,7 +121,7 @@ fn create_or_replace_property_graph() {
 fn create_property_graph_if_not_exists() {
     verified_standard_stmt(
         "CREATE PROPERTY GRAPH IF NOT EXISTS my_graph \
-         VERTEX TABLES (person)"
+         VERTEX TABLES (person)",
     );
 }
 

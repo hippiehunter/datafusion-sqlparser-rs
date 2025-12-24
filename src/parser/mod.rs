@@ -589,16 +589,7 @@ impl<'a> Parser<'a> {
                     self.parse_query().map(Statement::Query)
                 }
                 Keyword::TRUNCATE => self.parse_truncate(),
-                Keyword::ATTACH => {
-                    if dialect_of!(self is DuckDbDialect) {
-                        self.parse_attach_duckdb_database()
-                    } else {
-                        self.parse_attach_database()
-                    }
-                }
-                Keyword::DETACH if dialect_of!(self is DuckDbDialect | GenericDialect) => {
-                    self.parse_detach_duckdb_database()
-                }
+                Keyword::ATTACH => self.parse_attach_database(),
                 Keyword::MSCK => self.parse_msck(),
                 Keyword::CREATE => self.parse_create(),
                 Keyword::CACHE => self.parse_cache_table(),
@@ -656,12 +647,10 @@ impl<'a> Parser<'a> {
                 }
                 Keyword::RENAME => self.parse_rename(),
                 // `INSTALL` is duckdb specific https://duckdb.org/docs/extensions/overview
-                Keyword::INSTALL if dialect_of!(self is DuckDbDialect | GenericDialect) => {
-                    self.parse_install()
-                }
+                Keyword::INSTALL if dialect_of!(self is GenericDialect) => self.parse_install(),
                 Keyword::LOAD => self.parse_load(),
                 // `OPTIMIZE` is clickhouse specific https://clickhouse.tech/docs/en/sql-reference/statements/optimize/
-                Keyword::OPTIMIZE if dialect_of!(self is ClickHouseDialect | GenericDialect) => {
+                Keyword::OPTIMIZE if dialect_of!(self is GenericDialect) => {
                     self.parse_optimize_table()
                 }
                 // `COMMENT` is snowflake specific https://docs.snowflake.com/en/sql-reference/sql/comment
@@ -1169,72 +1158,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn parse_attach_duckdb_database_options(
-        &self,
-    ) -> Result<Vec<AttachDuckDBDatabaseOption>, ParserError> {
-        if !self.consume_token(&BorrowedToken::LParen) {
-            return Ok(vec![]);
-        }
-
-        let mut options = vec![];
-        loop {
-            if self.parse_keyword(Keyword::READ_ONLY) {
-                let boolean = if self.parse_keyword(Keyword::TRUE) {
-                    Some(true)
-                } else if self.parse_keyword(Keyword::FALSE) {
-                    Some(false)
-                } else {
-                    None
-                };
-                options.push(AttachDuckDBDatabaseOption::ReadOnly(boolean));
-            } else if self.parse_keyword(Keyword::TYPE) {
-                let ident = self.parse_identifier()?;
-                options.push(AttachDuckDBDatabaseOption::Type(ident));
-            } else {
-                return self.expected("expected one of: ), READ_ONLY, TYPE", self.peek_token());
-            };
-
-            if self.consume_token(&BorrowedToken::RParen) {
-                return Ok(options);
-            } else if self.consume_token(&BorrowedToken::Comma) {
-                continue;
-            } else {
-                return self.expected("expected one of: ')', ','", self.peek_token());
-            }
-        }
-    }
-
-    pub fn parse_attach_duckdb_database(&self) -> Result<Statement, ParserError> {
-        let database = self.parse_keyword(Keyword::DATABASE);
-        let if_not_exists = self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
-        let database_path = self.parse_identifier()?;
-        let database_alias = if self.parse_keyword(Keyword::AS) {
-            Some(self.parse_identifier()?)
-        } else {
-            None
-        };
-
-        let attach_options = self.parse_attach_duckdb_database_options()?;
-        Ok(Statement::AttachDuckDBDatabase {
-            if_not_exists,
-            database,
-            database_path,
-            database_alias,
-            attach_options,
-        })
-    }
-
-    pub fn parse_detach_duckdb_database(&self) -> Result<Statement, ParserError> {
-        let database = self.parse_keyword(Keyword::DATABASE);
-        let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
-        let database_alias = self.parse_identifier()?;
-        Ok(Statement::DetachDuckDBDatabase {
-            if_exists,
-            database,
-            database_alias,
-        })
-    }
-
     pub fn parse_attach_database(&self) -> Result<Statement, ParserError> {
         let database = self.parse_keyword(Keyword::DATABASE);
         let database_file_name = self.parse_expr()?;
@@ -1495,51 +1418,43 @@ impl<'a> Parser<'a> {
             | Keyword::CURRENT_USER
             | Keyword::SESSION_USER
             | Keyword::USER
-            if dialect_of!(self is PostgreSqlDialect | GenericDialect) =>
-                {
-                    Ok(Some(Expr::Function(Function {
-                        name: ObjectName::from(vec![w.clone().into_ident(w_span)]),
-                        uses_odbc_syntax: false,
-                        parameters: FunctionArguments::None,
-                        args: FunctionArguments::None,
-                        null_treatment: None,
-                        filter: None,
-                        over: None,
-                        within_group: vec![],
-                    })))
-                }
+                if dialect_of!(self is PostgreSqlDialect | GenericDialect) =>
+            {
+                Ok(Some(Expr::Function(Function {
+                    name: ObjectName::from(vec![w.clone().into_ident(w_span)]),
+                    uses_odbc_syntax: false,
+                    parameters: FunctionArguments::None,
+                    args: FunctionArguments::None,
+                    null_treatment: None,
+                    filter: None,
+                    over: None,
+                    within_group: vec![],
+                })))
+            }
             Keyword::CURRENT_TIMESTAMP
             | Keyword::CURRENT_TIME
             | Keyword::CURRENT_DATE
             | Keyword::LOCALTIME
             | Keyword::LOCALTIMESTAMP => {
-                Ok(Some(self.parse_time_functions(ObjectName::from(vec![w.clone().into_ident(w_span)]))?))
+                Ok(Some(self.parse_time_functions(ObjectName::from(vec![
+                    w.clone().into_ident(w_span),
+                ]))?))
             }
             Keyword::CASE => Ok(Some(self.parse_case_expr()?)),
             Keyword::CONVERT => Ok(Some(self.parse_convert_expr(false)?)),
-            Keyword::TRY_CONVERT if self.dialect.supports_try_convert() => Ok(Some(self.parse_convert_expr(true)?)),
+            Keyword::TRY_CONVERT if self.dialect.supports_try_convert() => {
+                Ok(Some(self.parse_convert_expr(true)?))
+            }
             Keyword::CAST => Ok(Some(self.parse_cast_expr(CastKind::Cast)?)),
             Keyword::TRY_CAST => Ok(Some(self.parse_cast_expr(CastKind::TryCast)?)),
             Keyword::SAFE_CAST => Ok(Some(self.parse_cast_expr(CastKind::SafeCast)?)),
-            Keyword::EXISTS
-            // Support parsing Databricks has a function named `exists`.
-            if !dialect_of!(self is DatabricksDialect)
-                || matches!(
-                        self.peek_nth_token_ref(1).token,
-                        BorrowedToken::Word(Word {
-                            keyword: Keyword::SELECT | Keyword::WITH,
-                            ..
-                        })
-                    ) =>
-                {
-                    Ok(Some(self.parse_exists_expr(false)?))
-                }
+            Keyword::EXISTS => Ok(Some(self.parse_exists_expr(false)?)),
             Keyword::EXTRACT => Ok(Some(self.parse_extract_expr()?)),
             Keyword::CEIL => Ok(Some(self.parse_ceil_floor_expr(true)?)),
             Keyword::FLOOR => Ok(Some(self.parse_ceil_floor_expr(false)?)),
-            Keyword::POSITION if self.peek_token_ref().token == BorrowedToken::LParen => {
-                Ok(Some(self.parse_position_expr(w.clone().into_ident(w_span))?))
-            }
+            Keyword::POSITION if self.peek_token_ref().token == BorrowedToken::LParen => Ok(Some(
+                self.parse_position_expr(w.clone().into_ident(w_span))?,
+            )),
             Keyword::SUBSTR | Keyword::SUBSTRING => {
                 self.prev_token();
                 Ok(Some(self.parse_substring()?))
@@ -1552,24 +1467,21 @@ impl<'a> Parser<'a> {
                 self.expect_token(&BorrowedToken::LBracket)?;
                 Ok(Some(self.parse_array_expr(true)?))
             }
-            Keyword::ARRAY
-            if self.peek_token() == BorrowedToken::LParen
-                && !dialect_of!(self is ClickHouseDialect | DatabricksDialect) =>
-                {
-                    self.expect_token(&BorrowedToken::LParen)?;
-                    let query = self.parse_query()?;
-                    self.expect_token(&BorrowedToken::RParen)?;
-                    Ok(Some(Expr::Function(Function {
-                        name: ObjectName::from(vec![w.clone().into_ident(w_span)]),
-                        uses_odbc_syntax: false,
-                        parameters: FunctionArguments::None,
-                        args: FunctionArguments::Subquery(query),
-                        filter: None,
-                        null_treatment: None,
-                        over: None,
-                        within_group: vec![],
-                    })))
-                }
+            Keyword::ARRAY if self.peek_token() == BorrowedToken::LParen => {
+                self.expect_token(&BorrowedToken::LParen)?;
+                let query = self.parse_query()?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                Ok(Some(Expr::Function(Function {
+                    name: ObjectName::from(vec![w.clone().into_ident(w_span)]),
+                    uses_odbc_syntax: false,
+                    parameters: FunctionArguments::None,
+                    args: FunctionArguments::Subquery(query),
+                    filter: None,
+                    null_treatment: None,
+                    over: None,
+                    within_group: vec![],
+                })))
+            }
             Keyword::NOT => Ok(Some(self.parse_not()?)),
             Keyword::MATCH if self.dialect.supports_match_against() => {
                 Ok(Some(self.parse_match_against()?))
@@ -1582,17 +1494,28 @@ impl<'a> Parser<'a> {
                 let expr = self.parse_subexpr(self.dialect.prec_value(Precedence::PlusMinus))?;
                 Ok(Some(Expr::Prior(Box::new(expr))))
             }
-            Keyword::MAP if *self.peek_token_ref() == BorrowedToken::LBrace && self.dialect.support_map_literal_syntax() => {
+            Keyword::MAP
+                if *self.peek_token_ref() == BorrowedToken::LBrace
+                    && self.dialect.support_map_literal_syntax() =>
+            {
                 Ok(Some(self.parse_duckdb_map_literal()?))
             }
             _ if self.dialect.supports_geometric_types() => match w.keyword {
                 Keyword::CIRCLE => Ok(Some(self.parse_geometric_type(GeometricTypeKind::Circle)?)),
-                Keyword::BOX => Ok(Some(self.parse_geometric_type(GeometricTypeKind::GeometricBox)?)),
-                Keyword::PATH => Ok(Some(self.parse_geometric_type(GeometricTypeKind::GeometricPath)?)),
+                Keyword::BOX => Ok(Some(
+                    self.parse_geometric_type(GeometricTypeKind::GeometricBox)?,
+                )),
+                Keyword::PATH => Ok(Some(
+                    self.parse_geometric_type(GeometricTypeKind::GeometricPath)?,
+                )),
                 Keyword::LINE => Ok(Some(self.parse_geometric_type(GeometricTypeKind::Line)?)),
-                Keyword::LSEG => Ok(Some(self.parse_geometric_type(GeometricTypeKind::LineSegment)?)),
+                Keyword::LSEG => Ok(Some(
+                    self.parse_geometric_type(GeometricTypeKind::LineSegment)?,
+                )),
                 Keyword::POINT => Ok(Some(self.parse_geometric_type(GeometricTypeKind::Point)?)),
-                Keyword::POLYGON => Ok(Some(self.parse_geometric_type(GeometricTypeKind::Polygon)?)),
+                Keyword::POLYGON => {
+                    Ok(Some(self.parse_geometric_type(GeometricTypeKind::Polygon)?))
+                }
                 _ => Ok(None),
             },
             _ => Ok(None),
@@ -2251,30 +2174,13 @@ impl<'a> Parser<'a> {
     fn parse_function_call(&self, name: ObjectName) -> Result<Function, ParserError> {
         self.expect_token(&BorrowedToken::LParen)?;
 
-        // Snowflake permits a subquery to be passed as an argument without
-        // an enclosing set of parens if it's the only argument.
-        if dialect_of!(self is SnowflakeDialect) && self.peek_sub_query() {
-            let subquery = self.parse_query()?;
-            self.expect_token(&BorrowedToken::RParen)?;
-            return Ok(Function {
-                name,
-                uses_odbc_syntax: false,
-                parameters: FunctionArguments::None,
-                args: FunctionArguments::Subquery(subquery),
-                filter: None,
-                null_treatment: None,
-                over: None,
-                within_group: vec![],
-            });
-        }
+        // Snowflake-specific subquery handling removed (dialect no longer supported)
 
         let mut args = self.parse_function_argument_list()?;
         let mut parameters = FunctionArguments::None;
         // ClickHouse aggregations support parametric functions like `HISTOGRAM(0.5, 0.6)(x, y)`
         // which (0.5, 0.6) is a parameter to the function.
-        if dialect_of!(self is ClickHouseDialect | GenericDialect)
-            && self.consume_token(&BorrowedToken::LParen)
-        {
+        if dialect_of!(self is GenericDialect) && self.consume_token(&BorrowedToken::LParen) {
             parameters = FunctionArguments::List(args);
             args = self.parse_function_argument_list()?;
         }
@@ -2664,9 +2570,7 @@ impl<'a> Parser<'a> {
 
         let syntax = if self.parse_keyword(Keyword::FROM) {
             ExtractSyntax::From
-        } else if self.consume_token(&BorrowedToken::Comma)
-            && dialect_of!(self is SnowflakeDialect | GenericDialect)
-        {
+        } else if self.consume_token(&BorrowedToken::Comma) && dialect_of!(self is GenericDialect) {
             ExtractSyntax::Comma
         } else {
             return Err(ParserError::ParserError(
@@ -2820,9 +2724,7 @@ impl<'a> Parser<'a> {
                 trim_what: Some(trim_what),
                 trim_characters: None,
             })
-        } else if self.consume_token(&BorrowedToken::Comma)
-            && dialect_of!(self is DuckDbDialect | SnowflakeDialect | BigQueryDialect | GenericDialect)
-        {
+        } else if self.consume_token(&BorrowedToken::Comma) && dialect_of!(self is GenericDialect) {
             let characters = self.parse_comma_separated(Parser::parse_expr)?;
             self.expect_token(&BorrowedToken::RParen)?;
             Ok(Expr::Trim {
@@ -2910,7 +2812,7 @@ impl<'a> Parser<'a> {
                 Keyword::MONTH => Ok(DateTimeField::Month),
                 Keyword::MONTHS => Ok(DateTimeField::Months),
                 Keyword::WEEK => {
-                    let week_day = if dialect_of!(self is BigQueryDialect | GenericDialect)
+                    let week_day = if dialect_of!(self is GenericDialect)
                         && self.consume_token(&BorrowedToken::LParen)
                     {
                         let week_day = self.parse_identifier()?;
@@ -3302,24 +3204,6 @@ impl<'a> Parser<'a> {
         ))
     }
 
-    /// Duckdb Struct Data Type <https://duckdb.org/docs/sql/data_types/struct.html#retrieving-from-structs>
-    fn parse_duckdb_struct_type_def(&self) -> Result<Vec<StructField>, ParserError> {
-        self.expect_keyword_is(Keyword::STRUCT)?;
-        self.expect_token(&BorrowedToken::LParen)?;
-        let struct_body = self.parse_comma_separated(|parser| {
-            let field_name = parser.parse_identifier()?;
-            let field_type = parser.parse_data_type()?;
-
-            Ok(StructField {
-                field_name: Some(field_name),
-                field_type,
-                options: None,
-            })
-        });
-        self.expect_token(&BorrowedToken::RParen)?;
-        struct_body
-    }
-
     /// Parse a field definition in a [struct] or [tuple].
     /// Syntax:
     ///
@@ -3578,19 +3462,19 @@ impl<'a> Parser<'a> {
             }
             BorrowedToken::Ampersand => Some(BinaryOperator::BitwiseAnd),
             BorrowedToken::Div => Some(BinaryOperator::Divide),
-            BorrowedToken::DuckIntDiv if dialect_is!(dialect is DuckDbDialect | GenericDialect) => {
+            BorrowedToken::DuckIntDiv if dialect_is!(dialect is GenericDialect) => {
                 Some(BinaryOperator::DuckIntegerDivide)
             }
-            BorrowedToken::ShiftLeft if dialect_is!(dialect is PostgreSqlDialect | DuckDbDialect | GenericDialect | RedshiftSqlDialect) => {
+            BorrowedToken::ShiftLeft if dialect_is!(dialect is PostgreSqlDialect | GenericDialect) => {
                 Some(BinaryOperator::PGBitwiseShiftLeft)
             }
-            BorrowedToken::ShiftRight if dialect_is!(dialect is PostgreSqlDialect | DuckDbDialect | GenericDialect | RedshiftSqlDialect) => {
+            BorrowedToken::ShiftRight if dialect_is!(dialect is PostgreSqlDialect | GenericDialect) => {
                 Some(BinaryOperator::PGBitwiseShiftRight)
             }
-            BorrowedToken::Sharp if dialect_is!(dialect is PostgreSqlDialect | RedshiftSqlDialect) => {
+            BorrowedToken::Sharp if dialect_is!(dialect is PostgreSqlDialect) => {
                 Some(BinaryOperator::PGBitwiseXor)
             }
-            BorrowedToken::Overlap if dialect_is!(dialect is PostgreSqlDialect | RedshiftSqlDialect) => {
+            BorrowedToken::Overlap if dialect_is!(dialect is PostgreSqlDialect) => {
                 Some(BinaryOperator::PGOverlap)
             }
             BorrowedToken::Overlap if dialect_is!(dialect is PostgreSqlDialect | GenericDialect) => {
@@ -3921,8 +3805,7 @@ impl<'a> Parser<'a> {
                 expr: Box::new(expr),
             })
         } else if BorrowedToken::LBracket == *tok && self.dialect.supports_partiql()
-            || (dialect_of!(self is SnowflakeDialect | GenericDialect)
-                && BorrowedToken::Colon == *tok)
+            || (dialect_of!(self is GenericDialect) && BorrowedToken::Colon == *tok)
         {
             self.prev_token();
             self.parse_json_access(expr)
@@ -4921,8 +4804,7 @@ impl<'a> Parser<'a> {
         let temporary = self
             .parse_one_of_keywords(&[Keyword::TEMP, Keyword::TEMPORARY])
             .is_some();
-        let persistent = dialect_of!(self is DuckDbDialect)
-            && self.parse_one_of_keywords(&[Keyword::PERSISTENT]).is_some();
+        let persistent = false;
         let create_view_params = self.parse_create_view_params()?;
         if self.parse_keyword(Keyword::TABLE) {
             self.parse_create_table(or_replace, temporary, global, transient)
@@ -5329,14 +5211,8 @@ impl<'a> Parser<'a> {
         or_replace: bool,
         temporary: bool,
     ) -> Result<Statement, ParserError> {
-        if dialect_of!(self is HiveDialect) {
-            self.parse_hive_create_function(or_replace, temporary)
-        } else if dialect_of!(self is PostgreSqlDialect | GenericDialect) {
+        if dialect_of!(self is PostgreSqlDialect | GenericDialect) {
             self.parse_postgres_create_function(or_replace, temporary)
-        } else if dialect_of!(self is DuckDbDialect) {
-            self.parse_create_macro(or_replace, temporary)
-        } else if dialect_of!(self is BigQueryDialect) {
-            self.parse_bigquery_create_function(or_replace, temporary)
         } else if dialect_of!(self is MsSqlDialect) {
             self.parse_mssql_create_function(or_alter, or_replace, temporary)
         } else {
@@ -5492,115 +5368,6 @@ impl<'a> Parser<'a> {
             determinism_specifier: None,
             options: None,
             remote_connection: None,
-        }))
-    }
-
-    /// Parse `CREATE FUNCTION` for [Hive]
-    ///
-    /// [Hive]: https://cwiki.apache.org/confluence/display/hive/languagemanual+ddl#LanguageManualDDL-Create/Drop/ReloadFunction
-    fn parse_hive_create_function(
-        &self,
-        or_replace: bool,
-        temporary: bool,
-    ) -> Result<Statement, ParserError> {
-        let name = self.parse_object_name(false)?;
-        self.expect_keyword_is(Keyword::AS)?;
-
-        let as_ = self.parse_create_function_body_string()?;
-        let using = self.parse_optional_create_function_using()?;
-
-        Ok(Statement::CreateFunction(CreateFunction {
-            or_alter: false,
-            or_replace,
-            temporary,
-            name,
-            function_body: Some(CreateFunctionBody::AsBeforeOptions(as_)),
-            using,
-            if_not_exists: false,
-            args: None,
-            return_type: None,
-            behavior: None,
-            called_on_null: None,
-            parallel: None,
-            language: None,
-            determinism_specifier: None,
-            options: None,
-            remote_connection: None,
-        }))
-    }
-
-    /// Parse `CREATE FUNCTION` for [BigQuery]
-    ///
-    /// [BigQuery]: https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#create_function_statement
-    fn parse_bigquery_create_function(
-        &self,
-        or_replace: bool,
-        temporary: bool,
-    ) -> Result<Statement, ParserError> {
-        let if_not_exists = self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
-        let (name, args) = self.parse_create_function_name_and_params()?;
-
-        let return_type = if self.parse_keyword(Keyword::RETURNS) {
-            Some(self.parse_data_type()?)
-        } else {
-            None
-        };
-
-        let determinism_specifier = if self.parse_keyword(Keyword::DETERMINISTIC) {
-            Some(FunctionDeterminismSpecifier::Deterministic)
-        } else if self.parse_keywords(&[Keyword::NOT, Keyword::DETERMINISTIC]) {
-            Some(FunctionDeterminismSpecifier::NotDeterministic)
-        } else {
-            None
-        };
-
-        let language = if self.parse_keyword(Keyword::LANGUAGE) {
-            Some(self.parse_identifier()?)
-        } else {
-            None
-        };
-
-        let remote_connection =
-            if self.parse_keywords(&[Keyword::REMOTE, Keyword::WITH, Keyword::CONNECTION]) {
-                Some(self.parse_object_name(false)?)
-            } else {
-                None
-            };
-
-        // `OPTIONS` may come before of after the function body but
-        // may be specified at most once.
-        let mut options = self.maybe_parse_options(Keyword::OPTIONS)?;
-
-        let function_body = if remote_connection.is_none() {
-            self.expect_keyword_is(Keyword::AS)?;
-            let expr = self.parse_expr()?;
-            if options.is_none() {
-                options = self.maybe_parse_options(Keyword::OPTIONS)?;
-                Some(CreateFunctionBody::AsBeforeOptions(expr))
-            } else {
-                Some(CreateFunctionBody::AsAfterOptions(expr))
-            }
-        } else {
-            None
-        };
-
-        Ok(Statement::CreateFunction(CreateFunction {
-            or_alter: false,
-            or_replace,
-            temporary,
-            if_not_exists,
-            name,
-            args: Some(args),
-            return_type,
-            function_body,
-            language,
-            determinism_specifier,
-            options,
-            remote_connection,
-            using: None,
-            behavior: None,
-            called_on_null: None,
-            parallel: None,
         }))
     }
 
@@ -5784,8 +5551,7 @@ impl<'a> Parser<'a> {
     /// DROP TRIGGER [ IF EXISTS ] name ON table_name [ CASCADE | RESTRICT ]
     /// ```
     pub fn parse_drop_trigger(&self) -> Result<Statement, ParserError> {
-        if !dialect_of!(self is PostgreSqlDialect | SQLiteDialect | GenericDialect | MySqlDialect | MsSqlDialect)
-        {
+        if !dialect_of!(self is PostgreSqlDialect | GenericDialect | MySqlDialect | MsSqlDialect) {
             self.prev_token();
             return self.expected("an object type after DROP", self.peek_token());
         }
@@ -5818,8 +5584,7 @@ impl<'a> Parser<'a> {
         or_replace: bool,
         is_constraint: bool,
     ) -> Result<Statement, ParserError> {
-        if !dialect_of!(self is PostgreSqlDialect | SQLiteDialect | GenericDialect | MySqlDialect | MsSqlDialect)
-        {
+        if !dialect_of!(self is PostgreSqlDialect | GenericDialect | MySqlDialect | MsSqlDialect) {
             self.prev_token();
             return self.expected("an object type after CREATE", self.peek_token());
         }
@@ -5984,7 +5749,7 @@ impl<'a> Parser<'a> {
         or_replace: bool,
         temporary: bool,
     ) -> Result<Statement, ParserError> {
-        if dialect_of!(self is DuckDbDialect |  GenericDialect) {
+        if dialect_of!(self is GenericDialect) {
             let name = self.parse_object_name(false)?;
             self.expect_token(&BorrowedToken::LParen)?;
             let args = if self.consume_token(&BorrowedToken::RParen) {
@@ -6113,7 +5878,7 @@ impl<'a> Parser<'a> {
         let secure = self.parse_keyword(Keyword::SECURE);
         let materialized = self.parse_keyword(Keyword::MATERIALIZED);
         self.expect_keyword_is(Keyword::VIEW)?;
-        let allow_unquoted_hyphen = dialect_of!(self is BigQueryDialect);
+        let allow_unquoted_hyphen = false;
         // Tries to parse IF NOT EXISTS either before name or after name
         // Name before IF NOT EXISTS is supported by snowflake but undocumented
         let if_not_exists_first =
@@ -6138,7 +5903,7 @@ impl<'a> Parser<'a> {
             vec![]
         };
 
-        if dialect_of!(self is BigQueryDialect | GenericDialect) {
+        if dialect_of!(self is GenericDialect) {
             if let Some(opts) = self.maybe_parse_options(Keyword::OPTIONS)? {
                 if !opts.is_empty() {
                     options = CreateTableOptions::Options(opts);
@@ -6146,16 +5911,13 @@ impl<'a> Parser<'a> {
             };
         }
 
-        let to = if dialect_of!(self is ClickHouseDialect | GenericDialect)
-            && self.parse_keyword(Keyword::TO)
-        {
+        let to = if dialect_of!(self is GenericDialect) && self.parse_keyword(Keyword::TO) {
             Some(self.parse_object_name(false)?)
         } else {
             None
         };
 
-        let comment = if dialect_of!(self is SnowflakeDialect | GenericDialect)
-            && self.parse_keyword(Keyword::COMMENT)
+        let comment = if dialect_of!(self is GenericDialect) && self.parse_keyword(Keyword::COMMENT)
         {
             self.expect_token(&BorrowedToken::Eq)?;
             Some(self.parse_comment_value()?)
@@ -6167,7 +5929,7 @@ impl<'a> Parser<'a> {
         let query = self.parse_query()?;
         // Optional `WITH [ CASCADED | LOCAL ] CHECK OPTION` is widely supported here.
 
-        let with_no_schema_binding = dialect_of!(self is RedshiftSqlDialect | GenericDialect)
+        let with_no_schema_binding = dialect_of!(self is GenericDialect)
             && self.parse_keywords(&[
                 Keyword::WITH,
                 Keyword::NO,
@@ -6927,10 +6689,9 @@ impl<'a> Parser<'a> {
 
     pub fn parse_drop(&self) -> Result<Statement, ParserError> {
         // MySQL dialect supports `TEMPORARY`
-        let temporary = dialect_of!(self is MySqlDialect | GenericDialect | DuckDbDialect)
+        let temporary = dialect_of!(self is MySqlDialect | GenericDialect)
             && self.parse_keyword(Keyword::TEMPORARY);
-        let persistent = dialect_of!(self is DuckDbDialect)
-            && self.parse_one_of_keywords(&[Keyword::PERSISTENT]).is_some();
+        let persistent = false;
 
         let object_type = if self.parse_keyword(Keyword::TABLE) {
             ObjectType::Table
@@ -7150,12 +6911,6 @@ impl<'a> Parser<'a> {
     /// The syntax can vary significantly between warehouses. See the grammar
     /// on the warehouse specific function in such cases.
     pub fn parse_declare(&self) -> Result<Statement, ParserError> {
-        if dialect_of!(self is BigQueryDialect) {
-            return self.parse_big_query_declare();
-        }
-        if dialect_of!(self is SnowflakeDialect) {
-            return self.parse_snowflake_declare();
-        }
         if dialect_of!(self is MsSqlDialect) {
             return self.parse_mssql_declare();
         }
@@ -7901,7 +7656,7 @@ impl<'a> Parser<'a> {
         global: Option<bool>,
         transient: bool,
     ) -> Result<Statement, ParserError> {
-        let allow_unquoted_hyphen = dialect_of!(self is BigQueryDialect);
+        let allow_unquoted_hyphen = false;
         let if_not_exists = self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
         let table_name = self.parse_object_name(allow_unquoted_hyphen)?;
 
@@ -7918,18 +7673,7 @@ impl<'a> Parser<'a> {
 
         // parse optional column list (schema)
         let (columns, constraints) = self.parse_columns()?;
-        let comment_after_column_def =
-            if dialect_of!(self is HiveDialect) && self.parse_keyword(Keyword::COMMENT) {
-                let next_token = self.next_token();
-                match next_token.token {
-                    BorrowedToken::SingleQuotedString(str) => {
-                        Some(CommentDef::WithoutEq(str.into_owned()))
-                    }
-                    _ => self.expected("comment", next_token)?,
-                }
-            } else {
-                None
-            };
+        let comment_after_column_def = None;
 
         // SQLite supports `WITHOUT ROWID` at the end of `CREATE TABLE`
         let without_rowid = self.parse_keywords(&[Keyword::WITHOUT, Keyword::ROWID]);
@@ -7942,7 +7686,7 @@ impl<'a> Parser<'a> {
 
         // ClickHouse supports `PRIMARY KEY`, before `ORDER BY`
         // https://clickhouse.com/docs/en/sql-reference/statements/create/table#primary-key
-        let primary_key = if dialect_of!(self is ClickHouseDialect | GenericDialect)
+        let primary_key = if dialect_of!(self is GenericDialect)
             && self.parse_keywords(&[Keyword::PRIMARY, Keyword::KEY])
         {
             Some(Box::new(self.parse_expr()?))
@@ -8091,7 +7835,7 @@ impl<'a> Parser<'a> {
         if !table_properties.is_empty() {
             table_options = CreateTableOptions::TableProperties(table_properties);
         }
-        let partition_by = if dialect_of!(self is BigQueryDialect | PostgreSqlDialect | GenericDialect)
+        let partition_by = if dialect_of!(self is PostgreSqlDialect | GenericDialect)
             && self.parse_keywords(&[Keyword::PARTITION, Keyword::BY])
         {
             Some(Box::new(self.parse_expr()?))
@@ -8100,7 +7844,7 @@ impl<'a> Parser<'a> {
         };
 
         let mut cluster_by = None;
-        if dialect_of!(self is BigQueryDialect | GenericDialect) {
+        if dialect_of!(self is GenericDialect) {
             if self.parse_keywords(&[Keyword::CLUSTER, Keyword::BY]) {
                 cluster_by = Some(WrappedCollection::NoWrapping(
                     self.parse_comma_separated(|p| p.parse_expr())?,
@@ -8115,7 +7859,7 @@ impl<'a> Parser<'a> {
             };
         }
 
-        if !dialect_of!(self is HiveDialect) && table_options == CreateTableOptions::None {
+        if table_options == CreateTableOptions::None {
             let plain_options = self.parse_plain_options()?;
             if !plain_options.is_empty() {
                 table_options = CreateTableOptions::Plain(plain_options)
@@ -8504,26 +8248,7 @@ impl<'a> Parser<'a> {
     }
 
     fn is_column_type_sqlite_unspecified(&self) -> bool {
-        if dialect_of!(self is SQLiteDialect) {
-            match self.peek_token().token {
-                BorrowedToken::Word(word) => matches!(
-                    word.keyword,
-                    Keyword::CONSTRAINT
-                        | Keyword::PRIMARY
-                        | Keyword::NOT
-                        | Keyword::UNIQUE
-                        | Keyword::CHECK
-                        | Keyword::DEFAULT
-                        | Keyword::COLLATE
-                        | Keyword::REFERENCES
-                        | Keyword::GENERATED
-                        | Keyword::AS
-                ),
-                _ => true, // e.g. comma immediately after column name
-            }
-        } else {
-            false
-        }
+        false
     }
 
     pub fn parse_optional_column_option(&self) -> Result<Option<ColumnOption>, ParserError> {
@@ -8558,19 +8283,13 @@ impl<'a> Parser<'a> {
             Ok(Some(ColumnOption::Default(
                 self.parse_column_option_expr()?,
             )))
-        } else if dialect_of!(self is ClickHouseDialect| GenericDialect)
-            && self.parse_keyword(Keyword::MATERIALIZED)
-        {
+        } else if dialect_of!(self is GenericDialect) && self.parse_keyword(Keyword::MATERIALIZED) {
             Ok(Some(ColumnOption::Materialized(
                 self.parse_column_option_expr()?,
             )))
-        } else if dialect_of!(self is ClickHouseDialect| GenericDialect)
-            && self.parse_keyword(Keyword::ALIAS)
-        {
+        } else if dialect_of!(self is GenericDialect) && self.parse_keyword(Keyword::ALIAS) {
             Ok(Some(ColumnOption::Alias(self.parse_column_option_expr()?)))
-        } else if dialect_of!(self is ClickHouseDialect| GenericDialect)
-            && self.parse_keyword(Keyword::EPHEMERAL)
-        {
+        } else if dialect_of!(self is GenericDialect) && self.parse_keyword(Keyword::EPHEMERAL) {
             // The expression is optional for the EPHEMERAL syntax, so we need to check
             // if the column definition has remaining tokens before parsing the expression.
             if matches!(
@@ -8670,8 +8389,7 @@ impl<'a> Parser<'a> {
             Ok(Some(ColumnOption::DialectSpecific(vec![
                 BorrowedToken::make_keyword("AUTO_INCREMENT"),
             ])))
-        } else if self.parse_keyword(Keyword::AUTOINCREMENT)
-            && dialect_of!(self is SQLiteDialect |  GenericDialect)
+        } else if self.parse_keyword(Keyword::AUTOINCREMENT) && dialect_of!(self is GenericDialect)
         {
             // Support AUTOINCREMENT for SQLite
             Ok(Some(ColumnOption::DialectSpecific(vec![
@@ -8698,15 +8416,13 @@ impl<'a> Parser<'a> {
             Ok(Some(ColumnOption::OnUpdate(expr)))
         } else if self.parse_keyword(Keyword::GENERATED) {
             self.parse_optional_column_option_generated()
-        } else if dialect_of!(self is BigQueryDialect | GenericDialect)
-            && self.parse_keyword(Keyword::OPTIONS)
-        {
+        } else if dialect_of!(self is GenericDialect) && self.parse_keyword(Keyword::OPTIONS) {
             self.prev_token();
             Ok(Some(ColumnOption::Options(
                 self.parse_options(Keyword::OPTIONS)?,
             )))
         } else if self.parse_keyword(Keyword::AS)
-            && dialect_of!(self is MySqlDialect | SQLiteDialect | DuckDbDialect | GenericDialect)
+            && dialect_of!(self is MySqlDialect | GenericDialect)
         {
             self.parse_optional_column_option_as()
         } else if self.parse_keyword(Keyword::SRID)
@@ -8736,7 +8452,7 @@ impl<'a> Parser<'a> {
                     order: None,
                 }),
             )))
-        } else if dialect_of!(self is SQLiteDialect | GenericDialect)
+        } else if dialect_of!(self is GenericDialect)
             && self.parse_keywords(&[Keyword::ON, Keyword::CONFLICT])
         {
             // Support ON CONFLICT for SQLite
@@ -8779,14 +8495,6 @@ impl<'a> Parser<'a> {
         } else {
             Ok(self.parse_expr()?)
         }
-    }
-
-    pub(crate) fn parse_tag(&self) -> Result<Tag, ParserError> {
-        let name = self.parse_object_name(false)?;
-        self.expect_token(&BorrowedToken::Eq)?;
-        let value = self.parse_literal_string()?;
-
-        Ok(Tag::new(name, value))
     }
 
     fn parse_optional_column_option_generated(&self) -> Result<Option<ColumnOption>, ParserError> {
@@ -8881,7 +8589,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_optional_clustered_by(&self) -> Result<Option<ClusteredBy>, ParserError> {
-        let clustered_by = if dialect_of!(self is HiveDialect|GenericDialect)
+        let clustered_by = if dialect_of!(self is GenericDialect)
             && self.parse_keywords(&[Keyword::CLUSTERED, Keyword::BY])
         {
             let columns = self.parse_parenthesized_column_list(Mandatory, false)?;
@@ -9301,7 +9009,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_sql_option(&self) -> Result<SqlOption, ParserError> {
-        let is_mssql = dialect_of!(self is MsSqlDialect|GenericDialect);
+        let is_mssql = dialect_of!(self is MsSqlDialect | GenericDialect);
 
         match self.peek_token().token {
             BorrowedToken::Word(w) if w.keyword == Keyword::HEAP && is_mssql => {
@@ -9427,8 +9135,7 @@ impl<'a> Parser<'a> {
                     constraint,
                     not_valid,
                 }
-            } else if dialect_of!(self is ClickHouseDialect|GenericDialect)
-                && self.parse_keyword(Keyword::PROJECTION)
+            } else if dialect_of!(self is GenericDialect) && self.parse_keyword(Keyword::PROJECTION)
             {
                 return self.parse_alter_table_add_projection();
             } else {
@@ -9450,8 +9157,7 @@ impl<'a> Parser<'a> {
                 } else {
                     let column_keyword = self.parse_keyword(Keyword::COLUMN);
 
-                    let if_not_exists = if dialect_of!(self is PostgreSqlDialect | BigQueryDialect | DuckDbDialect | GenericDialect)
-                    {
+                    let if_not_exists = if dialect_of!(self is PostgreSqlDialect | GenericDialect) {
                         self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS])
                             || if_not_exists
                     } else {
@@ -9539,7 +9245,7 @@ impl<'a> Parser<'a> {
                 );
             }
         } else if self.parse_keywords(&[Keyword::CLEAR, Keyword::PROJECTION])
-            && dialect_of!(self is ClickHouseDialect|GenericDialect)
+            && dialect_of!(self is GenericDialect)
         {
             let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
             let name = self.parse_identifier()?;
@@ -9554,7 +9260,7 @@ impl<'a> Parser<'a> {
                 partition,
             }
         } else if self.parse_keywords(&[Keyword::MATERIALIZE, Keyword::PROJECTION])
-            && dialect_of!(self is ClickHouseDialect|GenericDialect)
+            && dialect_of!(self is GenericDialect)
         {
             let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
             let name = self.parse_identifier()?;
@@ -9607,8 +9313,7 @@ impl<'a> Parser<'a> {
             } else if self.parse_keyword(Keyword::INDEX) {
                 let name = self.parse_identifier()?;
                 AlterTableOperation::DropIndex { name }
-            } else if self.parse_keyword(Keyword::PROJECTION)
-                && dialect_of!(self is ClickHouseDialect|GenericDialect)
+            } else if self.parse_keyword(Keyword::PROJECTION) && dialect_of!(self is GenericDialect)
             {
                 let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
                 let name = self.parse_identifier()?;
@@ -9745,21 +9450,15 @@ impl<'a> Parser<'a> {
         {
             let new_owner = self.parse_owner()?;
             AlterTableOperation::OwnerTo { new_owner }
-        } else if dialect_of!(self is ClickHouseDialect|GenericDialect)
-            && self.parse_keyword(Keyword::ATTACH)
-        {
+        } else if dialect_of!(self is GenericDialect) && self.parse_keyword(Keyword::ATTACH) {
             AlterTableOperation::AttachPartition {
                 partition: self.parse_part_or_partition()?,
             }
-        } else if dialect_of!(self is ClickHouseDialect|GenericDialect)
-            && self.parse_keyword(Keyword::DETACH)
-        {
+        } else if dialect_of!(self is GenericDialect) && self.parse_keyword(Keyword::DETACH) {
             AlterTableOperation::DetachPartition {
                 partition: self.parse_part_or_partition()?,
             }
-        } else if dialect_of!(self is ClickHouseDialect|GenericDialect)
-            && self.parse_keyword(Keyword::FREEZE)
-        {
+        } else if dialect_of!(self is GenericDialect) && self.parse_keyword(Keyword::FREEZE) {
             let partition = self.parse_part_or_partition()?;
             let with_name = if self.parse_keyword(Keyword::WITH) {
                 self.expect_keyword_is(Keyword::NAME)?;
@@ -9771,9 +9470,7 @@ impl<'a> Parser<'a> {
                 partition,
                 with_name,
             }
-        } else if dialect_of!(self is ClickHouseDialect|GenericDialect)
-            && self.parse_keyword(Keyword::UNFREEZE)
-        {
+        } else if dialect_of!(self is GenericDialect) && self.parse_keyword(Keyword::UNFREEZE) {
             let partition = self.parse_part_or_partition()?;
             let with_name = if self.parse_keyword(Keyword::WITH) {
                 self.expect_keyword_is(Keyword::NAME)?;
@@ -10804,15 +10501,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Parse a boolean string
-    pub(crate) fn parse_boolean_string(&self) -> Result<bool, ParserError> {
-        match self.parse_one_of_keywords(&[Keyword::TRUE, Keyword::FALSE]) {
-            Some(Keyword::TRUE) => Ok(true),
-            Some(Keyword::FALSE) => Ok(false),
-            _ => self.expected("TRUE or FALSE", self.peek_token()),
-        }
-    }
-
     /// Parse a literal unicode normalization clause
     pub fn parse_unicode_is_normalized(&self, expr: Expr) -> Result<Expr, ParserError> {
         let neg = self.parse_keyword(Keyword::NOT);
@@ -11212,27 +10900,14 @@ impl<'a> Parser<'a> {
                 Keyword::ENUM16 => Ok(DataType::Enum(self.parse_enum_values()?, Some(16))),
                 Keyword::SET => Ok(DataType::Set(self.parse_string_values()?)),
                 Keyword::ARRAY => {
-                    if dialect_of!(self is SnowflakeDialect) {
-                        Ok(DataType::Array(ArrayElemTypeDef::None))
-                    } else if dialect_of!(self is ClickHouseDialect) {
-                        Ok(self.parse_sub_type(|internal_type| {
-                            DataType::Array(ArrayElemTypeDef::Parenthesis(internal_type))
-                        })?)
-                    } else {
-                        self.expect_token(&BorrowedToken::Lt)?;
-                        let (inside_type, _trailing_bracket) = self.parse_data_type_helper()?;
-                        trailing_bracket = self.expect_closing_angle_bracket(_trailing_bracket)?;
-                        Ok(DataType::Array(ArrayElemTypeDef::AngleBracket(Box::new(
-                            inside_type,
-                        ))))
-                    }
+                    self.expect_token(&BorrowedToken::Lt)?;
+                    let (inside_type, _trailing_bracket) = self.parse_data_type_helper()?;
+                    trailing_bracket = self.expect_closing_angle_bracket(_trailing_bracket)?;
+                    Ok(DataType::Array(ArrayElemTypeDef::AngleBracket(Box::new(
+                        inside_type,
+                    ))))
                 }
-                Keyword::STRUCT if dialect_is!(dialect is DuckDbDialect) => {
-                    self.prev_token();
-                    let field_defs = self.parse_duckdb_struct_type_def()?;
-                    Ok(DataType::Struct(field_defs, StructBracketKind::Parentheses))
-                }
-                Keyword::STRUCT if dialect_is!(dialect is BigQueryDialect | GenericDialect) => {
+                Keyword::STRUCT if dialect_is!(dialect is GenericDialect) => {
                     self.prev_token();
                     let (field_defs, _trailing_bracket) =
                         self.parse_struct_type_def(Self::parse_struct_field_def)?;
@@ -11242,18 +10917,18 @@ impl<'a> Parser<'a> {
                         StructBracketKind::AngleBrackets,
                     ))
                 }
-                Keyword::UNION if dialect_is!(dialect is DuckDbDialect | GenericDialect) => {
+                Keyword::UNION if dialect_is!(dialect is GenericDialect) => {
                     self.prev_token();
                     let fields = self.parse_union_type_def()?;
                     Ok(DataType::Union(fields))
                 }
-                Keyword::NULLABLE if dialect_is!(dialect is ClickHouseDialect | GenericDialect) => {
+                Keyword::NULLABLE if dialect_is!(dialect is GenericDialect) => {
                     Ok(self.parse_sub_type(DataType::Nullable)?)
                 }
-                Keyword::LOWCARDINALITY if dialect_is!(dialect is ClickHouseDialect | GenericDialect) => {
+                Keyword::LOWCARDINALITY if dialect_is!(dialect is GenericDialect) => {
                     Ok(self.parse_sub_type(DataType::LowCardinality)?)
                 }
-                Keyword::MAP if dialect_is!(dialect is ClickHouseDialect | GenericDialect) => {
+                Keyword::MAP if dialect_is!(dialect is GenericDialect) => {
                     self.prev_token();
                     let (key_data_type, value_data_type) = self.parse_click_house_map_def()?;
                     Ok(DataType::Map(
@@ -11261,13 +10936,13 @@ impl<'a> Parser<'a> {
                         Box::new(value_data_type),
                     ))
                 }
-                Keyword::NESTED if dialect_is!(dialect is ClickHouseDialect | GenericDialect) => {
+                Keyword::NESTED if dialect_is!(dialect is GenericDialect) => {
                     self.expect_token(&BorrowedToken::LParen)?;
                     let field_defs = self.parse_comma_separated(Parser::parse_column_def)?;
                     self.expect_token(&BorrowedToken::RParen)?;
                     Ok(DataType::Nested(field_defs))
                 }
-                Keyword::TUPLE if dialect_is!(dialect is ClickHouseDialect | GenericDialect) => {
+                Keyword::TUPLE if dialect_is!(dialect is GenericDialect) => {
                     self.prev_token();
                     let field_defs = self.parse_click_house_tuple_def()?;
                     Ok(DataType::Tuple(field_defs))
@@ -11645,7 +11320,7 @@ impl<'a> Parser<'a> {
                     }
                 } else {
                     let exprs = self.parse_comma_separated(Parser::parse_order_by_expr)?;
-                    let interpolate = if dialect_of!(self is ClickHouseDialect | GenericDialect) {
+                    let interpolate = if dialect_of!(self is GenericDialect) {
                         self.parse_interpolations()?
                     } else {
                         None
@@ -11687,8 +11362,7 @@ impl<'a> Parser<'a> {
                 }));
             }
 
-            let limit_by = if dialect_of!(self is ClickHouseDialect | GenericDialect)
-                && self.parse_keyword(Keyword::BY)
+            let limit_by = if dialect_of!(self is GenericDialect) && self.parse_keyword(Keyword::BY)
             {
                 Some(self.parse_comma_separated(Parser::parse_expr)?)
             } else {
@@ -11748,89 +11422,44 @@ impl<'a> Parser<'a> {
     /// e.g. *, *.*, `foo`.*, or "foo"."bar"
     fn parse_object_name_inner(
         &self,
-        in_table_clause: bool,
+        _in_table_clause: bool,
         allow_wildcards: bool,
     ) -> Result<ObjectName, ParserError> {
         let mut parts = vec![];
-        if dialect_of!(self is BigQueryDialect) && in_table_clause {
-            loop {
-                let (ident, end_with_period) = self.parse_unquoted_hyphenated_identifier()?;
-                parts.push(ObjectNamePart::Identifier(ident));
-                if !self.consume_token(&BorrowedToken::Period) && !end_with_period {
-                    break;
-                }
-            }
-        } else {
-            loop {
-                if allow_wildcards && self.peek_token().token == BorrowedToken::Mul {
-                    let span = self.next_token().span;
-                    parts.push(ObjectNamePart::Identifier(Ident {
-                        value: BorrowedToken::Mul.to_string(),
-                        quote_style: None,
-                        span,
-                    }));
-                } else if dialect_of!(self is BigQueryDialect) && in_table_clause {
-                    let (ident, end_with_period) = self.parse_unquoted_hyphenated_identifier()?;
-                    parts.push(ObjectNamePart::Identifier(ident));
-                    if !self.consume_token(&BorrowedToken::Period) && !end_with_period {
-                        break;
-                    }
-                } else if self.dialect.supports_object_name_double_dot_notation()
-                    && parts.len() == 1
-                    && matches!(self.peek_token().token, BorrowedToken::Period)
+        loop {
+            if allow_wildcards && self.peek_token().token == BorrowedToken::Mul {
+                let span = self.next_token().span;
+                parts.push(ObjectNamePart::Identifier(Ident {
+                    value: BorrowedToken::Mul.to_string(),
+                    quote_style: None,
+                    span,
+                }));
+            } else if self.dialect.supports_object_name_double_dot_notation()
+                && parts.len() == 1
+                && matches!(self.peek_token().token, BorrowedToken::Period)
+            {
+                // Empty string here means default schema
+                parts.push(ObjectNamePart::Identifier(Ident::new("")));
+            } else {
+                let ident = self.parse_identifier()?;
+                let part = if self
+                    .dialect
+                    .is_identifier_generating_function_name(&ident, &parts)
                 {
-                    // Empty string here means default schema
-                    parts.push(ObjectNamePart::Identifier(Ident::new("")));
+                    self.expect_token(&BorrowedToken::LParen)?;
+                    let args: Vec<FunctionArg> = self
+                        .parse_comma_separated0(Self::parse_function_args, BorrowedToken::RParen)?;
+                    self.expect_token(&BorrowedToken::RParen)?;
+                    ObjectNamePart::Function(ObjectNamePartFunction { name: ident, args })
                 } else {
-                    let ident = self.parse_identifier()?;
-                    let part = if self
-                        .dialect
-                        .is_identifier_generating_function_name(&ident, &parts)
-                    {
-                        self.expect_token(&BorrowedToken::LParen)?;
-                        let args: Vec<FunctionArg> = self.parse_comma_separated0(
-                            Self::parse_function_args,
-                            BorrowedToken::RParen,
-                        )?;
-                        self.expect_token(&BorrowedToken::RParen)?;
-                        ObjectNamePart::Function(ObjectNamePartFunction { name: ident, args })
-                    } else {
-                        ObjectNamePart::Identifier(ident)
-                    };
-                    parts.push(part);
-                }
-
-                if !self.consume_token(&BorrowedToken::Period) {
-                    break;
-                }
+                    ObjectNamePart::Identifier(ident)
+                };
+                parts.push(part);
             }
-        }
 
-        // BigQuery accepts any number of quoted identifiers of a table name.
-        // https://cloud.google.com/bigquery/docs/reference/standard-sql/lexical#quoted_identifiers
-        if dialect_of!(self is BigQueryDialect)
-            && parts.iter().any(|part| {
-                part.as_ident()
-                    .is_some_and(|ident| ident.value.contains('.'))
-            })
-        {
-            parts = parts
-                .into_iter()
-                .flat_map(|part| match part.as_ident() {
-                    Some(ident) => ident
-                        .value
-                        .split('.')
-                        .map(|value| {
-                            ObjectNamePart::Identifier(Ident {
-                                value: value.into(),
-                                quote_style: ident.quote_style,
-                                span: ident.span,
-                            })
-                        })
-                        .collect::<Vec<_>>(),
-                    None => vec![part],
-                })
-                .collect()
+            if !self.consume_token(&BorrowedToken::Period) {
+                break;
+            }
         }
 
         Ok(ObjectName(parts))
@@ -11953,90 +11582,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// On BigQuery, hyphens are permitted in unquoted identifiers inside of a FROM or
-    /// TABLE clause.
-    ///
-    /// The first segment must be an ordinary unquoted identifier, e.g. it must not start
-    /// with a digit. Subsequent segments are either must either be valid identifiers or
-    /// integers, e.g. foo-123 is allowed, but foo-123a is not.
-    ///
-    /// [BigQuery-lexical](https://cloud.google.com/bigquery/docs/reference/standard-sql/lexical)
-    ///
-    /// Return a tuple of the identifier and a boolean indicating it ends with a period.
-    fn parse_unquoted_hyphenated_identifier(&self) -> Result<(Ident, bool), ParserError> {
-        match self.peek_token().token {
-            BorrowedToken::Word(w) => {
-                let quote_style_is_none = w.quote_style.is_none();
-                let mut requires_whitespace = false;
-                let mut ident = w.into_ident(self.next_token().span);
-                if quote_style_is_none {
-                    while matches!(self.peek_token_no_skip().token, BorrowedToken::Minus) {
-                        self.next_token();
-                        ident.value.push('-');
-
-                        let token = self
-                            .next_token_no_skip()
-                            .cloned()
-                            .unwrap_or(TokenWithSpan::wrap(BorrowedToken::EOF));
-                        requires_whitespace = match token.token {
-                            BorrowedToken::Word(next_word) if next_word.quote_style.is_none() => {
-                                ident.value.push_str(&next_word.value);
-                                false
-                            }
-                            BorrowedToken::Number(s, false) => {
-                                // A number token can represent a decimal value ending with a period, e.g., `Number('123.')`.
-                                // However, for an [ObjectName], it is part of a hyphenated identifier, e.g., `foo-123.bar`.
-                                //
-                                // If a number token is followed by a period, it is part of an [ObjectName].
-                                // Return the identifier with `true` if the number token is followed by a period, indicating that
-                                // parsing should continue for the next part of the hyphenated identifier.
-                                if s.ends_with('.') {
-                                    let Some(s) = s.split('.').next().filter(|s| {
-                                        !s.is_empty() && s.chars().all(|c| c.is_ascii_digit())
-                                    }) else {
-                                        return self.expected(
-                                            "continuation of hyphenated identifier",
-                                            TokenWithSpan::new(
-                                                BorrowedToken::Number(s, false),
-                                                token.span,
-                                            ),
-                                        );
-                                    };
-                                    ident.value.push_str(s);
-                                    return Ok((ident, true));
-                                } else {
-                                    ident.value.push_str(&s);
-                                }
-                                // If next token is period, then it is part of an ObjectName and we don't expect whitespace
-                                // after the number.
-                                !matches!(self.peek_token().token, BorrowedToken::Period)
-                            }
-                            _ => {
-                                return self
-                                    .expected("continuation of hyphenated identifier", token);
-                            }
-                        }
-                    }
-
-                    // If the last segment was a number, we must check that it's followed by whitespace,
-                    // otherwise foo-123a will be parsed as `foo-123` with the alias `a`.
-                    if requires_whitespace {
-                        let token = self.next_token();
-                        if !matches!(
-                            token.token,
-                            BorrowedToken::EOF | BorrowedToken::Whitespace(_)
-                        ) {
-                            return self
-                                .expected("whitespace following hyphenated identifier", token);
-                        }
-                    }
-                }
-                Ok((ident, false))
-            }
-            _ => Ok((self.parse_identifier()?, false)),
-        }
-    }
-
     /// Parses a parenthesized, comma-separated list of column definitions within a view.
     fn parse_view_columns(&self) -> Result<Vec<ViewColumnDef>, ParserError> {
         if self.consume_token(&BorrowedToken::LParen) {
@@ -12061,11 +11606,7 @@ impl<'a> Parser<'a> {
     fn parse_view_column(&self) -> Result<ViewColumnDef, ParserError> {
         let name = self.parse_identifier()?;
         let options = self.parse_view_column_options()?;
-        let data_type = if dialect_of!(self is ClickHouseDialect) {
-            Some(self.parse_data_type()?)
-        } else {
-            None
-        };
+        let data_type = None;
         Ok(ViewColumnDef {
             name,
             data_type,
@@ -12451,7 +11992,7 @@ impl<'a> Parser<'a> {
         let (tables, with_from_keyword) = if !self.parse_keyword(Keyword::FROM) {
             // `FROM` keyword is optional in BigQuery SQL.
             // https://cloud.google.com/bigquery/docs/reference/standard-sql/dml-syntax#delete_statement
-            if dialect_of!(self is BigQueryDialect | GenericDialect) {
+            if dialect_of!(self is GenericDialect) {
                 (vec![], false)
             } else {
                 let tables = self.parse_comma_separated(|p| p.parse_object_name(false))?;
@@ -12516,7 +12057,7 @@ impl<'a> Parser<'a> {
             Some(Keyword::CONNECTION) => Some(KillType::Connection),
             Some(Keyword::QUERY) => Some(KillType::Query),
             Some(Keyword::MUTATION) => {
-                if dialect_of!(self is ClickHouseDialect | GenericDialect) {
+                if dialect_of!(self is GenericDialect) {
                     Some(KillType::Mutation)
                 } else {
                     self.expected(
@@ -12695,18 +12236,17 @@ impl<'a> Parser<'a> {
                     locks.push(self.parse_lock()?);
                 }
             }
-            let format_clause = if dialect_of!(self is ClickHouseDialect | GenericDialect)
-                && self.parse_keyword(Keyword::FORMAT)
-            {
-                if self.parse_keyword(Keyword::NULL) {
-                    Some(FormatClause::Null)
+            let format_clause =
+                if dialect_of!(self is GenericDialect) && self.parse_keyword(Keyword::FORMAT) {
+                    if self.parse_keyword(Keyword::NULL) {
+                        Some(FormatClause::Null)
+                    } else {
+                        let ident = self.parse_identifier()?;
+                        Some(FormatClause::Identifier(ident))
+                    }
                 } else {
-                    let ident = self.parse_identifier()?;
-                    Some(FormatClause::Identifier(ident))
-                }
-            } else {
-                None
-            };
+                    None
+                };
 
             let pipe_operators = if self.dialect.supports_pipe_operator() {
                 self.parse_pipe_operators()?
@@ -12950,19 +12490,18 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_settings(&self) -> Result<Option<Vec<Setting>>, ParserError> {
-        let settings = if dialect_of!(self is ClickHouseDialect|GenericDialect)
-            && self.parse_keyword(Keyword::SETTINGS)
-        {
-            let key_values = self.parse_comma_separated(|p| {
-                let key = p.parse_identifier()?;
-                p.expect_token(&BorrowedToken::Eq)?;
-                let value = p.parse_expr()?;
-                Ok(Setting { key, value })
-            })?;
-            Some(key_values)
-        } else {
-            None
-        };
+        let settings =
+            if dialect_of!(self is GenericDialect) && self.parse_keyword(Keyword::SETTINGS) {
+                let key_values = self.parse_comma_separated(|p| {
+                    let key = p.parse_identifier()?;
+                    p.expect_token(&BorrowedToken::Eq)?;
+                    let value = p.parse_expr()?;
+                    Ok(Setting { key, value })
+                })?;
+                Some(key_values)
+            } else {
+                None
+            };
         Ok(settings)
     }
 
@@ -13361,13 +12900,12 @@ impl<'a> Parser<'a> {
             }
         }
 
-        let prewhere = if dialect_of!(self is ClickHouseDialect|GenericDialect)
-            && self.parse_keyword(Keyword::PREWHERE)
-        {
-            Some(self.parse_expr()?)
-        } else {
-            None
-        };
+        let prewhere =
+            if dialect_of!(self is GenericDialect) && self.parse_keyword(Keyword::PREWHERE) {
+                Some(self.parse_expr()?)
+            } else {
+                None
+            };
 
         let selection = if self.parse_keyword(Keyword::WHERE) {
             Some(self.parse_expr()?)
@@ -13469,7 +13007,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_value_table_mode(&self) -> Result<Option<ValueTableMode>, ParserError> {
-        if !dialect_of!(self is BigQueryDialect) {
+        if true {
             return Ok(None);
         }
 
@@ -14067,25 +13605,8 @@ impl<'a> Parser<'a> {
 
     pub fn parse_use(&self) -> Result<Statement, ParserError> {
         // Determine which keywords are recognized by the current dialect
-        let parsed_keyword = if dialect_of!(self is HiveDialect) {
-            // HiveDialect accepts USE DEFAULT; statement without any db specified
-            if self.parse_keyword(Keyword::DEFAULT) {
-                return Ok(Statement::Use(Use::Default));
-            }
-            None // HiveDialect doesn't expect any other specific keyword after `USE`
-        } else if dialect_of!(self is DatabricksDialect) {
-            self.parse_one_of_keywords(&[Keyword::CATALOG, Keyword::DATABASE, Keyword::SCHEMA])
-        } else if dialect_of!(self is SnowflakeDialect) {
-            self.parse_one_of_keywords(&[
-                Keyword::DATABASE,
-                Keyword::SCHEMA,
-                Keyword::WAREHOUSE,
-                Keyword::ROLE,
-                Keyword::SECONDARY,
-            ])
-        } else {
-            None // No specific keywords for other dialects, including GenericDialect
-        };
+        // Note: Dialect-specific USE syntax removed (HiveDialect, DatabricksDialect, SnowflakeDialect)
+        let parsed_keyword = None; // No specific keywords for remaining dialects
 
         let result = if matches!(parsed_keyword, Some(Keyword::SECONDARY)) {
             self.parse_secondary_roles()?
@@ -14397,7 +13918,7 @@ impl<'a> Parser<'a> {
                     table_with_joins: Box::new(table_and_joins),
                     alias,
                 })
-            } else if dialect_of!(self is SnowflakeDialect | GenericDialect) {
+            } else if dialect_of!(self is GenericDialect) {
                 // Dialect-specific behavior: Snowflake diverges from the
                 // standard and from most of the other implementations by
                 // allowing extra parentheses not only around a join (B), but
@@ -14443,7 +13964,7 @@ impl<'a> Parser<'a> {
                 // appearing alone in parentheses (e.g. `FROM (mytable)`)
                 self.expected("joined table", self.peek_token())
             }
-        } else if dialect_of!(self is SnowflakeDialect | DatabricksDialect | GenericDialect)
+        } else if dialect_of!(self is GenericDialect)
             && matches!(
                 self.peek_tokens(),
                 [
@@ -14478,7 +13999,7 @@ impl<'a> Parser<'a> {
                 }),
                 alias,
             })
-        } else if dialect_of!(self is BigQueryDialect | PostgreSqlDialect | GenericDialect)
+        } else if dialect_of!(self is PostgreSqlDialect | GenericDialect)
             && self.parse_keyword(Keyword::UNNEST)
         {
             self.expect_token(&BorrowedToken::LParen)?;
@@ -16262,11 +15783,7 @@ impl<'a> Parser<'a> {
 
                     let partitioned = self.parse_insert_partition()?;
                     // Hive allows you to specify columns after partitions as well if you want.
-                    let after_columns = if dialect_of!(self is HiveDialect) {
-                        self.parse_parenthesized_column_list(Optional, false)?
-                    } else {
-                        vec![]
-                    };
+                    let after_columns = vec![];
                     (columns, partitioned, after_columns)
                 } else {
                     Default::default()
@@ -16672,9 +16189,7 @@ impl<'a> Parser<'a> {
             clauses.push(FunctionArgumentClause::Limit(self.parse_expr()?));
         }
 
-        if dialect_of!(self is GenericDialect | BigQueryDialect)
-            && self.parse_keyword(Keyword::HAVING)
-        {
+        if dialect_of!(self is GenericDialect) && self.parse_keyword(Keyword::HAVING) {
             let kind = match self.expect_one_of_keywords(&[Keyword::MIN, Keyword::MAX])? {
                 Keyword::MIN => HavingBoundKind::Min,
                 Keyword::MAX => HavingBoundKind::Max,
@@ -16817,7 +16332,7 @@ impl<'a> Parser<'a> {
         &self,
         wildcard_token: TokenWithSpan,
     ) -> Result<WildcardAdditionalOptions, ParserError> {
-        let opt_ilike = if dialect_of!(self is GenericDialect | SnowflakeDialect) {
+        let opt_ilike = if dialect_of!(self is GenericDialect) {
             self.parse_optional_select_item_ilike()?
         } else {
             None
@@ -16833,13 +16348,12 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
-        let opt_replace = if dialect_of!(self is GenericDialect | BigQueryDialect | ClickHouseDialect | DuckDbDialect | SnowflakeDialect)
-        {
+        let opt_replace = if dialect_of!(self is GenericDialect) {
             self.parse_optional_select_item_replace()?
         } else {
             None
         };
-        let opt_rename = if dialect_of!(self is GenericDialect | SnowflakeDialect) {
+        let opt_rename = if dialect_of!(self is GenericDialect) {
             self.parse_optional_select_item_rename()?
         } else {
             None
@@ -17033,7 +16547,7 @@ impl<'a> Parser<'a> {
 
         let options = self.parse_order_by_options()?;
 
-        let with_fill = if dialect_of!(self is ClickHouseDialect | GenericDialect)
+        let with_fill = if dialect_of!(self is GenericDialect)
             && self.parse_keywords(&[Keyword::WITH, Keyword::FILL])
         {
             Some(self.parse_with_fill()?)
@@ -17668,7 +17182,7 @@ impl<'a> Parser<'a> {
                     let is_mysql = dialect_of!(self is MySqlDialect);
 
                     let columns = self.parse_parenthesized_column_list(Optional, is_mysql)?;
-                    let kind = if dialect_of!(self is BigQueryDialect | GenericDialect)
+                    let kind = if dialect_of!(self is GenericDialect)
                         && self.parse_keyword(Keyword::ROW)
                     {
                         MergeInsertKind::Row

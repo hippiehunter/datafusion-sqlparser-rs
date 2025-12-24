@@ -2641,7 +2641,7 @@ fn parse_update_with_joins() {
                         alias: Some(TableAlias {
                             name: Ident::new("o"),
                             columns: vec![],
-                                    implicit: false,
+                            implicit: false,
                         }),
                         args: None,
                         with_hints: vec![],
@@ -2658,7 +2658,7 @@ fn parse_update_with_joins() {
                             alias: Some(TableAlias {
                                 name: Ident::new("c"),
                                 columns: vec![],
-                                    implicit: false,
+                                implicit: false,
                             }),
                             args: None,
                             with_hints: vec![],

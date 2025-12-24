@@ -41,9 +41,7 @@
 //! - E171: SQLSTATE support
 //! - E182: Host language binding
 
-use crate::standards::common::{
-    one_statement_parses_to_std, verified_standard_stmt,
-};
+use crate::standards::common::{one_statement_parses_to_std, verified_standard_stmt};
 use crate::verified_with_ast;
 use sqlparser::ast::{
     Action, Assignment, BinaryOperator, CascadeOption, CharacterLength, ColumnOption, CreateTable,
@@ -3352,10 +3350,16 @@ mod e141_basic_integrity_constraints {
         verified_standard_stmt(
             "CREATE TABLE orders (customer_id INTEGER REFERENCES customers(id) ON UPDATE CASCADE)",
         );
-        verified_standard_stmt("CREATE TABLE orders (customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL)");
-        verified_standard_stmt("CREATE TABLE orders (customer_id INTEGER REFERENCES customers(id) ON UPDATE SET NULL)");
+        verified_standard_stmt(
+            "CREATE TABLE orders (customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL)",
+        );
+        verified_standard_stmt(
+            "CREATE TABLE orders (customer_id INTEGER REFERENCES customers(id) ON UPDATE SET NULL)",
+        );
         verified_standard_stmt("CREATE TABLE orders (customer_id INTEGER REFERENCES customers(id) ON DELETE SET DEFAULT)");
-        verified_standard_stmt("CREATE TABLE orders (customer_id INTEGER REFERENCES customers(id) ON DELETE RESTRICT)");
+        verified_standard_stmt(
+            "CREATE TABLE orders (customer_id INTEGER REFERENCES customers(id) ON DELETE RESTRICT)",
+        );
 
         // Both ON DELETE and ON UPDATE
         verified_standard_stmt("CREATE TABLE orders (customer_id INTEGER REFERENCES customers(id) ON DELETE CASCADE ON UPDATE CASCADE)");

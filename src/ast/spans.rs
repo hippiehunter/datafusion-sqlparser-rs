@@ -239,14 +239,11 @@ impl Spanned for Values {
 /// # partial span
 ///
 /// Missing spans:
-/// - [Statement::CopyIntoSnowflake]
 /// - [Statement::CreateSecret]
 /// - [Statement::CreateRole]
 /// - [Statement::AlterType]
 /// - [Statement::AlterRole]
 /// - [Statement::AttachDatabase]
-/// - [Statement::AttachDuckDBDatabase]
-/// - [Statement::DetachDuckDBDatabase]
 /// - [Statement::Drop]
 /// - [Statement::DropFunction]
 /// - [Statement::DropProcedure]
@@ -276,7 +273,6 @@ impl Spanned for Values {
 /// - [Statement::DropTrigger]
 /// - [Statement::CreateProcedure]
 /// - [Statement::CreateMacro]
-/// - [Statement::CreateStage]
 /// - [Statement::Assert]
 /// - [Statement::Grant]
 /// - [Statement::Revoke]
@@ -332,22 +328,6 @@ impl Spanned for Statement {
                 legacy_options: _,
                 values: _,
             } => source.span(),
-            Statement::CopyIntoSnowflake {
-                into: _,
-                into_columns: _,
-                from_obj: _,
-                from_obj_alias: _,
-                stage_params: _,
-                from_transformations: _,
-                files: _,
-                pattern: _,
-                file_format: _,
-                copy_options: _,
-                validation_mode: _,
-                kind: _,
-                from_query: _,
-                partition: _,
-            } => Span::empty(),
             Statement::Open(open) => open.span(),
             Statement::Close { cursor } => match cursor {
                 CloseCursor::All => Span::empty(),
@@ -397,8 +377,6 @@ impl Spanned for Statement {
             Statement::AlterRole { .. } => Span::empty(),
             Statement::AlterSession { .. } => Span::empty(),
             Statement::AttachDatabase { .. } => Span::empty(),
-            Statement::AttachDuckDBDatabase { .. } => Span::empty(),
-            Statement::DetachDuckDBDatabase { .. } => Span::empty(),
             Statement::Drop { .. } => Span::empty(),
             Statement::DropFunction(drop_function) => drop_function.span(),
             Statement::DropDomain { .. } => Span::empty(),
@@ -431,7 +409,6 @@ impl Spanned for Statement {
             Statement::DropTrigger { .. } => Span::empty(),
             Statement::CreateProcedure { .. } => Span::empty(),
             Statement::CreateMacro { .. } => Span::empty(),
-            Statement::CreateStage { .. } => Span::empty(),
             Statement::Assert { .. } => Span::empty(),
             Statement::Grant { .. } => Span::empty(),
             Statement::Deny { .. } => Span::empty(),
@@ -473,7 +450,6 @@ impl Spanned for Statement {
             Statement::RaisError { .. } => Span::empty(),
             Statement::Print { .. } => Span::empty(),
             Statement::Return { .. } => Span::empty(),
-            Statement::List(..) | Statement::Remove(..) => Span::empty(),
             Statement::ExportData(ExportData {
                 options,
                 query,
@@ -2437,7 +2413,7 @@ impl Spanned for CreateOperatorClass {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::dialect::{Dialect, GenericDialect, SnowflakeDialect};
+    use crate::dialect::{Dialect, GenericDialect};
     use crate::parser::Parser;
     use crate::tokenizer::Span;
 
@@ -2537,17 +2513,18 @@ pub mod tests {
         assert_eq!(test.get_source(select_span), "WITH cte_outer AS (SELECT a FROM postgres.public.source), cte_ignored AS (SELECT a FROM cte_outer), cte_inner AS (SELECT a FROM cte_outer) SELECT a FROM cte_inner");
     }
 
-    #[test]
-    pub fn test_snowflake_lateral_flatten() {
-        let dialect = &SnowflakeDialect;
-        let test = SpanTest::new(dialect, "SELECT FLATTENED.VALUE:field::TEXT AS FIELD FROM SNOWFLAKE.SCHEMA.SOURCE AS S, LATERAL FLATTEN(INPUT => S.JSON_ARRAY) AS FLATTENED");
-
-        let query = test.0.parse_select().unwrap();
-
-        let select_span = query.span();
-
-        assert_eq!(test.get_source(select_span), "SELECT FLATTENED.VALUE:field::TEXT AS FIELD FROM SNOWFLAKE.SCHEMA.SOURCE AS S, LATERAL FLATTEN(INPUT => S.JSON_ARRAY) AS FLATTENED");
-    }
+    // REMOVED: Test relied on Snowflake-specific syntax (colon operator)
+    // #[test]
+    // pub fn test_snowflake_lateral_flatten() {
+    //     let dialect = &GenericDialect;
+    //     let test = SpanTest::new(dialect, "SELECT FLATTENED.VALUE:field::TEXT AS FIELD FROM SNOWFLAKE.SCHEMA.SOURCE AS S, LATERAL FLATTEN(INPUT => S.JSON_ARRAY) AS FLATTENED");
+    //
+    //     let query = test.0.parse_select().unwrap();
+    //
+    //     let select_span = query.span();
+    //
+    //     assert_eq!(test.get_source(select_span), "SELECT FLATTENED.VALUE:field::TEXT AS FIELD FROM SNOWFLAKE.SCHEMA.SOURCE AS S, LATERAL FLATTEN(INPUT => S.JSON_ARRAY) AS FLATTENED");
+    // }
 
     #[test]
     pub fn test_wildcard_from_cte() {

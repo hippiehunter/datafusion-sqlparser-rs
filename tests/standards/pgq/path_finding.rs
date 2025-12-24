@@ -22,35 +22,35 @@ use crate::standards::common::verified_standard_stmt;
 #[test]
 fn path_finding_any() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH ANY (a)-[*]->(b) COLUMNS (a.id, b.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH ANY (a)-[*]->(b) COLUMNS (a.id, b.id))",
     );
 }
 
 #[test]
 fn path_finding_any_shortest() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH ANY SHORTEST (a)-[*]->(b) COLUMNS (a.id, b.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH ANY SHORTEST (a)-[*]->(b) COLUMNS (a.id, b.id))",
     );
 }
 
 #[test]
 fn path_finding_all_shortest() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH ALL SHORTEST (a)-[*]->(b) COLUMNS (a.id, b.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH ALL SHORTEST (a)-[*]->(b) COLUMNS (a.id, b.id))",
     );
 }
 
 #[test]
 fn path_finding_shortest_k() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH SHORTEST 5 (a)-[*]->(b) COLUMNS (a.id, b.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH SHORTEST 5 (a)-[*]->(b) COLUMNS (a.id, b.id))",
     );
 }
 
 #[test]
 fn path_finding_shortest_k_paths() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH SHORTEST 3 PATHS (a)-[*]->(b) COLUMNS (a.id, b.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH SHORTEST 3 PATHS (a)-[*]->(b) COLUMNS (a.id, b.id))",
     );
 }
 
@@ -64,7 +64,7 @@ fn path_finding_shortest_k_path_groups() {
 #[test]
 fn path_finding_all_with_limit() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH ALL (a)-[*{,10}]->(b) COLUMNS (a.id, b.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH ALL (a)-[*{,10}]->(b) COLUMNS (a.id, b.id))",
     );
 }
 
@@ -131,7 +131,7 @@ fn keep_basic() {
 #[test]
 fn keep_shortest() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH ALL (a)-[e*]->(b) KEEP SHORTEST COLUMNS (a.id, b.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH ALL (a)-[e*]->(b) KEEP SHORTEST COLUMNS (a.id, b.id))",
     );
 }
 
@@ -145,7 +145,7 @@ fn keep_cheapest() {
 #[test]
 fn keep_first_k() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH ALL (a)-[*]->(b) KEEP FIRST 10 COLUMNS (a.id, b.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH ALL (a)-[*]->(b) KEEP FIRST 10 COLUMNS (a.id, b.id))",
     );
 }
 
@@ -168,13 +168,13 @@ fn cheapest_with_mode() {
 #[test]
 fn shortest_with_quantifier() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH ANY SHORTEST (a)-[*1..10]->(b) COLUMNS (a.id, b.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH ANY SHORTEST (a)-[*1..10]->(b) COLUMNS (a.id, b.id))",
     );
 }
 
 #[test]
 fn all_paths_bounded() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH ALL (a)-[*..5]->(b) COLUMNS (a.id, b.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH ALL (a)-[*..5]->(b) COLUMNS (a.id, b.id))",
     );
 }

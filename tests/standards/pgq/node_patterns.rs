@@ -21,57 +21,47 @@ use crate::standards::common::verified_standard_stmt;
 
 #[test]
 fn node_pattern_anonymous() {
-    verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH () COLUMNS (1 AS one))"
-    );
+    verified_standard_stmt("SELECT * FROM GRAPH_TABLE (g MATCH () COLUMNS (1 AS one))");
 }
 
 #[test]
 fn node_pattern_variable() {
-    verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (n) COLUMNS (n.id))"
-    );
+    verified_standard_stmt("SELECT * FROM GRAPH_TABLE (g MATCH (n) COLUMNS (n.id))");
 }
 
 #[test]
 fn node_pattern_single_label() {
-    verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (n:Person) COLUMNS (n.name))"
-    );
+    verified_standard_stmt("SELECT * FROM GRAPH_TABLE (g MATCH (n:Person) COLUMNS (n.name))");
 }
 
 #[test]
 fn node_pattern_multiple_labels() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (n:Person:Employee) COLUMNS (n.name))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (n:Person:Employee) COLUMNS (n.name))",
     );
 }
 
 #[test]
 fn node_pattern_label_disjunction() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (n:Person|Company) COLUMNS (n.name))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (n:Person|Company) COLUMNS (n.name))",
     );
 }
 
 #[test]
 fn node_pattern_label_negation() {
-    verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (n:!Inactive) COLUMNS (n.id))"
-    );
+    verified_standard_stmt("SELECT * FROM GRAPH_TABLE (g MATCH (n:!Inactive) COLUMNS (n.id))");
 }
 
 #[test]
 fn node_pattern_wildcard_label() {
-    verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (n:%) COLUMNS (n.id))"
-    );
+    verified_standard_stmt("SELECT * FROM GRAPH_TABLE (g MATCH (n:%) COLUMNS (n.id))");
 }
 
 #[test]
 fn node_pattern_with_where() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (n:Person WHERE n.age > 18) COLUMNS (n.name))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (n:Person WHERE n.age > 18) COLUMNS (n.name))",
     );
 }
 
@@ -80,43 +70,41 @@ fn node_pattern_with_where() {
 #[test]
 fn label_conjunction() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (n:Person&Employee) COLUMNS (n.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (n:Person&Employee) COLUMNS (n.id))",
     );
 }
 
 #[test]
 fn label_disjunction_multiple() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (n:Person|Company|Organization) COLUMNS (n.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (n:Person|Company|Organization) COLUMNS (n.id))",
     );
 }
 
 #[test]
 fn label_negation_combined() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (n:Person&!Inactive) COLUMNS (n.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (n:Person&!Inactive) COLUMNS (n.id))",
     );
 }
 
 #[test]
 fn label_complex_expression() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (n:(Person|Company)&!Deleted) COLUMNS (n.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (n:(Person|Company)&!Deleted) COLUMNS (n.id))",
     );
 }
 
 #[test]
 fn label_parenthesized() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (n:(Person&Employee)|Manager) COLUMNS (n.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (n:(Person&Employee)|Manager) COLUMNS (n.id))",
     );
 }
 
 #[test]
 fn label_wildcard_with_negation() {
-    verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (n:%&!System) COLUMNS (n.id))"
-    );
+    verified_standard_stmt("SELECT * FROM GRAPH_TABLE (g MATCH (n:%&!System) COLUMNS (n.id))");
 }
 
 // ==================== Property Value Expressions ====================
@@ -124,56 +112,52 @@ fn label_wildcard_with_negation() {
 #[test]
 fn property_literal_string() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (n {status: 'active'}) COLUMNS (n.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (n {status: 'active'}) COLUMNS (n.id))",
     );
 }
 
 #[test]
 fn property_literal_number() {
-    verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (n {priority: 1}) COLUMNS (n.id))"
-    );
+    verified_standard_stmt("SELECT * FROM GRAPH_TABLE (g MATCH (n {priority: 1}) COLUMNS (n.id))");
 }
 
 #[test]
 fn property_literal_boolean() {
-    verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (n {active: true}) COLUMNS (n.id))"
-    );
+    verified_standard_stmt("SELECT * FROM GRAPH_TABLE (g MATCH (n {active: true}) COLUMNS (n.id))");
 }
 
 #[test]
 fn property_multiple() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (n {status: 'active', priority: 1}) COLUMNS (n.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (n {status: 'active', priority: 1}) COLUMNS (n.id))",
     );
 }
 
 #[test]
 fn property_with_label() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (n:Person {age: 30, city: 'NYC'}) COLUMNS (n.name))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (n:Person {age: 30, city: 'NYC'}) COLUMNS (n.name))",
     );
 }
 
 #[test]
 fn property_null_check() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (n {deleted_at: NULL}) COLUMNS (n.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (n {deleted_at: NULL}) COLUMNS (n.id))",
     );
 }
 
 #[test]
 fn property_nested_access() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (n) COLUMNS (n.address.city, n.address.zip))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (n) COLUMNS (n.address.city, n.address.zip))",
     );
 }
 
 #[test]
 fn property_array_access() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (n) COLUMNS (n.tags[1], n.scores[0]))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (n) COLUMNS (n.tags[1], n.scores[0]))",
     );
 }
 
@@ -187,7 +171,7 @@ fn property_expression_in_where() {
 #[test]
 fn property_function_call() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (n WHERE LENGTH(n.name) > 5) COLUMNS (n.name))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (n WHERE LENGTH(n.name) > 5) COLUMNS (n.name))",
     );
 }
 

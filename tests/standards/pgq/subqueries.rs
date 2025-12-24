@@ -24,7 +24,7 @@ use crate::standards::common::verified_standard_stmt;
 #[test]
 fn exists_pattern_subquery() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (n) WHERE EXISTS { (n)-[:KNOWS]->() } COLUMNS (n.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (n) WHERE EXISTS { (n)-[:KNOWS]->() } COLUMNS (n.id))",
     );
 }
 
@@ -126,7 +126,7 @@ fn nested_match_in_where() {
         "SELECT * FROM GRAPH_TABLE (g \
          MATCH (a)-[e]->(b) \
          WHERE EXISTS { MATCH (b)-[:VERIFIED]->(:Authority) } \
-         COLUMNS (a.id, b.id))"
+         COLUMNS (a.id, b.id))",
     );
 }
 
@@ -136,7 +136,7 @@ fn correlated_subquery() {
         "SELECT * FROM GRAPH_TABLE (g \
          MATCH (p:Person) \
          WHERE COUNT { (p)-[:PURCHASED]->(i) WHERE i.price > 100 } >= 5 \
-         COLUMNS (p.id, p.name))"
+         COLUMNS (p.id, p.name))",
     );
 }
 
@@ -147,7 +147,7 @@ fn multiple_subqueries() {
          MATCH (n:User) \
          WHERE EXISTS { (n)-[:PREMIUM]->() } \
            AND COUNT { (n)-[:ORDER]->() } > 10 \
-         COLUMNS (n.id))"
+         COLUMNS (n.id))",
     );
 }
 
@@ -157,7 +157,7 @@ fn multiple_subqueries() {
 fn sum_subquery() {
     verified_standard_stmt(
         "SELECT * FROM GRAPH_TABLE (g MATCH (c:Customer) \
-         COLUMNS (c.id, SUM { (c)-[:PURCHASED]->(p) RETURN p.price } AS total_spent))"
+         COLUMNS (c.id, SUM { (c)-[:PURCHASED]->(p) RETURN p.price } AS total_spent))",
     );
 }
 
@@ -165,7 +165,7 @@ fn sum_subquery() {
 fn avg_subquery() {
     verified_standard_stmt(
         "SELECT * FROM GRAPH_TABLE (g MATCH (u:User) \
-         COLUMNS (u.id, AVG { (u)-[:RATED]->(m) RETURN m.score } AS avg_rating))"
+         COLUMNS (u.id, AVG { (u)-[:RATED]->(m) RETURN m.score } AS avg_rating))",
     );
 }
 
@@ -175,7 +175,7 @@ fn min_max_subquery() {
         "SELECT * FROM GRAPH_TABLE (g MATCH (s:Sensor) \
          COLUMNS (s.id, \
                   MIN { (s)-[:READING]->(r) RETURN r.value } AS min_val, \
-                  MAX { (s)-[:READING]->(r) RETURN r.value } AS max_val))"
+                  MAX { (s)-[:READING]->(r) RETURN r.value } AS max_val))",
     );
 }
 
@@ -197,6 +197,6 @@ fn shortest_path_exists() {
         "SELECT * FROM GRAPH_TABLE (g \
          MATCH (a:Source), (b:Target) \
          WHERE EXISTS { ANY SHORTEST (a)-[*..10]->(b) } \
-         COLUMNS (a.id, b.id))"
+         COLUMNS (a.id, b.id))",
     );
 }

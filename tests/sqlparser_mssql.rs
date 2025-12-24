@@ -458,7 +458,7 @@ fn parse_mssql_openjson() {
                 alias: Some(TableAlias {
                     name: Ident::new("A"),
                     columns: vec![],
-                                    implicit: false,
+                    implicit: false,
                 }),
                 args: None,
                 with_hints: vec![],
@@ -499,7 +499,7 @@ fn parse_mssql_openjson() {
                     alias: Some(TableAlias {
                         name: Ident::new("B"),
                         columns: vec![],
-                                    implicit: false,
+                        implicit: false,
                     })
                 },
                 global: false,
@@ -520,7 +520,7 @@ fn parse_mssql_openjson() {
                 alias: Some(TableAlias {
                     name: Ident::new("A"),
                     columns: vec![],
-                                    implicit: false,
+                    implicit: false,
                 }),
                 args: None,
                 with_hints: vec![],
@@ -561,7 +561,7 @@ fn parse_mssql_openjson() {
                     alias: Some(TableAlias {
                         name: Ident::new("B"),
                         columns: vec![],
-                                    implicit: false,
+                        implicit: false,
                     })
                 },
                 global: false,
@@ -582,7 +582,7 @@ fn parse_mssql_openjson() {
                 alias: Some(TableAlias {
                     name: Ident::new("A"),
                     columns: vec![],
-                                    implicit: false,
+                    implicit: false,
                 }),
                 args: None,
                 with_hints: vec![],
@@ -623,7 +623,7 @@ fn parse_mssql_openjson() {
                     alias: Some(TableAlias {
                         name: Ident::new("B"),
                         columns: vec![],
-                                    implicit: false,
+                        implicit: false,
                     })
                 },
                 global: false,
@@ -644,7 +644,7 @@ fn parse_mssql_openjson() {
                 alias: Some(TableAlias {
                     name: Ident::new("A"),
                     columns: vec![],
-                                    implicit: false,
+                    implicit: false,
                 }),
                 args: None,
                 with_hints: vec![],
@@ -665,7 +665,7 @@ fn parse_mssql_openjson() {
                     alias: Some(TableAlias {
                         name: Ident::new("B"),
                         columns: vec![],
-                                    implicit: false,
+                        implicit: false,
                     })
                 },
                 global: false,
@@ -686,7 +686,7 @@ fn parse_mssql_openjson() {
                 alias: Some(TableAlias {
                     name: Ident::new("A"),
                     columns: vec![],
-                                    implicit: false,
+                    implicit: false,
                 }),
                 args: None,
                 with_hints: vec![],
@@ -707,7 +707,7 @@ fn parse_mssql_openjson() {
                     alias: Some(TableAlias {
                         name: Ident::new("B"),
                         columns: vec![],
-                                    implicit: false,
+                        implicit: false,
                     })
                 },
                 global: false,

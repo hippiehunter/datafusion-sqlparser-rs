@@ -127,7 +127,9 @@ mod repeat_statements {
     fn repeat_nested() {
         // SQL:2016 PSM: Nested REPEAT statements - NOT YET IMPLEMENTED
         // Nested labeled statements not fully supported
-        verified_standard_stmt("outer: REPEAT inner: REPEAT SELECT 1; UNTIL x > 5 END REPEAT; UNTIL y > 10 END REPEAT");
+        verified_standard_stmt(
+            "outer: REPEAT inner: REPEAT SELECT 1; UNTIL x > 5 END REPEAT; UNTIL y > 10 END REPEAT",
+        );
     }
 
     #[test]
@@ -173,7 +175,9 @@ mod while_statements {
     fn while_with_label() {
         // SQL:2016 PSM: WHILE with label - NOT YET IMPLEMENTED
         verified_standard_stmt("my_while: WHILE x > 0 DO SELECT x; END WHILE");
-        verified_standard_stmt("process_loop: WHILE NOT finished DO UPDATE t SET status = 'processing'; END WHILE");
+        verified_standard_stmt(
+            "process_loop: WHILE NOT finished DO UPDATE t SET status = 'processing'; END WHILE",
+        );
     }
 
     #[test]
@@ -186,7 +190,9 @@ mod while_statements {
     #[test]
     fn while_nested() {
         // SQL:2016 PSM: Nested WHILE statements - NOT YET IMPLEMENTED
-        verified_standard_stmt("outer: WHILE x < 10 DO inner: WHILE y < 5 DO SELECT x, y; END WHILE; END WHILE");
+        verified_standard_stmt(
+            "outer: WHILE x < 10 DO inner: WHILE y < 5 DO SELECT x, y; END WHILE; END WHILE",
+        );
         verified_standard_stmt("WHILE a > 0 DO WHILE b > 0 DO SELECT a * b; END WHILE; END WHILE");
     }
 
@@ -194,7 +200,9 @@ mod while_statements {
     fn while_complex_condition() {
         // SQL:2016 PSM: WHILE with complex condition
         verified_standard_stmt("WHILE x > 0 AND y < 100 DO SELECT x; END WHILE");
-        verified_standard_stmt("WHILE (count < max_count OR retries > 0) AND status <> 'error' DO SELECT 1; END WHILE");
+        verified_standard_stmt(
+            "WHILE (count < max_count OR retries > 0) AND status <> 'error' DO SELECT 1; END WHILE",
+        );
     }
 
     #[test]
@@ -245,7 +253,9 @@ mod leave_statements {
     fn leave_in_while() {
         // SQL:2016 PSM: LEAVE in WHILE - NOT YET IMPLEMENTED
         // WHILE with DO is not yet supported
-        verified_standard_stmt("my_while: WHILE true DO IF x = 0 THEN LEAVE my_while; END IF; END WHILE");
+        verified_standard_stmt(
+            "my_while: WHILE true DO IF x = 0 THEN LEAVE my_while; END IF; END WHILE",
+        );
     }
 
     #[test]
@@ -258,7 +268,9 @@ mod leave_statements {
     #[test]
     fn leave_in_begin_end() {
         // SQL:2016 PSM: LEAVE in BEGIN...END block - NOT YET IMPLEMENTED
-        verified_standard_stmt("my_block: BEGIN IF condition THEN LEAVE my_block; END IF; SELECT 1; END");
+        verified_standard_stmt(
+            "my_block: BEGIN IF condition THEN LEAVE my_block; END IF; SELECT 1; END",
+        );
     }
 }
 
@@ -504,7 +516,9 @@ mod declare_statements {
     #[test]
     fn declare_handler() {
         // SQL:2016 PSM: DECLARE HANDLER - NOT YET IMPLEMENTED
-        verified_standard_stmt("DECLARE CONTINUE HANDLER FOR SQLEXCEPTION BEGIN SELECT 'error'; END");
+        verified_standard_stmt(
+            "DECLARE CONTINUE HANDLER FOR SQLEXCEPTION BEGIN SELECT 'error'; END",
+        );
     }
 
     #[test]
@@ -548,7 +562,9 @@ mod exception_handling {
     #[test]
     fn begin_exception_end() {
         // SQL:2016 PSM: BEGIN...EXCEPTION...END - NOT YET IMPLEMENTED
-        verified_standard_stmt("BEGIN SELECT 1; EXCEPTION WHEN SQLEXCEPTION THEN SELECT 'error'; END");
+        verified_standard_stmt(
+            "BEGIN SELECT 1; EXCEPTION WHEN SQLEXCEPTION THEN SELECT 'error'; END",
+        );
     }
 }
 
@@ -705,7 +721,9 @@ mod return_statements {
     #[test]
     fn return_in_procedure() {
         // SQL:2016 PSM: RETURN in procedure (exit without value) - NOT YET IMPLEMENTED
-        verified_standard_stmt("CREATE PROCEDURE proc() BEGIN IF error THEN RETURN; END IF; SELECT 1; END");
+        verified_standard_stmt(
+            "CREATE PROCEDURE proc() BEGIN IF error THEN RETURN; END IF; SELECT 1; END",
+        );
     }
 }
 
@@ -771,7 +789,9 @@ mod integration_tests {
     fn repeat_with_begin_end() {
         // REPEAT with BEGIN...END blocks - NOT YET IMPLEMENTED
         // BEGIN as statement not supported
-        verified_standard_stmt("my_repeat: REPEAT BEGIN SELECT x; SELECT y; END; UNTIL x > 100 END REPEAT");
+        verified_standard_stmt(
+            "my_repeat: REPEAT BEGIN SELECT x; SELECT y; END; UNTIL x > 100 END REPEAT",
+        );
     }
 
     #[test]

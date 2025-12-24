@@ -24,10 +24,7 @@ use alloc::{
     vec,
     vec::Vec,
 };
-use helpers::{
-    attached_token::AttachedToken,
-    stmt_data_loading::{FileStagingCommand, StageLoadSelectItemKind},
-};
+use helpers::attached_token::AttachedToken;
 
 use core::cmp::Ordering;
 use core::ops::Deref;
@@ -111,7 +108,6 @@ pub use self::value::{
 };
 
 use crate::ast::helpers::key_value_options::KeyValueOptions;
-use crate::ast::helpers::stmt_data_loading::StageParamsObject;
 
 #[cfg(feature = "visitor")]
 pub use visitor::*;
@@ -3432,33 +3428,6 @@ pub enum Statement {
         values: Vec<Option<String>>,
     },
     /// ```sql
-    /// COPY INTO <table> | <location>
-    /// ```
-    /// See:
-    /// <https://docs.snowflake.com/en/sql-reference/sql/copy-into-table>
-    /// <https://docs.snowflake.com/en/sql-reference/sql/copy-into-location>
-    ///
-    /// Copy Into syntax available for Snowflake is different than the one implemented in
-    /// Postgres. Although they share common prefix, it is reasonable to implement them
-    /// in different enums. This can be refactored later once custom dialects
-    /// are allowed to have custom Statements.
-    CopyIntoSnowflake {
-        kind: CopyIntoSnowflakeKind,
-        into: ObjectName,
-        into_columns: Option<Vec<Ident>>,
-        from_obj: Option<ObjectName>,
-        from_obj_alias: Option<Ident>,
-        stage_params: StageParamsObject,
-        from_transformations: Option<Vec<StageLoadSelectItemKind>>,
-        from_query: Option<Box<Query>>,
-        files: Option<Vec<String>>,
-        pattern: Option<String>,
-        file_format: KeyValueOptions,
-        copy_options: KeyValueOptions,
-        validation_mode: Option<String>,
-        partition: Option<Box<Expr>>,
-    },
-    /// ```sql
     /// OPEN cursor_name
     /// ```
     /// Opens a cursor.
@@ -3641,31 +3610,6 @@ pub enum Statement {
         database_file_name: Expr,
         /// true if the syntax is 'ATTACH DATABASE', false if it's just 'ATTACH'
         database: bool,
-    },
-    /// (DuckDB-specific)
-    /// ```sql
-    /// ATTACH 'sqlite_file.db' AS sqlite_db (READ_ONLY, TYPE SQLITE);
-    /// ```
-    /// See <https://duckdb.org/docs/sql/statements/attach.html>
-    AttachDuckDBDatabase {
-        if_not_exists: bool,
-        /// true if the syntax is 'ATTACH DATABASE', false if it's just 'ATTACH'
-        database: bool,
-        /// An expression that indicates the path to the database file
-        database_path: Ident,
-        database_alias: Option<Ident>,
-        attach_options: Vec<AttachDuckDBDatabaseOption>,
-    },
-    /// (DuckDB-specific)
-    /// ```sql
-    /// DETACH db_alias;
-    /// ```
-    /// See <https://duckdb.org/docs/sql/statements/attach.html>
-    DetachDuckDBDatabase {
-        if_exists: bool,
-        /// true if the syntax is 'DETACH DATABASE', false if it's just 'DETACH'
-        database: bool,
-        database_alias: Ident,
     },
     /// ```sql
     /// DROP [TABLE, VIEW, ...]
@@ -4093,21 +4037,6 @@ pub enum Statement {
         definition: MacroDefinition,
     },
     /// ```sql
-    /// CREATE STAGE
-    /// ```
-    /// See <https://docs.snowflake.com/en/sql-reference/sql/create-stage>
-    CreateStage {
-        or_replace: bool,
-        temporary: bool,
-        if_not_exists: bool,
-        name: ObjectName,
-        stage_params: StageParamsObject,
-        directory_table_params: KeyValueOptions,
-        file_format: KeyValueOptions,
-        copy_options: KeyValueOptions,
-        comment: Option<String>,
-    },
-    /// ```sql
     /// ASSERT <condition> [AS <message>]
     /// ```
     Assert {
@@ -4455,12 +4384,6 @@ pub enum Statement {
     ///
     /// See Mysql <https://dev.mysql.com/doc/refman/9.1/en/rename-table.html>
     RenameTable(Vec<RenameTable>),
-    /// Snowflake `LIST`
-    /// See: <https://docs.snowflake.com/en/sql-reference/sql/list>
-    List(FileStagingCommand),
-    /// Snowflake `REMOVE`
-    /// See: <https://docs.snowflake.com/en/sql-reference/sql/remove>
-    Remove(FileStagingCommand),
     /// RaiseError (MSSQL)
     /// RAISERROR ( { msg_id | msg_str | @local_variable }
     /// { , severity , state }
@@ -4773,40 +4696,6 @@ impl fmt::Display for Statement {
             } => {
                 let keyword = if *database { "DATABASE " } else { "" };
                 write!(f, "ATTACH {keyword}{database_file_name} AS {schema_name}")
-            }
-            Statement::AttachDuckDBDatabase {
-                if_not_exists,
-                database,
-                database_path,
-                database_alias,
-                attach_options,
-            } => {
-                write!(
-                    f,
-                    "ATTACH{database}{if_not_exists} {database_path}",
-                    database = if *database { " DATABASE" } else { "" },
-                    if_not_exists = if *if_not_exists { " IF NOT EXISTS" } else { "" },
-                )?;
-                if let Some(alias) = database_alias {
-                    write!(f, " AS {alias}")?;
-                }
-                if !attach_options.is_empty() {
-                    write!(f, " ({})", display_comma_separated(attach_options))?;
-                }
-                Ok(())
-            }
-            Statement::DetachDuckDBDatabase {
-                if_exists,
-                database,
-                database_alias,
-            } => {
-                write!(
-                    f,
-                    "DETACH{database}{if_exists} {database_alias}",
-                    database = if *database { " DATABASE" } else { "" },
-                    if_exists = if *if_exists { " IF EXISTS" } else { "" },
-                )?;
-                Ok(())
             }
             Statement::Analyze(analyze) => analyze.fmt(f),
             Statement::Insert(insert) => insert.fmt(f),
@@ -5860,110 +5749,6 @@ impl fmt::Display for Statement {
                 }
                 write!(f, "")
             }
-            Statement::CreateStage {
-                or_replace,
-                temporary,
-                if_not_exists,
-                name,
-                stage_params,
-                directory_table_params,
-                file_format,
-                copy_options,
-                comment,
-                ..
-            } => {
-                write!(
-                    f,
-                    "CREATE {or_replace}{temp}STAGE {if_not_exists}{name}{stage_params}",
-                    temp = if *temporary { "TEMPORARY " } else { "" },
-                    or_replace = if *or_replace { "OR REPLACE " } else { "" },
-                    if_not_exists = if *if_not_exists { "IF NOT EXISTS " } else { "" },
-                )?;
-                if !directory_table_params.options.is_empty() {
-                    write!(f, " DIRECTORY=({directory_table_params})")?;
-                }
-                if !file_format.options.is_empty() {
-                    write!(f, " FILE_FORMAT=({file_format})")?;
-                }
-                if !copy_options.options.is_empty() {
-                    write!(f, " COPY_OPTIONS=({copy_options})")?;
-                }
-                if comment.is_some() {
-                    write!(f, " COMMENT='{}'", comment.as_ref().unwrap())?;
-                }
-                Ok(())
-            }
-            Statement::CopyIntoSnowflake {
-                kind,
-                into,
-                into_columns,
-                from_obj,
-                from_obj_alias,
-                stage_params,
-                from_transformations,
-                from_query,
-                files,
-                pattern,
-                file_format,
-                copy_options,
-                validation_mode,
-                partition,
-            } => {
-                write!(f, "COPY INTO {into}")?;
-                if let Some(into_columns) = into_columns {
-                    write!(f, " ({})", display_comma_separated(into_columns))?;
-                }
-                if let Some(from_transformations) = from_transformations {
-                    // Data load with transformation
-                    if let Some(from_stage) = from_obj {
-                        write!(
-                            f,
-                            " FROM (SELECT {} FROM {}{}",
-                            display_separated(from_transformations, ", "),
-                            from_stage,
-                            stage_params
-                        )?;
-                    }
-                    if let Some(from_obj_alias) = from_obj_alias {
-                        write!(f, " AS {from_obj_alias}")?;
-                    }
-                    write!(f, ")")?;
-                } else if let Some(from_obj) = from_obj {
-                    // Standard data load
-                    write!(f, " FROM {from_obj}{stage_params}")?;
-                    if let Some(from_obj_alias) = from_obj_alias {
-                        write!(f, " AS {from_obj_alias}")?;
-                    }
-                } else if let Some(from_query) = from_query {
-                    // Data unload from query
-                    write!(f, " FROM ({from_query})")?;
-                }
-
-                if let Some(files) = files {
-                    write!(f, " FILES = ('{}')", display_separated(files, "', '"))?;
-                }
-                if let Some(pattern) = pattern {
-                    write!(f, " PATTERN = '{pattern}'")?;
-                }
-                if let Some(partition) = partition {
-                    write!(f, " PARTITION BY {partition}")?;
-                }
-                if !file_format.options.is_empty() {
-                    write!(f, " FILE_FORMAT=({file_format})")?;
-                }
-                if !copy_options.options.is_empty() {
-                    match kind {
-                        CopyIntoSnowflakeKind::Table => {
-                            write!(f, " COPY_OPTIONS=({copy_options})")?
-                        }
-                        CopyIntoSnowflakeKind::Location => write!(f, " {copy_options}")?,
-                    }
-                }
-                if let Some(validation_mode) = validation_mode {
-                    write!(f, " VALIDATION_MODE = {validation_mode}")?;
-                }
-                Ok(())
-            }
             Statement::CreateType {
                 name,
                 representation,
@@ -6078,8 +5863,6 @@ impl fmt::Display for Statement {
             }
             Statement::Print(s) => write!(f, "{s}"),
             Statement::Return(r) => write!(f, "{r}"),
-            Statement::List(command) => write!(f, "LIST {command}"),
-            Statement::Remove(command) => write!(f, "REMOVE {command}"),
             Statement::ExportData(e) => write!(f, "{e}"),
             Statement::CreateUser(s) => write!(f, "{s}"),
             Statement::AlterSchema(s) => write!(f, "{s}"),
@@ -8233,25 +8016,6 @@ impl fmt::Display for CreateServerOption {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum AttachDuckDBDatabaseOption {
-    ReadOnly(Option<bool>),
-    Type(Ident),
-}
-
-impl fmt::Display for AttachDuckDBDatabaseOption {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            AttachDuckDBDatabaseOption::ReadOnly(Some(true)) => write!(f, "READ_ONLY true"),
-            AttachDuckDBDatabaseOption::ReadOnly(Some(false)) => write!(f, "READ_ONLY false"),
-            AttachDuckDBDatabaseOption::ReadOnly(None) => write!(f, "READ_ONLY"),
-            AttachDuckDBDatabaseOption::Type(t) => write!(f, "TYPE {t}"),
-        }
-    }
-}
-
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -10374,19 +10138,6 @@ impl Display for CatalogSyncNamespaceMode {
             CatalogSyncNamespaceMode::Flatten => write!(f, "FLATTEN"),
         }
     }
-}
-
-/// Variants of the Snowflake `COPY INTO` statement
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum CopyIntoSnowflakeKind {
-    /// Loads data from files to a table
-    /// See: <https://docs.snowflake.com/en/sql-reference/sql/copy-into-table>
-    Table,
-    /// Unloads data from a table or query to external files
-    /// See: <https://docs.snowflake.com/en/sql-reference/sql/copy-into-location>
-    Location,
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]

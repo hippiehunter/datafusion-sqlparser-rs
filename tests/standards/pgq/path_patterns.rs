@@ -21,9 +21,7 @@ use crate::standards::common::verified_standard_stmt;
 
 #[test]
 fn path_pattern_named() {
-    verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH p = (a)-[]->(b) COLUMNS (p))"
-    );
+    verified_standard_stmt("SELECT * FROM GRAPH_TABLE (g MATCH p = (a)-[]->(b) COLUMNS (p))");
 }
 
 #[test]
@@ -43,7 +41,7 @@ fn path_pattern_alternation() {
 #[test]
 fn path_pattern_parenthesized() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH ((a)-[e]->(b)) COLUMNS (a.id, b.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH ((a)-[e]->(b)) COLUMNS (a.id, b.id))",
     );
 }
 
@@ -59,7 +57,7 @@ fn path_pattern_complex() {
 #[test]
 fn path_variable_with_quantifier() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH p = (a)-[*1..10]->(b) COLUMNS (path_length(p) AS len))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH p = (a)-[*1..10]->(b) COLUMNS (path_length(p) AS len))",
     );
 }
 
@@ -74,7 +72,7 @@ fn path_variable_in_where() {
 fn multiple_path_variables() {
     verified_standard_stmt(
         "SELECT * FROM GRAPH_TABLE (g MATCH p1 = (a)-[*]->(b), p2 = (b)-[*]->(c) \
-         WHERE path_length(p1) + path_length(p2) < 10 COLUMNS (a.id, c.id))"
+         WHERE path_length(p1) + path_length(p2) < 10 COLUMNS (a.id, c.id))",
     );
 }
 
@@ -90,14 +88,14 @@ fn pattern_sequence() {
 #[test]
 fn pattern_mixed_directions() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[:X]->(b)<-[:Y]-(c)-[:Z]-(d) COLUMNS (a.id, d.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[:X]->(b)<-[:Y]-(c)-[:Z]-(d) COLUMNS (a.id, d.id))",
     );
 }
 
 #[test]
 fn pattern_repeated_variable() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[:E]->(b)-[:E]->(a) COLUMNS (a.id, b.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[:E]->(b)-[:E]->(a) COLUMNS (a.id, b.id))",
     );
 }
 
@@ -136,7 +134,7 @@ fn alternation_with_labels() {
 #[test]
 fn grouped_pattern_quantified() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (a)((-[:A]->()-[:B]->)){1,3}(b) COLUMNS (a.id, b.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (a)((-[:A]->()-[:B]->)){1,3}(b) COLUMNS (a.id, b.id))",
     );
 }
 
@@ -181,9 +179,7 @@ fn where_on_path_inline() {
 
 #[test]
 fn pattern_same_start_end() {
-    verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[*3..5]->(a) COLUMNS (a.id))"
-    );
+    verified_standard_stmt("SELECT * FROM GRAPH_TABLE (g MATCH (a)-[*3..5]->(a) COLUMNS (a.id))");
 }
 
 #[test]

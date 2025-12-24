@@ -62,7 +62,7 @@ fn f701_01_match_full() {
     // SQL:2016 F701: MATCH FULL - all columns must be NULL or all must match
     verified_standard_stmt(
         "CREATE TABLE child (id INT, parent_a INT, parent_b INT, \
-         FOREIGN KEY (parent_a, parent_b) REFERENCES parent(a, b) MATCH FULL)"
+         FOREIGN KEY (parent_a, parent_b) REFERENCES parent(a, b) MATCH FULL)",
     );
 }
 
@@ -71,7 +71,7 @@ fn f701_02_match_partial() {
     // SQL:2016 F701: MATCH PARTIAL - non-null columns must match
     verified_standard_stmt(
         "CREATE TABLE child (id INT, parent_a INT, parent_b INT, \
-         FOREIGN KEY (parent_a, parent_b) REFERENCES parent(a, b) MATCH PARTIAL)"
+         FOREIGN KEY (parent_a, parent_b) REFERENCES parent(a, b) MATCH PARTIAL)",
     );
 }
 
@@ -80,7 +80,7 @@ fn f701_03_match_simple() {
     // SQL:2016 F701: MATCH SIMPLE - default, any NULL satisfies constraint
     verified_standard_stmt(
         "CREATE TABLE child (id INT, parent_a INT, parent_b INT, \
-         FOREIGN KEY (parent_a, parent_b) REFERENCES parent(a, b) MATCH SIMPLE)"
+         FOREIGN KEY (parent_a, parent_b) REFERENCES parent(a, b) MATCH SIMPLE)",
     );
 }
 
@@ -97,36 +97,28 @@ fn f701_04_match_with_actions() {
 #[test]
 fn f721_01_deferrable_primary_key() {
     // SQL:2016 F721: Deferrable constraints
-    verified_standard_stmt(
-        "CREATE TABLE t (id INT PRIMARY KEY DEFERRABLE)"
-    );
+    verified_standard_stmt("CREATE TABLE t (id INT PRIMARY KEY DEFERRABLE)");
 }
 
 #[test]
 fn f721_02_deferrable_initially_deferred() {
-    verified_standard_stmt(
-        "CREATE TABLE t (id INT PRIMARY KEY DEFERRABLE INITIALLY DEFERRED)"
-    );
+    verified_standard_stmt("CREATE TABLE t (id INT PRIMARY KEY DEFERRABLE INITIALLY DEFERRED)");
 }
 
 #[test]
 fn f721_03_deferrable_initially_immediate() {
-    verified_standard_stmt(
-        "CREATE TABLE t (id INT PRIMARY KEY DEFERRABLE INITIALLY IMMEDIATE)"
-    );
+    verified_standard_stmt("CREATE TABLE t (id INT PRIMARY KEY DEFERRABLE INITIALLY IMMEDIATE)");
 }
 
 #[test]
 fn f721_04_not_deferrable() {
-    verified_standard_stmt(
-        "CREATE TABLE t (id INT PRIMARY KEY NOT DEFERRABLE)"
-    );
+    verified_standard_stmt("CREATE TABLE t (id INT PRIMARY KEY NOT DEFERRABLE)");
 }
 
 #[test]
 fn f721_05_deferrable_unique() {
     verified_standard_stmt(
-        "CREATE TABLE t (id INT, email VARCHAR(100) UNIQUE DEFERRABLE INITIALLY DEFERRED)"
+        "CREATE TABLE t (id INT, email VARCHAR(100) UNIQUE DEFERRABLE INITIALLY DEFERRED)",
     );
 }
 
@@ -134,14 +126,14 @@ fn f721_05_deferrable_unique() {
 fn f721_06_deferrable_foreign_key() {
     verified_standard_stmt(
         "CREATE TABLE child (id INT, parent_id INT, \
-         FOREIGN KEY (parent_id) REFERENCES parent(id) DEFERRABLE INITIALLY DEFERRED)"
+         FOREIGN KEY (parent_id) REFERENCES parent(id) DEFERRABLE INITIALLY DEFERRED)",
     );
 }
 
 #[test]
 fn f721_07_deferrable_check() {
     verified_standard_stmt(
-        "CREATE TABLE t (id INT, value INT CHECK (value > 0) DEFERRABLE INITIALLY IMMEDIATE)"
+        "CREATE TABLE t (id INT, value INT CHECK (value > 0) DEFERRABLE INITIALLY IMMEDIATE)",
     );
 }
 
@@ -170,14 +162,14 @@ fn f721_11_set_constraints_single() {
 #[test]
 fn f711_01_on_delete_cascade() {
     verified_standard_stmt(
-        "CREATE TABLE orders (id INT, customer_id INT REFERENCES customers(id) ON DELETE CASCADE)"
+        "CREATE TABLE orders (id INT, customer_id INT REFERENCES customers(id) ON DELETE CASCADE)",
     );
 }
 
 #[test]
 fn f711_02_on_delete_set_null() {
     verified_standard_stmt(
-        "CREATE TABLE orders (id INT, customer_id INT REFERENCES customers(id) ON DELETE SET NULL)"
+        "CREATE TABLE orders (id INT, customer_id INT REFERENCES customers(id) ON DELETE SET NULL)",
     );
 }
 
@@ -191,7 +183,7 @@ fn f711_03_on_delete_set_default() {
 #[test]
 fn f711_04_on_delete_restrict() {
     verified_standard_stmt(
-        "CREATE TABLE orders (id INT, customer_id INT REFERENCES customers(id) ON DELETE RESTRICT)"
+        "CREATE TABLE orders (id INT, customer_id INT REFERENCES customers(id) ON DELETE RESTRICT)",
     );
 }
 
@@ -205,7 +197,7 @@ fn f711_05_on_delete_no_action() {
 #[test]
 fn f711_06_on_update_cascade() {
     verified_standard_stmt(
-        "CREATE TABLE orders (id INT, customer_id INT REFERENCES customers(id) ON UPDATE CASCADE)"
+        "CREATE TABLE orders (id INT, customer_id INT REFERENCES customers(id) ON UPDATE CASCADE)",
     );
 }
 
@@ -220,53 +212,45 @@ fn f711_07_combined_actions() {
 
 #[test]
 fn f690_01_column_collation() {
-    verified_standard_stmt(
-        "CREATE TABLE t (name VARCHAR(100) COLLATE utf8_general_ci)"
-    );
+    verified_standard_stmt("CREATE TABLE t (name VARCHAR(100) COLLATE utf8_general_ci)");
 }
 
 #[test]
 fn f690_02_comparison_collation() {
-    verified_standard_stmt(
-        "SELECT * FROM t WHERE name COLLATE utf8_bin = 'Test'"
-    );
+    verified_standard_stmt("SELECT * FROM t WHERE name COLLATE utf8_bin = 'Test'");
 }
 
 #[test]
 fn f690_03_order_by_collation() {
-    verified_standard_stmt(
-        "SELECT * FROM t ORDER BY name COLLATE utf8_unicode_ci"
-    );
+    verified_standard_stmt("SELECT * FROM t ORDER BY name COLLATE utf8_unicode_ci");
 }
 
 // ==================== F692: Named Constraints ====================
 
 #[test]
 fn f692_01_named_primary_key() {
-    verified_standard_stmt(
-        "CREATE TABLE t (id INT, CONSTRAINT pk_t PRIMARY KEY (id))"
-    );
+    verified_standard_stmt("CREATE TABLE t (id INT, CONSTRAINT pk_t PRIMARY KEY (id))");
 }
 
 #[test]
 fn f692_02_named_foreign_key() {
     verified_standard_stmt(
         "CREATE TABLE orders (id INT, customer_id INT, \
-         CONSTRAINT fk_customer FOREIGN KEY (customer_id) REFERENCES customers(id))"
+         CONSTRAINT fk_customer FOREIGN KEY (customer_id) REFERENCES customers(id))",
     );
 }
 
 #[test]
 fn f692_03_named_unique() {
     verified_standard_stmt(
-        "CREATE TABLE t (id INT, email VARCHAR(100), CONSTRAINT uq_email UNIQUE (email))"
+        "CREATE TABLE t (id INT, email VARCHAR(100), CONSTRAINT uq_email UNIQUE (email))",
     );
 }
 
 #[test]
 fn f692_04_named_check() {
     verified_standard_stmt(
-        "CREATE TABLE t (id INT, value INT, CONSTRAINT chk_positive CHECK (value > 0))"
+        "CREATE TABLE t (id INT, value INT, CONSTRAINT chk_positive CHECK (value > 0))",
     );
 }
 
@@ -277,7 +261,5 @@ fn f692_05_alter_drop_constraint() {
 
 #[test]
 fn f692_06_alter_add_constraint() {
-    verified_standard_stmt(
-        "ALTER TABLE t ADD CONSTRAINT uq_code UNIQUE (code)"
-    );
+    verified_standard_stmt("ALTER TABLE t ADD CONSTRAINT uq_code UNIQUE (code)");
 }

@@ -21,51 +21,43 @@ use crate::standards::common::verified_standard_stmt;
 
 #[test]
 fn edge_pattern_right_directed() {
-    verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[e]->(b) COLUMNS (a.id, b.id))"
-    );
+    verified_standard_stmt("SELECT * FROM GRAPH_TABLE (g MATCH (a)-[e]->(b) COLUMNS (a.id, b.id))");
 }
 
 #[test]
 fn edge_pattern_left_directed() {
-    verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (a)<-[e]-(b) COLUMNS (a.id, b.id))"
-    );
+    verified_standard_stmt("SELECT * FROM GRAPH_TABLE (g MATCH (a)<-[e]-(b) COLUMNS (a.id, b.id))");
 }
 
 #[test]
 fn edge_pattern_undirected() {
-    verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[e]-(b) COLUMNS (a.id, b.id))"
-    );
+    verified_standard_stmt("SELECT * FROM GRAPH_TABLE (g MATCH (a)-[e]-(b) COLUMNS (a.id, b.id))");
 }
 
 #[test]
 fn edge_pattern_any_direction() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (a)<-[e]->(b) COLUMNS (a.id, b.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (a)<-[e]->(b) COLUMNS (a.id, b.id))",
     );
 }
 
 #[test]
 fn edge_pattern_with_label() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[e:KNOWS]->(b) COLUMNS (a.name, b.name))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[e:KNOWS]->(b) COLUMNS (a.name, b.name))",
     );
 }
 
 #[test]
 fn edge_pattern_multiple_labels() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[e:KNOWS|FOLLOWS]->(b) COLUMNS (a.id, b.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[e:KNOWS|FOLLOWS]->(b) COLUMNS (a.id, b.id))",
     );
 }
 
 #[test]
 fn edge_pattern_anonymous() {
-    verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-->(b) COLUMNS (a.id, b.id))"
-    );
+    verified_standard_stmt("SELECT * FROM GRAPH_TABLE (g MATCH (a)-->(b) COLUMNS (a.id, b.id))");
 }
 
 #[test]
@@ -78,13 +70,13 @@ fn edge_pattern_with_where() {
 #[test]
 fn edge_pattern_chain() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[e1]->(b)-[e2]->(c) COLUMNS (a.id, b.id, c.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[e1]->(b)-[e2]->(c) COLUMNS (a.id, b.id, c.id))",
     );
 }
 
 #[test]
 fn edge_pattern_long_chain() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[]->(b)-[]->(c)-[]->(d) COLUMNS (a.id, d.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[]->(b)-[]->(c)-[]->(d) COLUMNS (a.id, d.id))",
     );
 }

@@ -30,9 +30,7 @@
 //! - T865-T878: JSON item methods (bigint, boolean, date, decimal, etc.)
 //! - T879-T882: JSON comparison operations
 
-use crate::standards::common::{
-    one_statement_parses_to_std, verified_standard_stmt,
-};
+use crate::standards::common::{one_statement_parses_to_std, verified_standard_stmt};
 
 // =============================================================================
 // T801: JSON Data Type

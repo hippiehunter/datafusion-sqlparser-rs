@@ -21,15 +21,13 @@ use crate::standards::common::verified_standard_stmt;
 
 #[test]
 fn graph_table_basic() {
-    verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (my_graph MATCH (n) COLUMNS (n.name))"
-    );
+    verified_standard_stmt("SELECT * FROM GRAPH_TABLE (my_graph MATCH (n) COLUMNS (n.name))");
 }
 
 #[test]
 fn graph_table_with_alias() {
     verified_standard_stmt(
-        "SELECT name FROM GRAPH_TABLE (my_graph MATCH (n) COLUMNS (n.name AS name)) AS g"
+        "SELECT name FROM GRAPH_TABLE (my_graph MATCH (n) COLUMNS (n.name AS name)) AS g",
     );
 }
 
@@ -57,7 +55,7 @@ fn graph_table_labeled_edge() {
 #[test]
 fn graph_table_multiple_columns() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (n) COLUMNS (n.id, n.name, n.created_at, n.status))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (n) COLUMNS (n.id, n.name, n.created_at, n.status))",
     );
 }
 

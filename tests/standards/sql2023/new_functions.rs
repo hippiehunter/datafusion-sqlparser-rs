@@ -47,7 +47,7 @@
 //!   - UNIQUE NULLS DISTINCT
 //!   - UNIQUE NULLS NOT DISTINCT
 
-use crate::standards::common::{verified_standard_stmt};
+use crate::standards::common::verified_standard_stmt;
 use crate::verified_with_ast;
 use sqlparser::ast::{
     ColumnDef, CreateTable, DataType, Expr, Function, FunctionArg, FunctionArgExpr,
@@ -966,5 +966,7 @@ fn f292_04_unique_nulls_not_distinct_inline() {
 fn f292_05_unique_nulls_in_alter_table() {
     // SQL:2023 F292: ALTER TABLE ADD CONSTRAINT with NULLS treatment
     // Standard syntax: ADD CONSTRAINT name UNIQUE (column) NULLS NOT DISTINCT
-    verified_standard_stmt("ALTER TABLE users ADD CONSTRAINT uk_email UNIQUE (email) NULLS NOT DISTINCT");
+    verified_standard_stmt(
+        "ALTER TABLE users ADD CONSTRAINT uk_email UNIQUE (email) NULLS NOT DISTINCT",
+    );
 }

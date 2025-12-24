@@ -48,16 +48,11 @@ $ cargo run --example cli - [--dialectname]
 
     let dialect: Box<dyn Dialect> = match std::env::args().nth(2).unwrap_or_default().as_ref() {
         "--ansi" => Box::new(AnsiDialect {}),
-        "--bigquery" => Box::new(BigQueryDialect {}),
         "--postgres" => Box::new(PostgreSqlDialect {}),
         "--ms" => Box::new(MsSqlDialect {}),
         "--mysql" => Box::new(MySqlDialect {}),
-        "--snowflake" => Box::new(SnowflakeDialect {}),
-        "--hive" => Box::new(HiveDialect {}),
-        "--redshift" => Box::new(RedshiftSqlDialect {}),
-        "--clickhouse" => Box::new(ClickHouseDialect {}),
-        "--duckdb" => Box::new(DuckDbDialect {}),
-        "--sqlite" => Box::new(SQLiteDialect {}),
+        "--oracle" => Box::new(OracleDialect {}),
+        "--db2" => Box::new(Db2Dialect {}),
         "--generic" | "" => Box::new(GenericDialect {}),
         s => panic!("Unexpected parameter: {s}"),
     };

@@ -22,55 +22,55 @@ use crate::standards::common::verified_standard_stmt;
 #[test]
 fn quantifier_zero_or_more() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[:KNOWS*]->(b) COLUMNS (a.id, b.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[:KNOWS*]->(b) COLUMNS (a.id, b.id))",
     );
 }
 
 #[test]
 fn quantifier_one_or_more() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[:KNOWS+]->(b) COLUMNS (a.id, b.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[:KNOWS+]->(b) COLUMNS (a.id, b.id))",
     );
 }
 
 #[test]
 fn quantifier_optional() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[:KNOWS?]->(b) COLUMNS (a.id, b.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[:KNOWS?]->(b) COLUMNS (a.id, b.id))",
     );
 }
 
 #[test]
 fn quantifier_exact() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[:KNOWS{3}]->(b) COLUMNS (a.id, b.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[:KNOWS{3}]->(b) COLUMNS (a.id, b.id))",
     );
 }
 
 #[test]
 fn quantifier_minimum() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[:KNOWS{2,}]->(b) COLUMNS (a.id, b.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[:KNOWS{2,}]->(b) COLUMNS (a.id, b.id))",
     );
 }
 
 #[test]
 fn quantifier_maximum() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[:KNOWS{,5}]->(b) COLUMNS (a.id, b.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[:KNOWS{,5}]->(b) COLUMNS (a.id, b.id))",
     );
 }
 
 #[test]
 fn quantifier_range() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[:KNOWS{1,5}]->(b) COLUMNS (a.id, b.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[:KNOWS{1,5}]->(b) COLUMNS (a.id, b.id))",
     );
 }
 
 #[test]
 fn quantifier_on_anonymous_edge() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[*1..3]->(b) COLUMNS (a.id, b.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[*1..3]->(b) COLUMNS (a.id, b.id))",
     );
 }

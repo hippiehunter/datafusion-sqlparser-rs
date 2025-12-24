@@ -34,7 +34,7 @@ fn r010_01_match_recognize_basic() {
            ORDER BY trade_date \
            PATTERN (A B+ C) \
            DEFINE B AS B.price > PREV(B.price) \
-         )"
+         )",
     );
 }
 
@@ -47,7 +47,7 @@ fn r010_02_match_recognize_partition_by() {
            ORDER BY trade_date \
            PATTERN (A B+ C) \
            DEFINE B AS B.price > PREV(B.price) \
-         )"
+         )",
     );
 }
 
@@ -64,7 +64,7 @@ fn r010_03_match_recognize_measures() {
              A.price AS start_price \
            PATTERN (A B+ C) \
            DEFINE B AS B.price > PREV(B.price) \
-         )"
+         )",
     );
 }
 
@@ -78,7 +78,7 @@ fn r011_01_prev_function() {
            ORDER BY ts \
            PATTERN (A B) \
            DEFINE B AS B.value > PREV(B.value) \
-         )"
+         )",
     );
 }
 
@@ -90,7 +90,7 @@ fn r011_02_prev_with_offset() {
            ORDER BY ts \
            PATTERN (A B C) \
            DEFINE C AS C.value > PREV(C.value, 2) \
-         )"
+         )",
     );
 }
 
@@ -102,7 +102,7 @@ fn r011_03_next_function() {
            ORDER BY ts \
            PATTERN (A B) \
            DEFINE A AS A.value < NEXT(A.value) \
-         )"
+         )",
     );
 }
 
@@ -117,7 +117,7 @@ fn r011_04_first_last() {
              LAST(B.value) AS last_val \
            PATTERN (A+ B+) \
            DEFINE B AS B.value > A.value \
-         )"
+         )",
     );
 }
 
@@ -131,7 +131,7 @@ fn r012_01_one_or_more() {
            ORDER BY ts \
            PATTERN (A+) \
            DEFINE A AS A.flag = true \
-         )"
+         )",
     );
 }
 
@@ -143,7 +143,7 @@ fn r012_02_zero_or_more() {
            ORDER BY ts \
            PATTERN (A*) \
            DEFINE A AS A.flag = true \
-         )"
+         )",
     );
 }
 
@@ -155,7 +155,7 @@ fn r012_03_optional() {
            ORDER BY ts \
            PATTERN (A B? C) \
            DEFINE A AS A.type = 'start', C AS C.type = 'end' \
-         )"
+         )",
     );
 }
 
@@ -167,7 +167,7 @@ fn r012_04_exact_count() {
            ORDER BY ts \
            PATTERN (A{3}) \
            DEFINE A AS A.flag = true \
-         )"
+         )",
     );
 }
 
@@ -179,7 +179,7 @@ fn r012_05_range_quantifier() {
            ORDER BY ts \
            PATTERN (A{2,5}) \
            DEFINE A AS A.flag = true \
-         )"
+         )",
     );
 }
 
@@ -191,7 +191,7 @@ fn r012_06_minimum_quantifier() {
            ORDER BY ts \
            PATTERN (A{3,}) \
            DEFINE A AS A.flag = true \
-         )"
+         )",
     );
 }
 
@@ -203,7 +203,7 @@ fn r012_07_reluctant_quantifier() {
            ORDER BY ts \
            PATTERN (A+?) \
            DEFINE A AS A.value > 0 \
-         )"
+         )",
     );
 }
 
@@ -217,7 +217,7 @@ fn r013_01_alternation() {
            ORDER BY ts \
            PATTERN ((A B) | (C D)) \
            DEFINE A AS A.type = 'x', B AS B.type = 'y', C AS C.type = 'p', D AS D.type = 'q' \
-         )"
+         )",
     );
 }
 
@@ -229,7 +229,7 @@ fn r013_02_complex_pattern() {
            ORDER BY ts \
            PATTERN (A (B | C)+ D) \
            DEFINE B AS B.value > 0, C AS C.value < 0 \
-         )"
+         )",
     );
 }
 
@@ -248,7 +248,7 @@ fn r020_01_one_row_per_match() {
            ONE ROW PER MATCH \
            PATTERN (A B+ C) \
            DEFINE B AS B.price > PREV(B.price) \
-         )"
+         )",
     );
 }
 
@@ -265,7 +265,7 @@ fn r020_02_all_rows_per_match() {
            ALL ROWS PER MATCH \
            PATTERN (A B+ C) \
            DEFINE B AS B.price > PREV(B.price) \
-         )"
+         )",
     );
 }
 
@@ -278,7 +278,7 @@ fn r020_03_all_rows_with_unmatched() {
            ALL ROWS PER MATCH WITH UNMATCHED ROWS \
            PATTERN (A B+ C) \
            DEFINE B AS B.price > PREV(B.price) \
-         )"
+         )",
     );
 }
 
@@ -294,7 +294,7 @@ fn r021_01_classifier() {
            ALL ROWS PER MATCH \
            PATTERN (A | B | C) \
            DEFINE A AS A.type = 'a', B AS B.type = 'b' \
-         )"
+         )",
     );
 }
 
@@ -308,7 +308,7 @@ fn r021_02_match_number() {
            ALL ROWS PER MATCH \
            PATTERN (A+) \
            DEFINE A AS A.value > 0 \
-         )"
+         )",
     );
 }
 
@@ -323,7 +323,7 @@ fn r022_01_after_match_skip_past_last_row() {
            AFTER MATCH SKIP PAST LAST ROW \
            PATTERN (A B+ C) \
            DEFINE B AS B.value > PREV(B.value) \
-         )"
+         )",
     );
 }
 
@@ -336,7 +336,7 @@ fn r022_02_after_match_skip_to_next_row() {
            AFTER MATCH SKIP TO NEXT ROW \
            PATTERN (A B+ C) \
            DEFINE B AS B.value > PREV(B.value) \
-         )"
+         )",
     );
 }
 
@@ -349,7 +349,7 @@ fn r022_03_after_match_skip_to_first() {
            AFTER MATCH SKIP TO FIRST B \
            PATTERN (A B+ C) \
            DEFINE B AS B.value > PREV(B.value) \
-         )"
+         )",
     );
 }
 
@@ -362,7 +362,7 @@ fn r022_04_after_match_skip_to_last() {
            AFTER MATCH SKIP TO LAST B \
            PATTERN (A B+ C) \
            DEFINE B AS B.value > PREV(B.value) \
-         )"
+         )",
     );
 }
 
@@ -378,7 +378,7 @@ fn r030_01_subset() {
            PATTERN (STRT DOWN+ UP+) \
            SUBSET UP = (UP1, UP2) \
            DEFINE DOWN AS DOWN.price < PREV(DOWN.price) \
-         )"
+         )",
     );
 }
 
@@ -405,7 +405,7 @@ fn complex_v_shape_pattern() {
            DEFINE \
              DOWN AS DOWN.price < PREV(DOWN.price), \
              UP AS UP.price > PREV(UP.price) \
-         ) AS mr"
+         ) AS mr",
     );
 }
 

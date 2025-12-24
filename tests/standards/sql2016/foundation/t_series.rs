@@ -237,7 +237,9 @@ fn t122_02_recursive_hierarchy() {
 #[test]
 fn t133_01_cycle_clause() {
     // SQL:2016 T133: CYCLE clause - NOT YET IMPLEMENTED
-    verified_standard_stmt("WITH RECURSIVE cte AS (SELECT 1 AS x) CYCLE x SET is_cycle USING path SELECT * FROM cte");
+    verified_standard_stmt(
+        "WITH RECURSIVE cte AS (SELECT 1 AS x) CYCLE x SET is_cycle USING path SELECT * FROM cte",
+    );
 }
 
 #[test]

@@ -21,9 +21,7 @@ use crate::standards::common::verified_standard_stmt;
 
 #[test]
 fn aggregation_count() {
-    verified_standard_stmt(
-        "SELECT COUNT(*) FROM GRAPH_TABLE (g MATCH (n:Person) COLUMNS (n.id))"
-    );
+    verified_standard_stmt("SELECT COUNT(*) FROM GRAPH_TABLE (g MATCH (n:Person) COLUMNS (n.id))");
 }
 
 #[test]
@@ -43,7 +41,7 @@ fn aggregation_sum() {
 #[test]
 fn aggregation_avg() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (n:Person) COLUMNS (AVG(n.age) AS avg_age))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH (n:Person) COLUMNS (AVG(n.age) AS avg_age))",
     );
 }
 
@@ -64,20 +62,20 @@ fn aggregation_having() {
 #[test]
 fn row_limiting_one_row_per_match() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH ONE ROW PER MATCH (a)-[*]->(b) COLUMNS (a.id, b.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH ONE ROW PER MATCH (a)-[*]->(b) COLUMNS (a.id, b.id))",
     );
 }
 
 #[test]
 fn row_limiting_one_row_per_vertex() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH ONE ROW PER VERTEX (a)-[*]->(b) COLUMNS (a.id, b.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH ONE ROW PER VERTEX (a)-[*]->(b) COLUMNS (a.id, b.id))",
     );
 }
 
 #[test]
 fn row_limiting_one_row_per_step() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH ONE ROW PER STEP (a)-[*]->(b) COLUMNS (a.id, b.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH ONE ROW PER STEP (a)-[*]->(b) COLUMNS (a.id, b.id))",
     );
 }

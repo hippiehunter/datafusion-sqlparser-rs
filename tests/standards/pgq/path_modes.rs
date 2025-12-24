@@ -22,28 +22,28 @@ use crate::standards::common::verified_standard_stmt;
 #[test]
 fn path_mode_walk() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH WALK (a)-[*]->(b) COLUMNS (a.id, b.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH WALK (a)-[*]->(b) COLUMNS (a.id, b.id))",
     );
 }
 
 #[test]
 fn path_mode_trail() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH TRAIL (a)-[*]->(b) COLUMNS (a.id, b.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH TRAIL (a)-[*]->(b) COLUMNS (a.id, b.id))",
     );
 }
 
 #[test]
 fn path_mode_acyclic() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH ACYCLIC (a)-[*]->(b) COLUMNS (a.id, b.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH ACYCLIC (a)-[*]->(b) COLUMNS (a.id, b.id))",
     );
 }
 
 #[test]
 fn path_mode_simple() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH SIMPLE (a)-[*]->(b) COLUMNS (a.id, b.id))"
+        "SELECT * FROM GRAPH_TABLE (g MATCH SIMPLE (a)-[*]->(b) COLUMNS (a.id, b.id))",
     );
 }
 

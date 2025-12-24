@@ -70,7 +70,6 @@ pub fn try_parse(sql: &str) -> Result<Vec<Statement>, ParserError> {
     Parser::parse_sql(&GenericDialect {}, sql)
 }
 
-
 /// Macro for features that parse correctly but need AST validation later.
 ///
 /// Use this with a TODO comment documenting what validation is needed.

@@ -50,9 +50,7 @@
 //!   - T881: JSON in GROUP BY
 //!   - T882: JSON distinctness (DISTINCT, ORDER BY)
 
-use crate::standards::common::{
-    one_statement_parses_to_std, verified_standard_stmt,
-};
+use crate::standards::common::{one_statement_parses_to_std, verified_standard_stmt};
 use sqlparser::ast::{AccessExpr, Expr, SelectItem, Statement, Subscript};
 
 // ==================== T860-T864: JSON Simplified Accessor ====================
@@ -456,7 +454,9 @@ fn json_multiple_methods_integration() {
 #[test]
 fn t879_01_json_equality() {
     // SQL:2023 T879: JSON equality comparison
-    verified_standard_stmt("SELECT * FROM documents WHERE json_col = CAST('{\"key\": \"value\"}' AS JSON)");
+    verified_standard_stmt(
+        "SELECT * FROM documents WHERE json_col = CAST('{\"key\": \"value\"}' AS JSON)",
+    );
 }
 
 #[test]
@@ -478,7 +478,9 @@ fn t879_03_json_equality_null_handling() {
 #[test]
 fn t880_01_json_ordering_less_than() {
     // SQL:2023 T880: JSON ordering - less than
-    verified_standard_stmt("SELECT * FROM documents WHERE json_col < CAST('{\"key\": 100}' AS JSON)");
+    verified_standard_stmt(
+        "SELECT * FROM documents WHERE json_col < CAST('{\"key\": 100}' AS JSON)",
+    );
 }
 
 #[test]

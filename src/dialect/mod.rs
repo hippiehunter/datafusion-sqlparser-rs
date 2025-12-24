@@ -16,18 +16,12 @@
 // under the License.
 
 mod ansi;
-mod bigquery;
-mod clickhouse;
-mod databricks;
-mod duckdb;
+mod db2;
 mod generic;
-mod hive;
 mod mssql;
 mod mysql;
+mod oracle;
 mod postgresql;
-mod redshift;
-mod snowflake;
-mod sqlite;
 
 use core::any::{Any, TypeId};
 use core::fmt::Debug;
@@ -37,18 +31,12 @@ use core::str::Chars;
 use log::debug;
 
 pub use self::ansi::AnsiDialect;
-pub use self::bigquery::BigQueryDialect;
-pub use self::clickhouse::ClickHouseDialect;
-pub use self::databricks::DatabricksDialect;
-pub use self::duckdb::DuckDbDialect;
+pub use self::db2::Db2Dialect;
 pub use self::generic::GenericDialect;
-pub use self::hive::HiveDialect;
 pub use self::mssql::MsSqlDialect;
 pub use self::mysql::MySqlDialect;
+pub use self::oracle::OracleDialect;
 pub use self::postgresql::PostgreSqlDialect;
-pub use self::redshift::RedshiftSqlDialect;
-pub use self::snowflake::SnowflakeDialect;
-pub use self::sqlite::SQLiteDialect;
 use crate::ast::{ColumnOption, Expr, GranteesType, Ident, ObjectNamePart, Statement};
 pub use crate::keywords;
 use crate::keywords::Keyword;
@@ -93,9 +81,7 @@ macro_rules! dialect_is {
 /// encapsulates the parsing differences between dialects.
 ///
 /// [`GenericDialect`] is the most permissive dialect, and parses the union of
-/// all the other dialects, when there is no ambiguity. However, it does not
-/// currently allow `CREATE TABLE` statements without types specified for all
-/// columns; use [`SQLiteDialect`] if you require that.
+/// all the other dialects, when there is no ambiguity.
 ///
 /// # Examples
 /// Most users create a [`Dialect`] directly, as shown on the [module
@@ -1260,16 +1246,10 @@ pub fn dialect_from_str(dialect_name: impl AsRef<str>) -> Option<Box<dyn Dialect
         "generic" => Some(Box::new(GenericDialect)),
         "mysql" => Some(Box::new(MySqlDialect {})),
         "postgresql" | "postgres" => Some(Box::new(PostgreSqlDialect {})),
-        "hive" => Some(Box::new(HiveDialect {})),
-        "sqlite" => Some(Box::new(SQLiteDialect {})),
-        "snowflake" => Some(Box::new(SnowflakeDialect)),
-        "redshift" => Some(Box::new(RedshiftSqlDialect {})),
         "mssql" => Some(Box::new(MsSqlDialect {})),
-        "clickhouse" => Some(Box::new(ClickHouseDialect {})),
-        "bigquery" => Some(Box::new(BigQueryDialect)),
         "ansi" => Some(Box::new(AnsiDialect {})),
-        "duckdb" => Some(Box::new(DuckDbDialect {})),
-        "databricks" => Some(Box::new(DatabricksDialect {})),
+        "oracle" => Some(Box::new(OracleDialect {})),
+        "db2" => Some(Box::new(Db2Dialect {})),
         _ => None,
     }
 }
@@ -1308,21 +1288,13 @@ mod tests {
         assert!(parse_dialect("MySql").is::<MySqlDialect>());
         assert!(parse_dialect("postgresql").is::<PostgreSqlDialect>());
         assert!(parse_dialect("postgres").is::<PostgreSqlDialect>());
-        assert!(parse_dialect("hive").is::<HiveDialect>());
-        assert!(parse_dialect("sqlite").is::<SQLiteDialect>());
-        assert!(parse_dialect("snowflake").is::<SnowflakeDialect>());
-        assert!(parse_dialect("SnowFlake").is::<SnowflakeDialect>());
         assert!(parse_dialect("MsSql").is::<MsSqlDialect>());
-        assert!(parse_dialect("clickhouse").is::<ClickHouseDialect>());
-        assert!(parse_dialect("ClickHouse").is::<ClickHouseDialect>());
-        assert!(parse_dialect("bigquery").is::<BigQueryDialect>());
-        assert!(parse_dialect("BigQuery").is::<BigQueryDialect>());
         assert!(parse_dialect("ansi").is::<AnsiDialect>());
         assert!(parse_dialect("ANSI").is::<AnsiDialect>());
-        assert!(parse_dialect("duckdb").is::<DuckDbDialect>());
-        assert!(parse_dialect("DuckDb").is::<DuckDbDialect>());
-        assert!(parse_dialect("DataBricks").is::<DatabricksDialect>());
-        assert!(parse_dialect("databricks").is::<DatabricksDialect>());
+        assert!(parse_dialect("oracle").is::<OracleDialect>());
+        assert!(parse_dialect("Oracle").is::<OracleDialect>());
+        assert!(parse_dialect("db2").is::<Db2Dialect>());
+        assert!(parse_dialect("DB2").is::<Db2Dialect>());
 
         // error cases
         assert!(dialect_from_str("Unknown").is_none());
@@ -1337,7 +1309,6 @@ mod tests {
     fn identifier_quote_style() {
         let tests: Vec<(&dyn Dialect, &str, Option<char>)> = vec![
             (&GenericDialect {}, "id", None),
-            (&SQLiteDialect {}, "id", Some('`')),
             (&PostgreSqlDialect {}, "id", Some('"')),
         ];
 

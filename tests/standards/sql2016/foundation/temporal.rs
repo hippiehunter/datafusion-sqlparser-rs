@@ -29,7 +29,7 @@ fn t180_01_system_versioned_table_basic() {
          sys_start TIMESTAMP GENERATED ALWAYS AS ROW START, \
          sys_end TIMESTAMP GENERATED ALWAYS AS ROW END, \
          PERIOD FOR SYSTEM_TIME (sys_start, sys_end)) \
-         WITH SYSTEM VERSIONING"
+         WITH SYSTEM VERSIONING",
     );
 }
 
@@ -40,7 +40,7 @@ fn t180_02_system_versioned_with_primary_key() {
          sys_start TIMESTAMP(6) GENERATED ALWAYS AS ROW START, \
          sys_end TIMESTAMP(6) GENERATED ALWAYS AS ROW END, \
          PERIOD FOR SYSTEM_TIME (sys_start, sys_end)) \
-         WITH SYSTEM VERSIONING"
+         WITH SYSTEM VERSIONING",
     );
 }
 
@@ -48,7 +48,7 @@ fn t180_02_system_versioned_with_primary_key() {
 fn t180_03_for_system_time_as_of() {
     // SQL:2016 T180: Query historical data at a point in time
     verified_standard_stmt(
-        "SELECT * FROM employees FOR SYSTEM_TIME AS OF TIMESTAMP '2023-01-01 00:00:00'"
+        "SELECT * FROM employees FOR SYSTEM_TIME AS OF TIMESTAMP '2023-01-01 00:00:00'",
     );
 }
 
@@ -82,7 +82,7 @@ fn t180_07_for_system_time_all() {
 fn t180_08_system_time_in_join() {
     verified_standard_stmt(
         "SELECT e.name, d.dept_name FROM employees FOR SYSTEM_TIME AS OF TIMESTAMP '2023-06-01' e \
-         JOIN departments FOR SYSTEM_TIME AS OF TIMESTAMP '2023-06-01' d ON e.dept_id = d.id"
+         JOIN departments FOR SYSTEM_TIME AS OF TIMESTAMP '2023-06-01' d ON e.dept_id = d.id",
     );
 }
 
@@ -90,7 +90,7 @@ fn t180_08_system_time_in_join() {
 fn t180_09_system_time_in_subquery() {
     verified_standard_stmt(
         "SELECT * FROM current_employees WHERE id IN \
-         (SELECT id FROM employees FOR SYSTEM_TIME AS OF TIMESTAMP '2022-01-01')"
+         (SELECT id FROM employees FOR SYSTEM_TIME AS OF TIMESTAMP '2022-01-01')",
     );
 }
 
@@ -102,7 +102,7 @@ fn t181_01_application_time_period() {
     verified_standard_stmt(
         "CREATE TABLE contracts (id INT, customer_id INT, \
          valid_from DATE, valid_to DATE, \
-         PERIOD FOR valid_period (valid_from, valid_to))"
+         PERIOD FOR valid_period (valid_from, valid_to))",
     );
 }
 
@@ -112,7 +112,7 @@ fn t181_02_application_time_with_constraints() {
         "CREATE TABLE insurance_policies (policy_id INT PRIMARY KEY, \
          coverage_start DATE NOT NULL, coverage_end DATE NOT NULL, \
          premium DECIMAL(10,2), \
-         PERIOD FOR coverage (coverage_start, coverage_end))"
+         PERIOD FOR coverage (coverage_start, coverage_end))",
     );
 }
 
@@ -121,7 +121,7 @@ fn t181_03_for_portion_of() {
     // SQL:2016 T181: Update for portion of period
     verified_standard_stmt(
         "UPDATE contracts FOR PORTION OF valid_period FROM DATE '2023-06-01' TO DATE '2023-12-31' \
-         SET premium = 500.00 WHERE id = 1"
+         SET premium = 500.00 WHERE id = 1",
     );
 }
 
@@ -137,9 +137,7 @@ fn t181_04_delete_for_portion_of() {
 
 #[test]
 fn t182_01_period_contains() {
-    verified_standard_stmt(
-        "SELECT * FROM contracts WHERE valid_period CONTAINS DATE '2023-06-15'"
-    );
+    verified_standard_stmt("SELECT * FROM contracts WHERE valid_period CONTAINS DATE '2023-06-15'");
 }
 
 #[test]
@@ -196,7 +194,7 @@ fn t184_01_bitemporal_table() {
          sys_end TIMESTAMP GENERATED ALWAYS AS ROW END, \
          PERIOD FOR valid_period (valid_from, valid_to), \
          PERIOD FOR SYSTEM_TIME (sys_start, sys_end)) \
-         WITH SYSTEM VERSIONING"
+         WITH SYSTEM VERSIONING",
     );
 }
 
@@ -205,7 +203,7 @@ fn t184_02_bitemporal_query() {
     verified_standard_stmt(
         "SELECT * FROM product_prices \
          FOR SYSTEM_TIME AS OF TIMESTAMP '2023-06-01' \
-         WHERE valid_period CONTAINS DATE '2023-06-15'"
+         WHERE valid_period CONTAINS DATE '2023-06-15'",
     );
 }
 
@@ -217,7 +215,7 @@ fn t185_01_temporal_primary_key() {
         "CREATE TABLE employees (emp_id INT, dept_id INT, \
          valid_from DATE, valid_to DATE, \
          PERIOD FOR employment (valid_from, valid_to), \
-         PRIMARY KEY (emp_id, employment WITHOUT OVERLAPS))"
+         PRIMARY KEY (emp_id, employment WITHOUT OVERLAPS))",
     );
 }
 
@@ -227,7 +225,7 @@ fn t185_02_temporal_foreign_key() {
         "CREATE TABLE assignments (id INT, emp_id INT, project_id INT, \
          valid_from DATE, valid_to DATE, \
          PERIOD FOR assignment (valid_from, valid_to), \
-         FOREIGN KEY (emp_id, PERIOD assignment) REFERENCES employees (emp_id, PERIOD employment))"
+         FOREIGN KEY (emp_id, PERIOD assignment) REFERENCES employees (emp_id, PERIOD employment))",
     );
 }
 
@@ -240,7 +238,7 @@ fn t186_01_with_history_table() {
          sys_start TIMESTAMP GENERATED ALWAYS AS ROW START, \
          sys_end TIMESTAMP GENERATED ALWAYS AS ROW END, \
          PERIOD FOR SYSTEM_TIME (sys_start, sys_end)) \
-         WITH SYSTEM VERSIONING WITH HISTORY TABLE order_history"
+         WITH SYSTEM VERSIONING WITH HISTORY TABLE order_history",
     );
 }
 
@@ -250,20 +248,18 @@ fn t186_01_with_history_table() {
 fn t187_01_insert_into_temporal() {
     verified_standard_stmt(
         "INSERT INTO contracts (id, customer_id, valid_from, valid_to) \
-         VALUES (1, 100, DATE '2023-01-01', DATE '2023-12-31')"
+         VALUES (1, 100, DATE '2023-01-01', DATE '2023-12-31')",
     );
 }
 
 #[test]
 fn t187_02_update_temporal() {
-    verified_standard_stmt(
-        "UPDATE contracts SET premium = 600.00 WHERE id = 1"
-    );
+    verified_standard_stmt("UPDATE contracts SET premium = 600.00 WHERE id = 1");
 }
 
 #[test]
 fn t187_03_delete_temporal() {
     verified_standard_stmt(
-        "DELETE FROM contracts WHERE id = 1 AND valid_period CONTAINS DATE '2023-06-01'"
+        "DELETE FROM contracts WHERE id = 1 AND valid_period CONTAINS DATE '2023-06-01'",
     );
 }
