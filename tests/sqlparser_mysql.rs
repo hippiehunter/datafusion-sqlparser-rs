@@ -3841,6 +3841,7 @@ fn parse_revoke() {
         grantees,
         granted_by,
         cascade,
+        ..
     } = stmt
     {
         assert_eq!(

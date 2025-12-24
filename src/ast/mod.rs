@@ -106,7 +106,8 @@ pub use self::trigger::{
 
 pub use self::value::{
     escape_double_quote_string, escape_quoted_string, DateTimeField, DollarQuotedString,
-    NormalizationForm, TrimWhereField, Value, ValueWithSpan,
+    JsonPredicateType, JsonPredicateUniqueKeyConstraint, NormalizationForm, TrimWhereField, Value,
+    ValueWithSpan,
 };
 
 use crate::ast::helpers::key_value_options::KeyValueOptions;
@@ -827,6 +828,19 @@ pub enum Expr {
         expr: Box<Expr>,
         form: Option<NormalizationForm>,
         negated: bool,
+    },
+    /// `<expr> IS [ NOT ] JSON [ VALUE | ARRAY | OBJECT | SCALAR ] [ UNIQUE [ KEYS ] | WITH UNIQUE [ KEYS ] | WITHOUT UNIQUE [ KEYS ] ]`
+    ///
+    /// See SQL:2016 standard, section 8.20 (JSON predicate).
+    IsJson {
+        /// The expression to test
+        expr: Box<Expr>,
+        /// Whether the predicate is negated (IS NOT JSON)
+        negated: bool,
+        /// The type of JSON to test for (VALUE, ARRAY, OBJECT, SCALAR)
+        json_predicate_type: Option<JsonPredicateType>,
+        /// The unique keys constraint
+        unique_keys: Option<JsonPredicateUniqueKeyConstraint>,
     },
     /// `[ NOT ] IN (val1, val2, ...)`
     InList {
@@ -1613,6 +1627,22 @@ impl fmt::Display for Expr {
                     )
                 }
             }
+            Expr::IsJson {
+                expr,
+                negated,
+                json_predicate_type,
+                unique_keys,
+            } => {
+                let not_ = if *negated { "NOT " } else { "" };
+                write!(f, "{expr} IS {not_}JSON")?;
+                if let Some(json_type) = json_predicate_type {
+                    write!(f, " {json_type}")?;
+                }
+                if let Some(uk) = unique_keys {
+                    write!(f, " {uk}")?;
+                }
+                Ok(())
+            }
             Expr::SimilarTo {
                 negated,
                 expr,
@@ -2054,6 +2084,9 @@ impl fmt::Display for WindowSpec {
             } else {
                 write!(f, "{} {}", window_frame.units, window_frame.start_bound)?;
             }
+            if let Some(exclude) = &window_frame.exclude {
+                write!(f, " {exclude}")?;
+            }
         }
         Ok(())
     }
@@ -2074,7 +2107,9 @@ pub struct WindowFrame {
     /// indicates the shorthand form (e.g. `ROWS 1 PRECEDING`), which must
     /// behave the same as `end_bound = WindowFrameBound::CurrentRow`.
     pub end_bound: Option<WindowFrameBound>,
-    // TBD: EXCLUDE
+    /// Optional EXCLUDE clause for window frames.
+    /// See SQL:2016 section 7.11 (window clause), part T612-15.
+    pub exclude: Option<WindowFrameExclude>,
 }
 
 impl Default for WindowFrame {
@@ -2086,6 +2121,7 @@ impl Default for WindowFrame {
             units: WindowFrameUnits::Range,
             start_bound: WindowFrameBound::Preceding(None),
             end_bound: None,
+            exclude: None,
         }
     }
 }
@@ -2106,6 +2142,34 @@ impl fmt::Display for WindowFrameUnits {
             WindowFrameUnits::Range => "RANGE",
             WindowFrameUnits::Groups => "GROUPS",
         })
+    }
+}
+
+/// Specifies the EXCLUDE clause for a window frame.
+///
+/// See SQL:2016 section 7.11 (window clause), part T612-15.
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum WindowFrameExclude {
+    /// `EXCLUDE CURRENT ROW` - excludes the current row from the frame
+    CurrentRow,
+    /// `EXCLUDE GROUP` - excludes the current row and its peers (rows with equal ORDER BY values)
+    Group,
+    /// `EXCLUDE TIES` - excludes the current row's peers but not the current row itself
+    Ties,
+    /// `EXCLUDE NO OTHERS` - explicitly includes all rows (default behavior)
+    NoOthers,
+}
+
+impl fmt::Display for WindowFrameExclude {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            WindowFrameExclude::CurrentRow => write!(f, "EXCLUDE CURRENT ROW"),
+            WindowFrameExclude::Group => write!(f, "EXCLUDE GROUP"),
+            WindowFrameExclude::Ties => write!(f, "EXCLUDE TIES"),
+            WindowFrameExclude::NoOthers => write!(f, "EXCLUDE NO OTHERS"),
+        }
     }
 }
 
@@ -3938,6 +4002,7 @@ pub enum Statement {
     Deny(DenyStatement),
     /// ```sql
     /// REVOKE privileges ON objects FROM grantees
+    /// REVOKE GRANT OPTION FOR privileges ON objects FROM grantees
     /// ```
     Revoke {
         privileges: Privileges,
@@ -3945,6 +4010,37 @@ pub enum Statement {
         grantees: Vec<Grantee>,
         granted_by: Option<Ident>,
         cascade: Option<CascadeOption>,
+        /// If true, this is `REVOKE GRANT OPTION FOR ...` (SQL:2016)
+        grant_option_for: bool,
+    },
+    /// ```sql
+    /// GRANT role_name [, role_name ...] TO user [, user ...] [WITH ADMIN OPTION]
+    /// ```
+    GrantRole {
+        /// The roles being granted
+        roles: Vec<Ident>,
+        /// The recipients of the role grant
+        grantees: Vec<Grantee>,
+        /// If true, the grantee can grant the role to others
+        with_admin_option: bool,
+        /// The grantor of the role
+        granted_by: Option<Ident>,
+    },
+    /// ```sql
+    /// REVOKE role_name [, role_name ...] FROM user [, user ...] [CASCADE | RESTRICT]
+    /// REVOKE ADMIN OPTION FOR role_name FROM user
+    /// ```
+    RevokeRole {
+        /// The roles being revoked
+        roles: Vec<Ident>,
+        /// The recipients of the role revocation
+        grantees: Vec<Grantee>,
+        /// The grantor of the role
+        granted_by: Option<Ident>,
+        /// Cascade or restrict
+        cascade: Option<CascadeOption>,
+        /// If true, this is `REVOKE ADMIN OPTION FOR ...`
+        admin_option_for: bool,
     },
     /// ```sql
     /// DEALLOCATE [ PREPARE ] { name | ALL }
@@ -5395,12 +5491,62 @@ impl fmt::Display for Statement {
                 grantees,
                 granted_by,
                 cascade,
+                grant_option_for,
             } => {
-                write!(f, "REVOKE {privileges} ")?;
+                write!(f, "REVOKE ")?;
+                if *grant_option_for {
+                    write!(f, "GRANT OPTION FOR ")?;
+                }
+                write!(f, "{privileges} ")?;
                 if let Some(objects) = objects {
                     write!(f, "ON {objects} ")?;
                 }
                 write!(f, "FROM {}", display_comma_separated(grantees))?;
+                if let Some(grantor) = granted_by {
+                    write!(f, " GRANTED BY {grantor}")?;
+                }
+                if let Some(cascade) = cascade {
+                    write!(f, " {cascade}")?;
+                }
+                Ok(())
+            }
+            Statement::GrantRole {
+                roles,
+                grantees,
+                with_admin_option,
+                granted_by,
+            } => {
+                write!(
+                    f,
+                    "GRANT {} TO {}",
+                    display_comma_separated(roles),
+                    display_comma_separated(grantees)
+                )?;
+                if *with_admin_option {
+                    write!(f, " WITH ADMIN OPTION")?;
+                }
+                if let Some(grantor) = granted_by {
+                    write!(f, " GRANTED BY {grantor}")?;
+                }
+                Ok(())
+            }
+            Statement::RevokeRole {
+                roles,
+                grantees,
+                granted_by,
+                cascade,
+                admin_option_for,
+            } => {
+                write!(f, "REVOKE ")?;
+                if *admin_option_for {
+                    write!(f, "ADMIN OPTION FOR ")?;
+                }
+                write!(
+                    f,
+                    "{} FROM {}",
+                    display_comma_separated(roles),
+                    display_comma_separated(grantees)
+                )?;
                 if let Some(grantor) = granted_by {
                     write!(f, " GRANTED BY {grantor}")?;
                 }
@@ -6691,6 +6837,24 @@ pub enum GrantObjects {
         name: ObjectName,
         arg_types: Vec<DataType>,
     },
+
+    /// Grant privileges on a type (SQL:2016)
+    ///
+    /// For example:
+    /// `GRANT USAGE ON TYPE address_type TO alice`
+    Types(Vec<ObjectName>),
+
+    /// Grant privileges on a domain (SQL:2016)
+    ///
+    /// For example:
+    /// `GRANT USAGE ON DOMAIN email_address TO alice`
+    Domains(Vec<ObjectName>),
+
+    /// Grant privileges on a collation (SQL:2016)
+    ///
+    /// For example:
+    /// `GRANT USAGE ON COLLATION utf8_general_ci TO alice`
+    Collations(Vec<ObjectName>),
 }
 
 impl fmt::Display for GrantObjects {
@@ -6835,6 +6999,15 @@ impl fmt::Display for GrantObjects {
                     write!(f, "({})", display_comma_separated(arg_types))?;
                 }
                 Ok(())
+            }
+            GrantObjects::Types(types) => {
+                write!(f, "TYPE {}", display_comma_separated(types))
+            }
+            GrantObjects::Domains(domains) => {
+                write!(f, "DOMAIN {}", display_comma_separated(domains))
+            }
+            GrantObjects::Collations(collations) => {
+                write!(f, "COLLATION {}", display_comma_separated(collations))
             }
         }
     }

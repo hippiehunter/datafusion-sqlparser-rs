@@ -431,6 +431,8 @@ impl Spanned for Statement {
             Statement::Grant { .. } => Span::empty(),
             Statement::Deny { .. } => Span::empty(),
             Statement::Revoke { .. } => Span::empty(),
+            Statement::GrantRole { .. } => Span::empty(),
+            Statement::RevokeRole { .. } => Span::empty(),
             Statement::Deallocate { .. } => Span::empty(),
             Statement::Execute { .. } => Span::empty(),
             Statement::Prepare { .. } => Span::empty(),
@@ -1417,6 +1419,12 @@ impl Spanned for Expr {
                 expr,
                 form: _,
                 negated: _,
+            } => expr.span(),
+            Expr::IsJson {
+                expr,
+                negated: _,
+                json_predicate_type: _,
+                unique_keys: _,
             } => expr.span(),
             Expr::SimilarTo {
                 negated: _,

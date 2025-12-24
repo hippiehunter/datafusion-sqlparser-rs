@@ -622,8 +622,9 @@ fn test_detach_database_simple() {
 
 #[test]
 fn test_duckdb_named_argument_function_with_assignment_operator() {
+    // Note: GenericDialect parses := differently due to supports_named_fn_args_with_expr_name
     let sql = "SELECT FUN(a := '1', b := '2') FROM foo";
-    let select = duckdb_and_generic().verified_only_select(sql);
+    let select = duckdb().verified_only_select(sql);
     assert_eq!(
         &Expr::Function(Function {
             name: ObjectName::from(vec![Ident::new("FUN")]),

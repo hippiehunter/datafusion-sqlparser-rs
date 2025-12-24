@@ -428,6 +428,56 @@ impl fmt::Display for NormalizationForm {
     }
 }
 
+/// The type of JSON predicate used in `<expr> IS [NOT] JSON [<type>]`.
+///
+/// See SQL:2016 standard, section 8.20 (JSON predicate).
+#[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum JsonPredicateType {
+    /// `IS JSON VALUE` - any JSON value (default when not specified)
+    Value,
+    /// `IS JSON ARRAY` - a JSON array
+    Array,
+    /// `IS JSON OBJECT` - a JSON object
+    Object,
+    /// `IS JSON SCALAR` - a JSON scalar (string, number, boolean, or null)
+    Scalar,
+}
+
+impl fmt::Display for JsonPredicateType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            JsonPredicateType::Value => write!(f, "VALUE"),
+            JsonPredicateType::Array => write!(f, "ARRAY"),
+            JsonPredicateType::Object => write!(f, "OBJECT"),
+            JsonPredicateType::Scalar => write!(f, "SCALAR"),
+        }
+    }
+}
+
+/// The unique keys constraint for the JSON predicate.
+///
+/// See SQL:2016 standard, section 8.20 (JSON predicate).
+#[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum JsonPredicateUniqueKeyConstraint {
+    /// `WITH UNIQUE KEYS` or `WITH UNIQUE`
+    WithUniqueKeys,
+    /// `WITHOUT UNIQUE KEYS` or `WITHOUT UNIQUE`
+    WithoutUniqueKeys,
+}
+
+impl fmt::Display for JsonPredicateUniqueKeyConstraint {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            JsonPredicateUniqueKeyConstraint::WithUniqueKeys => write!(f, "WITH UNIQUE KEYS"),
+            JsonPredicateUniqueKeyConstraint::WithoutUniqueKeys => write!(f, "WITHOUT UNIQUE KEYS"),
+        }
+    }
+}
+
 pub struct EscapeQuotedString<'a> {
     string: &'a str,
     quote: char,

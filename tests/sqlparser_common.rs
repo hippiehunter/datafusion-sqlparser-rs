@@ -1680,6 +1680,7 @@ fn parse_json_object() {
     let dialects = TestedDialects::new(vec![
         Box::new(MsSqlDialect {}),
         Box::new(PostgreSqlDialect {}),
+        Box::new(GenericDialect {}),
     ]);
     let select = dialects.verified_only_select("SELECT JSON_OBJECT('name' : 'value', 'type' : 1)");
     match expr_from_projection(&select.projection[0]) {
@@ -1914,6 +1915,121 @@ fn parse_is_not_distinct_from() {
         ),
         verified_expr(sql)
     );
+}
+
+#[test]
+fn parse_is_json() {
+    // Basic IS JSON
+    let sql = "a IS JSON";
+    assert_eq!(
+        Expr::IsJson {
+            expr: Box::new(Expr::Identifier(Ident::new("a"))),
+            negated: false,
+            json_predicate_type: None,
+            unique_keys: None,
+        },
+        verified_expr(sql)
+    );
+
+    // IS NOT JSON
+    let sql = "a IS NOT JSON";
+    assert_eq!(
+        Expr::IsJson {
+            expr: Box::new(Expr::Identifier(Ident::new("a"))),
+            negated: true,
+            json_predicate_type: None,
+            unique_keys: None,
+        },
+        verified_expr(sql)
+    );
+
+    // IS JSON VALUE
+    let sql = "a IS JSON VALUE";
+    assert_eq!(
+        Expr::IsJson {
+            expr: Box::new(Expr::Identifier(Ident::new("a"))),
+            negated: false,
+            json_predicate_type: Some(JsonPredicateType::Value),
+            unique_keys: None,
+        },
+        verified_expr(sql)
+    );
+
+    // IS JSON ARRAY
+    let sql = "a IS JSON ARRAY";
+    assert_eq!(
+        Expr::IsJson {
+            expr: Box::new(Expr::Identifier(Ident::new("a"))),
+            negated: false,
+            json_predicate_type: Some(JsonPredicateType::Array),
+            unique_keys: None,
+        },
+        verified_expr(sql)
+    );
+
+    // IS JSON OBJECT
+    let sql = "a IS JSON OBJECT";
+    assert_eq!(
+        Expr::IsJson {
+            expr: Box::new(Expr::Identifier(Ident::new("a"))),
+            negated: false,
+            json_predicate_type: Some(JsonPredicateType::Object),
+            unique_keys: None,
+        },
+        verified_expr(sql)
+    );
+
+    // IS JSON SCALAR
+    let sql = "a IS JSON SCALAR";
+    assert_eq!(
+        Expr::IsJson {
+            expr: Box::new(Expr::Identifier(Ident::new("a"))),
+            negated: false,
+            json_predicate_type: Some(JsonPredicateType::Scalar),
+            unique_keys: None,
+        },
+        verified_expr(sql)
+    );
+
+    // IS JSON WITH UNIQUE KEYS
+    let sql = "a IS JSON WITH UNIQUE KEYS";
+    assert_eq!(
+        Expr::IsJson {
+            expr: Box::new(Expr::Identifier(Ident::new("a"))),
+            negated: false,
+            json_predicate_type: None,
+            unique_keys: Some(JsonPredicateUniqueKeyConstraint::WithUniqueKeys),
+        },
+        verified_expr(sql)
+    );
+
+    // IS JSON WITHOUT UNIQUE KEYS
+    let sql = "a IS JSON WITHOUT UNIQUE KEYS";
+    assert_eq!(
+        Expr::IsJson {
+            expr: Box::new(Expr::Identifier(Ident::new("a"))),
+            negated: false,
+            json_predicate_type: None,
+            unique_keys: Some(JsonPredicateUniqueKeyConstraint::WithoutUniqueKeys),
+        },
+        verified_expr(sql)
+    );
+
+    // IS NOT JSON OBJECT WITH UNIQUE KEYS
+    let sql = "a IS NOT JSON OBJECT WITH UNIQUE KEYS";
+    assert_eq!(
+        Expr::IsJson {
+            expr: Box::new(Expr::Identifier(Ident::new("a"))),
+            negated: true,
+            json_predicate_type: Some(JsonPredicateType::Object),
+            unique_keys: Some(JsonPredicateUniqueKeyConstraint::WithUniqueKeys),
+        },
+        verified_expr(sql)
+    );
+
+    // Test in SELECT statement
+    let sql = "SELECT * FROM t WHERE c IS JSON";
+    verified_stmt(sql);
 }
 
 #[test]
@@ -4280,6 +4396,87 @@ fn parse_create_table_hive_array() {
 }
 
 #[test]
+fn parse_array_type_postfix_syntax() {
+    // SQL standard ARRAY type suffix: "INTEGER ARRAY"
+    // Note: The display output normalizes to "INTEGER[]" format
+    // Use dialects that support [] array syntax in display
+    let dialects = TestedDialects::new(vec![
+        Box::new(PostgreSqlDialect {}),
+        Box::new(GenericDialect {}),
+    ]);
+
+    let sql = "CREATE TABLE t (arr INTEGER ARRAY)";
+    let expected = "CREATE TABLE t (arr INTEGER[])";
+    match dialects.one_statement_parses_to(sql, expected) {
+        Statement::CreateTable(CreateTable { columns, .. }) => {
+            assert_eq!(columns.len(), 1);
+            assert_eq!(
+                columns[0].data_type,
+                DataType::Array(ArrayElemTypeDef::SquareBracket(
+                    Box::new(DataType::Integer(None)),
+                    None
+                ))
+            );
+        }
+        _ => unreachable!(),
+    }
+
+    // ARRAY with size: "INTEGER ARRAY[10]"
+    let sql = "CREATE TABLE t (arr INTEGER ARRAY[10])";
+    let expected = "CREATE TABLE t (arr INTEGER[10])";
+    match dialects.one_statement_parses_to(sql, expected) {
+        Statement::CreateTable(CreateTable { columns, .. }) => {
+            assert_eq!(
+                columns[0].data_type,
+                DataType::Array(ArrayElemTypeDef::SquareBracket(
+                    Box::new(DataType::Integer(None)),
+                    Some(10)
+                ))
+            );
+        }
+        _ => unreachable!(),
+    }
+
+    // Nested arrays: "INTEGER ARRAY ARRAY"
+    let sql = "CREATE TABLE t (arr INTEGER ARRAY ARRAY)";
+    let expected = "CREATE TABLE t (arr INTEGER[][])";
+    match dialects.one_statement_parses_to(sql, expected) {
+        Statement::CreateTable(CreateTable { columns, .. }) => {
+            assert_eq!(
+                columns[0].data_type,
+                DataType::Array(ArrayElemTypeDef::SquareBracket(
+                    Box::new(DataType::Array(ArrayElemTypeDef::SquareBracket(
+                        Box::new(DataType::Integer(None)),
+                        None
+                    ))),
+                    None
+                ))
+            );
+        }
+        _ => unreachable!(),
+    }
+
+    // VARCHAR ARRAY
+    let sql = "CREATE TABLE t (arr VARCHAR(100) ARRAY)";
+    let expected = "CREATE TABLE t (arr VARCHAR(100)[])";
+    match dialects.one_statement_parses_to(sql, expected) {
+        Statement::CreateTable(CreateTable { columns, .. }) => {
+            assert_eq!(
+                columns[0].data_type,
+                DataType::Array(ArrayElemTypeDef::SquareBracket(
+                    Box::new(DataType::Varchar(Some(CharacterLength::IntegerLength {
+                        length: 100,
+                        unit: None
+                    }))),
+                    None
+                ))
+            );
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[test]
 fn parse_create_table_with_multiple_on_delete_in_constraint_fails() {
     parse_sql_statements(
         "\
@@ -5711,6 +5908,41 @@ fn parse_window_clause() {
         ParserError::ParserError("Expected: (, found: window2".to_string()),
         res.unwrap_err()
     );
+}
+
+#[test]
+fn parse_window_frame_exclude() {
+    // Test EXCLUDE CURRENT ROW
+    let sql = "SELECT SUM(a) OVER (ORDER BY a ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING EXCLUDE CURRENT ROW) FROM t";
+    verified_stmt(sql);
+
+    // Test EXCLUDE GROUP
+    let sql = "SELECT SUM(a) OVER (ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE GROUP) FROM t";
+    verified_stmt(sql);
+
+    // Test EXCLUDE TIES
+    let sql = "SELECT SUM(a) OVER (ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE TIES) FROM t";
+    verified_stmt(sql);
+
+    // Test EXCLUDE NO OTHERS
+    let sql = "SELECT SUM(a) OVER (ORDER BY a ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING EXCLUDE NO OTHERS) FROM t";
+    verified_stmt(sql);
+
+    // Test with RANGE instead of ROWS
+    let sql = "SELECT SUM(a) OVER (ORDER BY a RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW EXCLUDE CURRENT ROW) FROM t";
+    verified_stmt(sql);
+
+    // Test with GROUPS
+    let sql = "SELECT SUM(a) OVER (ORDER BY a GROUPS BETWEEN 1 PRECEDING AND 1 FOLLOWING EXCLUDE TIES) FROM t";
+    verified_stmt(sql);
+
+    // Test with PARTITION BY
+    let sql = "SELECT SUM(a) OVER (PARTITION BY b ORDER BY a ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE GROUP) FROM t";
+    verified_stmt(sql);
+
+    // Test shorthand form (no BETWEEN)
+    let sql = "SELECT SUM(a) OVER (ORDER BY a ROWS UNBOUNDED PRECEDING EXCLUDE CURRENT ROW) FROM t";
+    verified_stmt(sql);
 }
 
 #[test]
@@ -9738,6 +9970,7 @@ fn test_revoke() {
             grantees,
             granted_by,
             cascade,
+            ..
         } => {
             assert_eq!(
                 Privileges::All {
@@ -9764,6 +9997,7 @@ fn test_revoke_with_cascade() {
             grantees,
             granted_by,
             cascade,
+            ..
         } => {
             assert_eq!(
                 Privileges::All {
@@ -10558,7 +10792,7 @@ fn parse_is_boolean() {
     let res = parse_sql_statements(sql);
     assert_eq!(
         ParserError::ParserError(
-            "Expected: [NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED FROM after IS, found: 0"
+            "Expected: [NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED | JSON after IS, found: 0"
                 .to_string()
         ),
         res.unwrap_err()
@@ -10568,7 +10802,7 @@ fn parse_is_boolean() {
     let res = parse_sql_statements(sql);
     assert_eq!(
         ParserError::ParserError(
-            "Expected: [NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED FROM after IS, found: XYZ"
+            "Expected: [NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED | JSON after IS, found: XYZ"
                 .to_string()
         ),
         res.unwrap_err()
@@ -10578,7 +10812,7 @@ fn parse_is_boolean() {
     let res = parse_sql_statements(sql);
     assert_eq!(
         ParserError::ParserError(
-            "Expected: [NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED FROM after IS, found: FROM"
+            "Expected: [NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED | JSON after IS, found: FROM"
                 .to_string()
         ),
         res.unwrap_err()
@@ -10588,7 +10822,7 @@ fn parse_is_boolean() {
     let res = parse_sql_statements(sql);
     assert_eq!(
         ParserError::ParserError(
-            "Expected: [NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED FROM after IS, found: TRIM"
+            "Expected: [NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED | JSON after IS, found: TRIM"
                 .to_string()
         ),
         res.unwrap_err()
@@ -17915,4 +18149,243 @@ fn test_parse_set_session_authorization() {
             }),
         }))
     );
+}
+
+#[test]
+fn parse_create_function_psm_begin_end() {
+    // SQL:2016 PSM BEGIN...END block without AS prefix
+    let dialects = TestedDialects::new(vec![
+        Box::new(PostgreSqlDialect {}),
+        Box::new(GenericDialect {}),
+    ]);
+
+    // Simple function with BEGIN...END block (no AS prefix, SQL:2016 style)
+    // Note: The Display impl normalizes to "AS BEGIN...END" for compatibility with MSSQL
+    let sql = "CREATE FUNCTION increment(i INTEGER) RETURNS INTEGER BEGIN RETURN i + 1; END";
+    let stmt = dialects.one_statement_parses_to(
+        sql,
+        "CREATE FUNCTION increment(i INTEGER) RETURNS INTEGER AS BEGIN RETURN i + 1; END",
+    );
+    match stmt {
+        Statement::CreateFunction(CreateFunction { name, function_body, .. }) => {
+            assert_eq!(name.to_string(), "increment");
+            assert!(matches!(function_body, Some(CreateFunctionBody::AsBeginEnd(_))));
+        }
+        _ => unreachable!(),
+    }
+
+    // Function with multiple statements in BEGIN...END
+    let sql = "CREATE FUNCTION calc(x INTEGER, y INTEGER) RETURNS INTEGER BEGIN SELECT x + y; RETURN x * y; END";
+    let stmt = dialects.one_statement_parses_to(
+        sql,
+        "CREATE FUNCTION calc(x INTEGER, y INTEGER) RETURNS INTEGER AS BEGIN SELECT x + y; RETURN x * y; END",
+    );
+    match stmt {
+        Statement::CreateFunction(CreateFunction { name, function_body, .. }) => {
+            assert_eq!(name.to_string(), "calc");
+            match function_body {
+                Some(CreateFunctionBody::AsBeginEnd(bes)) => {
+                    assert_eq!(bes.statements.len(), 2);
+                }
+                _ => unreachable!(),
+            }
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn parse_grant_usage_on_type_domain_collation() {
+    // SQL:2016 GRANT USAGE ON TYPE/DOMAIN/COLLATION
+
+    // GRANT USAGE ON TYPE
+    let sql = "GRANT USAGE ON TYPE address_type TO alice";
+    let stmt = verified_stmt(sql);
+    match stmt {
+        Statement::Grant { objects: Some(GrantObjects::Types(types)), .. } => {
+            assert_eq!(types.len(), 1);
+            assert_eq!(types[0].to_string(), "address_type");
+        }
+        _ => unreachable!(),
+    }
+
+    // GRANT USAGE ON DOMAIN
+    let sql = "GRANT USAGE ON DOMAIN email_address TO alice";
+    let stmt = verified_stmt(sql);
+    match stmt {
+        Statement::Grant { objects: Some(GrantObjects::Domains(domains)), .. } => {
+            assert_eq!(domains.len(), 1);
+            assert_eq!(domains[0].to_string(), "email_address");
+        }
+        _ => unreachable!(),
+    }
+
+    // GRANT USAGE ON COLLATION
+    let sql = "GRANT USAGE ON COLLATION utf8_general_ci TO alice";
+    let stmt = verified_stmt(sql);
+    match stmt {
+        Statement::Grant { objects: Some(GrantObjects::Collations(collations)), .. } => {
+            assert_eq!(collations.len(), 1);
+            assert_eq!(collations[0].to_string(), "utf8_general_ci");
+        }
+        _ => unreachable!(),
+    }
+
+    // Multiple objects
+    let sql = "GRANT USAGE ON TYPE type1, type2, type3 TO alice";
+    let stmt = verified_stmt(sql);
+    match stmt {
+        Statement::Grant { objects: Some(GrantObjects::Types(types)), .. } => {
+            assert_eq!(types.len(), 3);
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn parse_revoke_grant_option_for() {
+    // SQL:2016 REVOKE GRANT OPTION FOR
+
+    // Basic REVOKE GRANT OPTION FOR
+    let sql = "REVOKE GRANT OPTION FOR SELECT ON person FROM alice";
+    let stmt = verified_stmt(sql);
+    match stmt {
+        Statement::Revoke { grant_option_for, privileges, .. } => {
+            assert!(grant_option_for);
+            assert!(matches!(privileges, Privileges::Actions(_)));
+        }
+        _ => unreachable!(),
+    }
+
+    // REVOKE GRANT OPTION FOR with multiple privileges
+    let sql = "REVOKE GRANT OPTION FOR SELECT, INSERT ON person FROM alice";
+    let stmt = verified_stmt(sql);
+    match stmt {
+        Statement::Revoke { grant_option_for, privileges: Privileges::Actions(actions), .. } => {
+            assert!(grant_option_for);
+            assert_eq!(actions.len(), 2);
+        }
+        _ => unreachable!(),
+    }
+
+    // REVOKE GRANT OPTION FOR with CASCADE
+    let sql = "REVOKE GRANT OPTION FOR SELECT ON person FROM alice CASCADE";
+    let stmt = verified_stmt(sql);
+    match stmt {
+        Statement::Revoke { grant_option_for, cascade, .. } => {
+            assert!(grant_option_for);
+            assert!(matches!(cascade, Some(CascadeOption::Cascade)));
+        }
+        _ => unreachable!(),
+    }
+
+    // Regular REVOKE (without GRANT OPTION FOR)
+    let sql = "REVOKE SELECT ON person FROM alice";
+    let stmt = verified_stmt(sql);
+    match stmt {
+        Statement::Revoke { grant_option_for, .. } => {
+            assert!(!grant_option_for);
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn parse_grant_role() {
+    // SQL:2016 role grants
+
+    // Basic role grant
+    let sql = "GRANT admin_role TO alice";
+    let stmt = verified_stmt(sql);
+    match stmt {
+        Statement::GrantRole { roles, grantees, with_admin_option, granted_by } => {
+            assert_eq!(roles.len(), 1);
+            assert_eq!(roles[0].to_string(), "admin_role");
+            assert_eq!(grantees.len(), 1);
+            assert!(!with_admin_option);
+            assert!(granted_by.is_none());
+        }
+        _ => unreachable!(),
+    }
+
+    // Multiple roles
+    let sql = "GRANT role1, role2 TO alice, bob";
+    let stmt = verified_stmt(sql);
+    match stmt {
+        Statement::GrantRole { roles, grantees, .. } => {
+            assert_eq!(roles.len(), 2);
+            assert_eq!(grantees.len(), 2);
+        }
+        _ => unreachable!(),
+    }
+
+    // With ADMIN OPTION
+    let sql = "GRANT admin_role TO alice WITH ADMIN OPTION";
+    let stmt = verified_stmt(sql);
+    match stmt {
+        Statement::GrantRole { with_admin_option, .. } => {
+            assert!(with_admin_option);
+        }
+        _ => unreachable!(),
+    }
+
+    // With GRANTED BY
+    let sql = "GRANT admin_role TO alice GRANTED BY system_admin";
+    let stmt = verified_stmt(sql);
+    match stmt {
+        Statement::GrantRole { granted_by, .. } => {
+            assert_eq!(granted_by.unwrap().to_string(), "system_admin");
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn parse_revoke_role() {
+    // SQL:2016 role revocations
+
+    // Basic role revoke
+    let sql = "REVOKE admin_role FROM alice";
+    let stmt = verified_stmt(sql);
+    match stmt {
+        Statement::RevokeRole { roles, grantees, admin_option_for, cascade, .. } => {
+            assert_eq!(roles.len(), 1);
+            assert_eq!(roles[0].to_string(), "admin_role");
+            assert_eq!(grantees.len(), 1);
+            assert!(!admin_option_for);
+            assert!(cascade.is_none());
+        }
+        _ => unreachable!(),
+    }
+
+    // Multiple roles
+    let sql = "REVOKE role1, role2 FROM alice, bob";
+    let stmt = verified_stmt(sql);
+    match stmt {
+        Statement::RevokeRole { roles, grantees, .. } => {
+            assert_eq!(roles.len(), 2);
+            assert_eq!(grantees.len(), 2);
+        }
+        _ => unreachable!(),
+    }
+
+    // REVOKE ADMIN OPTION FOR
+    let sql = "REVOKE ADMIN OPTION FOR admin_role FROM alice";
+    let stmt = verified_stmt(sql);
+    match stmt {
+        Statement::RevokeRole { admin_option_for, .. } => {
+            assert!(admin_option_for);
+        }
+        _ => unreachable!(),
+    }
+
+    // With CASCADE
+    let sql = "REVOKE admin_role FROM alice CASCADE";
+    let stmt = verified_stmt(sql);
+    match stmt {
+        Statement::RevokeRole { cascade, .. } => {
+            assert!(matches!(cascade, Some(CascadeOption::Cascade)));
+        }
+        _ => unreachable!(),
+    }
 }

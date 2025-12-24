@@ -2275,11 +2275,35 @@ impl<'a> Parser<'a> {
         } else {
             (self.parse_window_frame_bound()?, None)
         };
+
+        // Parse optional EXCLUDE clause
+        let exclude = if self.parse_keyword(Keyword::EXCLUDE) {
+            Some(self.parse_window_frame_exclude()?)
+        } else {
+            None
+        };
+
         Ok(WindowFrame {
             units,
             start_bound,
             end_bound,
+            exclude,
         })
+    }
+
+    /// Parse the EXCLUDE clause of a window frame.
+    pub fn parse_window_frame_exclude(&self) -> Result<WindowFrameExclude, ParserError> {
+        if self.parse_keywords(&[Keyword::CURRENT, Keyword::ROW]) {
+            Ok(WindowFrameExclude::CurrentRow)
+        } else if self.parse_keyword(Keyword::GROUP) {
+            Ok(WindowFrameExclude::Group)
+        } else if self.parse_keyword(Keyword::TIES) {
+            Ok(WindowFrameExclude::Ties)
+        } else if self.parse_keywords(&[Keyword::NO, Keyword::OTHERS]) {
+            Ok(WindowFrameExclude::NoOthers)
+        } else {
+            self.expected("CURRENT ROW | GROUP | TIES | NO OTHERS after EXCLUDE", self.peek_token())
+        }
     }
 
     /// Parse `CURRENT ROW` or `{ <positive number> | UNBOUNDED } { PRECEDING | FOLLOWING }`
@@ -3654,11 +3678,15 @@ impl<'a> Parser<'a> {
                     {
                         let expr2 = self.parse_expr()?;
                         Ok(Expr::IsNotDistinctFrom(Box::new(expr), Box::new(expr2)))
+                    } else if self.parse_keyword(Keyword::JSON) {
+                        self.parse_is_json(expr, false)
+                    } else if self.parse_keywords(&[Keyword::NOT, Keyword::JSON]) {
+                        self.parse_is_json(expr, true)
                     } else if let Ok(is_normalized) = self.parse_unicode_is_normalized(expr) {
                         Ok(is_normalized)
                     } else {
                         self.expected(
-                            "[NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED FROM after IS",
+                            "[NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED | JSON after IS",
                             self.peek_token(),
                         )
                     }
@@ -5240,9 +5268,21 @@ impl<'a> Parser<'a> {
             }
             if self.parse_keyword(Keyword::AS) {
                 ensure_not_set(&body.function_body, "AS")?;
-                body.function_body = Some(CreateFunctionBody::AsBeforeOptions(
-                    self.parse_create_function_body_string()?,
-                ));
+                if self.peek_keyword(Keyword::BEGIN) {
+                    // AS BEGIN...END block
+                    let begin_token = self.expect_keyword(Keyword::BEGIN)?;
+                    let statements = self.parse_statement_list(&[Keyword::END])?;
+                    let end_token = self.expect_keyword(Keyword::END)?;
+                    body.function_body = Some(CreateFunctionBody::AsBeginEnd(BeginEndStatements {
+                        begin_token: AttachedToken(begin_token.to_static()),
+                        statements,
+                        end_token: AttachedToken(end_token.to_static()),
+                    }));
+                } else {
+                    body.function_body = Some(CreateFunctionBody::AsBeforeOptions(
+                        self.parse_create_function_body_string()?,
+                    ));
+                }
             } else if self.parse_keyword(Keyword::LANGUAGE) {
                 ensure_not_set(&body.language, "LANGUAGE")?;
                 body.language = Some(self.parse_identifier()?);
@@ -5298,6 +5338,17 @@ impl<'a> Parser<'a> {
             } else if self.parse_keyword(Keyword::RETURN) {
                 ensure_not_set(&body.function_body, "RETURN")?;
                 body.function_body = Some(CreateFunctionBody::Return(self.parse_expr()?));
+            } else if self.peek_keyword(Keyword::BEGIN) {
+                // SQL:2016 PSM BEGIN...END block (without AS prefix)
+                ensure_not_set(&body.function_body, "BEGIN...END")?;
+                let begin_token = self.expect_keyword(Keyword::BEGIN)?;
+                let statements = self.parse_statement_list(&[Keyword::END])?;
+                let end_token = self.expect_keyword(Keyword::END)?;
+                body.function_body = Some(CreateFunctionBody::AsBeginEnd(BeginEndStatements {
+                    begin_token: AttachedToken(begin_token.to_static()),
+                    statements,
+                    end_token: AttachedToken(end_token.to_static()),
+                }));
             } else {
                 break;
             }
@@ -10668,6 +10719,46 @@ impl<'a> Parser<'a> {
         self.expected("unicode normalization form", self.peek_token())
     }
 
+    /// Parse an IS JSON predicate.
+    ///
+    /// Syntax: `<expr> IS [NOT] JSON [VALUE | ARRAY | OBJECT | SCALAR] [WITH UNIQUE [KEYS] | WITHOUT UNIQUE [KEYS]]`
+    pub fn parse_is_json(&self, expr: Expr, negated: bool) -> Result<Expr, ParserError> {
+        // Parse optional JSON type (VALUE, ARRAY, OBJECT, SCALAR)
+        let json_predicate_type =
+            match self.parse_one_of_keywords(&[
+                Keyword::VALUE,
+                Keyword::ARRAY,
+                Keyword::OBJECT,
+                Keyword::SCALAR,
+            ]) {
+                Some(Keyword::VALUE) => Some(JsonPredicateType::Value),
+                Some(Keyword::ARRAY) => Some(JsonPredicateType::Array),
+                Some(Keyword::OBJECT) => Some(JsonPredicateType::Object),
+                Some(Keyword::SCALAR) => Some(JsonPredicateType::Scalar),
+                _ => None,
+            };
+
+        // Parse optional unique keys constraint
+        let unique_keys = if self.parse_keywords(&[Keyword::WITH, Keyword::UNIQUE]) {
+            // Optional KEYS keyword
+            let _ = self.parse_keyword(Keyword::KEYS);
+            Some(JsonPredicateUniqueKeyConstraint::WithUniqueKeys)
+        } else if self.parse_keywords(&[Keyword::WITHOUT, Keyword::UNIQUE]) {
+            // Optional KEYS keyword
+            let _ = self.parse_keyword(Keyword::KEYS);
+            Some(JsonPredicateUniqueKeyConstraint::WithoutUniqueKeys)
+        } else {
+            None
+        };
+
+        Ok(Expr::IsJson {
+            expr: Box::new(expr),
+            negated,
+            json_predicate_type,
+            unique_keys,
+        })
+    }
+
     pub fn parse_enum_values(&self) -> Result<Vec<EnumMember>, ParserError> {
         self.expect_token(&BorrowedToken::LParen)?;
         let values = self.parse_comma_separated(|parser| {
@@ -11117,6 +11208,20 @@ impl<'a> Parser<'a> {
                 data = DataType::Array(ArrayElemTypeDef::SquareBracket(Box::new(data), size))
             }
         }
+
+        // Parse optional ARRAY keyword suffix (SQL standard: "INTEGER ARRAY")
+        while self.parse_keyword(Keyword::ARRAY) {
+            // Optionally parse [size] after ARRAY keyword (e.g., "INTEGER ARRAY[10]")
+            let size = if self.consume_token(&BorrowedToken::LBracket) {
+                let size = self.maybe_parse(|p| p.parse_literal_uint())?;
+                self.expect_token(&BorrowedToken::RBracket)?;
+                size
+            } else {
+                None
+            };
+            data = DataType::Array(ArrayElemTypeDef::SquareBracket(Box::new(data), size))
+        }
+
         Ok((data, trailing_bracket))
     }
 
@@ -15197,6 +15302,12 @@ impl<'a> Parser<'a> {
 
     /// Parse a GRANT statement.
     pub fn parse_grant(&self) -> Result<Statement, ParserError> {
+        // Try to parse role grant first: GRANT role [, role ...] TO grantee [, grantee ...]
+        // Role grants are distinguished by having identifiers followed by TO without ON
+        if let Ok(Some(role_grant)) = self.maybe_parse(|p| p.parse_grant_role()) {
+            return Ok(role_grant);
+        }
+
         let (privileges, objects) = self.parse_grant_deny_revoke_privileges_objects()?;
 
         self.expect_keyword_is(Keyword::TO)?;
@@ -15234,6 +15345,33 @@ impl<'a> Parser<'a> {
             as_grantor,
             granted_by,
             current_grants,
+        })
+    }
+
+    /// Parse a GRANT role statement: GRANT role [, role ...] TO grantee [, grantee ...]
+    fn parse_grant_role(&self) -> Result<Statement, ParserError> {
+        // Parse role names - must be identifiers, not privilege keywords
+        let roles = self.parse_comma_separated(|p| p.parse_identifier())?;
+
+        // Must be followed by TO (not ON for privilege grants)
+        self.expect_keyword_is(Keyword::TO)?;
+
+        let grantees = self.parse_grantees()?;
+
+        let with_admin_option =
+            self.parse_keywords(&[Keyword::WITH, Keyword::ADMIN, Keyword::OPTION]);
+
+        let granted_by = if self.parse_keywords(&[Keyword::GRANTED, Keyword::BY]) {
+            Some(self.parse_identifier()?)
+        } else {
+            None
+        };
+
+        Ok(Statement::GrantRole {
+            roles,
+            grantees,
+            with_admin_option,
+            granted_by,
         })
     }
 
@@ -15461,6 +15599,9 @@ impl<'a> Parser<'a> {
                     Keyword::CONNECTION,
                     Keyword::PROCEDURE,
                     Keyword::FUNCTION,
+                    Keyword::TYPE,
+                    Keyword::DOMAIN,
+                    Keyword::COLLATION,
                 ]);
                 let objects =
                     self.parse_comma_separated(|p| p.parse_object_name_inner(false, true));
@@ -15481,6 +15622,9 @@ impl<'a> Parser<'a> {
                         }
                     }
                     Some(Keyword::TABLE) | None => Some(GrantObjects::Tables(objects?)),
+                    Some(Keyword::TYPE) => Some(GrantObjects::Types(objects?)),
+                    Some(Keyword::DOMAIN) => Some(GrantObjects::Domains(objects?)),
+                    Some(Keyword::COLLATION) => Some(GrantObjects::Collations(objects?)),
                     _ => unreachable!(),
                 }
             }
@@ -15817,6 +15961,27 @@ impl<'a> Parser<'a> {
 
     /// Parse a REVOKE statement
     pub fn parse_revoke(&self) -> Result<Statement, ParserError> {
+        // Check for ADMIN OPTION FOR (role revocation)
+        let admin_option_for =
+            self.parse_keywords(&[Keyword::ADMIN, Keyword::OPTION, Keyword::FOR]);
+
+        if admin_option_for {
+            // This is definitely a role revocation
+            return self.parse_revoke_role(true);
+        }
+
+        // Check for GRANT OPTION FOR (SQL:2016 privilege revocation)
+        let grant_option_for =
+            self.parse_keywords(&[Keyword::GRANT, Keyword::OPTION, Keyword::FOR]);
+
+        // Try to parse role revocation first: REVOKE role [, role ...] FROM grantee [, grantee ...]
+        // Role revocations are distinguished by having identifiers followed by FROM without ON
+        if !grant_option_for {
+            if let Ok(Some(role_revoke)) = self.maybe_parse(|p| p.parse_revoke_role(false)) {
+                return Ok(role_revoke);
+            }
+        }
+
         let (privileges, objects) = self.parse_grant_deny_revoke_privileges_objects()?;
 
         self.expect_keyword_is(Keyword::FROM)?;
@@ -15836,6 +16001,34 @@ impl<'a> Parser<'a> {
             grantees,
             granted_by,
             cascade,
+            grant_option_for,
+        })
+    }
+
+    /// Parse a REVOKE role statement: REVOKE role [, role ...] FROM grantee [, grantee ...]
+    fn parse_revoke_role(&self, admin_option_for: bool) -> Result<Statement, ParserError> {
+        // Parse role names - must be identifiers
+        let roles = self.parse_comma_separated(|p| p.parse_identifier())?;
+
+        // Must be followed by FROM (not ON for privilege revocations)
+        self.expect_keyword_is(Keyword::FROM)?;
+
+        let grantees = self.parse_grantees()?;
+
+        let granted_by = if self.parse_keywords(&[Keyword::GRANTED, Keyword::BY]) {
+            Some(self.parse_identifier()?)
+        } else {
+            None
+        };
+
+        let cascade = self.parse_cascade_option();
+
+        Ok(Statement::RevokeRole {
+            roles,
+            grantees,
+            granted_by,
+            cascade,
+            admin_option_for,
         })
     }
 
@@ -19099,7 +19292,7 @@ mod tests {
         assert_eq!(
             ast,
             Err(ParserError::ParserError(
-                "Expected: [NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED FROM after IS, found: a at Line: 1, Column: 16"
+                "Expected: [NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED | JSON after IS, found: a at Line: 1, Column: 16"
                     .to_string()
             ))
         );
