@@ -2446,6 +2446,128 @@ impl fmt::Display for WhileStatement {
     }
 }
 
+/// A `LOOP` statement.
+///
+/// Example:
+/// ```sql
+/// my_loop: LOOP
+///     SELECT 1;
+///     LEAVE my_loop;
+/// END LOOP my_loop
+/// ```
+///
+/// [MySQL](https://dev.mysql.com/doc/refman/8.0/en/loop.html)
+/// [SQL:2016](https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#loop-statement)
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct LoopStatement {
+    /// Optional label before the LOOP keyword
+    pub label: Option<Ident>,
+    /// The body of the loop
+    pub body: ConditionalStatements,
+    /// Optional label after END LOOP (must match start label if present)
+    pub end_label: Option<Ident>,
+}
+
+impl fmt::Display for LoopStatement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Some(label) = &self.label {
+            write!(f, "{label}: ")?;
+        }
+        write!(f, "LOOP {} END LOOP", self.body)?;
+        if let Some(end_label) = &self.end_label {
+            write!(f, " {end_label}")?;
+        }
+        Ok(())
+    }
+}
+
+/// A `REPEAT` statement (post-condition loop).
+///
+/// Example:
+/// ```sql
+/// my_repeat: REPEAT
+///     SET x = x + 1;
+/// UNTIL x > 10
+/// END REPEAT my_repeat
+/// ```
+///
+/// [MySQL](https://dev.mysql.com/doc/refman/8.0/en/repeat.html)
+/// [SQL:2016](https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#repeat-statement)
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct RepeatStatement {
+    /// Optional label before the REPEAT keyword
+    pub label: Option<Ident>,
+    /// The body of the repeat loop
+    pub body: ConditionalStatements,
+    /// The UNTIL condition (loop continues while condition is false)
+    pub until: Expr,
+    /// Optional label after END REPEAT (must match start label if present)
+    pub end_label: Option<Ident>,
+}
+
+impl fmt::Display for RepeatStatement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Some(label) = &self.label {
+            write!(f, "{label}: ")?;
+        }
+        write!(f, "REPEAT {} UNTIL {} END REPEAT", self.body, self.until)?;
+        if let Some(end_label) = &self.end_label {
+            write!(f, " {end_label}")?;
+        }
+        Ok(())
+    }
+}
+
+/// A `LEAVE` statement (exit from a labeled block or loop).
+///
+/// Example:
+/// ```sql
+/// LEAVE my_loop
+/// ```
+///
+/// [MySQL](https://dev.mysql.com/doc/refman/8.0/en/leave.html)
+/// [SQL:2016](https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#leave-statement)
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct LeaveStatement {
+    /// The label of the block/loop to exit
+    pub label: Ident,
+}
+
+impl fmt::Display for LeaveStatement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "LEAVE {}", self.label)
+    }
+}
+
+/// An `ITERATE` statement (continue to next iteration of a labeled loop).
+///
+/// Example:
+/// ```sql
+/// ITERATE my_loop
+/// ```
+///
+/// [MySQL](https://dev.mysql.com/doc/refman/8.0/en/iterate.html)
+/// [SQL:2016](https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#iterate-statement)
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct IterateStatement {
+    /// The label of the loop to continue
+    pub label: Ident,
+}
+
+impl fmt::Display for IterateStatement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "ITERATE {}", self.label)
+    }
+}
+
 /// A block within a [Statement::Case] or [Statement::If] or [Statement::While]-like statement
 ///
 /// Example 1:
@@ -3278,6 +3400,14 @@ pub enum Statement {
     If(IfStatement),
     /// A `WHILE` statement.
     While(WhileStatement),
+    /// A `LOOP` statement.
+    Loop(LoopStatement),
+    /// A `REPEAT` statement.
+    Repeat(RepeatStatement),
+    /// A `LEAVE` statement (exit loop).
+    Leave(LeaveStatement),
+    /// An `ITERATE` statement (continue loop).
+    Iterate(IterateStatement),
     /// A `RAISE` statement.
     Raise(RaiseStatement),
     /// ```sql
@@ -4619,6 +4749,18 @@ impl fmt::Display for Statement {
                 write!(f, "{stmt}")
             }
             Statement::While(stmt) => {
+                write!(f, "{stmt}")
+            }
+            Statement::Loop(stmt) => {
+                write!(f, "{stmt}")
+            }
+            Statement::Repeat(stmt) => {
+                write!(f, "{stmt}")
+            }
+            Statement::Leave(stmt) => {
+                write!(f, "{stmt}")
+            }
+            Statement::Iterate(stmt) => {
                 write!(f, "{stmt}")
             }
             Statement::Raise(stmt) => {

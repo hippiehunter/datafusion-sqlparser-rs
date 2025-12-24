@@ -564,6 +564,22 @@ impl<'a> Parser<'a> {
                     self.prev_token();
                     self.parse_while()
                 }
+                Keyword::LOOP => {
+                    self.prev_token();
+                    self.parse_loop(None)
+                }
+                Keyword::REPEAT => {
+                    self.prev_token();
+                    self.parse_repeat(None)
+                }
+                Keyword::LEAVE => {
+                    self.prev_token();
+                    self.parse_leave()
+                }
+                Keyword::ITERATE => {
+                    self.prev_token();
+                    self.parse_iterate()
+                }
                 Keyword::RAISE => {
                     self.prev_token();
                     self.parse_raise_stmt()
@@ -661,7 +677,26 @@ impl<'a> Parser<'a> {
                     self.parse_vacuum()
                 }
                 Keyword::RESET => self.parse_reset(),
-                _ => self.expected("an SQL statement", next_token),
+                _ => {
+                    // Check for labeled statement: identifier COLON (LOOP | REPEAT)
+                    if w.keyword == Keyword::NoKeyword && self.consume_token(&BorrowedToken::Colon)
+                    {
+                        let label = w.clone().into_ident(next_token.span);
+                        let next_keyword = self.peek_token();
+                        match &next_keyword.token {
+                            BorrowedToken::Word(w2) if w2.keyword == Keyword::LOOP => {
+                                return self.parse_loop(Some(label));
+                            }
+                            BorrowedToken::Word(w2) if w2.keyword == Keyword::REPEAT => {
+                                return self.parse_repeat(Some(label));
+                            }
+                            _ => {
+                                return self.expected("LOOP or REPEAT after label", next_keyword);
+                            }
+                        }
+                    }
+                    self.expected("an SQL statement", next_token)
+                }
             },
             BorrowedToken::LParen => {
                 self.prev_token();
@@ -756,6 +791,87 @@ impl<'a> Parser<'a> {
         let while_block = self.parse_conditional_statement_block(&[Keyword::END])?;
 
         Ok(Statement::While(WhileStatement { while_block }))
+    }
+
+    /// Parse a `LOOP` statement.
+    ///
+    /// See [Statement::Loop]
+    fn parse_loop(&self, label: Option<Ident>) -> Result<Statement, ParserError> {
+        self.expect_keyword_is(Keyword::LOOP)?;
+
+        let body = self.parse_conditional_statements(&[Keyword::END])?;
+
+        self.expect_keywords(&[Keyword::END, Keyword::LOOP])?;
+
+        let end_label = if self.peek_token().token != BorrowedToken::SemiColon
+            && self.peek_token().token != BorrowedToken::EOF
+            && !self.peek_keyword(Keyword::END)
+            && !self.peek_keyword(Keyword::ELSE)
+            && !self.peek_keyword(Keyword::ELSEIF)
+            && !self.peek_keyword(Keyword::WHEN)
+            && !self.peek_keyword(Keyword::UNTIL)
+        {
+            Some(self.parse_identifier()?)
+        } else {
+            None
+        };
+
+        Ok(Statement::Loop(LoopStatement {
+            label,
+            body,
+            end_label,
+        }))
+    }
+
+    /// Parse a `REPEAT` statement.
+    ///
+    /// See [Statement::Repeat]
+    fn parse_repeat(&self, label: Option<Ident>) -> Result<Statement, ParserError> {
+        self.expect_keyword_is(Keyword::REPEAT)?;
+
+        let body = self.parse_conditional_statements(&[Keyword::UNTIL])?;
+
+        self.expect_keyword_is(Keyword::UNTIL)?;
+        let until = self.parse_expr()?;
+
+        self.expect_keywords(&[Keyword::END, Keyword::REPEAT])?;
+
+        let end_label = if self.peek_token().token != BorrowedToken::SemiColon
+            && self.peek_token().token != BorrowedToken::EOF
+            && !self.peek_keyword(Keyword::END)
+            && !self.peek_keyword(Keyword::ELSE)
+            && !self.peek_keyword(Keyword::ELSEIF)
+            && !self.peek_keyword(Keyword::WHEN)
+        {
+            Some(self.parse_identifier()?)
+        } else {
+            None
+        };
+
+        Ok(Statement::Repeat(RepeatStatement {
+            label,
+            body,
+            until,
+            end_label,
+        }))
+    }
+
+    /// Parse a `LEAVE` statement.
+    ///
+    /// See [Statement::Leave]
+    fn parse_leave(&self) -> Result<Statement, ParserError> {
+        self.expect_keyword_is(Keyword::LEAVE)?;
+        let label = self.parse_identifier()?;
+        Ok(Statement::Leave(LeaveStatement { label }))
+    }
+
+    /// Parse an `ITERATE` statement.
+    ///
+    /// See [Statement::Iterate]
+    fn parse_iterate(&self) -> Result<Statement, ParserError> {
+        self.expect_keyword_is(Keyword::ITERATE)?;
+        let label = self.parse_identifier()?;
+        Ok(Statement::Iterate(IterateStatement { label }))
     }
 
     /// Parses an expression and associated list of statements
@@ -2302,7 +2418,10 @@ impl<'a> Parser<'a> {
         } else if self.parse_keywords(&[Keyword::NO, Keyword::OTHERS]) {
             Ok(WindowFrameExclude::NoOthers)
         } else {
-            self.expected("CURRENT ROW | GROUP | TIES | NO OTHERS after EXCLUDE", self.peek_token())
+            self.expected(
+                "CURRENT ROW | GROUP | TIES | NO OTHERS after EXCLUDE",
+                self.peek_token(),
+            )
         }
     }
 
@@ -10724,19 +10843,18 @@ impl<'a> Parser<'a> {
     /// Syntax: `<expr> IS [NOT] JSON [VALUE | ARRAY | OBJECT | SCALAR] [WITH UNIQUE [KEYS] | WITHOUT UNIQUE [KEYS]]`
     pub fn parse_is_json(&self, expr: Expr, negated: bool) -> Result<Expr, ParserError> {
         // Parse optional JSON type (VALUE, ARRAY, OBJECT, SCALAR)
-        let json_predicate_type =
-            match self.parse_one_of_keywords(&[
-                Keyword::VALUE,
-                Keyword::ARRAY,
-                Keyword::OBJECT,
-                Keyword::SCALAR,
-            ]) {
-                Some(Keyword::VALUE) => Some(JsonPredicateType::Value),
-                Some(Keyword::ARRAY) => Some(JsonPredicateType::Array),
-                Some(Keyword::OBJECT) => Some(JsonPredicateType::Object),
-                Some(Keyword::SCALAR) => Some(JsonPredicateType::Scalar),
-                _ => None,
-            };
+        let json_predicate_type = match self.parse_one_of_keywords(&[
+            Keyword::VALUE,
+            Keyword::ARRAY,
+            Keyword::OBJECT,
+            Keyword::SCALAR,
+        ]) {
+            Some(Keyword::VALUE) => Some(JsonPredicateType::Value),
+            Some(Keyword::ARRAY) => Some(JsonPredicateType::Array),
+            Some(Keyword::OBJECT) => Some(JsonPredicateType::Object),
+            Some(Keyword::SCALAR) => Some(JsonPredicateType::Scalar),
+            _ => None,
+        };
 
         // Parse optional unique keys constraint
         let unique_keys = if self.parse_keywords(&[Keyword::WITH, Keyword::UNIQUE]) {

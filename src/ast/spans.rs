@@ -33,14 +33,15 @@ use super::{
     CreateTableOptions, Cte, Delete, DoUpdate, ExceptSelectItem, ExcludeSelectItem, Expr,
     ExprWithAlias, Fetch, FromTable, Function, FunctionArg, FunctionArgExpr,
     FunctionArgumentClause, FunctionArgumentList, FunctionArguments, GroupByExpr, HavingBound,
-    IfStatement, IlikeSelectItem, IndexColumn, Insert, Interpolate, InterpolateExpr, Join,
-    JoinConstraint, JoinOperator, JsonPath, JsonPathElem, LateralView, LimitClause,
-    MatchRecognizePattern, Measure, NamedParenthesizedList, NamedWindowDefinition, ObjectName,
-    ObjectNamePart, Offset, OnConflict, OnConflictAction, OnInsert, OpenStatement, OrderBy,
-    OrderByExpr, OrderByKind, Partition, PivotValueSource, ProjectionSelect, Query, RaiseStatement,
-    RaiseStatementValue, ReferentialAction, RenameSelectItem, ReplaceSelectElement,
-    ReplaceSelectItem, Select, SelectInto, SelectItem, SetExpr, SqlOption, Statement, Subscript,
-    SymbolDefinition, TableAlias, TableAliasColumnDef, TableConstraint, TableFactor, TableObject,
+    IfStatement, IlikeSelectItem, IndexColumn, Insert, Interpolate, InterpolateExpr,
+    IterateStatement, Join, JoinConstraint, JoinOperator, JsonPath, JsonPathElem, LateralView,
+    LeaveStatement, LimitClause, LoopStatement, MatchRecognizePattern, Measure,
+    NamedParenthesizedList, NamedWindowDefinition, ObjectName, ObjectNamePart, Offset, OnConflict,
+    OnConflictAction, OnInsert, OpenStatement, OrderBy, OrderByExpr, OrderByKind, Partition,
+    PivotValueSource, ProjectionSelect, Query, RaiseStatement, RaiseStatementValue,
+    ReferentialAction, RenameSelectItem, RepeatStatement, ReplaceSelectElement, ReplaceSelectItem,
+    Select, SelectInto, SelectItem, SetExpr, SqlOption, Statement, Subscript, SymbolDefinition,
+    TableAlias, TableAliasColumnDef, TableConstraint, TableFactor, TableObject,
     TableOptionsClustered, TableWithJoins, Update, UpdateTableFromKind, Use, Value, Values,
     ViewColumnDef, WhileStatement, WildcardAdditionalOptions, With, WithFill,
 };
@@ -317,6 +318,10 @@ impl Spanned for Statement {
             Statement::Case(stmt) => stmt.span(),
             Statement::If(stmt) => stmt.span(),
             Statement::While(stmt) => stmt.span(),
+            Statement::Loop(stmt) => stmt.span(),
+            Statement::Repeat(stmt) => stmt.span(),
+            Statement::Leave(stmt) => stmt.span(),
+            Statement::Iterate(stmt) => stmt.span(),
             Statement::Raise(stmt) => stmt.span(),
             Statement::Call(function) => function.span(),
             Statement::Copy {
@@ -683,6 +688,43 @@ impl Spanned for WhileStatement {
         let WhileStatement { while_block } = self;
 
         while_block.span()
+    }
+}
+
+impl Spanned for LoopStatement {
+    fn span(&self) -> Span {
+        let LoopStatement {
+            label: _,
+            body,
+            end_label: _,
+        } = self;
+        body.span()
+    }
+}
+
+impl Spanned for RepeatStatement {
+    fn span(&self) -> Span {
+        let RepeatStatement {
+            label: _,
+            body,
+            until,
+            end_label: _,
+        } = self;
+        union_spans([body.span(), until.span()].into_iter())
+    }
+}
+
+impl Spanned for LeaveStatement {
+    fn span(&self) -> Span {
+        let LeaveStatement { label } = self;
+        label.span
+    }
+}
+
+impl Spanned for IterateStatement {
+    fn span(&self) -> Span {
+        let IterateStatement { label } = self;
+        label.span
     }
 }
 

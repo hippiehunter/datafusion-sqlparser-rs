@@ -18167,9 +18167,16 @@ fn parse_create_function_psm_begin_end() {
         "CREATE FUNCTION increment(i INTEGER) RETURNS INTEGER AS BEGIN RETURN i + 1; END",
     );
     match stmt {
-        Statement::CreateFunction(CreateFunction { name, function_body, .. }) => {
+        Statement::CreateFunction(CreateFunction {
+            name,
+            function_body,
+            ..
+        }) => {
             assert_eq!(name.to_string(), "increment");
-            assert!(matches!(function_body, Some(CreateFunctionBody::AsBeginEnd(_))));
+            assert!(matches!(
+                function_body,
+                Some(CreateFunctionBody::AsBeginEnd(_))
+            ));
         }
         _ => unreachable!(),
     }
@@ -18181,7 +18188,11 @@ fn parse_create_function_psm_begin_end() {
         "CREATE FUNCTION calc(x INTEGER, y INTEGER) RETURNS INTEGER AS BEGIN SELECT x + y; RETURN x * y; END",
     );
     match stmt {
-        Statement::CreateFunction(CreateFunction { name, function_body, .. }) => {
+        Statement::CreateFunction(CreateFunction {
+            name,
+            function_body,
+            ..
+        }) => {
             assert_eq!(name.to_string(), "calc");
             match function_body {
                 Some(CreateFunctionBody::AsBeginEnd(bes)) => {
@@ -18202,7 +18213,10 @@ fn parse_grant_usage_on_type_domain_collation() {
     let sql = "GRANT USAGE ON TYPE address_type TO alice";
     let stmt = verified_stmt(sql);
     match stmt {
-        Statement::Grant { objects: Some(GrantObjects::Types(types)), .. } => {
+        Statement::Grant {
+            objects: Some(GrantObjects::Types(types)),
+            ..
+        } => {
             assert_eq!(types.len(), 1);
             assert_eq!(types[0].to_string(), "address_type");
         }
@@ -18213,7 +18227,10 @@ fn parse_grant_usage_on_type_domain_collation() {
     let sql = "GRANT USAGE ON DOMAIN email_address TO alice";
     let stmt = verified_stmt(sql);
     match stmt {
-        Statement::Grant { objects: Some(GrantObjects::Domains(domains)), .. } => {
+        Statement::Grant {
+            objects: Some(GrantObjects::Domains(domains)),
+            ..
+        } => {
             assert_eq!(domains.len(), 1);
             assert_eq!(domains[0].to_string(), "email_address");
         }
@@ -18224,7 +18241,10 @@ fn parse_grant_usage_on_type_domain_collation() {
     let sql = "GRANT USAGE ON COLLATION utf8_general_ci TO alice";
     let stmt = verified_stmt(sql);
     match stmt {
-        Statement::Grant { objects: Some(GrantObjects::Collations(collations)), .. } => {
+        Statement::Grant {
+            objects: Some(GrantObjects::Collations(collations)),
+            ..
+        } => {
             assert_eq!(collations.len(), 1);
             assert_eq!(collations[0].to_string(), "utf8_general_ci");
         }
@@ -18235,7 +18255,10 @@ fn parse_grant_usage_on_type_domain_collation() {
     let sql = "GRANT USAGE ON TYPE type1, type2, type3 TO alice";
     let stmt = verified_stmt(sql);
     match stmt {
-        Statement::Grant { objects: Some(GrantObjects::Types(types)), .. } => {
+        Statement::Grant {
+            objects: Some(GrantObjects::Types(types)),
+            ..
+        } => {
             assert_eq!(types.len(), 3);
         }
         _ => unreachable!(),
@@ -18250,7 +18273,11 @@ fn parse_revoke_grant_option_for() {
     let sql = "REVOKE GRANT OPTION FOR SELECT ON person FROM alice";
     let stmt = verified_stmt(sql);
     match stmt {
-        Statement::Revoke { grant_option_for, privileges, .. } => {
+        Statement::Revoke {
+            grant_option_for,
+            privileges,
+            ..
+        } => {
             assert!(grant_option_for);
             assert!(matches!(privileges, Privileges::Actions(_)));
         }
@@ -18261,7 +18288,11 @@ fn parse_revoke_grant_option_for() {
     let sql = "REVOKE GRANT OPTION FOR SELECT, INSERT ON person FROM alice";
     let stmt = verified_stmt(sql);
     match stmt {
-        Statement::Revoke { grant_option_for, privileges: Privileges::Actions(actions), .. } => {
+        Statement::Revoke {
+            grant_option_for,
+            privileges: Privileges::Actions(actions),
+            ..
+        } => {
             assert!(grant_option_for);
             assert_eq!(actions.len(), 2);
         }
@@ -18272,7 +18303,11 @@ fn parse_revoke_grant_option_for() {
     let sql = "REVOKE GRANT OPTION FOR SELECT ON person FROM alice CASCADE";
     let stmt = verified_stmt(sql);
     match stmt {
-        Statement::Revoke { grant_option_for, cascade, .. } => {
+        Statement::Revoke {
+            grant_option_for,
+            cascade,
+            ..
+        } => {
             assert!(grant_option_for);
             assert!(matches!(cascade, Some(CascadeOption::Cascade)));
         }
@@ -18283,7 +18318,9 @@ fn parse_revoke_grant_option_for() {
     let sql = "REVOKE SELECT ON person FROM alice";
     let stmt = verified_stmt(sql);
     match stmt {
-        Statement::Revoke { grant_option_for, .. } => {
+        Statement::Revoke {
+            grant_option_for, ..
+        } => {
             assert!(!grant_option_for);
         }
         _ => unreachable!(),
@@ -18298,7 +18335,12 @@ fn parse_grant_role() {
     let sql = "GRANT admin_role TO alice";
     let stmt = verified_stmt(sql);
     match stmt {
-        Statement::GrantRole { roles, grantees, with_admin_option, granted_by } => {
+        Statement::GrantRole {
+            roles,
+            grantees,
+            with_admin_option,
+            granted_by,
+        } => {
             assert_eq!(roles.len(), 1);
             assert_eq!(roles[0].to_string(), "admin_role");
             assert_eq!(grantees.len(), 1);
@@ -18312,7 +18354,9 @@ fn parse_grant_role() {
     let sql = "GRANT role1, role2 TO alice, bob";
     let stmt = verified_stmt(sql);
     match stmt {
-        Statement::GrantRole { roles, grantees, .. } => {
+        Statement::GrantRole {
+            roles, grantees, ..
+        } => {
             assert_eq!(roles.len(), 2);
             assert_eq!(grantees.len(), 2);
         }
@@ -18323,7 +18367,9 @@ fn parse_grant_role() {
     let sql = "GRANT admin_role TO alice WITH ADMIN OPTION";
     let stmt = verified_stmt(sql);
     match stmt {
-        Statement::GrantRole { with_admin_option, .. } => {
+        Statement::GrantRole {
+            with_admin_option, ..
+        } => {
             assert!(with_admin_option);
         }
         _ => unreachable!(),
@@ -18348,7 +18394,13 @@ fn parse_revoke_role() {
     let sql = "REVOKE admin_role FROM alice";
     let stmt = verified_stmt(sql);
     match stmt {
-        Statement::RevokeRole { roles, grantees, admin_option_for, cascade, .. } => {
+        Statement::RevokeRole {
+            roles,
+            grantees,
+            admin_option_for,
+            cascade,
+            ..
+        } => {
             assert_eq!(roles.len(), 1);
             assert_eq!(roles[0].to_string(), "admin_role");
             assert_eq!(grantees.len(), 1);
@@ -18362,7 +18414,9 @@ fn parse_revoke_role() {
     let sql = "REVOKE role1, role2 FROM alice, bob";
     let stmt = verified_stmt(sql);
     match stmt {
-        Statement::RevokeRole { roles, grantees, .. } => {
+        Statement::RevokeRole {
+            roles, grantees, ..
+        } => {
             assert_eq!(roles.len(), 2);
             assert_eq!(grantees.len(), 2);
         }
@@ -18373,7 +18427,9 @@ fn parse_revoke_role() {
     let sql = "REVOKE ADMIN OPTION FOR admin_role FROM alice";
     let stmt = verified_stmt(sql);
     match stmt {
-        Statement::RevokeRole { admin_option_for, .. } => {
+        Statement::RevokeRole {
+            admin_option_for, ..
+        } => {
             assert!(admin_option_for);
         }
         _ => unreachable!(),
@@ -18386,6 +18442,170 @@ fn parse_revoke_role() {
         Statement::RevokeRole { cascade, .. } => {
             assert!(matches!(cascade, Some(CascadeOption::Cascade)));
         }
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn parse_loop_statement() {
+    // Simple LOOP
+    let sql = "LOOP SELECT 1; END LOOP";
+    let stmt = verified_stmt(sql);
+    match stmt {
+        Statement::Loop(LoopStatement {
+            label,
+            body: _,
+            end_label,
+        }) => {
+            assert!(label.is_none());
+            assert!(end_label.is_none());
+        }
+        _ => unreachable!(),
+    }
+
+    // LOOP with multiple statements
+    let sql = "LOOP SELECT 1; SELECT 2; END LOOP";
+    let stmt = verified_stmt(sql);
+    match stmt {
+        Statement::Loop(LoopStatement { body, .. }) => {
+            assert_eq!(body.statements().len(), 2);
+        }
+        _ => unreachable!(),
+    }
+
+    // Labeled LOOP
+    let sql = "my_loop: LOOP SELECT 1; END LOOP my_loop";
+    let stmt = verified_stmt(sql);
+    match stmt {
+        Statement::Loop(LoopStatement {
+            label,
+            body: _,
+            end_label,
+        }) => {
+            assert_eq!(label.unwrap().to_string(), "my_loop");
+            assert_eq!(end_label.unwrap().to_string(), "my_loop");
+        }
+        _ => unreachable!(),
+    }
+
+    // Labeled LOOP with only start label
+    let sql = "my_loop: LOOP SELECT 1; END LOOP";
+    let stmt = verified_stmt(sql);
+    match stmt {
+        Statement::Loop(LoopStatement {
+            label, end_label, ..
+        }) => {
+            assert_eq!(label.unwrap().to_string(), "my_loop");
+            assert!(end_label.is_none());
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn parse_repeat_statement() {
+    // Simple REPEAT
+    let sql = "REPEAT SELECT 1; UNTIL x > 10 END REPEAT";
+    let stmt = verified_stmt(sql);
+    match stmt {
+        Statement::Repeat(RepeatStatement {
+            label,
+            body: _,
+            until,
+            end_label,
+        }) => {
+            assert!(label.is_none());
+            assert!(end_label.is_none());
+            // Check that until condition was parsed
+            assert!(matches!(until, Expr::BinaryOp { .. }));
+        }
+        _ => unreachable!(),
+    }
+
+    // Labeled REPEAT
+    let sql = "my_repeat: REPEAT SELECT 1; UNTIL done END REPEAT my_repeat";
+    let stmt = verified_stmt(sql);
+    match stmt {
+        Statement::Repeat(RepeatStatement {
+            label,
+            end_label,
+            until,
+            ..
+        }) => {
+            assert_eq!(label.unwrap().to_string(), "my_repeat");
+            assert_eq!(end_label.unwrap().to_string(), "my_repeat");
+            // The until condition is just an identifier
+            assert!(matches!(until, Expr::Identifier(_)));
+        }
+        _ => unreachable!(),
+    }
+
+    // REPEAT with multiple statements
+    let sql = "REPEAT SELECT 1; SELECT 2; UNTIL x = 0 END REPEAT";
+    let stmt = verified_stmt(sql);
+    match stmt {
+        Statement::Repeat(RepeatStatement { body, .. }) => {
+            assert_eq!(body.statements().len(), 2);
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn parse_leave_statement() {
+    let sql = "LEAVE my_loop";
+    let stmt = verified_stmt(sql);
+    match stmt {
+        Statement::Leave(LeaveStatement { label }) => {
+            assert_eq!(label.to_string(), "my_loop");
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn parse_iterate_statement() {
+    let sql = "ITERATE my_loop";
+    let stmt = verified_stmt(sql);
+    match stmt {
+        Statement::Iterate(IterateStatement { label }) => {
+            assert_eq!(label.to_string(), "my_loop");
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn parse_nested_loop_statements() {
+    // Nested LOOP with LEAVE and ITERATE
+    let sql = "outer_loop: LOOP SELECT 1; inner_loop: LOOP LEAVE inner_loop; END LOOP inner_loop; ITERATE outer_loop; END LOOP outer_loop";
+
+    let stmt = verified_stmt(sql);
+    match stmt {
+        Statement::Loop(LoopStatement {
+            label,
+            body,
+            end_label,
+        }) => {
+            assert_eq!(label.unwrap().to_string(), "outer_loop");
+            assert_eq!(end_label.unwrap().to_string(), "outer_loop");
+            // The outer loop body should have 3 statements: SELECT, inner LOOP, ITERATE
+            assert_eq!(body.statements().len(), 3);
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn parse_loop_with_begin_end() {
+    // LOOP with BEGIN...END block
+    let sql = "LOOP BEGIN SELECT 1; SELECT 2; END END LOOP";
+    let stmt = verified_stmt(sql);
+    match stmt {
+        Statement::Loop(LoopStatement { body, .. }) => match body {
+            ConditionalStatements::BeginEnd(_) => {}
+            _ => panic!("Expected BeginEnd block"),
+        },
         _ => unreachable!(),
     }
 }
