@@ -373,6 +373,7 @@ pub fn table_alias(name: impl Into<String>) -> Option<TableAlias> {
     Some(TableAlias {
         name: Ident::new(name),
         columns: vec![],
+        implicit: false,
     })
 }
 
@@ -412,6 +413,7 @@ pub fn table_with_alias(name: impl Into<String>, alias: impl Into<String>) -> Ta
         alias: Some(TableAlias {
             name: Ident::new(alias),
             columns: vec![],
+            implicit: false,
         }),
         args: None,
         with_hints: vec![],

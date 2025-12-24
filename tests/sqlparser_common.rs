@@ -514,6 +514,7 @@ fn parse_update_set_from() {
                     alias: Some(TableAlias {
                         name: Ident::new("t2"),
                         columns: vec![],
+                                    implicit: false,
                     })
                 },
                 joins: vec![]
@@ -560,6 +561,7 @@ fn parse_update_with_table_alias() {
                         alias: Some(TableAlias {
                             name: Ident::new("u"),
                             columns: vec![],
+                                    implicit: false,
                         }),
                         args: None,
                         with_hints: vec![],
@@ -626,10 +628,10 @@ fn parse_update_or() {
 
 #[test]
 fn parse_select_with_table_alias_as() {
-    // AS is optional
+    // AS is optional - implicit form (no AS) is preserved in round-trip
     one_statement_parses_to(
         "SELECT a, b, c FROM lineitem l (A, B, C)",
-        "SELECT a, b, c FROM lineitem AS l (A, B, C)",
+        "SELECT a, b, c FROM lineitem l (A, B, C)",
     );
 }
 
@@ -656,6 +658,7 @@ fn parse_select_with_table_alias() {
                         TableAliasColumnDef::from_name("B"),
                         TableAliasColumnDef::from_name("C"),
                     ],
+                    implicit: false,
                 }),
                 args: None,
                 with_hints: vec![],
@@ -853,6 +856,7 @@ fn parse_where_delete_with_alias_statement() {
                     alias: Some(TableAlias {
                         name: Ident::new("a"),
                         columns: vec![],
+                                    implicit: false,
                     }),
                     args: None,
                     with_hints: vec![],
@@ -872,6 +876,7 @@ fn parse_where_delete_with_alias_statement() {
                         alias: Some(TableAlias {
                             name: Ident::new("b"),
                             columns: vec![],
+                                    implicit: false,
                         }),
                         args: None,
                         with_hints: vec![],
@@ -7150,6 +7155,7 @@ fn parse_unnest_in_from_clause() {
                 alias: Some(TableAlias {
                     name: Ident::new("numbers"),
                     columns: vec![],
+                                    implicit: false,
                 }),
                 array_exprs: vec![Expr::Identifier(Ident::new("expr"))],
                 with_offset: true,
@@ -7207,6 +7213,7 @@ fn parse_unnest_in_from_clause() {
                 alias: Some(TableAlias {
                     name: Ident::new("numbers"),
                     columns: vec![],
+                                    implicit: false,
                 }),
                 array_exprs: vec![Expr::Identifier(Ident::new("expr"))],
                 with_offset: false,
@@ -7504,7 +7511,7 @@ fn parse_joins_on() {
     );
     one_statement_parses_to(
         "SELECT * FROM t1 JOIN t2 foo ON c1 = c2",
-        "SELECT * FROM t1 JOIN t2 AS foo ON c1 = c2",
+        "SELECT * FROM t1 JOIN t2 foo ON c1 = c2",
     );
     // Test parsing of different join operators
     assert_eq!(
@@ -7641,9 +7648,10 @@ fn parse_joins_using() {
             JoinOperator::Join,
         )]
     );
+    // Implicit alias form (no AS) is preserved in round-trip
     one_statement_parses_to(
         "SELECT * FROM t1 JOIN t2 foo USING(c1)",
-        "SELECT * FROM t1 JOIN t2 AS foo USING(c1)",
+        "SELECT * FROM t1 JOIN t2 foo USING(c1)",
     );
     // Test parsing of different join operators
     assert_eq!(
@@ -7948,6 +7956,7 @@ fn parse_recursive_cte() {
                 span: Span::empty(),
             },
             columns: vec![TableAliasColumnDef::from_name("val")],
+            implicit: false,
         },
         query: Box::new(cte_query),
         from: None,
@@ -8017,6 +8026,7 @@ fn parse_derived_tables() {
                     alias: Some(TableAlias {
                         name: "t1".into(),
                         columns: vec![],
+                                    implicit: false,
                     }),
                 },
                 joins: vec![Join {
@@ -10047,6 +10057,7 @@ fn parse_merge() {
                     alias: Some(TableAlias {
                         name: Ident::new("dest"),
                         columns: vec![],
+                                    implicit: false,
                     }),
                     args: None,
                     with_hints: vec![],
@@ -10114,6 +10125,7 @@ fn parse_merge() {
                             span: Span::empty(),
                         },
                         columns: vec![],
+                                    implicit: false,
                     }),
                 }
             );
@@ -11304,7 +11316,8 @@ fn parse_pivot_table() {
                 name: ObjectName::from(vec![Ident::new("monthly_sales")]),
                 alias: Some(TableAlias {
                     name: Ident::new("a"),
-                    columns: vec![]
+                    columns: vec![],
+                                    implicit: false,
                 }),
                 args: None,
                 with_hints: vec![],
@@ -11351,6 +11364,7 @@ fn parse_pivot_table() {
                     TableAliasColumnDef::from_name("c"),
                     TableAliasColumnDef::from_name("d"),
                 ],
+                implicit: false,
             }),
         }
     );
@@ -11453,6 +11467,7 @@ fn parse_unpivot_table() {
             alias: Some(TableAlias {
                 name: Ident::new("s"),
                 columns: vec![],
+                                    implicit: false,
             }),
             args: None,
             with_hints: vec![],
@@ -11479,6 +11494,7 @@ fn parse_unpivot_table() {
                 .into_iter()
                 .map(TableAliasColumnDef::from_name)
                 .collect(),
+            implicit: false,
         }),
     };
     pretty_assertions::assert_eq!(verified_only_select(sql).from[0].relation, base_unpivot);
@@ -11696,10 +11712,11 @@ fn parse_select_table_with_index_hints() {
     );
 
     // Test that dialects that don't support table hints will keep parsing the USE as table alias
+    // Input has implicit alias (no AS) which is preserved in round-trip
     let sql = "SELECT * FROM T USE LIMIT 1";
     let unsupported_dialects = all_dialects_where(|d| !d.supports_table_hints());
     let select = unsupported_dialects
-        .verified_only_select_with_canonical(sql, "SELECT * FROM T AS USE LIMIT 1");
+        .verified_only_select_with_canonical(sql, "SELECT * FROM T USE LIMIT 1");
     assert_eq!(
         select.from,
         vec![TableWithJoins {
@@ -11710,6 +11727,7 @@ fn parse_select_table_with_index_hints() {
                 alias: Some(TableAlias {
                     name: Ident::new("USE"),
                     columns: vec![],
+                    implicit: true,
                 }),
                 args: None,
                 with_hints: vec![],
@@ -11741,7 +11759,8 @@ fn parse_pivot_unpivot_table() {
                     name: ObjectName::from(vec![Ident::new("census")]),
                     alias: Some(TableAlias {
                         name: Ident::new("c"),
-                        columns: vec![]
+                        columns: vec![],
+                                    implicit: false,
                     }),
                     args: None,
                     with_hints: vec![],
@@ -11764,7 +11783,8 @@ fn parse_pivot_unpivot_table() {
                     .collect(),
                 alias: Some(TableAlias {
                     name: Ident::new("u"),
-                    columns: vec![]
+                    columns: vec![],
+                                    implicit: false,
                 }),
             }),
             aggregate_functions: vec![ExprWithAlias {
@@ -11791,7 +11811,8 @@ fn parse_pivot_unpivot_table() {
             default_on_null: None,
             alias: Some(TableAlias {
                 name: Ident::new("p"),
-                columns: vec![]
+                columns: vec![],
+                                    implicit: false,
             }),
         }
     );
@@ -16574,7 +16595,7 @@ fn parse_pipeline_operator() {
     // join pipe operator with alias
     dialects.verified_query_with_canonical(
         "SELECT * FROM users |> JOIN orders o ON users.id = o.user_id",
-        "SELECT * FROM users |> JOIN orders AS o ON users.id = o.user_id",
+        "SELECT * FROM users |> JOIN orders o ON users.id = o.user_id",
     );
     dialects.verified_stmt("SELECT * FROM users |> LEFT JOIN orders AS o ON users.id = o.user_id");
 

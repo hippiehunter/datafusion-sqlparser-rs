@@ -1902,7 +1902,11 @@ impl fmt::Display for TableFactor {
                     write!(f, " {sample}")?;
                 }
                 if let Some(alias) = alias {
-                    write!(f, " AS {alias}")?;
+                    if alias.implicit {
+                        write!(f, " {alias}")?;
+                    } else {
+                        write!(f, " AS {alias}")?;
+                    }
                 }
                 if !index_hints.is_empty() {
                     write!(f, " {}", display_separated(index_hints, " "))?;
@@ -1932,7 +1936,11 @@ impl fmt::Display for TableFactor {
                 NewLine.fmt(f)?;
                 f.write_str(")")?;
                 if let Some(alias) = alias {
-                    write!(f, " AS {alias}")?;
+                    if alias.implicit {
+                        write!(f, " {alias}")?;
+                    } else {
+                        write!(f, " AS {alias}")?;
+                    }
                 }
                 Ok(())
             }
@@ -2177,12 +2185,39 @@ impl fmt::Display for TableFactor {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[derive(Debug, Clone, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct TableAlias {
     pub name: Ident,
     pub columns: Vec<TableAliasColumnDef>,
+    /// Whether the alias was specified without the `AS` keyword (implicit alias).
+    /// When true, display will omit `AS` for round-trip compatibility.
+    /// Note: This field is excluded from PartialEq to allow `table t` and `table AS t`
+    /// to compare as equal for AST comparison purposes.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub implicit: bool,
+}
+
+impl PartialEq for TableAlias {
+    fn eq(&self, other: &Self) -> bool {
+        // Note: `implicit` is intentionally excluded from equality comparison
+        // so that `table t` and `table AS t` compare as equal
+        self.name == other.name && self.columns == other.columns
+    }
+}
+
+impl Eq for TableAlias {}
+
+impl TableAlias {
+    /// Create a new table alias with explicit AS (implicit=false)
+    pub fn new(name: Ident, columns: Vec<TableAliasColumnDef>) -> Self {
+        TableAlias {
+            name,
+            columns,
+            implicit: false,
+        }
+    }
 }
 
 impl fmt::Display for TableAlias {

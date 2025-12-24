@@ -1841,6 +1841,7 @@ fn parse_merge() {
                     alias: Some(TableAlias {
                         name: Ident::new("T"),
                         columns: vec![],
+                            implicit: true,
                     }),
                     args: Default::default(),
                     with_hints: Default::default(),
@@ -1859,6 +1860,7 @@ fn parse_merge() {
                     alias: Some(TableAlias {
                         name: Ident::new("S"),
                         columns: vec![],
+                            implicit: true,
                     }),
                     args: Default::default(),
                     with_hints: Default::default(),
@@ -1925,6 +1927,7 @@ fn parse_merge() {
                         predicate: Some(Expr::value(number("1"))),
                         action: MergeAction::Insert(MergeInsertExpr {
                             columns: vec![],
+                            implicit: true,
                             kind: MergeInsertKind::Row
                         })
                     },
@@ -1933,6 +1936,7 @@ fn parse_merge() {
                         predicate: None,
                         action: MergeAction::Insert(MergeInsertExpr {
                             columns: vec![],
+                            implicit: true,
                             kind: MergeInsertKind::Row
                         })
                     },
@@ -1966,6 +1970,7 @@ fn parse_merge() {
                         predicate: None,
                         action: MergeAction::Insert(MergeInsertExpr {
                             columns: vec![],
+                            implicit: true,
                             kind: MergeInsertKind::Values(Values {
                                 value_keyword: false,
                                 explicit_row: false,

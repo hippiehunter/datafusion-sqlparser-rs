@@ -1364,7 +1364,9 @@ impl<'a> Parser<'a> {
         fn validator(explicit: bool, kw: &Keyword, _parser: &Parser) -> bool {
             explicit || !&[Keyword::ASC, Keyword::DESC, Keyword::GROUP].contains(kw)
         }
-        let alias = self.parse_optional_alias_inner(None, validator)?;
+        let alias = self
+            .parse_optional_alias_inner(None, validator)?
+            .map(|(ident, _)| ident);
         let order_by = OrderByOptions {
             asc: self.parse_asc_desc(),
             nulls_first: None,
@@ -11428,7 +11430,9 @@ impl<'a> Parser<'a> {
         fn validator(explicit: bool, kw: &Keyword, parser: &Parser) -> bool {
             parser.dialect.is_select_item_alias(explicit, kw, parser)
         }
-        self.parse_optional_alias_inner(None, validator)
+        Ok(self
+            .parse_optional_alias_inner(None, validator)?
+            .map(|(ident, _)| ident))
     }
 
     /// Optionally parses an alias for a table like in `... FROM generate_series(1, 10) AS t (col)`.
@@ -11439,9 +11443,13 @@ impl<'a> Parser<'a> {
             parser.dialect.is_table_factor_alias(explicit, kw, parser)
         }
         match self.parse_optional_alias_inner(None, validator)? {
-            Some(name) => {
+            Some((name, explicit_as)) => {
                 let columns = self.parse_table_alias_column_defs()?;
-                Ok(Some(TableAlias { name, columns }))
+                Ok(Some(TableAlias {
+                    name,
+                    columns,
+                    implicit: !explicit_as,
+                }))
             }
             None => Ok(None),
         }
@@ -11515,7 +11523,9 @@ impl<'a> Parser<'a> {
         fn validator(_explicit: bool, _kw: &Keyword, _parser: &Parser) -> bool {
             false
         }
-        self.parse_optional_alias_inner(Some(reserved_kwds), validator)
+        Ok(self
+            .parse_optional_alias_inner(Some(reserved_kwds), validator)?
+            .map(|(ident, _)| ident))
     }
 
     /// Parses an optional alias after a SQL element such as a select list item
@@ -11524,11 +11534,13 @@ impl<'a> Parser<'a> {
     /// This method accepts an optional list of reserved keywords or a function
     /// to call to validate if a keyword should be parsed as an alias, to allow
     /// callers to customize the parsing logic based on their context.
+    /// Returns a tuple of (ident, explicit_as) where explicit_as is true if the AS keyword
+    /// was present before the alias.
     fn parse_optional_alias_inner<F>(
         &self,
         reserved_kwds: Option<&[Keyword]>,
         validator: F,
-    ) -> Result<Option<Ident>, ParserError>
+    ) -> Result<Option<(Ident, bool)>, ParserError>
     where
         F: Fn(bool, &Keyword, &Parser) -> bool,
     {
@@ -11541,17 +11553,21 @@ impl<'a> Parser<'a> {
             BorrowedToken::Word(w)
                 if after_as || reserved_kwds.is_some_and(|x| !x.contains(&w.keyword)) =>
             {
-                Ok(Some(w.into_ident(next_token.span)))
+                Ok(Some((w.into_ident(next_token.span), after_as)))
             }
             // This pattern allows for customizing the acceptance of words as aliases based on the caller's
             // context, such as to what SQL element this word is a potential alias of (select item alias, table name
             // alias, etc.) or dialect-specific logic that goes beyond a simple list of reserved keywords.
             BorrowedToken::Word(w) if validator(after_as, &w.keyword, self) => {
-                Ok(Some(w.into_ident(next_token.span)))
+                Ok(Some((w.into_ident(next_token.span), after_as)))
             }
             // For backwards-compatibility, we accept quoted strings as aliases regardless of the context.
-            BorrowedToken::SingleQuotedString(s) => Ok(Some(Ident::with_quote('\'', s))),
-            BorrowedToken::DoubleQuotedString(s) => Ok(Some(Ident::with_quote('\"', s))),
+            BorrowedToken::SingleQuotedString(s) => {
+                Ok(Some((Ident::with_quote('\'', s), after_as)))
+            }
+            BorrowedToken::DoubleQuotedString(s) => {
+                Ok(Some((Ident::with_quote('\"', s), after_as)))
+            }
             _ => {
                 if after_as {
                     return self.expected("an identifier after AS", next_token);
@@ -13073,6 +13089,7 @@ impl<'a> Parser<'a> {
             let alias = TableAlias {
                 name,
                 columns: vec![],
+                implicit: false,
             };
             Cte {
                 alias,
@@ -13097,7 +13114,11 @@ impl<'a> Parser<'a> {
             let query = self.parse_query()?;
             let closing_paren_token = self.expect_token(&BorrowedToken::RParen)?;
 
-            let alias = TableAlias { name, columns };
+            let alias = TableAlias {
+                name,
+                columns,
+                implicit: false,
+            };
             Cte {
                 alias,
                 query,

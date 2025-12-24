@@ -2640,7 +2640,8 @@ fn parse_update_with_joins() {
                         name: ObjectName::from(vec![Ident::new("orders")]),
                         alias: Some(TableAlias {
                             name: Ident::new("o"),
-                            columns: vec![]
+                            columns: vec![],
+                                    implicit: false,
                         }),
                         args: None,
                         with_hints: vec![],
@@ -2656,7 +2657,8 @@ fn parse_update_with_joins() {
                             name: ObjectName::from(vec![Ident::new("customers")]),
                             alias: Some(TableAlias {
                                 name: Ident::new("c"),
-                                columns: vec![]
+                                columns: vec![],
+                                    implicit: false,
                             }),
                             args: None,
                             with_hints: vec![],
@@ -3719,6 +3721,7 @@ fn parse_json_table() {
             alias: Some(TableAlias {
                 name: Ident::new("t"),
                 columns: vec![],
+                                    implicit: false,
             }),
         }
     );

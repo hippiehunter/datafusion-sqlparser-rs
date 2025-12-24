@@ -2116,7 +2116,11 @@ impl Spanned for FunctionArgExpr {
 
 impl Spanned for TableAlias {
     fn span(&self) -> Span {
-        let TableAlias { name, columns } = self;
+        let TableAlias {
+            name,
+            columns,
+            implicit: _,
+        } = self;
 
         union_spans(iter::once(name.span).chain(columns.iter().map(|i| i.span())))
     }

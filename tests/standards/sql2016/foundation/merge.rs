@@ -188,7 +188,7 @@ fn merge_with_cte() {
 #[test]
 fn merge_with_values() {
     verified_standard_stmt(
-        "MERGE INTO settings s USING (VALUES ('theme', 'dark'), ('lang', 'en')) AS v(key, value) ON s.key = v.key \
+        "MERGE INTO settings s USING (VALUES ('theme', 'dark'), ('lang', 'en')) AS v (key, value) ON s.key = v.key \
          WHEN MATCHED THEN UPDATE SET s.value = v.value \
          WHEN NOT MATCHED THEN INSERT (key, value) VALUES (v.key, v.value)"
     );

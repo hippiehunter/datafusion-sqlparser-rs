@@ -299,9 +299,9 @@ fn t171_02_identity_by_default() {
 fn t171_03_identity_with_parameters() {
     // SQL:2016 T171: Identity with parameters
     // Note: Extra spaces in parentheses
-    verified_standard_stmt("CREATE TABLE t (id INT GENERATED ALWAYS AS IDENTITY ( START WITH 1 ))");
+    verified_standard_stmt("CREATE TABLE t (id INT GENERATED ALWAYS AS IDENTITY( START WITH 1 ))");
     verified_standard_stmt(
-        "CREATE TABLE t (id INT GENERATED ALWAYS AS IDENTITY ( INCREMENT BY 1 ))",
+        "CREATE TABLE t (id INT GENERATED ALWAYS AS IDENTITY( INCREMENT BY 1 ))",
     );
 }
 

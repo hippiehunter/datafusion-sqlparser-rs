@@ -990,7 +990,7 @@ mod e051_basic_query_specification {
     #[test]
     fn e051_09_rename_columns_in_from() {
         // SQL:2016 E051-09: Rename columns in FROM clause
-        verified_with_ast!("SELECT x, y FROM t AS s (x, y)", |stmt: Statement| {
+        verified_with_ast!("SELECT x, y FROM t AS s(x, y)", |stmt: Statement| {
             if let Statement::Query(query) = stmt {
                 if let SetExpr::Select(select) = query.body.as_ref() {
                     if let TableFactor::Table { alias, .. } = &select.from[0].relation {
@@ -1008,7 +1008,7 @@ mod e051_basic_query_specification {
         });
 
         verified_with_ast!(
-            "SELECT col1, col2 FROM (SELECT a, b FROM t) AS derived (col1, col2)",
+            "SELECT col1, col2 FROM (SELECT a, b FROM t) AS derived(col1, col2)",
             |stmt: Statement| {
                 if let Statement::Query(query) = stmt {
                     if let SetExpr::Select(select) = query.body.as_ref() {
@@ -1026,7 +1026,7 @@ mod e051_basic_query_specification {
         );
 
         verified_with_ast!(
-            "SELECT first, last FROM users AS u (first, last)",
+            "SELECT first, last FROM users AS u(first, last)",
             |stmt: Statement| {
                 if let Statement::Query(query) = stmt {
                     if let SetExpr::Select(select) = query.body.as_ref() {
@@ -3235,8 +3235,8 @@ mod e141_basic_integrity_constraints {
         // SQL:2016 E141-04: FOREIGN KEY with NO ACTION
         verified_standard_stmt("CREATE TABLE orders (customer_id INTEGER REFERENCES customers)");
         verified_standard_stmt("CREATE TABLE orders (customer_id INTEGER, FOREIGN KEY (customer_id) REFERENCES customers(id))");
-        verified_standard_stmt("CREATE TABLE orders (customer_id INTEGER REFERENCES customers (id) ON DELETE NO ACTION)");
-        verified_standard_stmt("CREATE TABLE orders (customer_id INTEGER REFERENCES customers (id) ON UPDATE NO ACTION)");
+        verified_standard_stmt("CREATE TABLE orders (customer_id INTEGER REFERENCES customers(id) ON DELETE NO ACTION)");
+        verified_standard_stmt("CREATE TABLE orders (customer_id INTEGER REFERENCES customers(id) ON UPDATE NO ACTION)");
 
         // Named constraint
         verified_standard_stmt("CREATE TABLE orders (customer_id INTEGER, CONSTRAINT fk_customer FOREIGN KEY (customer_id) REFERENCES customers(id))");
@@ -3347,18 +3347,18 @@ mod e141_basic_integrity_constraints {
     fn e141_referential_actions() {
         // Referential actions: CASCADE, SET NULL, SET DEFAULT, RESTRICT
         verified_standard_stmt(
-            "CREATE TABLE orders (customer_id INTEGER REFERENCES customers (id) ON DELETE CASCADE)",
+            "CREATE TABLE orders (customer_id INTEGER REFERENCES customers(id) ON DELETE CASCADE)",
         );
         verified_standard_stmt(
-            "CREATE TABLE orders (customer_id INTEGER REFERENCES customers (id) ON UPDATE CASCADE)",
+            "CREATE TABLE orders (customer_id INTEGER REFERENCES customers(id) ON UPDATE CASCADE)",
         );
-        verified_standard_stmt("CREATE TABLE orders (customer_id INTEGER REFERENCES customers (id) ON DELETE SET NULL)");
-        verified_standard_stmt("CREATE TABLE orders (customer_id INTEGER REFERENCES customers (id) ON UPDATE SET NULL)");
-        verified_standard_stmt("CREATE TABLE orders (customer_id INTEGER REFERENCES customers (id) ON DELETE SET DEFAULT)");
-        verified_standard_stmt("CREATE TABLE orders (customer_id INTEGER REFERENCES customers (id) ON DELETE RESTRICT)");
+        verified_standard_stmt("CREATE TABLE orders (customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL)");
+        verified_standard_stmt("CREATE TABLE orders (customer_id INTEGER REFERENCES customers(id) ON UPDATE SET NULL)");
+        verified_standard_stmt("CREATE TABLE orders (customer_id INTEGER REFERENCES customers(id) ON DELETE SET DEFAULT)");
+        verified_standard_stmt("CREATE TABLE orders (customer_id INTEGER REFERENCES customers(id) ON DELETE RESTRICT)");
 
         // Both ON DELETE and ON UPDATE
-        verified_standard_stmt("CREATE TABLE orders (customer_id INTEGER REFERENCES customers (id) ON DELETE CASCADE ON UPDATE CASCADE)");
+        verified_standard_stmt("CREATE TABLE orders (customer_id INTEGER REFERENCES customers(id) ON DELETE CASCADE ON UPDATE CASCADE)");
     }
 }
 
@@ -3610,7 +3610,7 @@ fn e_series_comprehensive_dml() {
 fn e_series_comprehensive_ddl() {
     // Complex CREATE TABLE with all constraint types
     verified_with_ast!(
-        "CREATE TABLE employees (employee_id INTEGER PRIMARY KEY, department_id INTEGER NOT NULL REFERENCES departments (id) ON DELETE RESTRICT, manager_id INTEGER REFERENCES employees (employee_id) ON DELETE SET NULL, first_name VARCHAR(50) NOT NULL, last_name VARCHAR(50) NOT NULL, email VARCHAR(255) UNIQUE NOT NULL, salary DECIMAL(10,2) CHECK (salary >= 0), hire_date DATE NOT NULL DEFAULT CURRENT_DATE, status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'on_leave')), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, CONSTRAINT check_name_length CHECK (CHARACTER_LENGTH(first_name) > 0 AND CHARACTER_LENGTH(last_name) > 0), CONSTRAINT unique_email UNIQUE (email))",
+        "CREATE TABLE employees (employee_id INTEGER PRIMARY KEY, department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE RESTRICT, manager_id INTEGER REFERENCES employees(employee_id) ON DELETE SET NULL, first_name VARCHAR(50) NOT NULL, last_name VARCHAR(50) NOT NULL, email VARCHAR(255) UNIQUE NOT NULL, salary DECIMAL(10,2) CHECK (salary >= 0), hire_date DATE NOT NULL DEFAULT CURRENT_DATE, status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'on_leave')), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, CONSTRAINT check_name_length CHECK (CHARACTER_LENGTH(first_name) > 0 AND CHARACTER_LENGTH(last_name) > 0), CONSTRAINT unique_email UNIQUE (email))",
         |stmt: Statement| {
             if let Statement::CreateTable(CreateTable { columns, constraints, .. }) = stmt {
                 // Verify we have all expected columns
