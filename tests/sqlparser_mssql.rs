@@ -217,13 +217,13 @@ fn parse_create_function() {
             if_not_exists: false,
             name: ObjectName::from(vec![Ident::new("some_scalar_udf")]),
             args: Some(vec![
-                OperateFunctionArg {
+                OperateFunctionArg { xml_passing: None,
                     mode: None,
                     name: Some(Ident::new("@foo")),
                     data_type: DataType::Int(None),
                     default_expr: None,
                 },
-                OperateFunctionArg {
+                OperateFunctionArg { xml_passing: None,
                     mode: None,
                     name: Some(Ident::new("@bar")),
                     data_type: DataType::Varchar(Some(CharacterLength::IntegerLength {
@@ -400,7 +400,7 @@ fn parse_create_function_parameter_default_values() {
             temporary: false,
             if_not_exists: false,
             name: ObjectName::from(vec![Ident::new("test_func")]),
-            args: Some(vec![OperateFunctionArg {
+            args: Some(vec![OperateFunctionArg { xml_passing: None,
                 mode: None,
                 name: Some(Ident::new("@param1")),
                 data_type: DataType::Int(None),

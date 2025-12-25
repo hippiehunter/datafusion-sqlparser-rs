@@ -4527,7 +4527,7 @@ fn parse_drop_function() {
                 }]),
                 args: Some(vec![
                     OperateFunctionArg::with_name("a", DataType::Integer(None)),
-                    OperateFunctionArg {
+                    OperateFunctionArg { xml_passing: None,
                         mode: Some(ArgMode::In),
                         name: Some("b".into()),
                         data_type: DataType::Integer(None),
@@ -4555,7 +4555,7 @@ fn parse_drop_function() {
                     }]),
                     args: Some(vec![
                         OperateFunctionArg::with_name("a", DataType::Integer(None)),
-                        OperateFunctionArg {
+                        OperateFunctionArg { xml_passing: None,
                             mode: Some(ArgMode::In),
                             name: Some("b".into()),
                             data_type: DataType::Integer(None),
@@ -4573,7 +4573,7 @@ fn parse_drop_function() {
                     }]),
                     args: Some(vec![
                         OperateFunctionArg::with_name("a", DataType::Varchar(None)),
-                        OperateFunctionArg {
+                        OperateFunctionArg { xml_passing: None,
                             mode: Some(ArgMode::In),
                             name: Some("b".into()),
                             data_type: DataType::Integer(None),
@@ -4681,7 +4681,7 @@ fn parse_drop_procedure() {
                 }]),
                 args: Some(vec![
                     OperateFunctionArg::with_name("a", DataType::Integer(None)),
-                    OperateFunctionArg {
+                    OperateFunctionArg { xml_passing: None,
                         mode: Some(ArgMode::In),
                         name: Some("b".into()),
                         data_type: DataType::Integer(None),
@@ -4709,7 +4709,7 @@ fn parse_drop_procedure() {
                     }]),
                     args: Some(vec![
                         OperateFunctionArg::with_name("a", DataType::Integer(None)),
-                        OperateFunctionArg {
+                        OperateFunctionArg { xml_passing: None,
                             mode: Some(ArgMode::In),
                             name: Some("b".into()),
                             data_type: DataType::Integer(None),
@@ -4727,7 +4727,7 @@ fn parse_drop_procedure() {
                     }]),
                     args: Some(vec![
                         OperateFunctionArg::with_name("a", DataType::Varchar(None)),
-                        OperateFunctionArg {
+                        OperateFunctionArg { xml_passing: None,
                             mode: Some(ArgMode::In),
                             name: Some("b".into()),
                             data_type: DataType::Integer(None),

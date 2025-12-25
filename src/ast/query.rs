@@ -1403,6 +1403,8 @@ pub enum TableFactor {
     /// );
     /// ````
     XmlTable {
+        /// Whether this is a LATERAL XMLTABLE
+        lateral: bool,
         /// Optional XMLNAMESPACES clause (empty if not present)
         namespaces: Vec<XmlNamespaceDefinition>,
         /// The row-generating XPath expression.
@@ -2168,12 +2170,16 @@ impl fmt::Display for TableFactor {
                 Ok(())
             }
             TableFactor::XmlTable {
+                lateral,
                 row_expression,
                 passing,
                 columns,
                 alias,
                 namespaces,
             } => {
+                if *lateral {
+                    write!(f, "LATERAL ")?;
+                }
                 write!(f, "XMLTABLE(")?;
                 if !namespaces.is_empty() {
                     write!(
@@ -2188,7 +2194,11 @@ impl fmt::Display for TableFactor {
                     columns = display_comma_separated(columns)
                 )?;
                 if let Some(alias) = alias {
-                    write!(f, " AS {alias}")?;
+                    if alias.implicit {
+                        write!(f, " {alias}")?;
+                    } else {
+                        write!(f, " AS {alias}")?;
+                    }
                 }
                 Ok(())
             }

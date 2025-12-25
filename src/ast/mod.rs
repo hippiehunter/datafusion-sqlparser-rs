@@ -9370,6 +9370,8 @@ pub struct OperateFunctionArg {
     pub mode: Option<ArgMode>,
     pub name: Option<Ident>,
     pub data_type: DataType,
+    /// SQL:2016 XML passing mechanism (BY VALUE or BY REF)
+    pub xml_passing: Option<XmlPassingMechanism>,
     pub default_expr: Option<Expr>,
 }
 
@@ -9380,6 +9382,7 @@ impl OperateFunctionArg {
             mode: None,
             name: None,
             data_type,
+            xml_passing: None,
             default_expr: None,
         }
     }
@@ -9390,6 +9393,7 @@ impl OperateFunctionArg {
             mode: None,
             name: Some(name.into()),
             data_type,
+            xml_passing: None,
             default_expr: None,
         }
     }
@@ -9404,6 +9408,9 @@ impl fmt::Display for OperateFunctionArg {
             write!(f, "{name} ")?;
         }
         write!(f, "{}", self.data_type)?;
+        if let Some(xml_passing) = &self.xml_passing {
+            write!(f, " {xml_passing}")?;
+        }
         if let Some(default_expr) = &self.default_expr {
             write!(f, " = {default_expr}")?;
         }
@@ -9427,6 +9434,26 @@ impl fmt::Display for ArgMode {
             ArgMode::In => write!(f, "IN"),
             ArgMode::Out => write!(f, "OUT"),
             ArgMode::InOut => write!(f, "INOUT"),
+        }
+    }
+}
+
+/// SQL:2016 XML passing mechanism for function parameters.
+///
+/// <https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#XML-passing-mechanism>
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum XmlPassingMechanism {
+    ByValue,
+    ByRef,
+}
+
+impl fmt::Display for XmlPassingMechanism {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            XmlPassingMechanism::ByValue => write!(f, "BY VALUE"),
+            XmlPassingMechanism::ByRef => write!(f, "BY REF"),
         }
     }
 }

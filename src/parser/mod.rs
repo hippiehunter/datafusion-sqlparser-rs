@@ -3047,6 +3047,21 @@ impl<'a> Parser<'a> {
         Ok(XmlForestElement { expr, alias })
     }
 
+    /// Parses SQL:2016 XML passing mechanism: BY VALUE or BY REF
+    pub fn parse_xml_passing_mechanism(&self) -> Result<Option<XmlPassingMechanism>, ParserError> {
+        if self.parse_keyword(Keyword::BY) {
+            if self.parse_keyword(Keyword::VALUE) {
+                Ok(Some(XmlPassingMechanism::ByValue))
+            } else if self.parse_keyword(Keyword::REF) {
+                Ok(Some(XmlPassingMechanism::ByRef))
+            } else {
+                self.expected("VALUE or REF after BY", self.peek_token())
+            }
+        } else {
+            Ok(None)
+        }
+    }
+
     /// Parses an array expression `[ex1, ex2, ..]`
     /// if `named` is `true`, came from an expression like  `ARRAY[ex1, ex2]`
     pub fn parse_array_expr(&self, named: bool) -> Result<Expr, ParserError> {
@@ -5841,6 +5856,8 @@ impl<'a> Parser<'a> {
         let parse_function_param = |parser: &Parser| -> Result<OperateFunctionArg, ParserError> {
             let name = parser.parse_identifier()?;
             let data_type = parser.parse_data_type()?;
+            // SQL:2016 XML passing mechanism: BY VALUE or BY REF
+            let xml_passing = parser.parse_xml_passing_mechanism()?;
             let default_expr = if parser.consume_token(&BorrowedToken::Eq) {
                 Some(parser.parse_expr()?)
             } else {
@@ -5851,6 +5868,7 @@ impl<'a> Parser<'a> {
                 mode: None,
                 name: Some(name),
                 data_type,
+                xml_passing,
                 default_expr,
             })
         };
@@ -5905,6 +5923,9 @@ impl<'a> Parser<'a> {
             data_type = next_data_type;
         }
 
+        // SQL:2016 XML passing mechanism: BY VALUE or BY REF
+        let xml_passing = self.parse_xml_passing_mechanism()?;
+
         let default_expr =
             if self.parse_keyword(Keyword::DEFAULT) || self.consume_token(&BorrowedToken::Eq) {
                 Some(self.parse_expr()?)
@@ -5915,6 +5936,7 @@ impl<'a> Parser<'a> {
             mode,
             name,
             data_type,
+            xml_passing,
             default_expr,
         })
     }
@@ -14424,6 +14446,9 @@ impl<'a> Parser<'a> {
             // LATERAL must always be followed by a subquery or table function.
             if self.consume_token(&BorrowedToken::LParen) {
                 self.parse_derived_table_factor(Lateral)
+            } else if self.parse_keyword(Keyword::XMLTABLE) {
+                // LATERAL XMLTABLE(...)
+                self.parse_xml_table_factor(true)
             } else {
                 let name = self.parse_object_name(false)?;
                 self.expect_token(&BorrowedToken::LParen)?;
@@ -14646,7 +14671,7 @@ impl<'a> Parser<'a> {
             self.parse_open_json_table_factor()
         } else if self.parse_keyword_with_tokens(Keyword::XMLTABLE, &[BorrowedToken::LParen]) {
             self.prev_token();
-            self.parse_xml_table_factor()
+            self.parse_xml_table_factor(false)
         } else if self.dialect.supports_semantic_view_table_factor()
             && self.peek_keyword_with_tokens(Keyword::SEMANTIC_VIEW, &[BorrowedToken::LParen])
         {
@@ -14893,7 +14918,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_xml_table_factor(&self) -> Result<TableFactor, ParserError> {
+    fn parse_xml_table_factor(&self, lateral: bool) -> Result<TableFactor, ParserError> {
         self.expect_token(&BorrowedToken::LParen)?;
         let namespaces = if self.parse_keyword(Keyword::XMLNAMESPACES) {
             self.expect_token(&BorrowedToken::LParen)?;
@@ -14911,6 +14936,7 @@ impl<'a> Parser<'a> {
         self.expect_token(&BorrowedToken::RParen)?;
         let alias = self.maybe_parse_table_alias()?;
         Ok(TableFactor::XmlTable {
+            lateral,
             namespaces,
             row_expression,
             passing,
