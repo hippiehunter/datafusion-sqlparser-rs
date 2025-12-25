@@ -911,6 +911,7 @@ fn parse_delimited_identifiers() {
                 clauses: vec![],
             }),
             null_treatment: None,
+                    nth_value_order: None,
             filter: None,
             over: None,
             within_group: vec![],
@@ -1843,6 +1844,7 @@ fn parse_create_table_with_valid_options() {
                             ),
                             filter: None,
                             null_treatment: None,
+                    nth_value_order: None,
                             over: None,
                             within_group: vec![],
                         },
@@ -1945,6 +1947,7 @@ fn parse_create_table_with_valid_options() {
                 refresh_mode: None,
                 initialize: None,
                 require_user: false,
+                system_versioning: None,
             })
         );
     }
@@ -2116,6 +2119,7 @@ fn parse_create_table_with_identity_column() {
                 refresh_mode: None,
                 initialize: None,
                 require_user: false,
+                system_versioning: None,
             }),
         );
     }

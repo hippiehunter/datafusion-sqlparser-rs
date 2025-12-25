@@ -61,9 +61,10 @@ pub use self::ddl::{
     AlterTableLock, AlterTableOperation, AlterTableType, AlterType, AlterTypeAddValue,
     AlterTypeAddValuePosition, AlterTypeOperation, AlterTypeRename, AlterTypeRenameValue,
     ClusteredBy, ColumnDef, ColumnOption, ColumnOptionDef, ColumnOptions, ColumnPolicy,
-    ColumnPolicyProperty, ConstraintCharacteristics, CreateConnector, CreateDomain,
+    ColumnPolicyProperty, ConstraintCharacteristics, CreateAssertion, CreateConnector, CreateDomain,
     CreateExtension, CreateFunction, CreateIndex, CreateOperator, CreateOperatorClass,
-    CreateOperatorFamily, CreateTable, CreateTrigger, CreateView, Deduplicate, DeferrableInitial,
+    CreateOperatorFamily, CreateTable, CreateTableSystemVersioning, CreateTrigger, CreateView,
+    Deduplicate, DeferrableInitial,
     DropBehavior, DropExtension, DropFunction, DropTrigger, GeneratedAs, GeneratedExpressionMode,
     IdentityParameters, IdentityProperty, IdentityPropertyFormatKind, IdentityPropertyKind,
     IdentityPropertyOrder, IndexColumn, IndexOption, IndexType, KeyOrIndexDisplay, Msck,
@@ -73,7 +74,7 @@ pub use self::ddl::{
     UserDefinedTypeInternalLength, UserDefinedTypeRangeOption, UserDefinedTypeRepresentation,
     UserDefinedTypeSqlDefinitionOption, UserDefinedTypeStorage, ViewColumnDef,
 };
-pub use self::dml::{Delete, Insert, Update};
+pub use self::dml::{Delete, ForPortionOf, Insert, Update};
 pub use self::operator::{BinaryOperator, UnaryOperator};
 pub use self::query::{
     AfterMatchSkip, ConnectBy, Cte, CteAsMaterialized, Distinct, EmptyMatchesMode,
@@ -87,13 +88,14 @@ pub use self::query::{
     PipeOperator, PivotValueSource, ProjectionSelect, Query, RenameSelectItem,
     RepetitionQuantifier, ReplaceSelectElement, ReplaceSelectItem, RowsPerMatch, Select,
     SelectFlavor, SelectInto, SelectItem, SelectItemQualifiedWildcardKind, SetExpr, SetOperator,
-    SetQuantifier, Setting, SymbolDefinition, Table, TableAlias, TableAliasColumnDef, TableFactor,
+    SetQuantifier, Setting, SubsetDefinition, SymbolDefinition, Table, TableAlias, TableAliasColumnDef, TableFactor,
     TableFunctionArgs, TableIndexHintForClause, TableIndexHintType, TableIndexHints,
     TableIndexType, TableSample, TableSampleBucket, TableSampleKind, TableSampleMethod,
     TableSampleModifier, TableSampleQuantity, TableSampleSeed, TableSampleSeedModifier,
     TableSampleUnit, TableVersion, TableWithJoins, Top, TopQuantity, UpdateTableFromKind,
-    ValueTableMode, Values, WildcardAdditionalOptions, With, WithFill, XmlNamespaceDefinition,
-    XmlPassingArgument, XmlPassingClause, XmlTableColumn, XmlTableColumnOption,
+    ValueTableMode, Values, WildcardAdditionalOptions, With, WithFill, XmlAttribute,
+    XmlDocumentOrContent, XmlForestElement, XmlNamespaceDefinition, XmlPassingArgument,
+    XmlPassingClause, XmlTableColumn, XmlTableColumnOption, XmlTableOnError, XmlWhitespace,
 };
 
 pub use self::trigger::{
@@ -121,8 +123,9 @@ mod dml;
 pub mod helpers;
 pub mod table_constraints;
 pub use table_constraints::{
-    CheckConstraint, ForeignKeyConstraint, FullTextOrSpatialConstraint, IndexConstraint,
-    PrimaryKeyConstraint, TableConstraint, UniqueConstraint,
+    CheckConstraint, ForeignKeyColumnOrPeriod, ForeignKeyConstraint, FullTextOrSpatialConstraint,
+    IndexConstraint, PeriodForDefinition, PeriodForName, PrimaryKeyConstraint, TableConstraint,
+    UniqueConstraint,
 };
 mod operator;
 mod query;
@@ -838,6 +841,24 @@ pub enum Expr {
         /// The unique keys constraint
         unique_keys: Option<JsonPredicateUniqueKeyConstraint>,
     },
+    /// `<expr> IS [ NOT ] DOCUMENT`
+    ///
+    /// See SQL:2016 standard, X-Series (XML document predicate).
+    IsDocument {
+        /// The expression to test
+        expr: Box<Expr>,
+        /// Whether the predicate is negated (IS NOT DOCUMENT)
+        negated: bool,
+    },
+    /// `<expr> IS [ NOT ] CONTENT`
+    ///
+    /// See SQL:2016 standard, X-Series (XML content predicate).
+    IsContent {
+        /// The expression to test
+        expr: Box<Expr>,
+        /// Whether the predicate is negated (IS NOT CONTENT)
+        negated: bool,
+    },
     /// `[ NOT ] IN (val1, val2, ...)`
     InList {
         expr: Box<Expr>,
@@ -1063,6 +1084,61 @@ pub enum Expr {
     TypedString(TypedString),
     /// Scalar function call e.g. `LEFT(foo, 5)`
     Function(Function),
+    /// `XMLPARSE(DOCUMENT|CONTENT <expr> [PRESERVE|STRIP WHITESPACE])`
+    ///
+    /// See SQL:2016 standard, X-Series (XML).
+    XmlParse {
+        /// Whether to parse as DOCUMENT or CONTENT
+        document_or_content: XmlDocumentOrContent,
+        /// The expression to parse
+        expr: Box<Expr>,
+        /// Optional whitespace handling
+        whitespace: Option<XmlWhitespace>,
+    },
+    /// `XMLSERIALIZE(DOCUMENT|CONTENT <expr> AS <type> [ENCODING <charset>] [VERSION '<version>'] [INDENT|NO INDENT])`
+    ///
+    /// See SQL:2016 standard, X-Series (XML).
+    XmlSerialize {
+        /// Whether to serialize as DOCUMENT or CONTENT
+        document_or_content: XmlDocumentOrContent,
+        /// The expression to serialize
+        expr: Box<Expr>,
+        /// The target data type
+        as_type: DataType,
+        /// Optional encoding
+        encoding: Option<Ident>,
+        /// Optional version string
+        version: Option<String>,
+        /// Optional indentation (true for INDENT, false for NO INDENT, None for neither)
+        indent: Option<bool>,
+    },
+    /// `XMLPI(NAME <target> [, <content>])`
+    ///
+    /// See SQL:2016 standard, X-Series (XML processing instruction).
+    XmlPi {
+        /// The target name
+        name: Ident,
+        /// Optional content expression
+        content: Option<Box<Expr>>,
+    },
+    /// `XMLELEMENT(NAME <name> [, XMLATTRIBUTES(...)] [, <content>...])`
+    ///
+    /// See SQL:2016 standard, X-Series (XML element constructor).
+    XmlElement {
+        /// The element name (can be identifier or string literal)
+        name: Box<Expr>,
+        /// Optional attributes
+        attributes: Option<Vec<XmlAttribute>>,
+        /// Content expressions
+        content: Vec<Expr>,
+    },
+    /// `XMLFOREST(expr [AS name], ...)`
+    ///
+    /// See SQL:2016 standard, X-Series (XML forest constructor).
+    XmlForest {
+        /// List of expressions with optional aliases
+        elements: Vec<XmlForestElement>,
+    },
     /// `CASE [<operand>] WHEN <condition> THEN <result> ... [ELSE <result>] END`
     ///
     /// Note we only recognize a complete single expression as `<condition>`,
@@ -1189,6 +1265,11 @@ pub enum Expr {
     Lambda(LambdaFunction),
     /// Checks membership of a value in a JSON array
     MemberOf(MemberOf),
+    /// SQL:2016 PERIOD constructor: `PERIOD (start, end)`
+    Period {
+        start: Box<Expr>,
+        end: Box<Expr>,
+    },
 }
 
 impl Expr {
@@ -1639,6 +1720,14 @@ impl fmt::Display for Expr {
                 }
                 Ok(())
             }
+            Expr::IsDocument { expr, negated } => {
+                let not_ = if *negated { "NOT " } else { "" };
+                write!(f, "{expr} IS {not_}DOCUMENT")
+            }
+            Expr::IsContent { expr, negated } => {
+                let not_ = if *negated { "NOT " } else { "" };
+                write!(f, "{expr} IS {not_}CONTENT")
+            }
             Expr::SimilarTo {
                 negated,
                 expr,
@@ -1793,6 +1882,77 @@ impl fmt::Display for Expr {
             Expr::Prefixed { prefix, value } => write!(f, "{prefix} {value}"),
             Expr::TypedString(ts) => ts.fmt(f),
             Expr::Function(fun) => fun.fmt(f),
+            Expr::XmlParse {
+                document_or_content,
+                expr,
+                whitespace,
+            } => {
+                write!(f, "XMLPARSE({document_or_content} {expr}")?;
+                if let Some(ws) = whitespace {
+                    write!(f, " {ws}")?;
+                }
+                write!(f, ")")
+            }
+            Expr::XmlSerialize {
+                document_or_content,
+                expr,
+                as_type,
+                encoding,
+                version,
+                indent,
+            } => {
+                write!(f, "XMLSERIALIZE({document_or_content} {expr} AS {as_type}")?;
+                if let Some(enc) = encoding {
+                    write!(f, " ENCODING {enc}")?;
+                }
+                if let Some(ver) = version {
+                    write!(f, " VERSION '{ver}'")?;
+                }
+                if let Some(ind) = indent {
+                    write!(f, " {}", if *ind { "INDENT" } else { "NO INDENT" })?;
+                }
+                write!(f, ")")
+            }
+            Expr::XmlPi { name, content } => {
+                write!(f, "XMLPI(NAME {name}")?;
+                if let Some(c) = content {
+                    write!(f, ", {c}")?;
+                }
+                write!(f, ")")
+            }
+            Expr::XmlElement {
+                name,
+                attributes,
+                content,
+            } => {
+                write!(f, "XMLELEMENT(NAME {name}")?;
+                if let Some(attrs) = attributes {
+                    if !attrs.is_empty() {
+                        write!(f, ", XMLATTRIBUTES(")?;
+                        for (i, attr) in attrs.iter().enumerate() {
+                            if i > 0 {
+                                write!(f, ", ")?;
+                            }
+                            write!(f, "{attr}")?;
+                        }
+                        write!(f, ")")?;
+                    }
+                }
+                for expr in content {
+                    write!(f, ", {expr}")?;
+                }
+                write!(f, ")")
+            }
+            Expr::XmlForest { elements } => {
+                write!(f, "XMLFOREST(")?;
+                for (i, elem) in elements.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{elem}")?;
+                }
+                write!(f, ")")
+            }
             Expr::Case {
                 case_token: _,
                 end_token: _,
@@ -1991,6 +2151,7 @@ impl fmt::Display for Expr {
             Expr::Prior(expr) => write!(f, "PRIOR {expr}"),
             Expr::Lambda(lambda) => write!(f, "{lambda}"),
             Expr::MemberOf(member_of) => write!(f, "{member_of}"),
+            Expr::Period { start, end } => write!(f, "PERIOD ({start}, {end})"),
         }
     }
 }
@@ -2185,6 +2346,25 @@ impl fmt::Display for NullTreatment {
         f.write_str(match self {
             NullTreatment::IgnoreNulls => "IGNORE NULLS",
             NullTreatment::RespectNulls => "RESPECT NULLS",
+        })
+    }
+}
+
+/// Specifies whether NTH_VALUE counts from the first or last row.
+/// SQL:2016 feature T619.
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum NthValueOrder {
+    FromFirst,
+    FromLast,
+}
+
+impl fmt::Display for NthValueOrder {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            NthValueOrder::FromFirst => "FROM FIRST",
+            NthValueOrder::FromLast => "FROM LAST",
         })
     }
 }
@@ -2561,6 +2741,111 @@ pub struct IterateStatement {
 impl fmt::Display for IterateStatement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "ITERATE {}", self.label)
+    }
+}
+
+/// A `GET DIAGNOSTICS` statement
+///
+/// [SQL:2016](https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#get-diagnostics-statement)
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct GetDiagnosticsStatement {
+    pub stacked: bool,
+    pub kind: GetDiagnosticsKind,
+}
+
+impl fmt::Display for GetDiagnosticsStatement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "GET ")?;
+        if self.stacked {
+            write!(f, "STACKED ")?;
+        }
+        write!(f, "DIAGNOSTICS {}", self.kind)
+    }
+}
+
+/// The kind of GET DIAGNOSTICS: statement or condition
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum GetDiagnosticsKind {
+    Statement(Vec<DiagnosticsAssignment>),
+    Condition {
+        condition_number: Expr,
+        assignments: Vec<DiagnosticsAssignment>,
+    },
+}
+
+impl fmt::Display for GetDiagnosticsKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            GetDiagnosticsKind::Statement(assignments) => {
+                write!(
+                    f,
+                    "{}",
+                    assignments
+                        .iter()
+                        .map(|a| a.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }
+            GetDiagnosticsKind::Condition {
+                condition_number,
+                assignments,
+            } => {
+                write!(f, "CONDITION {} ", condition_number)?;
+                write!(
+                    f,
+                    "{}",
+                    assignments
+                        .iter()
+                        .map(|a| a.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }
+        }
+    }
+}
+
+/// An assignment in a GET DIAGNOSTICS statement
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct DiagnosticsAssignment {
+    pub target: Expr,
+    pub item: DiagnosticsItem,
+}
+
+impl fmt::Display for DiagnosticsAssignment {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} = {}", self.target, self.item)
+    }
+}
+
+/// A diagnostics item in a GET DIAGNOSTICS statement
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum DiagnosticsItem {
+    RowCount,
+    Number,
+    More,
+    ReturnedSqlstate,
+    MessageText,
+}
+
+impl fmt::Display for DiagnosticsItem {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            DiagnosticsItem::RowCount => write!(f, "ROW_COUNT"),
+            DiagnosticsItem::Number => write!(f, "NUMBER"),
+            DiagnosticsItem::More => write!(f, "MORE"),
+            DiagnosticsItem::ReturnedSqlstate => write!(f, "RETURNED_SQLSTATE"),
+            DiagnosticsItem::MessageText => write!(f, "MESSAGE_TEXT"),
+        }
     }
 }
 
@@ -3162,6 +3447,16 @@ pub enum Set {
         snapshot: Option<Value>,
         session: bool,
     },
+    /// ```sql
+    /// SET CONSTRAINTS { ALL | constraint_name [, ...] } { DEFERRED | IMMEDIATE }
+    /// ```
+    ///
+    /// SQL:2016 F721: Deferrable constraints
+    SetConstraints {
+        all: bool,
+        constraints: Vec<ObjectName>,
+        mode: ConstraintCheckTime,
+    },
 }
 
 impl Display for Set {
@@ -3246,6 +3541,19 @@ impl Display for Set {
                     variable,
                     display_comma_separated(values)
                 )
+            }
+            Set::SetConstraints {
+                all,
+                constraints,
+                mode,
+            } => {
+                write!(f, "SET CONSTRAINTS ")?;
+                if *all {
+                    write!(f, "ALL")?;
+                } else {
+                    write!(f, "{}", display_comma_separated(constraints))?;
+                }
+                write!(f, " {}", mode)
             }
         }
     }
@@ -3404,6 +3712,8 @@ pub enum Statement {
     Leave(LeaveStatement),
     /// An `ITERATE` statement (continue loop).
     Iterate(IterateStatement),
+    /// A `GET DIAGNOSTICS` statement.
+    GetDiagnostics(GetDiagnosticsStatement),
     /// A `RAISE` statement.
     Raise(RaiseStatement),
     /// ```sql
@@ -3525,6 +3835,11 @@ pub enum Statement {
     /// ```
     /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-createopclass.html)
     CreateOperatorClass(CreateOperatorClass),
+    /// ```sql
+    /// CREATE ASSERTION
+    /// ```
+    /// SQL:2016 F491: Schema-level CHECK constraint
+    CreateAssertion(CreateAssertion),
     /// ```sql
     /// ALTER TABLE
     /// ```
@@ -3648,6 +3963,11 @@ pub enum Statement {
     /// DROP DOMAIN [ IF EXISTS ] name [, ...] [ CASCADE | RESTRICT ]
     ///
     DropDomain(DropDomain),
+    /// ```sql
+    /// DROP ASSERTION
+    /// ```
+    /// SQL:2016 F491: Drop schema-level CHECK constraint
+    DropAssertion(DropAssertion),
     /// ```sql
     /// DROP PROCEDURE
     /// ```
@@ -4686,6 +5006,9 @@ impl fmt::Display for Statement {
             Statement::Iterate(stmt) => {
                 write!(f, "{stmt}")
             }
+            Statement::GetDiagnostics(stmt) => {
+                write!(f, "{stmt}")
+            }
             Statement::Raise(stmt) => {
                 write!(f, "{stmt}")
             }
@@ -5049,6 +5372,7 @@ impl fmt::Display for Statement {
                 create_operator_family.fmt(f)
             }
             Statement::CreateOperatorClass(create_operator_class) => create_operator_class.fmt(f),
+            Statement::CreateAssertion(create_assertion) => write!(f, "{create_assertion}"),
             Statement::AlterTable(alter_table) => write!(f, "{alter_table}"),
             Statement::AlterIndex { name, operation } => {
                 write!(f, "ALTER INDEX {name} {operation}")
@@ -5168,6 +5492,7 @@ impl fmt::Display for Statement {
                 }
                 Ok(())
             }
+            Statement::DropAssertion(drop_assertion) => write!(f, "{drop_assertion}"),
             Statement::DropProcedure {
                 if_exists,
                 proc_desc,
@@ -7137,6 +7462,28 @@ pub struct DropDomain {
     pub drop_behavior: Option<DropBehavior>,
 }
 
+/// A Drop Assertion statement
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct DropAssertion {
+    /// Whether to drop the assertion if it exists
+    pub if_exists: bool,
+    /// The name of the assertion to drop
+    pub name: ObjectName,
+}
+
+impl fmt::Display for DropAssertion {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "DROP ASSERTION {if_exists}{name}",
+            if_exists = if self.if_exists { "IF EXISTS " } else { "" },
+            name = self.name
+        )
+    }
+}
+
 /// A constant of form `<data_type> 'value'`.
 /// This can represent ANSI SQL `DATE`, `TIME`, and `TIMESTAMP` literals (such as `DATE '2020-01-01'`),
 /// as well as constants of other types (a non-standard PostgreSQL extension).
@@ -7213,6 +7560,16 @@ pub struct Function {
     pub args: FunctionArguments,
     /// e.g. `x > 5` in `COUNT(x) FILTER (WHERE x > 5)`
     pub filter: Option<Box<Expr>>,
+    /// Specifies whether NTH_VALUE counts from the first or last row.
+    ///
+    /// Example:
+    /// ```plaintext
+    /// NTH_VALUE( <expr>, <n> ) FROM FIRST OVER ...
+    /// NTH_VALUE( <expr>, <n> ) FROM LAST OVER ...
+    /// ```
+    ///
+    /// SQL:2016 feature T619.
+    pub nth_value_order: Option<NthValueOrder>,
     /// Indicates how `NULL`s should be handled in the calculation.
     ///
     /// Example:
@@ -7252,6 +7609,10 @@ impl fmt::Display for Function {
 
         if let Some(filter_cond) = &self.filter {
             write!(f, " FILTER (WHERE {filter_cond})")?;
+        }
+
+        if let Some(nth_value_order) = &self.nth_value_order {
+            write!(f, " {nth_value_order}")?;
         }
 
         if let Some(null_treatment) = &self.null_treatment {
@@ -8100,6 +8461,24 @@ impl fmt::Display for TransactionModifier {
             Exclusive => "EXCLUSIVE",
             Try => "TRY",
             Catch => "CATCH",
+        })
+    }
+}
+
+/// Constraint checking mode for SET CONSTRAINTS statement.
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum ConstraintCheckTime {
+    Deferred,
+    Immediate,
+}
+
+impl fmt::Display for ConstraintCheckTime {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            ConstraintCheckTime::Deferred => "DEFERRED",
+            ConstraintCheckTime::Immediate => "IMMEDIATE",
         })
     }
 }

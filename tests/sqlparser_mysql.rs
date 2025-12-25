@@ -645,6 +645,7 @@ fn parse_create_table_auto_increment() {
                                 columns: vec![],
                                 index_options: vec![],
                                 characteristics: None,
+                                period_without_overlaps: None,
                             }),
                         },
                         ColumnOptionDef {
@@ -706,6 +707,7 @@ fn table_constraint_unique_primary_ctor(
             columns,
             index_options,
             characteristics,
+            period_without_overlaps: None,
         }
         .into(),
     }
@@ -754,6 +756,7 @@ fn parse_create_table_primary_and_unique_key() {
                                         columns: vec![],
                                         index_options: vec![],
                                         characteristics: None,
+                                        period_without_overlaps: None,
                                     }),
                                 },
                                 ColumnOptionDef {
@@ -1397,6 +1400,7 @@ fn parse_quote_identifiers() {
                             columns: vec![],
                             index_options: vec![],
                             characteristics: None,
+                            period_without_overlaps: None,
                         }),
                     }],
                 }],
@@ -2633,6 +2637,7 @@ fn parse_update_with_joins() {
             or: None,
             limit: None,
             update_token: _,
+            for_portion_of: None,
         }) => {
             assert_eq!(
                 TableWithJoins {

@@ -488,7 +488,8 @@ fn parse_update_set_from() {
             }),
             returning: None,
             or: None,
-            limit: None
+            limit: None,
+            for_portion_of: None,
         })
     );
 
@@ -509,6 +510,7 @@ fn parse_update_with_table_alias() {
             or: None,
             limit: None,
             update_token: _,
+            for_portion_of: None,
         }) => {
             assert_eq!(
                 TableWithJoins {
@@ -1178,6 +1180,7 @@ fn parse_select_count_wildcard() {
                 clauses: vec![],
             }),
             null_treatment: None,
+                    nth_value_order: None,
             filter: None,
             over: None,
             within_group: vec![]
@@ -1204,6 +1207,7 @@ fn parse_select_count_distinct() {
                 clauses: vec![],
             }),
             null_treatment: None,
+                    nth_value_order: None,
             within_group: vec![],
             filter: None,
             over: None
@@ -2812,6 +2816,7 @@ fn parse_select_having() {
                     clauses: vec![],
                 }),
                 null_treatment: None,
+                    nth_value_order: None,
                 filter: None,
                 over: None,
                 within_group: vec![]
@@ -2843,6 +2848,7 @@ fn parse_select_qualify() {
                     clauses: vec![],
                 }),
                 null_treatment: None,
+                    nth_value_order: None,
                 filter: None,
                 over: Some(WindowType::WindowSpec(WindowSpec {
                     window_name: None,
@@ -3275,6 +3281,7 @@ fn parse_listagg() {
             }),
             filter: None,
             null_treatment: None,
+                    nth_value_order: None,
             over: None,
             within_group: vec![
                 OrderByExpr {
@@ -3607,7 +3614,7 @@ fn parse_create_table() {
          lat DOUBLE NULL, \
          lng DOUBLE, \
          constrained INT NULL CONSTRAINT pkey PRIMARY KEY NOT NULL UNIQUE CHECK (constrained > 0), \
-         ref INT REFERENCES othertable (a, b), \
+         ref INT REFERENCES othertable(a, b), \
          ref2 INT REFERENCES othertable2 ON DELETE CASCADE ON UPDATE NO ACTION, \
          CONSTRAINT fkey FOREIGN KEY (lat) REFERENCES othertable3(lat) ON DELETE RESTRICT, \
          CONSTRAINT fkey2 FOREIGN KEY (lat) REFERENCES othertable4(lat) ON DELETE NO ACTION ON UPDATE RESTRICT, \
@@ -3671,6 +3678,7 @@ fn parse_create_table() {
                                     columns: vec![],
                                     index_options: vec![],
                                     characteristics: None,
+                                    period_without_overlaps: None,
                                 }),
                             },
                             ColumnOptionDef {
@@ -5433,6 +5441,7 @@ fn parse_named_argument_function() {
                 clauses: vec![],
             }),
             null_treatment: None,
+                    nth_value_order: None,
             filter: None,
             over: None,
             within_group: vec![]
@@ -5474,6 +5483,7 @@ fn parse_window_functions() {
                 clauses: vec![],
             }),
             null_treatment: None,
+                    nth_value_order: None,
             filter: None,
             over: Some(WindowType::WindowSpec(WindowSpec {
                 window_name: None,
@@ -5652,6 +5662,7 @@ fn test_parse_named_window() {
                         clauses: vec![],
                     }),
                     null_treatment: None,
+                    nth_value_order: None,
                     filter: None,
                     over: Some(WindowType::NamedWindow(Ident {
                         value: "window1".to_string(),
@@ -5687,6 +5698,7 @@ fn test_parse_named_window() {
                         clauses: vec![],
                     }),
                     null_treatment: None,
+                    nth_value_order: None,
                     filter: None,
                     over: Some(WindowType::NamedWindow(Ident {
                         value: "window2".to_string(),
@@ -10279,6 +10291,7 @@ fn parse_time_functions() {
                 clauses: vec![],
             }),
             null_treatment: None,
+                    nth_value_order: None,
             filter: None,
             over: None,
             within_group: vec![],
@@ -11827,6 +11840,7 @@ fn parse_call() {
             name: ObjectName::from(vec![Ident::new("my_procedure")]),
             filter: None,
             null_treatment: None,
+                    nth_value_order: None,
             over: None,
             within_group: vec![],
         })
@@ -12404,9 +12418,10 @@ fn test_selective_aggregation() {
                 filter: Some(Box::new(Expr::IsNotNull(Box::new(Expr::Identifier(
                     Ident::new("name")
                 ))))),
+                nth_value_order: None,
+                null_treatment: None,
                 over: None,
                 within_group: vec![],
-                null_treatment: None
             })),
             SelectItem::ExprWithAlias {
                 expr: Expr::Function(Function {
@@ -12430,6 +12445,7 @@ fn test_selective_aggregation() {
                         any: false,
                     })),
                     null_treatment: None,
+                    nth_value_order: None,
                     over: None,
                     within_group: vec![]
                 }),
@@ -12574,6 +12590,7 @@ fn test_match_recognize() {
                     OneOrMore,
                 ),
             ]),
+            subsets: vec![],
             symbols: vec![
                 SymbolDefinition {
                     symbol: Ident::new("row_with_price_decrease"),
@@ -12738,7 +12755,7 @@ fn test_match_recognize_patterns() {
 
     // grouping case 1
     check(
-        "S1 ( S2 )",
+        "S1 (S2)",
         Concat(vec![
             Symbol(Named(Ident::new("S1"))),
             Group(Box::new(Symbol(Named(Ident::new("S2"))))),
@@ -12747,7 +12764,7 @@ fn test_match_recognize_patterns() {
 
     // grouping case 2
     check(
-        "( {- S3 -} S4 )+",
+        "({- S3 -} S4)+",
         Repetition(
             Box::new(Group(Box::new(Concat(vec![
                 Exclude(Named(Ident::new("S3"))),
@@ -12759,7 +12776,7 @@ fn test_match_recognize_patterns() {
 
     // the grand finale (example taken from snowflake docs)
     check(
-        "^ S1 S2*? ( {- S3 -} S4 )+ | PERMUTE(S1, S2){1,2} $",
+        "^ S1 S2*? ({- S3 -} S4)+ | PERMUTE(S1, S2){1,2} $",
         Alternation(vec![
             Concat(vec![
                 Symbol(Start),
@@ -14341,6 +14358,7 @@ fn parse_composite_access_expr() {
                     clauses: vec![],
                 }),
                 null_treatment: None,
+                    nth_value_order: None,
                 filter: None,
                 over: None,
                 within_group: vec![]
@@ -14365,6 +14383,7 @@ fn parse_composite_access_expr() {
                     clauses: vec![],
                 }),
                 null_treatment: None,
+                    nth_value_order: None,
                 filter: None,
                 over: None,
                 within_group: vec![]
@@ -14391,6 +14410,7 @@ fn parse_composite_access_expr() {
                 clauses: vec![],
             }),
             null_treatment: None,
+                    nth_value_order: None,
             filter: None,
             over: None,
             within_group: vec![],

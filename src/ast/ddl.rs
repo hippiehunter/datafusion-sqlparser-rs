@@ -1741,7 +1741,7 @@ impl fmt::Display for ColumnOption {
                 if !constraint.referred_columns.is_empty() {
                     write!(
                         f,
-                        " ({})",
+                        "({})",
                         display_comma_separated(&constraint.referred_columns)
                     )?;
                 }
@@ -1785,12 +1785,20 @@ impl fmt::Display for ColumnOption {
                     }
                     Ok(())
                 } else {
-                    // Like Postgres - generated from sequence
+                    // Like Postgres - generated from sequence or temporal row start/end
                     let when = match generated_as {
                         GeneratedAs::Always => "ALWAYS",
                         GeneratedAs::ByDefault => "BY DEFAULT",
                         // ExpStored goes with an expression, handled above
                         GeneratedAs::ExpStored => unreachable!(),
+                        GeneratedAs::RowStart => {
+                            write!(f, "GENERATED ALWAYS AS ROW START")?;
+                            return Ok(());
+                        }
+                        GeneratedAs::RowEnd => {
+                            write!(f, "GENERATED ALWAYS AS ROW END")?;
+                            return Ok(());
+                        }
                     };
                     write!(f, "GENERATED {when} AS IDENTITY")?;
                     if sequence_options.is_some() {
@@ -1843,6 +1851,10 @@ pub enum GeneratedAs {
     Always,
     ByDefault,
     ExpStored,
+    /// `GENERATED ALWAYS AS ROW START` for temporal tables
+    RowStart,
+    /// `GENERATED ALWAYS AS ROW END` for temporal tables
+    RowEnd,
 }
 
 /// `GeneratedExpressionMode`s are modifiers that follow an expression in a `generated`.
@@ -2530,6 +2542,25 @@ impl fmt::Display for CreateIndex {
     }
 }
 
+/// SQL:2016 temporal table system versioning configuration
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct CreateTableSystemVersioning {
+    /// Optional history table name
+    pub history_table: Option<ObjectName>,
+}
+
+impl fmt::Display for CreateTableSystemVersioning {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, " WITH SYSTEM VERSIONING")?;
+        if let Some(history_table) = &self.history_table {
+            write!(f, " WITH HISTORY TABLE {}", history_table)?;
+        }
+        Ok(())
+    }
+}
+
 /// CREATE TABLE statement.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -2652,6 +2683,9 @@ pub struct CreateTable {
     /// Snowflake "REQUIRE USER" clause for dybamic tables
     /// <https://docs.snowflake.com/en/sql-reference/sql/create-dynamic-table>
     pub require_user: bool,
+    /// SQL:2016 temporal table system versioning
+    /// `WITH SYSTEM VERSIONING [WITH HISTORY TABLE history_table_name]`
+    pub system_versioning: Option<CreateTableSystemVersioning>,
 }
 
 impl fmt::Display for CreateTable {
@@ -2938,10 +2972,28 @@ impl fmt::Display for CreateTable {
         if self.strict {
             write!(f, " STRICT")?;
         }
+        if let Some(system_versioning) = &self.system_versioning {
+            write!(f, "{}", system_versioning)?;
+        }
         if let Some(query) = &self.query {
             write!(f, " AS {query}")?;
         }
         Ok(())
+    }
+}
+
+/// CREATE ASSERTION statement
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct CreateAssertion {
+    pub name: ObjectName,
+    pub expr: Box<Expr>,
+}
+
+impl fmt::Display for CreateAssertion {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "CREATE ASSERTION {} CHECK ({})", self.name, self.expr)
     }
 }
 

@@ -2621,6 +2621,7 @@ fn parse_create_indices_with_operator_classes() {
                         }),
                         filter: None,
                         null_treatment: None,
+                    nth_value_order: None,
                         over: None,
                         within_group: vec![],
                     }),
@@ -3086,6 +3087,7 @@ fn parse_array_subquery_expr() {
             })),
             filter: None,
             null_treatment: None,
+                    nth_value_order: None,
             over: None,
             within_group: vec![]
         }),
@@ -3528,6 +3530,7 @@ fn test_composite_value() {
                     clauses: vec![],
                 }),
                 null_treatment: None,
+                    nth_value_order: None,
                 filter: None,
                 over: None,
                 within_group: vec![],
@@ -3695,6 +3698,7 @@ fn parse_current_functions() {
             parameters: FunctionArguments::None,
             args: FunctionArguments::None,
             null_treatment: None,
+                    nth_value_order: None,
             filter: None,
             over: None,
             within_group: vec![],
@@ -3708,6 +3712,7 @@ fn parse_current_functions() {
             parameters: FunctionArguments::None,
             args: FunctionArguments::None,
             null_treatment: None,
+                    nth_value_order: None,
             filter: None,
             over: None,
             within_group: vec![],
@@ -3721,6 +3726,7 @@ fn parse_current_functions() {
             parameters: FunctionArguments::None,
             args: FunctionArguments::None,
             null_treatment: None,
+                    nth_value_order: None,
             filter: None,
             over: None,
             within_group: vec![],
@@ -3734,6 +3740,7 @@ fn parse_current_functions() {
             parameters: FunctionArguments::None,
             args: FunctionArguments::None,
             null_treatment: None,
+                    nth_value_order: None,
             filter: None,
             over: None,
             within_group: vec![],
@@ -4186,6 +4193,7 @@ fn parse_delimited_identifiers() {
                 clauses: vec![],
             }),
             null_treatment: None,
+                    nth_value_order: None,
             filter: None,
             over: None,
             within_group: vec![],
@@ -6058,6 +6066,7 @@ fn parse_trigger_related_functions() {
             refresh_mode: None,
             initialize: None,
             require_user: false,
+            system_versioning: None,
         }
     );
 
@@ -6600,7 +6609,7 @@ fn parse_foreign_key_match() {
 
     for (match_clause, expected_kind) in test_cases {
         // Test column-level foreign key
-        let sql = format!("CREATE TABLE t (id INT REFERENCES other_table (id) {match_clause})");
+        let sql = format!("CREATE TABLE t (id INT REFERENCES other_table(id) {match_clause})");
         let statement = pg_and_generic().verified_stmt(&sql);
         match statement {
             Statement::CreateTable(CreateTable { columns, .. }) => {
@@ -6633,7 +6642,7 @@ fn parse_foreign_key_match() {
 
 #[test]
 fn parse_foreign_key_match_with_actions() {
-    let sql = "CREATE TABLE orders (order_id INT REFERENCES another_table (id) MATCH FULL ON DELETE CASCADE ON UPDATE RESTRICT, customer_id INT, CONSTRAINT fk_customer FOREIGN KEY (customer_id) REFERENCES customers(customer_id) MATCH SIMPLE ON DELETE SET NULL ON UPDATE CASCADE)";
+    let sql = "CREATE TABLE orders (order_id INT REFERENCES another_table(id) MATCH FULL ON DELETE CASCADE ON UPDATE RESTRICT, customer_id INT, CONSTRAINT fk_customer FOREIGN KEY (customer_id) REFERENCES customers(customer_id) MATCH SIMPLE ON DELETE SET NULL ON UPDATE CASCADE)";
 
     pg_and_generic().verified_stmt(sql);
 }

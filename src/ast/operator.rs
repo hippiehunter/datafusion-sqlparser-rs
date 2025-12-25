@@ -329,6 +329,20 @@ pub enum BinaryOperator {
     /// ':=' Assignment Operator
     /// See <https://dev.mysql.com/doc/refman/8.4/en/assignment-operators.html#operator_assign-value>
     Assignment,
+    /// SQL:2016 Period predicate: `period CONTAINS expr`
+    PeriodContains,
+    /// SQL:2016 Period predicate: `period EQUALS period`
+    PeriodEquals,
+    /// SQL:2016 Period predicate: `period OVERLAPS period`
+    PeriodOverlaps,
+    /// SQL:2016 Period predicate: `period PRECEDES period`
+    PeriodPrecedes,
+    /// SQL:2016 Period predicate: `period SUCCEEDS period`
+    PeriodSucceeds,
+    /// SQL:2016 Period predicate: `period IMMEDIATELY PRECEDES period`
+    PeriodImmediatelyPrecedes,
+    /// SQL:2016 Period predicate: `period IMMEDIATELY SUCCEEDS period`
+    PeriodImmediatelySucceeds,
 }
 
 impl fmt::Display for BinaryOperator {
@@ -405,6 +419,13 @@ impl fmt::Display for BinaryOperator {
             BinaryOperator::At => f.write_str("@"),
             BinaryOperator::TildeEq => f.write_str("~="),
             BinaryOperator::Assignment => f.write_str(":="),
+            BinaryOperator::PeriodContains => f.write_str("CONTAINS"),
+            BinaryOperator::PeriodEquals => f.write_str("EQUALS"),
+            BinaryOperator::PeriodOverlaps => f.write_str("OVERLAPS"),
+            BinaryOperator::PeriodPrecedes => f.write_str("PRECEDES"),
+            BinaryOperator::PeriodSucceeds => f.write_str("SUCCEEDS"),
+            BinaryOperator::PeriodImmediatelyPrecedes => f.write_str("IMMEDIATELY PRECEDES"),
+            BinaryOperator::PeriodImmediatelySucceeds => f.write_str("IMMEDIATELY SUCCEEDS"),
         }
     }
 }

@@ -33,6 +33,33 @@ use super::{
     UpdateTableFromKind,
 };
 
+/// FOR PORTION OF clause used in UPDATE and DELETE statements for temporal tables.
+///
+/// This represents SQL:2016 temporal operations that modify only a portion of a period.
+///
+/// # Syntax
+/// ```sql
+/// FOR PORTION OF period_name FROM start_expr TO end_expr
+/// ```
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct ForPortionOf {
+    pub period_name: Ident,
+    pub from: Expr,
+    pub to: Expr,
+}
+
+impl Display for ForPortionOf {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "FOR PORTION OF {} FROM {} TO {}",
+            self.period_name, self.from, self.to
+        )
+    }
+}
+
 /// INSERT statement.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -188,6 +215,8 @@ pub struct Delete {
     pub tables: Vec<ObjectName>,
     /// FROM
     pub from: FromTable,
+    /// FOR PORTION OF (SQL:2016 temporal tables)
+    pub for_portion_of: Option<ForPortionOf>,
     /// USING (Snowflake, Postgres, MySQL)
     pub using: Option<Vec<TableWithJoins>>,
     /// WHERE
@@ -214,6 +243,10 @@ impl Display for Delete {
             FromTable::WithoutKeyword(from) => {
                 indented_list(f, from)?;
             }
+        }
+        if let Some(for_portion_of) = &self.for_portion_of {
+            SpaceOrNewline.fmt(f)?;
+            for_portion_of.fmt(f)?;
         }
         if let Some(using) = &self.using {
             SpaceOrNewline.fmt(f)?;
@@ -255,6 +288,8 @@ pub struct Update {
     pub update_token: AttachedToken,
     /// TABLE
     pub table: TableWithJoins,
+    /// FOR PORTION OF (SQL:2016 temporal tables)
+    pub for_portion_of: Option<ForPortionOf>,
     /// Column assignments
     pub assignments: Vec<Assignment>,
     /// Table which provide value to be set
@@ -277,6 +312,10 @@ impl Display for Update {
             f.write_str(" ")?;
         }
         self.table.fmt(f)?;
+        if let Some(for_portion_of) = &self.for_portion_of {
+            SpaceOrNewline.fmt(f)?;
+            for_portion_of.fmt(f)?;
+        }
         if let Some(UpdateTableFromKind::BeforeSet(from)) = &self.from {
             SpaceOrNewline.fmt(f)?;
             f.write_str("FROM")?;

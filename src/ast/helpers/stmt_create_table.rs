@@ -25,9 +25,10 @@ use serde::{Deserialize, Serialize};
 use sqlparser_derive::{Visit, VisitMut};
 
 use crate::ast::{
-    ClusteredBy, ColumnDef, CommentDef, CreateTable, CreateTableLikeKind, CreateTableOptions, Expr,
-    FileFormat, HiveDistributionStyle, HiveFormat, Ident, InitializeKind, ObjectName, OnCommit,
-    OneOrManyWithParens, Query, RefreshModeKind, RowAccessPolicy, Statement,
+    ClusteredBy, ColumnDef, CommentDef, CreateTable, CreateTableLikeKind, CreateTableOptions,
+    CreateTableSystemVersioning, Expr, FileFormat, HiveDistributionStyle, HiveFormat, Ident,
+    InitializeKind, ObjectName, OnCommit, OneOrManyWithParens, Query, RefreshModeKind,
+    RowAccessPolicy, Statement,
     StorageSerializationPolicy, TableConstraint, TableVersion, Tag, WrappedCollection,
 };
 
@@ -115,6 +116,7 @@ pub struct CreateTableBuilder {
     pub refresh_mode: Option<RefreshModeKind>,
     pub initialize: Option<InitializeKind>,
     pub require_user: bool,
+    pub system_versioning: Option<CreateTableSystemVersioning>,
 }
 
 impl CreateTableBuilder {
@@ -171,6 +173,7 @@ impl CreateTableBuilder {
             refresh_mode: None,
             initialize: None,
             require_user: false,
+            system_versioning: None,
         }
     }
     pub fn or_replace(mut self, or_replace: bool) -> Self {
@@ -431,6 +434,11 @@ impl CreateTableBuilder {
         self
     }
 
+    pub fn system_versioning(mut self, system_versioning: Option<CreateTableSystemVersioning>) -> Self {
+        self.system_versioning = system_versioning;
+        self
+    }
+
     pub fn build(self) -> Statement {
         CreateTable {
             or_replace: self.or_replace,
@@ -484,6 +492,7 @@ impl CreateTableBuilder {
             refresh_mode: self.refresh_mode,
             initialize: self.initialize,
             require_user: self.require_user,
+            system_versioning: self.system_versioning,
         }
         .into()
     }
@@ -548,6 +557,7 @@ impl TryFrom<Statement> for CreateTableBuilder {
                 refresh_mode,
                 initialize,
                 require_user,
+                system_versioning,
             }) => Ok(Self {
                 or_replace,
                 temporary,
@@ -600,6 +610,7 @@ impl TryFrom<Statement> for CreateTableBuilder {
                 refresh_mode,
                 initialize,
                 require_user,
+                system_versioning,
             }),
             _ => Err(ParserError::ParserError(format!(
                 "Expected create table statement, but received: {stmt}"

@@ -101,6 +101,9 @@ pub enum TableConstraint {
     /// [1]: https://dev.mysql.com/doc/refman/8.0/en/fulltext-natural-language.html
     /// [2]: https://dev.mysql.com/doc/refman/8.0/en/spatial-types.html
     FulltextOrSpatial(FullTextOrSpatialConstraint),
+    /// SQL:2016 Temporal table period definition
+    /// `PERIOD FOR period_name (start_column, end_column)`
+    Period(PeriodForDefinition),
 }
 
 impl From<UniqueConstraint> for TableConstraint {
@@ -139,6 +142,12 @@ impl From<FullTextOrSpatialConstraint> for TableConstraint {
     }
 }
 
+impl From<PeriodForDefinition> for TableConstraint {
+    fn from(constraint: PeriodForDefinition) -> Self {
+        TableConstraint::Period(constraint)
+    }
+}
+
 impl fmt::Display for TableConstraint {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -148,6 +157,7 @@ impl fmt::Display for TableConstraint {
             TableConstraint::Check(constraint) => constraint.fmt(f),
             TableConstraint::Index(constraint) => constraint.fmt(f),
             TableConstraint::FulltextOrSpatial(constraint) => constraint.fmt(f),
+            TableConstraint::Period(constraint) => constraint.fmt(f),
         }
     }
 }
@@ -188,6 +198,46 @@ impl crate::ast::Spanned for CheckConstraint {
     }
 }
 
+/// SQL:2016 Temporal: Column or period reference in foreign key constraints
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum ForeignKeyColumnOrPeriod {
+    Column(Ident),
+    Period(Ident),
+}
+
+impl fmt::Display for ForeignKeyColumnOrPeriod {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ForeignKeyColumnOrPeriod::Column(col) => write!(f, "{}", col),
+            ForeignKeyColumnOrPeriod::Period(period) => write!(f, "PERIOD {}", period),
+        }
+    }
+}
+
+impl crate::ast::Spanned for ForeignKeyColumnOrPeriod {
+    fn span(&self) -> Span {
+        match self {
+            ForeignKeyColumnOrPeriod::Column(ident) | ForeignKeyColumnOrPeriod::Period(ident) => {
+                ident.span
+            }
+        }
+    }
+}
+
+impl From<Ident> for ForeignKeyColumnOrPeriod {
+    fn from(ident: Ident) -> Self {
+        ForeignKeyColumnOrPeriod::Column(ident)
+    }
+}
+
+impl<'a> From<&'a str> for ForeignKeyColumnOrPeriod {
+    fn from(s: &'a str) -> Self {
+        ForeignKeyColumnOrPeriod::Column(Ident::new(s))
+    }
+}
+
 /// A referential integrity constraint (`[ CONSTRAINT <name> ] FOREIGN KEY (<columns>)
 /// REFERENCES <foreign_table> (<referred_columns>) [ MATCH { FULL | PARTIAL | SIMPLE } ]
 /// { [ON DELETE <referential_action>] [ON UPDATE <referential_action>] |
@@ -201,9 +251,9 @@ pub struct ForeignKeyConstraint {
     /// MySQL-specific field
     /// <https://dev.mysql.com/doc/refman/8.4/en/create-table-foreign-keys.html>
     pub index_name: Option<Ident>,
-    pub columns: Vec<Ident>,
+    pub columns: Vec<ForeignKeyColumnOrPeriod>,
     pub foreign_table: ObjectName,
-    pub referred_columns: Vec<Ident>,
+    pub referred_columns: Vec<ForeignKeyColumnOrPeriod>,
     pub on_delete: Option<ReferentialAction>,
     pub on_update: Option<ReferentialAction>,
     pub match_kind: Option<ConstraintReferenceMatchKind>,
@@ -251,9 +301,9 @@ impl crate::ast::Spanned for ForeignKeyConstraint {
                 .iter()
                 .map(|i| i.span)
                 .chain(self.index_name.iter().map(|i| i.span))
-                .chain(self.columns.iter().map(|i| i.span))
+                .chain(self.columns.iter().map(|i| i.span()))
                 .chain(core::iter::once(self.foreign_table.span()))
-                .chain(self.referred_columns.iter().map(|i| i.span))
+                .chain(self.referred_columns.iter().map(|i| i.span()))
                 .chain(self.on_delete.iter().map(|i| i.span()))
                 .chain(self.on_update.iter().map(|i| i.span()))
                 .chain(self.characteristics.iter().map(|i| i.span())),
@@ -415,6 +465,9 @@ pub struct PrimaryKeyConstraint {
     pub columns: Vec<IndexColumn>,
     pub index_options: Vec<IndexOption>,
     pub characteristics: Option<ConstraintCharacteristics>,
+    /// SQL:2016 Temporal: Optional period name for temporal primary key with WITHOUT OVERLAPS
+    /// Example: PRIMARY KEY (emp_id, employment WITHOUT OVERLAPS)
+    pub period_without_overlaps: Option<Ident>,
 }
 
 impl fmt::Display for PrimaryKeyConstraint {
@@ -422,12 +475,19 @@ impl fmt::Display for PrimaryKeyConstraint {
         use crate::ast::ddl::{display_constraint_name, display_option, display_option_spaced};
         write!(
             f,
-            "{}PRIMARY KEY{}{} ({})",
+            "{}PRIMARY KEY{}{} (",
             display_constraint_name(&self.name),
             display_option_spaced(&self.index_name),
             display_option(" USING ", "", &self.index_type),
-            display_comma_separated(&self.columns),
         )?;
+
+        write!(f, "{}", display_comma_separated(&self.columns))?;
+
+        if let Some(period) = &self.period_without_overlaps {
+            write!(f, ", {} WITHOUT OVERLAPS", period)?;
+        }
+
+        write!(f, ")")?;
 
         if !self.index_options.is_empty() {
             write!(f, " {}", display_separated(&self.index_options, " "))?;
@@ -516,5 +576,62 @@ impl crate::ast::Spanned for UniqueConstraint {
                 .chain(self.columns.iter().map(|i| i.span()))
                 .chain(self.characteristics.iter().map(|i| i.span())),
         )
+    }
+}
+
+/// SQL:2016 Temporal table period definition
+/// `PERIOD FOR period_name (start_column, end_column)`
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct PeriodForDefinition {
+    pub name: PeriodForName,
+    pub start_column: Ident,
+    pub end_column: Ident,
+}
+
+impl fmt::Display for PeriodForDefinition {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "PERIOD FOR {} ({}, {})",
+            self.name, self.start_column, self.end_column
+        )
+    }
+}
+
+impl crate::ast::Spanned for PeriodForDefinition {
+    fn span(&self) -> Span {
+        self.start_column
+            .span
+            .union(&self.end_column.span)
+            .union(&self.name.span())
+    }
+}
+
+/// Period name for temporal tables
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum PeriodForName {
+    SystemTime,
+    Named(Ident),
+}
+
+impl fmt::Display for PeriodForName {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            PeriodForName::SystemTime => write!(f, "SYSTEM_TIME"),
+            PeriodForName::Named(name) => write!(f, "{}", name),
+        }
+    }
+}
+
+impl PeriodForName {
+    fn span(&self) -> Span {
+        match self {
+            PeriodForName::SystemTime => Span::empty(),
+            PeriodForName::Named(ident) => ident.span,
+        }
     }
 }

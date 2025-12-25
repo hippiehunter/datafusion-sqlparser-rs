@@ -700,6 +700,12 @@ pub trait Dialect: Debug + Any {
             BorrowedToken::Word(w) if w.keyword == Keyword::SIMILAR => Ok(p!(Like)),
             BorrowedToken::Word(w) if w.keyword == Keyword::MEMBER => Ok(p!(Like)),
             BorrowedToken::Word(w) if w.keyword == Keyword::OPERATOR => Ok(p!(Between)),
+            // SQL:2016 Period predicates
+            BorrowedToken::Word(w) if w.keyword == Keyword::CONTAINS => Ok(p!(Between)),
+            BorrowedToken::Word(w) if w.keyword == Keyword::EQUALS => Ok(p!(Between)),
+            BorrowedToken::Word(w) if w.keyword == Keyword::PRECEDES => Ok(p!(Between)),
+            BorrowedToken::Word(w) if w.keyword == Keyword::SUCCEEDS => Ok(p!(Between)),
+            BorrowedToken::Word(w) if w.keyword == Keyword::IMMEDIATELY => Ok(p!(Between)),
             BorrowedToken::Word(w) if w.keyword == Keyword::DIV => Ok(p!(MulDivModOp)),
             BorrowedToken::Period => Ok(p!(Period)),
             BorrowedToken::Assignment

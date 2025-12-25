@@ -1377,6 +1377,8 @@ pub enum TableFactor {
         after_match_skip: Option<AfterMatchSkip>,
         /// `PATTERN ( <pattern> )`
         pattern: MatchRecognizePattern,
+        /// `SUBSET <name> = ( <symbol> [, ... ] ) [, ... ]`
+        subsets: Vec<SubsetDefinition>,
         /// `DEFINE <symbol> AS <expr> [, ... ]`
         symbols: Vec<SymbolDefinition>,
         alias: Option<TableAlias>,
@@ -1718,7 +1720,7 @@ impl fmt::Display for AfterMatchSkip {
         write!(f, "AFTER MATCH SKIP ")?;
         match self {
             AfterMatchSkip::PastLastRow => write!(f, "PAST LAST ROW"),
-            AfterMatchSkip::ToNextRow => write!(f, " TO NEXT ROW"),
+            AfterMatchSkip::ToNextRow => write!(f, "TO NEXT ROW"),
             AfterMatchSkip::ToFirst(symbol) => write!(f, "TO FIRST {symbol}"),
             AfterMatchSkip::ToLast(symbol) => write!(f, "TO LAST {symbol}"),
         }
@@ -1761,6 +1763,23 @@ pub struct SymbolDefinition {
 impl fmt::Display for SymbolDefinition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} AS {}", self.symbol, self.definition)
+    }
+}
+
+/// A subset definition in a `MATCH_RECOGNIZE` operation.
+///
+/// See <https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#_7_6_row_pattern_recognition_clause>.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct SubsetDefinition {
+    pub name: Ident,
+    pub symbols: Vec<Ident>,
+}
+
+impl fmt::Display for SubsetDefinition {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} = ({})", self.name, display_comma_separated(&self.symbols))
     }
 }
 
@@ -1818,7 +1837,7 @@ impl fmt::Display for MatchRecognizePattern {
             Exclude(symbol) => write!(f, "{{- {symbol} -}}"),
             Permute(symbols) => write!(f, "PERMUTE({})", display_comma_separated(symbols)),
             Concat(patterns) => write!(f, "{}", display_separated(patterns, " ")),
-            Group(pattern) => write!(f, "( {pattern} )"),
+            Group(pattern) => write!(f, "({pattern})"),
             Alternation(patterns) => write!(f, "{}", display_separated(patterns, " | ")),
             Repetition(pattern, op) => write!(f, "{pattern}{op}"),
         }
@@ -1901,6 +1920,10 @@ impl fmt::Display for TableFactor {
                 if let Some(TableSampleKind::BeforeTableAlias(sample)) = sample {
                     write!(f, " {sample}")?;
                 }
+                // SQL:2016 Temporal: FOR SYSTEM_TIME must come before alias
+                if let Some(version) = version {
+                    write!(f, " {version}")?;
+                }
                 if let Some(alias) = alias {
                     if alias.implicit {
                         write!(f, " {alias}")?;
@@ -1913,9 +1936,6 @@ impl fmt::Display for TableFactor {
                 }
                 if !with_hints.is_empty() {
                     write!(f, " WITH ({})", display_comma_separated(with_hints))?;
-                }
-                if let Some(version) = version {
-                    write!(f, " {version}")?;
                 }
                 if let Some(TableSampleKind::AfterTableAlias(sample)) = sample {
                     write!(f, " {sample}")?;
@@ -2096,27 +2116,52 @@ impl fmt::Display for TableFactor {
                 rows_per_match,
                 after_match_skip,
                 pattern,
+                subsets,
                 symbols,
                 alias,
             } => {
                 write!(f, "{table} MATCH_RECOGNIZE(")?;
+                let mut need_sep = false;
                 if !partition_by.is_empty() {
-                    write!(f, "PARTITION BY {} ", display_comma_separated(partition_by))?;
+                    write!(f, "PARTITION BY {}", display_comma_separated(partition_by))?;
+                    need_sep = true;
                 }
                 if !order_by.is_empty() {
-                    write!(f, "ORDER BY {} ", display_comma_separated(order_by))?;
+                    if need_sep {
+                        write!(f, " ")?;
+                    }
+                    write!(f, "ORDER BY {}", display_comma_separated(order_by))?;
+                    need_sep = true;
                 }
                 if !measures.is_empty() {
-                    write!(f, "MEASURES {} ", display_comma_separated(measures))?;
+                    if need_sep {
+                        write!(f, " ")?;
+                    }
+                    write!(f, "MEASURES {}", display_comma_separated(measures))?;
+                    need_sep = true;
                 }
                 if let Some(rows_per_match) = rows_per_match {
-                    write!(f, "{rows_per_match} ")?;
+                    if need_sep {
+                        write!(f, " ")?;
+                    }
+                    write!(f, "{rows_per_match}")?;
+                    need_sep = true;
                 }
                 if let Some(after_match_skip) = after_match_skip {
-                    write!(f, "{after_match_skip} ")?;
+                    if need_sep {
+                        write!(f, " ")?;
+                    }
+                    write!(f, "{after_match_skip}")?;
+                    need_sep = true;
                 }
-                write!(f, "PATTERN ({pattern}) ")?;
-                write!(f, "DEFINE {})", display_comma_separated(symbols))?;
+                if need_sep {
+                    write!(f, " ")?;
+                }
+                write!(f, "PATTERN ({pattern})")?;
+                if !subsets.is_empty() {
+                    write!(f, " SUBSET {}", display_comma_separated(subsets))?;
+                }
+                write!(f, " DEFINE {})", display_comma_separated(symbols))?;
                 if alias.is_some() {
                     write!(f, " AS {}", alias.as_ref().unwrap())?;
                 }
@@ -2281,6 +2326,18 @@ pub enum TableVersion {
     /// When the table version is defined using `FOR SYSTEM_TIME AS OF`.
     /// For example: `SELECT * FROM tbl FOR SYSTEM_TIME AS OF TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR)`
     ForSystemTimeAsOf(Expr),
+    /// When the table version is defined using `FOR SYSTEM_TIME FROM ... TO ...`.
+    /// For example: `SELECT * FROM tbl FOR SYSTEM_TIME FROM '2020-01-01' TO '2020-12-31'`
+    ForSystemTimeFromTo { start: Expr, end: Expr },
+    /// When the table version is defined using `FOR SYSTEM_TIME BETWEEN ... AND ...`.
+    /// For example: `SELECT * FROM tbl FOR SYSTEM_TIME BETWEEN '2020-01-01' AND '2020-12-31'`
+    ForSystemTimeBetween { start: Expr, end: Expr },
+    /// When the table version is defined using `FOR SYSTEM_TIME CONTAINED IN (...)`.
+    /// For example: `SELECT * FROM tbl FOR SYSTEM_TIME CONTAINED IN ('2020-01-01', '2020-12-31')`
+    ForSystemTimeContainedIn { start: Expr, end: Expr },
+    /// When the table version is defined using `FOR SYSTEM_TIME ALL`.
+    /// For example: `SELECT * FROM tbl FOR SYSTEM_TIME ALL`
+    ForSystemTimeAll,
     /// When the table version is defined using a function.
     /// For example: `SELECT * FROM tbl AT(TIMESTAMP => '2020-08-14 09:30:00')`
     Function(Expr),
@@ -2290,6 +2347,16 @@ impl Display for TableVersion {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             TableVersion::ForSystemTimeAsOf(e) => write!(f, "FOR SYSTEM_TIME AS OF {e}")?,
+            TableVersion::ForSystemTimeFromTo { start, end } => {
+                write!(f, "FOR SYSTEM_TIME FROM {start} TO {end}")?
+            }
+            TableVersion::ForSystemTimeBetween { start, end } => {
+                write!(f, "FOR SYSTEM_TIME BETWEEN {start} AND {end}")?
+            }
+            TableVersion::ForSystemTimeContainedIn { start, end } => {
+                write!(f, "FOR SYSTEM_TIME CONTAINED IN ({start}, {end})")?
+            }
+            TableVersion::ForSystemTimeAll => write!(f, "FOR SYSTEM_TIME ALL")?,
             TableVersion::Function(func) => write!(f, "{func}")?,
         }
         Ok(())
@@ -3684,11 +3751,26 @@ pub enum XmlTableColumnOption {
         path: Option<Expr>,
         /// Default value if path does not match
         default: Option<Expr>,
+        /// Default value ON EMPTY
+        default_on_empty: Option<Expr>,
+        /// NULL/value ON ERROR
+        on_error: Option<XmlTableOnError>,
         /// Whether the column is nullable (NULL=true, NOT NULL=false)
         nullable: bool,
     },
     /// The FOR ORDINALITY marker
     ForOrdinality,
+}
+
+/// ON ERROR handling for XMLTABLE columns
+///
+/// See SQL:2016 standard, X-Series.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum XmlTableOnError {
+    Null,
+    Value(Expr),
 }
 
 /// A single column definition in XMLTABLE
@@ -3721,6 +3803,8 @@ impl fmt::Display for XmlTableColumn {
                 r#type,
                 path,
                 default,
+                default_on_empty,
+                on_error,
                 nullable,
             } => {
                 write!(f, " {type}")?;
@@ -3729,6 +3813,15 @@ impl fmt::Display for XmlTableColumn {
                 }
                 if let Some(d) = default {
                     write!(f, " DEFAULT {d}")?;
+                }
+                if let Some(d) = default_on_empty {
+                    write!(f, " DEFAULT {d} ON EMPTY")?;
+                }
+                if let Some(e) = on_error {
+                    match e {
+                        XmlTableOnError::Null => write!(f, " NULL ON ERROR")?,
+                        XmlTableOnError::Value(v) => write!(f, " DEFAULT {v} ON ERROR")?,
+                    }
                 }
                 if !*nullable {
                     write!(f, " NOT NULL")?;
@@ -3798,5 +3891,91 @@ pub struct XmlNamespaceDefinition {
 impl fmt::Display for XmlNamespaceDefinition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} AS {}", self.uri, self.name)
+    }
+}
+
+/// An attribute in an XMLATTRIBUTES clause.
+///
+/// See SQL:2016 standard, X-Series (XMLELEMENT).
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct XmlAttribute {
+    /// The value expression
+    pub value: Expr,
+    /// Optional alias for the attribute
+    pub alias: Option<Ident>,
+}
+
+impl fmt::Display for XmlAttribute {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.value)?;
+        if let Some(alias) = &self.alias {
+            write!(f, " AS {}", alias)?;
+        }
+        Ok(())
+    }
+}
+
+/// An element in an XMLFOREST clause.
+///
+/// See SQL:2016 standard, X-Series (XMLFOREST).
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct XmlForestElement {
+    /// The value expression
+    pub expr: Expr,
+    /// Optional alias for the element
+    pub alias: Option<Ident>,
+}
+
+impl fmt::Display for XmlForestElement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.expr)?;
+        if let Some(alias) = &self.alias {
+            write!(f, " AS {}", alias)?;
+        }
+        Ok(())
+    }
+}
+
+/// DOCUMENT or CONTENT option for XMLPARSE and XMLSERIALIZE.
+///
+/// See SQL:2016 standard, X-Series.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum XmlDocumentOrContent {
+    Document,
+    Content,
+}
+
+impl fmt::Display for XmlDocumentOrContent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            XmlDocumentOrContent::Document => write!(f, "DOCUMENT"),
+            XmlDocumentOrContent::Content => write!(f, "CONTENT"),
+        }
+    }
+}
+
+/// PRESERVE or STRIP WHITESPACE option for XMLPARSE.
+///
+/// See SQL:2016 standard, X-Series.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum XmlWhitespace {
+    Preserve,
+    Strip,
+}
+
+impl fmt::Display for XmlWhitespace {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            XmlWhitespace::Preserve => write!(f, "PRESERVE WHITESPACE"),
+            XmlWhitespace::Strip => write!(f, "STRIP WHITESPACE"),
+        }
     }
 }

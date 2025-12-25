@@ -31,7 +31,7 @@ use super::{
     ColumnOption, ColumnOptionDef, ConditionalStatementBlock, ConditionalStatements,
     ConflictTarget, ConnectBy, ConstraintCharacteristics, CopySource, CreateIndex, CreateTable,
     CreateTableOptions, Cte, Delete, DoUpdate, ExceptSelectItem, ExcludeSelectItem, Expr,
-    ExprWithAlias, Fetch, FromTable, Function, FunctionArg, FunctionArgExpr,
+    ExprWithAlias, Fetch, ForPortionOf, FromTable, Function, FunctionArg, FunctionArgExpr,
     FunctionArgumentClause, FunctionArgumentList, FunctionArguments, GroupByExpr, HavingBound,
     IfStatement, IlikeSelectItem, IndexColumn, Insert, Interpolate, InterpolateExpr,
     IterateStatement, Join, JoinConstraint, JoinOperator, JsonPath, JsonPathElem, LateralView,
@@ -40,8 +40,8 @@ use super::{
     OnConflictAction, OnInsert, OpenStatement, OrderBy, OrderByExpr, OrderByKind, Partition,
     PivotValueSource, ProjectionSelect, Query, RaiseStatement, RaiseStatementValue,
     ReferentialAction, RenameSelectItem, RepeatStatement, ReplaceSelectElement, ReplaceSelectItem,
-    Select, SelectInto, SelectItem, SetExpr, SqlOption, Statement, Subscript, SymbolDefinition,
-    TableAlias, TableAliasColumnDef, TableConstraint, TableFactor, TableObject,
+    Select, SelectInto, SelectItem, SetExpr, SqlOption, Statement, Subscript, SubsetDefinition,
+    SymbolDefinition, TableAlias, TableAliasColumnDef, TableConstraint, TableFactor, TableObject,
     TableOptionsClustered, TableWithJoins, Update, UpdateTableFromKind, Use, Value, Values,
     ViewColumnDef, WhileStatement, WildcardAdditionalOptions, With, WithFill,
 };
@@ -318,6 +318,7 @@ impl Spanned for Statement {
             Statement::Repeat(stmt) => stmt.span(),
             Statement::Leave(stmt) => stmt.span(),
             Statement::Iterate(stmt) => stmt.span(),
+            Statement::GetDiagnostics(..) => Span::empty(),
             Statement::Raise(stmt) => stmt.span(),
             Statement::Call(function) => function.span(),
             Statement::Copy {
@@ -359,6 +360,7 @@ impl Spanned for Statement {
                 create_operator_family.span()
             }
             Statement::CreateOperatorClass(create_operator_class) => create_operator_class.span(),
+            Statement::CreateAssertion { .. } => Span::empty(),
             Statement::AlterTable(alter_table) => alter_table.span(),
             Statement::AlterIndex { name, operation } => name.span().union(&operation.span()),
             Statement::AlterView {
@@ -380,6 +382,7 @@ impl Spanned for Statement {
             Statement::Drop { .. } => Span::empty(),
             Statement::DropFunction(drop_function) => drop_function.span(),
             Statement::DropDomain { .. } => Span::empty(),
+            Statement::DropAssertion { .. } => Span::empty(),
             Statement::DropProcedure { .. } => Span::empty(),
             Statement::DropSecret { .. } => Span::empty(),
             Statement::Declare { .. } => Span::empty(),
@@ -544,6 +547,7 @@ impl Spanned for CreateTable {
             refresh_mode: _,
             initialize: _,
             require_user: _,
+            system_versioning: _,
         } = self;
 
         union_spans(
@@ -586,6 +590,7 @@ impl Spanned for TableConstraint {
             TableConstraint::Check(constraint) => constraint.span(),
             TableConstraint::Index(constraint) => constraint.span(),
             TableConstraint::FulltextOrSpatial(constraint) => constraint.span(),
+            TableConstraint::Period(constraint) => constraint.span(),
         }
     }
 }
@@ -868,6 +873,7 @@ impl Spanned for Delete {
             delete_token,
             tables,
             from,
+            for_portion_of,
             using,
             selection,
             returning,
@@ -881,6 +887,7 @@ impl Spanned for Delete {
                     .iter()
                     .map(|i| i.span())
                     .chain(core::iter::once(from.span()))
+                    .chain(for_portion_of.iter().map(|i| i.span()))
                     .chain(
                         using
                             .iter()
@@ -900,6 +907,7 @@ impl Spanned for Update {
         let Update {
             update_token,
             table,
+            for_portion_of,
             assignments,
             from,
             selection,
@@ -911,6 +919,7 @@ impl Spanned for Update {
         union_spans(
             core::iter::once(table.span())
                 .chain(core::iter::once(update_token.0.span))
+                .chain(for_portion_of.iter().map(|i| i.span()))
                 .chain(assignments.iter().map(|i| i.span()))
                 .chain(from.iter().map(|i| i.span()))
                 .chain(selection.iter().map(|i| i.span()))
@@ -926,6 +935,21 @@ impl Spanned for FromTable {
             FromTable::WithFromKeyword(vec) => union_spans(vec.iter().map(|i| i.span())),
             FromTable::WithoutKeyword(vec) => union_spans(vec.iter().map(|i| i.span())),
         }
+    }
+}
+
+impl Spanned for ForPortionOf {
+    fn span(&self) -> Span {
+        let ForPortionOf {
+            period_name,
+            from,
+            to,
+        } = self;
+        union_spans(
+            core::iter::once(period_name.span)
+                .chain(core::iter::once(from.span()))
+                .chain(core::iter::once(to.span())),
+        )
     }
 }
 
@@ -1444,6 +1468,14 @@ impl Spanned for Expr {
                 json_predicate_type: _,
                 unique_keys: _,
             } => expr.span(),
+            Expr::IsDocument {
+                expr,
+                negated: _,
+            } => expr.span(),
+            Expr::IsContent {
+                expr,
+                negated: _,
+            } => expr.span(),
             Expr::SimilarTo {
                 negated: _,
                 expr,
@@ -1470,6 +1502,30 @@ impl Spanned for Expr {
             Expr::Value(value) => value.span(),
             Expr::TypedString(TypedString { value, .. }) => value.span(),
             Expr::Function(function) => function.span(),
+            Expr::XmlParse { expr, .. } => expr.span(),
+            Expr::XmlSerialize { expr, .. } => expr.span(),
+            Expr::XmlPi { name, content } => name
+                .span
+                .union_opt(&content.as_ref().map(|c| c.span())),
+            Expr::XmlElement {
+                name,
+                attributes,
+                content,
+            } => {
+                let mut span = name.span();
+                if let Some(attrs) = attributes {
+                    for attr in attrs {
+                        span = span.union(&attr.value.span());
+                    }
+                }
+                for expr in content {
+                    span = span.union(&expr.span());
+                }
+                span
+            }
+            Expr::XmlForest { elements } => {
+                union_spans(elements.iter().map(|e| e.expr.span()))
+            }
             Expr::GroupingSets(vec) => {
                 union_spans(vec.iter().flat_map(|i| i.iter().map(|k| k.span())))
             }
@@ -1583,6 +1639,7 @@ impl Spanned for Expr {
             Expr::Prior(expr) => expr.span(),
             Expr::Lambda(_) => Span::empty(),
             Expr::MemberOf(member_of) => member_of.value.span().union(&member_of.array.span()),
+            Expr::Period { start, end } => start.span().union(&end.span()),
         }
     }
 }
@@ -1656,8 +1713,9 @@ impl Spanned for Function {
             parameters,
             args,
             filter,
-            null_treatment: _, // enum
-            over: _,           // todo
+            nth_value_order: _, // enum
+            null_treatment: _,  // enum
+            over: _,            // todo
             within_group,
         } = self;
 
@@ -1957,6 +2015,7 @@ impl Spanned for TableFactor {
                 rows_per_match: _,
                 after_match_skip: _,
                 pattern,
+                subsets,
                 symbols,
                 alias,
             } => union_spans(
@@ -1965,6 +2024,7 @@ impl Spanned for TableFactor {
                     .chain(order_by.iter().map(|i| i.span()))
                     .chain(measures.iter().map(|i| i.span()))
                     .chain(core::iter::once(pattern.span()))
+                    .chain(subsets.iter().map(|i| i.span()))
                     .chain(symbols.iter().map(|i| i.span()))
                     .chain(alias.as_ref().map(|i| i.span())),
             ),
@@ -2020,6 +2080,16 @@ impl Spanned for SymbolDefinition {
         let SymbolDefinition { symbol, definition } = self;
 
         symbol.span.union(&definition.span())
+    }
+}
+
+impl Spanned for SubsetDefinition {
+    fn span(&self) -> Span {
+        let SubsetDefinition { name, symbols } = self;
+
+        union_spans(
+            core::iter::once(name.span).chain(symbols.iter().map(|i| i.span))
+        )
     }
 }
 

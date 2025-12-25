@@ -225,7 +225,7 @@ fn t185_02_temporal_foreign_key() {
         "CREATE TABLE assignments (id INT, emp_id INT, project_id INT, \
          valid_from DATE, valid_to DATE, \
          PERIOD FOR assignment (valid_from, valid_to), \
-         FOREIGN KEY (emp_id, PERIOD assignment) REFERENCES employees (emp_id, PERIOD employment))",
+         FOREIGN KEY (emp_id, PERIOD assignment) REFERENCES employees(emp_id, PERIOD employment))",
     );
 }
 
