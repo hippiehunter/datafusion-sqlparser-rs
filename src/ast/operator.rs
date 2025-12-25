@@ -333,8 +333,7 @@ pub enum BinaryOperator {
     PeriodContains,
     /// SQL:2016 Period predicate: `period EQUALS period`
     PeriodEquals,
-    /// SQL:2016 Period predicate: `period OVERLAPS period`
-    PeriodOverlaps,
+    // Note: Period OVERLAPS uses the existing BinaryOperator::Overlaps
     /// SQL:2016 Period predicate: `period PRECEDES period`
     PeriodPrecedes,
     /// SQL:2016 Period predicate: `period SUCCEEDS period`
@@ -421,7 +420,6 @@ impl fmt::Display for BinaryOperator {
             BinaryOperator::Assignment => f.write_str(":="),
             BinaryOperator::PeriodContains => f.write_str("CONTAINS"),
             BinaryOperator::PeriodEquals => f.write_str("EQUALS"),
-            BinaryOperator::PeriodOverlaps => f.write_str("OVERLAPS"),
             BinaryOperator::PeriodPrecedes => f.write_str("PRECEDES"),
             BinaryOperator::PeriodSucceeds => f.write_str("SUCCEEDS"),
             BinaryOperator::PeriodImmediatelyPrecedes => f.write_str("IMMEDIATELY PRECEDES"),
