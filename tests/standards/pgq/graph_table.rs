@@ -62,7 +62,7 @@ fn graph_table_multiple_columns() {
 #[test]
 fn graph_table_join_with_regular_table() {
     verified_standard_stmt(
-        "SELECT g.name, t.extra FROM GRAPH_TABLE (my_graph MATCH (n) COLUMNS (n.id, n.name)) AS g JOIN other_table t ON g.id = t.graph_id"
+        "SELECT g.name, t.extra FROM GRAPH_TABLE (my_graph MATCH (n) COLUMNS (n.id, n.name)) AS g JOIN other_table AS t ON g.id = t.graph_id"
     );
 }
 

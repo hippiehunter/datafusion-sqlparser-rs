@@ -98,13 +98,13 @@ fn create_property_graph_edge_with_properties() {
 fn create_property_graph_complex() {
     verified_standard_stmt(
         "CREATE PROPERTY GRAPH financial_network \
-         VERTEX TABLES ( \
+         VERTEX TABLES (\
            accounts KEY (account_id) LABEL Account PROPERTIES (balance, type), \
-           customers KEY (customer_id) LABEL Customer PROPERTIES (name, since) \
+           customers KEY (customer_id) LABEL Customer PROPERTIES (name, since)\
          ) \
-         EDGE TABLES ( \
+         EDGE TABLES (\
            transfers SOURCE KEY (from_account) REFERENCES accounts DESTINATION KEY (to_account) REFERENCES accounts LABEL TRANSFER PROPERTIES (amount, date), \
-           owns SOURCE REFERENCES customers DESTINATION REFERENCES accounts LABEL OWNS \
+           owns SOURCE REFERENCES customers DESTINATION REFERENCES accounts LABEL OWNS\
          )"
     );
 }

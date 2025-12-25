@@ -1687,6 +1687,68 @@ impl<'a> Parser<'a> {
             Keyword::TRY_CAST => Ok(Some(self.parse_cast_expr(CastKind::TryCast)?)),
             Keyword::SAFE_CAST => Ok(Some(self.parse_cast_expr(CastKind::SafeCast)?)),
             Keyword::EXISTS => Ok(Some(self.parse_exists_expr(false)?)),
+            // Graph subqueries: COUNT { ... }, VALUE { ... }, COLLECT { ... }, etc.
+            Keyword::COUNT if self.peek_token() == BorrowedToken::LBrace => {
+                self.expect_token(&BorrowedToken::LBrace)?;
+                let subquery = self.parse_graph_subquery()?;
+                self.expect_token(&BorrowedToken::RBrace)?;
+                Ok(Some(Expr::GraphCount {
+                    subquery: Box::new(subquery),
+                }))
+            }
+            Keyword::VALUE if self.peek_token() == BorrowedToken::LBrace => {
+                self.expect_token(&BorrowedToken::LBrace)?;
+                let subquery = self.parse_graph_subquery()?;
+                self.expect_token(&BorrowedToken::RBrace)?;
+                Ok(Some(Expr::GraphValue {
+                    subquery: Box::new(subquery),
+                }))
+            }
+            Keyword::COLLECT if self.peek_token() == BorrowedToken::LBrace => {
+                self.expect_token(&BorrowedToken::LBrace)?;
+                let subquery = self.parse_graph_subquery()?;
+                self.expect_token(&BorrowedToken::RBrace)?;
+                Ok(Some(Expr::GraphCollect {
+                    subquery: Box::new(subquery),
+                }))
+            }
+            Keyword::SUM if self.peek_token() == BorrowedToken::LBrace => {
+                self.expect_token(&BorrowedToken::LBrace)?;
+                let subquery = self.parse_graph_subquery()?;
+                self.expect_token(&BorrowedToken::RBrace)?;
+                Ok(Some(Expr::GraphSum {
+                    subquery: Box::new(subquery),
+                }))
+            }
+            Keyword::AVG if self.peek_token() == BorrowedToken::LBrace => {
+                self.expect_token(&BorrowedToken::LBrace)?;
+                let subquery = self.parse_graph_subquery()?;
+                self.expect_token(&BorrowedToken::RBrace)?;
+                Ok(Some(Expr::GraphAvg {
+                    subquery: Box::new(subquery),
+                }))
+            }
+            Keyword::MIN if self.peek_token() == BorrowedToken::LBrace => {
+                self.expect_token(&BorrowedToken::LBrace)?;
+                let subquery = self.parse_graph_subquery()?;
+                self.expect_token(&BorrowedToken::RBrace)?;
+                Ok(Some(Expr::GraphMin {
+                    subquery: Box::new(subquery),
+                }))
+            }
+            Keyword::MAX if self.peek_token() == BorrowedToken::LBrace => {
+                self.expect_token(&BorrowedToken::LBrace)?;
+                let subquery = self.parse_graph_subquery()?;
+                self.expect_token(&BorrowedToken::RBrace)?;
+                Ok(Some(Expr::GraphMax {
+                    subquery: Box::new(subquery),
+                }))
+            }
+            // SQL/PGQ quantified predicates: ALL(x IN e | predicate), ANY(x IN e | predicate)
+            Keyword::ALL | Keyword::ANY if self.peek_quantified_predicate() => {
+                self.prev_token();
+                Ok(Some(self.parse_quantified_predicate()?))
+            }
             Keyword::EXTRACT => Ok(Some(self.parse_extract_expr()?)),
             Keyword::CEIL => Ok(Some(self.parse_ceil_floor_expr(true)?)),
             Keyword::FLOOR => Ok(Some(self.parse_ceil_floor_expr(false)?)),
@@ -2823,13 +2885,148 @@ impl<'a> Parser<'a> {
 
     /// Parse a SQL EXISTS expression e.g. `WHERE EXISTS(SELECT ...)`.
     pub fn parse_exists_expr(&self, negated: bool) -> Result<Expr, ParserError> {
-        self.expect_token(&BorrowedToken::LParen)?;
-        let exists_node = Expr::Exists {
-            negated,
-            subquery: self.parse_query()?,
+        // Check if this is a graph EXISTS with braces { MATCH ... }
+        if self.consume_token(&BorrowedToken::LBrace) {
+            // Parse graph pattern EXISTS { [MATCH] ... }
+            // MATCH keyword is optional in graph EXISTS predicates
+            let match_keyword_present = self.parse_keyword(Keyword::MATCH);
+            let mut pattern = self.parse_graph_match_clause()?;
+            pattern.match_keyword_present = match_keyword_present;
+            self.expect_token(&BorrowedToken::RBrace)?;
+            Ok(Expr::GraphExists {
+                negated,
+                pattern: Box::new(pattern),
+            })
+        } else {
+            // Regular EXISTS with parentheses
+            self.expect_token(&BorrowedToken::LParen)?;
+            let exists_node = Expr::Exists {
+                negated,
+                subquery: self.parse_query()?,
+            };
+            self.expect_token(&BorrowedToken::RParen)?;
+            Ok(exists_node)
+        }
+    }
+
+    /// Parse a graph subquery with optional RETURN clause
+    /// e.g. `COUNT { (n)-[:KNOWS]->() }` or `VALUE { (n)-[:KNOWS]->(m) RETURN m.name }`
+    pub fn parse_graph_subquery(&self) -> Result<GraphSubquery, ParserError> {
+        // Check for DISTINCT (only valid for COUNT)
+        let distinct = self.parse_keyword(Keyword::DISTINCT);
+
+        // Check if MATCH keyword is present (optional)
+        let match_keyword_present = self.parse_keyword(Keyword::MATCH);
+
+        // Parse optional path finding (e.g., ANY SHORTEST)
+        let path_finding = self.parse_path_finding()?;
+
+        // Parse optional path mode
+        let path_mode = self.parse_path_mode()?;
+
+        // Parse graph patterns
+        let patterns = self.parse_graph_patterns()?;
+
+        // Parse optional WHERE clause
+        let where_clause = if self.parse_keyword(Keyword::WHERE) {
+            Some(self.parse_expr()?)
+        } else {
+            None
         };
+
+        // Parse optional RETURN clause
+        let return_expr = if self.parse_keyword(Keyword::RETURN) {
+            Some(self.parse_expr()?)
+        } else {
+            None
+        };
+
+        // Parse optional ORDER BY clause
+        let order_by = if self.parse_keywords(&[Keyword::ORDER, Keyword::BY]) {
+            self.parse_comma_separated(Parser::parse_order_by_expr)?
+        } else {
+            vec![]
+        };
+
+        // Parse optional LIMIT clause
+        let limit = if self.parse_keyword(Keyword::LIMIT) {
+            Some(self.parse_expr()?)
+        } else {
+            None
+        };
+
+        Ok(GraphSubquery {
+            distinct,
+            match_keyword_present,
+            path_finding,
+            path_mode,
+            patterns,
+            where_clause,
+            return_expr,
+            order_by,
+            limit,
+        })
+    }
+
+    /// Look ahead to determine if this is a quantified predicate: `ALL(x IN e | ...)`
+    /// vs a regular function call or comparison operator.
+    fn peek_quantified_predicate(&self) -> bool {
+        // Look ahead: ALL ( ident IN ... | ... )
+        // Need to distinguish from ALL(subquery) or ALL as binary operator
+        let checkpoint = self.index.get();
+        let result = self.consume_token(&BorrowedToken::LParen)
+            && matches!(self.peek_token_ref().token, BorrowedToken::Word(_))
+            && {
+                self.next_token();
+                self.parse_keyword(Keyword::IN)
+            };
+        self.index.set(checkpoint);
+        result
+    }
+
+    /// Parse a quantified predicate: `ALL(x IN collection | predicate)` or `ANY(...)`
+    ///
+    /// SQL/PGQ element quantification for path predicates.
+    /// See ISO/IEC 9075-16:2023 (SQL/PGQ).
+    fn parse_quantified_predicate(&self) -> Result<Expr, ParserError> {
+        let quantifier = if self.parse_keyword(Keyword::ALL) {
+            QuantifiedPredicateKind::All
+        } else {
+            self.expect_keyword(Keyword::ANY)?;
+            QuantifiedPredicateKind::Any
+        };
+
+        self.expect_token(&BorrowedToken::LParen)?;
+
+        // Parse variable(s): x or (x, y)
+        let variables = if self.consume_token(&BorrowedToken::LParen) {
+            let vars = self.parse_comma_separated(Parser::parse_identifier)?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            OneOrManyWithParens::Many(vars)
+        } else {
+            OneOrManyWithParens::One(self.parse_identifier()?)
+        };
+
+        self.expect_keyword(Keyword::IN)?;
+
+        // Parse collection expression - stop before | (pipe)
+        // Pipe has precedence 21, so parse with higher precedence (22) to stop before |
+        let collection = self.parse_subexpr(22)?;
+
+        // Expect pipe separator
+        self.expect_token(&BorrowedToken::Pipe)?;
+
+        // Parse predicate expression
+        let predicate = self.parse_expr()?;
+
         self.expect_token(&BorrowedToken::RParen)?;
-        Ok(exists_node)
+
+        Ok(Expr::QuantifiedPredicate {
+            quantifier,
+            variables,
+            collection: Box::new(collection),
+            predicate: Box::new(predicate),
+        })
     }
 
     pub fn parse_extract_expr(&self) -> Result<Expr, ParserError> {
@@ -4199,11 +4396,43 @@ impl<'a> Parser<'a> {
                             expr: Box::new(expr),
                             negated: true,
                         })
+                    } else if self.parse_keywords(&[Keyword::NOT, Keyword::LABELED]) {
+                        let label = self.parse_identifier()?;
+                        Ok(Expr::IsLabeled {
+                            expr: Box::new(expr),
+                            negated: true,
+                            label,
+                        })
+                    } else if self.parse_keyword(Keyword::LABELED) {
+                        let label = self.parse_identifier()?;
+                        Ok(Expr::IsLabeled {
+                            expr: Box::new(expr),
+                            negated: false,
+                            label,
+                        })
+                    } else if self.parse_keywords(&[Keyword::SOURCE, Keyword::OF]) {
+                        let edge = self.parse_expr()?;
+                        Ok(Expr::IsSourceOf {
+                            node: Box::new(expr),
+                            edge: Box::new(edge),
+                        })
+                    } else if self.parse_keywords(&[Keyword::DESTINATION, Keyword::OF]) {
+                        let edge = self.parse_expr()?;
+                        Ok(Expr::IsDestinationOf {
+                            node: Box::new(expr),
+                            edge: Box::new(edge),
+                        })
+                    } else if self.parse_keywords(&[Keyword::SAME, Keyword::AS]) {
+                        let right = self.parse_expr()?;
+                        Ok(Expr::IsSameAs {
+                            left: Box::new(expr),
+                            right: Box::new(right),
+                        })
                     } else if let Ok(is_normalized) = self.parse_unicode_is_normalized(expr) {
                         Ok(is_normalized)
                     } else {
                         self.expected(
-                            "[NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED | JSON | DOCUMENT | CONTENT after IS",
+                            "[NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED | JSON | DOCUMENT | CONTENT | LABELED | SOURCE OF | DESTINATION OF | SAME AS after IS",
                             self.peek_token(),
                         )
                     }
@@ -5403,6 +5632,8 @@ impl<'a> Parser<'a> {
             self.parse_create_domain()
         } else if self.parse_keyword(Keyword::ASSERTION) {
             self.parse_create_assertion()
+        } else if self.parse_keywords(&[Keyword::PROPERTY, Keyword::GRAPH]) {
+            self.parse_create_property_graph(or_replace)
         } else if self.parse_keyword(Keyword::TRIGGER) {
             self.parse_create_trigger(temporary, or_alter, or_replace, false)
         } else if self.parse_keywords(&[Keyword::CONSTRAINT, Keyword::TRIGGER]) {
@@ -6910,6 +7141,118 @@ impl<'a> Parser<'a> {
         Ok(Statement::CreateAssertion(CreateAssertion { name, expr }))
     }
 
+    /// Parse CREATE PROPERTY GRAPH statement (SQL/PGQ)
+    fn parse_create_property_graph(&self, or_replace: bool) -> Result<Statement, ParserError> {
+        let if_not_exists = self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
+        let name = self.parse_object_name(false)?;
+
+        let mut vertex_tables = Vec::new();
+        let mut edge_tables = Vec::new();
+
+        // Parse VERTEX TABLES
+        if self.parse_keywords(&[Keyword::VERTEX, Keyword::TABLES]) {
+            self.expect_token(&Token::LParen)?;
+            vertex_tables = self.parse_comma_separated(|p| p.parse_graph_vertex_table_definition())?;
+            self.expect_token(&Token::RParen)?;
+        }
+
+        // Parse EDGE TABLES
+        if self.parse_keywords(&[Keyword::EDGE, Keyword::TABLES]) {
+            self.expect_token(&Token::LParen)?;
+            edge_tables = self.parse_comma_separated(|p| p.parse_graph_edge_table_definition())?;
+            self.expect_token(&Token::RParen)?;
+        }
+
+        Ok(Statement::CreatePropertyGraph(CreatePropertyGraph {
+            or_replace,
+            if_not_exists,
+            name,
+            vertex_tables,
+            edge_tables,
+        }))
+    }
+
+    fn parse_graph_vertex_table_definition(&self) -> Result<GraphVertexTableDefinition, ParserError> {
+        let table = self.parse_object_name(false)?;
+        let key = if self.parse_keyword(Keyword::KEY) {
+            Some(self.parse_graph_key_clause()?)
+        } else {
+            None
+        };
+        let label = if self.parse_keyword(Keyword::LABEL) {
+            Some(self.parse_identifier()?)
+        } else {
+            None
+        };
+        let properties = if self.parse_keyword(Keyword::PROPERTIES) {
+            Some(self.parse_graph_properties_clause()?)
+        } else {
+            None
+        };
+
+        Ok(GraphVertexTableDefinition {
+            table,
+            key,
+            label,
+            properties,
+        })
+    }
+
+    fn parse_graph_edge_table_definition(&self) -> Result<GraphEdgeTableDefinition, ParserError> {
+        let table = self.parse_object_name(false)?;
+        self.expect_keyword(Keyword::SOURCE)?;
+        let source = self.parse_graph_edge_endpoint()?;
+        self.expect_keyword(Keyword::DESTINATION)?;
+        let destination = self.parse_graph_edge_endpoint()?;
+
+        let label = if self.parse_keyword(Keyword::LABEL) {
+            Some(self.parse_identifier()?)
+        } else {
+            None
+        };
+        let properties = if self.parse_keyword(Keyword::PROPERTIES) {
+            Some(self.parse_graph_properties_clause()?)
+        } else {
+            None
+        };
+
+        Ok(GraphEdgeTableDefinition {
+            table,
+            source,
+            destination,
+            label,
+            properties,
+        })
+    }
+
+    fn parse_graph_edge_endpoint(&self) -> Result<GraphEdgeEndpoint, ParserError> {
+        let key = if self.parse_keyword(Keyword::KEY) {
+            Some(self.parse_graph_key_clause()?)
+        } else {
+            None
+        };
+        self.expect_keyword(Keyword::REFERENCES)?;
+        let references = self.parse_object_name(false)?;
+
+        Ok(GraphEdgeEndpoint { key, references })
+    }
+
+    fn parse_graph_key_clause(&self) -> Result<GraphKeyClause, ParserError> {
+        self.expect_token(&Token::LParen)?;
+        let columns = self.parse_comma_separated(|p| p.parse_identifier())?;
+        self.expect_token(&Token::RParen)?;
+
+        Ok(GraphKeyClause { columns })
+    }
+
+    fn parse_graph_properties_clause(&self) -> Result<GraphPropertiesClause, ParserError> {
+        self.expect_token(&Token::LParen)?;
+        let columns = self.parse_comma_separated(|p| p.parse_identifier())?;
+        self.expect_token(&Token::RParen)?;
+
+        Ok(GraphPropertiesClause { columns })
+    }
+
     /// ```sql
     ///     CREATE POLICY name ON table_name [ AS { PERMISSIVE | RESTRICTIVE } ]
     ///     [ FOR { ALL | SELECT | INSERT | UPDATE | DELETE } ]
@@ -7349,6 +7692,8 @@ impl<'a> Parser<'a> {
             return self.parse_drop_domain();
         } else if self.parse_keyword(Keyword::ASSERTION) {
             return self.parse_drop_assertion();
+        } else if self.parse_keywords(&[Keyword::PROPERTY, Keyword::GRAPH]) {
+            return self.parse_drop_property_graph();
         } else if self.parse_keyword(Keyword::PROCEDURE) {
             return self.parse_drop_procedure();
         } else if self.parse_keyword(Keyword::SECRET) {
@@ -7472,6 +7817,18 @@ impl<'a> Parser<'a> {
         let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
         let name = self.parse_object_name(false)?;
         Ok(Statement::DropAssertion(DropAssertion { if_exists, name }))
+    }
+
+    /// Parse DROP PROPERTY GRAPH statement (SQL/PGQ)
+    fn parse_drop_property_graph(&self) -> Result<Statement, ParserError> {
+        let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
+        let name = self.parse_object_name(false)?;
+        let drop_behavior = self.parse_optional_drop_behavior();
+        Ok(Statement::DropPropertyGraph(DropPropertyGraph {
+            if_exists,
+            name,
+            drop_behavior,
+        }))
     }
 
     /// ```sql
@@ -15062,6 +15419,7 @@ impl<'a> Parser<'a> {
                         | TableFactor::Unpivot { alias, .. }
                         | TableFactor::MatchRecognize { alias, .. }
                         | TableFactor::SemanticView { alias, .. }
+                        | TableFactor::GraphTable { alias, .. }
                         | TableFactor::NestedJoin { alias, .. } => {
                             // but not `FROM (mytable AS alias1) AS alias2`.
                             if let Some(inner_alias) = alias {
@@ -15180,6 +15538,8 @@ impl<'a> Parser<'a> {
             && self.peek_keyword_with_tokens(Keyword::SEMANTIC_VIEW, &[BorrowedToken::LParen])
         {
             self.parse_semantic_view_table_factor()
+        } else if self.parse_keyword_with_tokens(Keyword::GRAPH_TABLE, &[BorrowedToken::LParen]) {
+            self.parse_graph_table_factor()
         } else {
             let name = self.parse_object_name(true)?;
 
@@ -15603,6 +15963,801 @@ impl<'a> Parser<'a> {
             where_clause,
             alias,
         })
+    }
+
+    /// Parse GRAPH_TABLE ( graph_name MATCH ... COLUMNS ... )
+    fn parse_graph_table_factor(&self) -> Result<TableFactor, ParserError> {
+        // LParen already consumed by parse_keyword_with_tokens
+        let graph_name = self.parse_object_name(false)?;
+
+        self.expect_keyword(Keyword::MATCH)?;
+
+        let match_clause = self.parse_graph_match_clause()?;
+
+        self.expect_token(&BorrowedToken::RParen)?;
+
+        let alias = self.maybe_parse_table_alias()?;
+
+        Ok(TableFactor::GraphTable {
+            graph_name,
+            match_clause,
+            alias,
+        })
+    }
+
+    /// Parse MATCH [path_finding] [path_mode] [row_limiting] (pattern) [COST expr] [WHERE expr] [KEEP ...] COLUMNS (...)
+    fn parse_graph_match_clause(&self) -> Result<GraphMatchClause, ParserError> {
+        // Parse optional path finding algorithm
+        let path_finding = self.parse_path_finding()?;
+
+        // Parse optional path mode
+        let path_mode = self.parse_path_mode()?;
+
+        // Parse optional row limiting
+        let row_limiting = self.parse_row_limiting()?;
+
+        // Parse graph patterns
+        let patterns = self.parse_graph_patterns()?;
+
+        // Parse optional COST clause
+        let cost_expr = if self.parse_keyword(Keyword::COST) {
+            Some(self.parse_expr()?)
+        } else {
+            None
+        };
+
+        // Parse optional WHERE clause
+        let where_clause = if self.parse_keyword(Keyword::WHERE) {
+            Some(self.parse_expr()?)
+        } else {
+            None
+        };
+
+        // Parse optional KEEP clause
+        let keep_clause = if self.parse_keyword(Keyword::KEEP) {
+            Some(self.parse_keep_clause()?)
+        } else {
+            None
+        };
+
+        // Parse COLUMNS clause (optional in graph EXISTS predicates)
+        let columns = if self.parse_keyword(Keyword::COLUMNS) {
+            Some(self.parse_graph_columns_clause_inner()?)
+        } else {
+            None
+        };
+
+        Ok(GraphMatchClause {
+            path_finding,
+            path_mode,
+            row_limiting,
+            patterns,
+            cost_expr,
+            where_clause,
+            keep_clause,
+            columns,
+            // When called from GRAPH_TABLE, MATCH is always present
+            match_keyword_present: true,
+        })
+    }
+
+    /// Parse path finding algorithm (ANY, ANY SHORTEST, ALL SHORTEST, etc.)
+    fn parse_path_finding(&self) -> Result<Option<PathFinding>, ParserError> {
+        use crate::ast::{PathFinding, PathVariant};
+
+        if self.parse_keyword(Keyword::ANY) {
+            if self.parse_keyword(Keyword::SHORTEST) {
+                Ok(Some(PathFinding::AnyShortest))
+            } else if self.parse_keyword(Keyword::CHEAPEST) {
+                Ok(Some(PathFinding::AnyCheapest))
+            } else {
+                Ok(Some(PathFinding::Any))
+            }
+        } else if self.parse_keyword(Keyword::ALL) {
+            if self.parse_keyword(Keyword::SHORTEST) {
+                Ok(Some(PathFinding::AllShortest))
+            } else if self.parse_keyword(Keyword::CHEAPEST) {
+                Ok(Some(PathFinding::AllCheapest))
+            } else {
+                Ok(Some(PathFinding::All))
+            }
+        } else if self.parse_keyword(Keyword::SHORTEST) {
+            let k = self.parse_literal_uint()?;
+            let variant = if self.parse_keyword(Keyword::PATH) {
+                if self.parse_keyword(Keyword::GROUPS) {
+                    Some(PathVariant::PathGroups)
+                } else {
+                    Some(PathVariant::Paths)
+                }
+            } else if self.parse_keyword(Keyword::PATHS) {
+                Some(PathVariant::Paths)
+            } else {
+                None
+            };
+            Ok(Some(PathFinding::Shortest { k, variant }))
+        } else if self.parse_keyword(Keyword::CHEAPEST) {
+            let k = self.parse_literal_uint()?;
+            let variant = if self.parse_keyword(Keyword::PATH) {
+                if self.parse_keyword(Keyword::GROUPS) {
+                    Some(PathVariant::PathGroups)
+                } else {
+                    Some(PathVariant::Paths)
+                }
+            } else if self.parse_keyword(Keyword::PATHS) {
+                Some(PathVariant::Paths)
+            } else {
+                None
+            };
+            Ok(Some(PathFinding::Cheapest { k, variant }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Parse path mode (WALK, TRAIL, ACYCLIC, SIMPLE)
+    fn parse_path_mode(&self) -> Result<Option<PathMode>, ParserError> {
+        use crate::ast::PathMode;
+
+        if self.parse_keyword(Keyword::WALK) {
+            Ok(Some(PathMode::Walk))
+        } else if self.parse_keyword(Keyword::TRAIL) {
+            Ok(Some(PathMode::Trail))
+        } else if self.parse_keyword(Keyword::ACYCLIC) {
+            Ok(Some(PathMode::Acyclic))
+        } else if self.parse_keyword(Keyword::SIMPLE) {
+            Ok(Some(PathMode::Simple))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Parse row limiting clause (ONE ROW PER MATCH/VERTEX/STEP)
+    fn parse_row_limiting(&self) -> Result<Option<RowLimiting>, ParserError> {
+        use crate::ast::RowLimiting;
+
+        if self.parse_keywords(&[Keyword::ONE, Keyword::ROW, Keyword::PER]) {
+            if self.parse_keyword(Keyword::MATCH) {
+                Ok(Some(RowLimiting::OneRowPerMatch))
+            } else if self.parse_keyword(Keyword::VERTEX) {
+                Ok(Some(RowLimiting::OneRowPerVertex))
+            } else if self.parse_keyword(Keyword::STEP) {
+                Ok(Some(RowLimiting::OneRowPerStep))
+            } else {
+                self.expected("MATCH, VERTEX, or STEP after ONE ROW PER", self.peek_token())
+            }
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Parse KEEP clause (KEEP SHORTEST, KEEP CHEAPEST COST expr, KEEP FIRST k)
+    fn parse_keep_clause(&self) -> Result<KeepClause, ParserError> {
+        use crate::ast::KeepClause;
+
+        if self.parse_keyword(Keyword::SHORTEST) {
+            Ok(KeepClause::Shortest)
+        } else if self.parse_keyword(Keyword::CHEAPEST) {
+            self.expect_keyword(Keyword::COST)?;
+            let cost = self.parse_expr()?;
+            Ok(KeepClause::Cheapest { cost })
+        } else if self.parse_keyword(Keyword::FIRST) {
+            let k = self.parse_literal_uint()?;
+            Ok(KeepClause::First { k })
+        } else {
+            self.expected("SHORTEST, CHEAPEST, or FIRST after KEEP", self.peek_token())
+        }
+    }
+
+    /// Parse one or more graph patterns (node/edge chains)
+    fn parse_graph_patterns(&self) -> Result<Vec<GraphPattern>, ParserError> {
+        let mut patterns = vec![];
+
+        loop {
+            let pattern = self.parse_single_graph_pattern()?;
+            patterns.push(pattern);
+
+            if !self.consume_token(&BorrowedToken::Comma) {
+                break;
+            }
+        }
+
+        Ok(patterns)
+    }
+
+    /// Parse a single graph pattern (chain of nodes and edges)
+    fn parse_single_graph_pattern(&self) -> Result<GraphPattern, ParserError> {
+        // Check for path variable binding: `p = pattern`
+        let path_variable = if self.peek_token().token != BorrowedToken::LParen {
+            // Could be a path variable
+            let checkpoint = self.index.get();
+            if let Ok(ident) = self.parse_identifier() {
+                if self.consume_token(&BorrowedToken::Eq) {
+                    // It's a path variable binding
+                    Some(ident)
+                } else {
+                    // Not a path variable, backtrack
+                    self.index.set(checkpoint);
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let expr = self.parse_graph_pattern_chain()?;
+        Ok(GraphPattern {
+            path_variable,
+            expr,
+        })
+    }
+
+    /// Parse a graph pattern expression (chain, alternation, or group)
+    fn parse_graph_pattern_chain(&self) -> Result<GraphPatternExpr, ParserError> {
+        // Check if this starts with `(` - could be a node or a grouped/alternation pattern
+        if self.peek_token().token == BorrowedToken::LParen {
+            // Look ahead to distinguish between node pattern (a) and grouped pattern ((pattern) or (-[...]->))
+            let checkpoint = self.index.get();
+            self.next_token(); // consume (
+            let next = self.peek_token().token.clone();
+            self.index.set(checkpoint); // backtrack
+
+            // If next token is '(' or '-' or '<', it's a grouped pattern, not a node
+            if next == BorrowedToken::LParen
+                || next == BorrowedToken::Minus
+                || next == BorrowedToken::Lt {
+                // Grouped or alternation pattern at the start: ((pattern)) or (-[]->)
+                return self.parse_graph_pattern_grouped();
+            }
+        }
+
+        // Parse a chain using the primary parser (which handles subpatterns)
+        self.parse_graph_pattern_primary()
+    }
+
+    /// Parse grouped/alternation pattern: ((a)-[]->(b) | (a)-[]->(c)){n,m}
+    fn parse_graph_pattern_grouped(&self) -> Result<GraphPatternExpr, ParserError> {
+        self.expect_token(&BorrowedToken::LParen)?;
+
+        // Parse first pattern - use parse_graph_pattern_primary to handle chains and subpatterns
+        let first_pattern = self.parse_graph_pattern_primary()?;
+
+        // Check for alternation (|)
+        if self.peek_token().token == BorrowedToken::Pipe {
+            let mut patterns = vec![first_pattern];
+            while self.consume_token(&BorrowedToken::Pipe) {
+                patterns.push(self.parse_graph_pattern_primary()?);
+            }
+            self.expect_token(&BorrowedToken::RParen)?;
+
+            // Check for quantifier after the alternation group
+            let quantifier = if matches!(
+                self.peek_token().token,
+                BorrowedToken::Mul
+                    | BorrowedToken::Plus
+                    | BorrowedToken::LBrace
+            ) || matches!(self.peek_token().token, BorrowedToken::Placeholder(s) if s == "?")
+            {
+                Some(self.parse_edge_repetition_quantifier()?)
+            } else {
+                None
+            };
+
+            if quantifier.is_some() {
+                Ok(GraphPatternExpr::Group {
+                    pattern: Box::new(GraphPatternExpr::Alternation(patterns)),
+                    quantifier,
+                })
+            } else {
+                Ok(GraphPatternExpr::Alternation(patterns))
+            }
+        } else {
+            // Just a grouped pattern
+            self.expect_token(&BorrowedToken::RParen)?;
+
+            // Check for quantifier after the group
+            let quantifier = if matches!(
+                self.peek_token().token,
+                BorrowedToken::Mul
+                    | BorrowedToken::Plus
+                    | BorrowedToken::LBrace
+            ) || matches!(self.peek_token().token, BorrowedToken::Placeholder(s) if s == "?")
+            {
+                Some(self.parse_edge_repetition_quantifier()?)
+            } else {
+                None
+            };
+
+            Ok(GraphPatternExpr::Group {
+                pattern: Box::new(first_pattern),
+                quantifier,
+            })
+        }
+    }
+
+    /// Parse a primary graph pattern (a chain without grouping)
+    fn parse_graph_pattern_primary(&self) -> Result<GraphPatternExpr, ParserError> {
+        let mut elements = vec![];
+
+        // Check if we start with a node or an edge
+        let starts_with_node = self.peek_token().token == BorrowedToken::LParen && {
+            let checkpoint = self.index.get();
+            self.next_token(); // consume (
+            let next = self.peek_token().token.clone();
+            self.index.set(checkpoint); // backtrack
+            // It's a node if next token is not '(', '-', or '<' (which indicate grouped patterns or edges)
+            next != BorrowedToken::LParen && next != BorrowedToken::Minus && next != BorrowedToken::Lt
+        };
+
+        // Optionally start with a node
+        if starts_with_node {
+            let node = self.parse_node_pattern()?;
+            elements.push(GraphPatternElement::Node(node));
+        }
+
+        // Parse edges/subpatterns and nodes
+        loop {
+            // Check for edge or subpattern
+            if self.peek_token().token == BorrowedToken::Minus
+                || self.peek_token().token == BorrowedToken::Lt
+            {
+                // Regular edge pattern
+                let edge = self.parse_edge_pattern()?;
+                elements.push(GraphPatternElement::Edge(edge));
+            } else if self.peek_token().token == BorrowedToken::LParen {
+                // Could be a subpattern or a node
+                let checkpoint = self.index.get();
+                self.next_token(); // consume (
+                let next = self.peek_token().token.clone();
+                self.index.set(checkpoint); // backtrack
+
+                // Check if it's a grouped pattern (starting with '(', '-', or '<')
+                if next == BorrowedToken::LParen
+                    || next == BorrowedToken::Minus
+                    || next == BorrowedToken::Lt {
+                    // Subpattern: ((pattern)) or (-[]->)
+                    let subpattern = self.parse_graph_pattern_grouped()?;
+                    elements.push(GraphPatternElement::Subpattern(subpattern));
+                } else {
+                    // Node pattern
+                    let node = self.parse_node_pattern()?;
+                    elements.push(GraphPatternElement::Node(node));
+                    // Continue to look for more edges/nodes
+                    continue;
+                }
+            } else {
+                // No more edges/subpatterns
+                break;
+            }
+
+            // After edge/subpattern, optionally parse a trailing node
+            if self.peek_token().token == BorrowedToken::LParen {
+                let checkpoint = self.index.get();
+                self.next_token(); // consume (
+                let next = self.peek_token().token.clone();
+                self.index.set(checkpoint); // backtrack
+
+                // Check if it's a node (not a grouped pattern)
+                if next != BorrowedToken::LParen
+                    && next != BorrowedToken::Minus
+                    && next != BorrowedToken::Lt {
+                    // It's a node, not a subpattern
+                    let node = self.parse_node_pattern()?;
+                    elements.push(GraphPatternElement::Node(node));
+                }
+                // If it's a subpattern, it will be handled in the next iteration
+            }
+            // Continue the loop to check for more edges/subpatterns
+        }
+
+        Ok(GraphPatternExpr::Chain(elements))
+    }
+
+    /// Parse a node pattern: (var:Label {prop: val} WHERE expr)
+    fn parse_node_pattern(&self) -> Result<NodePattern, ParserError> {
+        self.expect_token(&BorrowedToken::LParen)?;
+
+        // Parse optional variable
+        let variable = if self.peek_token().token != BorrowedToken::Colon
+            && self.peek_token().token != BorrowedToken::LBrace
+            && self.peek_token().token != BorrowedToken::RParen
+            && !matches!(self.peek_token().token, BorrowedToken::Word(w) if w.keyword == Keyword::WHERE)
+        {
+            Some(self.parse_identifier()?)
+        } else {
+            None
+        };
+
+        // Parse labels (can be multiple, separated by :)
+        let mut labels = vec![];
+        while self.consume_token(&BorrowedToken::Colon) {
+            labels.push(self.parse_label_expression()?);
+        }
+
+        // Parse optional properties
+        let properties = if self.consume_token(&BorrowedToken::LBrace) {
+            let props = self.parse_property_key_values()?;
+            self.expect_token(&BorrowedToken::RBrace)?;
+            props
+        } else {
+            vec![]
+        };
+
+        // Parse optional WHERE clause
+        let where_clause = if self.parse_keyword(Keyword::WHERE) {
+            Some(self.parse_expr()?)
+        } else {
+            None
+        };
+
+        self.expect_token(&BorrowedToken::RParen)?;
+
+        Ok(NodePattern {
+            variable,
+            labels,
+            properties,
+            where_clause,
+        })
+    }
+
+    /// Parse an edge pattern: -[var:Label {prop: val} WHERE expr]-> or anonymous edge -->
+    fn parse_edge_pattern(&self) -> Result<EdgePattern, ParserError> {
+        // Determine direction from leading tokens
+        let has_left = self.consume_token(&BorrowedToken::Lt);
+
+        self.expect_token(&BorrowedToken::Minus)?;
+
+        // Check if this is an anonymous edge (no brackets)
+        let is_anonymous = !self.peek_token().token.eq(&BorrowedToken::LBracket);
+
+        if is_anonymous {
+            // Anonymous edge: just --> or <- or - or <->
+            // Check for arrow patterns
+            // Arrow might be tokenized as -> (single token) or as - > (two tokens)
+            let has_right = if self.consume_token(&BorrowedToken::Arrow) {
+                // Consumed -> as a single Arrow token
+                true
+            } else if self.consume_token(&BorrowedToken::Minus) {
+                // Consumed second - in -->, now check for >
+                self.consume_token(&BorrowedToken::Gt)
+            } else {
+                // Just a single - (undirected or left-directed)
+                false
+            };
+
+            let direction = match (has_left, has_right) {
+                (true, true) => EdgeDirection::Any,
+                (true, false) => EdgeDirection::Left,
+                (false, true) => EdgeDirection::Right,
+                (false, false) => EdgeDirection::Undirected,
+            };
+
+            return Ok(EdgePattern {
+                variable: None,
+                labels: vec![],
+                properties: vec![],
+                where_clause: None,
+                direction,
+                quantifier: None,
+                anonymous: true,
+            });
+        }
+
+        self.expect_token(&BorrowedToken::LBracket)?;
+
+        // Check for quantifier right after [ (anonymous edge with quantifier like -[*1..3]->)
+        let is_quantifier_first = matches!(
+            self.peek_token().token,
+            BorrowedToken::Mul | BorrowedToken::Plus
+        ) || matches!(self.peek_token().token, BorrowedToken::Placeholder(s) if s == "?");
+
+        // Parse optional variable (unless quantifier comes first)
+        let variable = if !is_quantifier_first
+            && self.peek_token().token != BorrowedToken::Colon
+            && self.peek_token().token != BorrowedToken::LBrace
+            && self.peek_token().token != BorrowedToken::RBracket
+            && !matches!(self.peek_token().token, BorrowedToken::Word(w) if w.keyword == Keyword::WHERE)
+        {
+            Some(self.parse_identifier()?)
+        } else {
+            None
+        };
+
+        // Parse labels (can be multiple, separated by :)
+        let mut labels = vec![];
+        while self.consume_token(&BorrowedToken::Colon) {
+            labels.push(self.parse_label_expression()?);
+        }
+
+        // Check if next token is quantifier or properties
+        // Quantifier: {n} or {n,} or {,n} or {n,m} starts with { followed by number or comma
+        // Properties: {prop: val} starts with { followed by identifier
+        let is_quantifier = if self.peek_token().token == BorrowedToken::LBrace {
+            // Look ahead to second token after {
+            let next_idx = self.index.get() + 1;
+            if next_idx < self.tokens.len() {
+                matches!(
+                    self.tokens[next_idx].token,
+                    BorrowedToken::Number(_, _) | BorrowedToken::Comma
+                )
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        // Parse optional quantifier (if it's detected as quantifier)
+        let quantifier = if is_quantifier
+            || matches!(
+                self.peek_token().token,
+                BorrowedToken::Mul | BorrowedToken::Plus
+            )
+            || matches!(self.peek_token().token, BorrowedToken::Placeholder(s) if s == "?")
+        {
+            Some(self.parse_edge_repetition_quantifier()?)
+        } else {
+            None
+        };
+
+        // Parse optional properties (only if not already consumed as quantifier)
+        let properties = if self.consume_token(&BorrowedToken::LBrace) {
+            let props = self.parse_property_key_values()?;
+            self.expect_token(&BorrowedToken::RBrace)?;
+            props
+        } else {
+            vec![]
+        };
+
+        // Parse optional WHERE clause
+        let where_clause = if self.parse_keyword(Keyword::WHERE) {
+            Some(self.parse_expr()?)
+        } else {
+            None
+        };
+
+        self.expect_token(&BorrowedToken::RBracket)?;
+
+        // Check for arrow patterns: -> or <- or - or <->
+        // The tokenizer may parse -> as a single Arrow token
+        let has_right = if self.consume_token(&BorrowedToken::Arrow) {
+            // Consumed -> as a single token
+            true
+        } else {
+            // Try to parse - and then >
+            self.expect_token(&BorrowedToken::Minus)?;
+            self.consume_token(&BorrowedToken::Gt)
+        };
+
+        let direction = match (has_left, has_right) {
+            (true, true) => EdgeDirection::Any,
+            (true, false) => EdgeDirection::Left,
+            (false, true) => EdgeDirection::Right,
+            (false, false) => EdgeDirection::Undirected,
+        };
+
+        Ok(EdgePattern {
+            variable,
+            labels,
+            properties,
+            where_clause,
+            direction,
+            quantifier,
+            anonymous: false,
+        })
+    }
+
+    /// Parse label expression with precedence: Or (|) > And (&) > Not (!) > Primary
+    fn parse_label_expression(&self) -> Result<LabelExpression, ParserError> {
+        self.parse_label_or()
+    }
+
+    fn parse_label_or(&self) -> Result<LabelExpression, ParserError> {
+        let mut left = self.parse_label_and()?;
+
+        while self.consume_token(&BorrowedToken::Pipe) {
+            let right = self.parse_label_and()?;
+            left = LabelExpression::Or(Box::new(left), Box::new(right));
+        }
+
+        Ok(left)
+    }
+
+    fn parse_label_and(&self) -> Result<LabelExpression, ParserError> {
+        let mut left = self.parse_label_not()?;
+
+        while self.consume_token(&BorrowedToken::Ampersand) {
+            let right = self.parse_label_not()?;
+            left = LabelExpression::And(Box::new(left), Box::new(right));
+        }
+
+        Ok(left)
+    }
+
+    fn parse_label_not(&self) -> Result<LabelExpression, ParserError> {
+        if self.consume_token(&BorrowedToken::ExclamationMark) {
+            let expr = self.parse_label_primary()?;
+            Ok(LabelExpression::Not(Box::new(expr)))
+        } else {
+            self.parse_label_primary()
+        }
+    }
+
+    fn parse_label_primary(&self) -> Result<LabelExpression, ParserError> {
+        if self.consume_token(&BorrowedToken::Mod) {
+            // % is wildcard
+            Ok(LabelExpression::Wildcard)
+        } else if self.consume_token(&BorrowedToken::LParen) {
+            let expr = self.parse_label_expression()?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            Ok(LabelExpression::Group(Box::new(expr)))
+        } else {
+            let ident = self.parse_identifier()?;
+            Ok(LabelExpression::Label(ident))
+        }
+    }
+
+    /// Parse property key-value pairs: key: value, key2: value2
+    fn parse_property_key_values(&self) -> Result<Vec<PropertyKeyValue>, ParserError> {
+        let mut properties = vec![];
+
+        loop {
+            let key = self.parse_identifier()?;
+            self.expect_token(&BorrowedToken::Colon)?;
+            let value = self.parse_expr()?;
+            properties.push(PropertyKeyValue { key, value });
+
+            if !self.consume_token(&BorrowedToken::Comma) {
+                break;
+            }
+        }
+
+        Ok(properties)
+    }
+
+    /// Parse COLUMNS (col1, col2 AS alias, ...)
+    fn parse_graph_columns_clause(&self) -> Result<GraphColumnsClause, ParserError> {
+        self.expect_keyword(Keyword::COLUMNS)?;
+        self.parse_graph_columns_clause_inner()
+    }
+
+    fn parse_graph_columns_clause_inner(&self) -> Result<GraphColumnsClause, ParserError> {
+        self.expect_token(&BorrowedToken::LParen)?;
+
+        let mut columns = vec![];
+        loop {
+            let expr = self.parse_expr()?;
+            let alias = if self.parse_keyword(Keyword::AS) {
+                Some(self.parse_identifier()?)
+            } else {
+                None
+            };
+            columns.push(GraphColumn { expr, alias });
+
+            if !self.consume_token(&BorrowedToken::Comma) {
+                break;
+            }
+        }
+
+        self.expect_token(&BorrowedToken::RParen)?;
+
+        Ok(GraphColumnsClause { columns })
+    }
+
+    /// Parse edge quantifier like *, +, ?, {n}, {n,m}, *n..m etc.
+    fn parse_edge_repetition_quantifier(&self) -> Result<RepetitionQuantifier, ParserError> {
+        let token = self.next_token();
+        let quantifier = match token.token {
+            BorrowedToken::Mul => {
+                // Check if this is *n..m or *..m syntax (SQL/PGQ range quantifier)
+                if matches!(self.peek_token().token, BorrowedToken::Period) {
+                    // This is *..m syntax (implicit 0 start)
+                    self.expect_token(&BorrowedToken::Period)?;
+
+                    // Next token might be:
+                    // - Period followed by Number (if tokenized as . . 5)
+                    // - Number starting with . (if tokenized as . .5)
+                    let next_token = self.next_token();
+                    let (m_value, span_start) = match next_token.token {
+                        BorrowedToken::Period => {
+                            // Tokenized as . . 5
+                            let num_token = self.next_token();
+                            let BorrowedToken::Number(m, _) = num_token.token else {
+                                return self.expected("number", num_token);
+                            };
+                            let m_str: &str = &m;
+                            (m_str.trim_start_matches('.').to_string(), num_token.span.start)
+                        }
+                        BorrowedToken::Number(m, _) => {
+                            // Tokenized as . .5
+                            let m_str: &str = &m;
+                            (m_str.trim_start_matches('.').to_string(), next_token.span.start)
+                        }
+                        _ => return self.expected("number after ..", next_token),
+                    };
+
+                    RepetitionQuantifier::Range(0, Self::parse(m_value, span_start)?)
+                } else if matches!(self.peek_token().token, BorrowedToken::Number(_, _)) {
+                    // This is *n..m syntax
+                    let num_token = self.next_token();
+                    let BorrowedToken::Number(n, _) = num_token.token else {
+                        return self.expected("number", num_token);
+                    };
+                    // The tokenizer might parse "1..3" as:
+                    // - Number("1.", _), Number(".3", _), OR
+                    // - Number("1", _), Period, Period, Number("3", _)
+                    // We need to handle both cases.
+                    let n_str: &str = &n;
+                    let n_value = if n_str.ends_with('.') {
+                        n_str.trim_end_matches('.')
+                    } else {
+                        // Consume two periods
+                        self.expect_token(&BorrowedToken::Period)?;
+                        self.expect_token(&BorrowedToken::Period)?;
+                        n_str
+                    };
+
+                    // Next token could be a number like "3" or ".3"
+                    let end_token = self.next_token();
+                    let BorrowedToken::Number(m, _) = end_token.token else {
+                        return self.expected("number", end_token);
+                    };
+                    let m_str: &str = &m;
+                    let m_value = m_str.trim_start_matches('.');
+
+                    RepetitionQuantifier::Range(
+                        Self::parse(n_value.to_string(), num_token.span.start)?,
+                        Self::parse(m_value.to_string(), end_token.span.start)?,
+                    )
+                } else {
+                    RepetitionQuantifier::ZeroOrMore
+                }
+            }
+            BorrowedToken::Plus => RepetitionQuantifier::OneOrMore,
+            BorrowedToken::Placeholder(s) if s == "?" => RepetitionQuantifier::AtMostOne,
+            BorrowedToken::LBrace => {
+                // quantifier is a range like {n} or {n,} or {,m} or {n,m}
+                let token = self.next_token();
+                match token.token {
+                    BorrowedToken::Comma => {
+                        let next_token = self.next_token();
+                        let BorrowedToken::Number(n, _) = next_token.token else {
+                            return self.expected("literal number", next_token);
+                        };
+                        self.expect_token(&BorrowedToken::RBrace)?;
+                        RepetitionQuantifier::AtMost(Self::parse(n, token.span.start)?)
+                    }
+                    BorrowedToken::Number(n, _) if self.consume_token(&BorrowedToken::Comma) => {
+                        let next_token = self.next_token();
+                        match next_token.token {
+                            BorrowedToken::Number(m, _) => {
+                                self.expect_token(&BorrowedToken::RBrace)?;
+                                RepetitionQuantifier::Range(
+                                    Self::parse(n, token.span.start)?,
+                                    Self::parse(m, token.span.start)?,
+                                )
+                            }
+                            BorrowedToken::RBrace => {
+                                RepetitionQuantifier::AtLeast(Self::parse(n, token.span.start)?)
+                            }
+                            _ => {
+                                return self.expected("} or upper bound", next_token);
+                            }
+                        }
+                    }
+                    BorrowedToken::Number(n, _) => {
+                        self.expect_token(&BorrowedToken::RBrace)?;
+                        RepetitionQuantifier::Exactly(Self::parse(n, token.span.start)?)
+                    }
+                    _ => return self.expected("quantifier range", token),
+                }
+            }
+            _ => {
+                return self.expected("quantifier", token);
+            }
+        };
+        Ok(quantifier)
     }
 
     fn parse_match_recognize(&self, table: TableFactor) -> Result<TableFactor, ParserError> {
@@ -20465,7 +21620,7 @@ mod tests {
         assert_eq!(
             ast,
             Err(ParserError::ParserError(
-                "Expected: [NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED | JSON | DOCUMENT | CONTENT after IS, found: a at Line: 1, Column: 16"
+                "Expected: [NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED | JSON | DOCUMENT | CONTENT | LABELED | SOURCE OF | DESTINATION OF | SAME AS after IS, found: a at Line: 1, Column: 16"
                     .to_string()
             ))
         );

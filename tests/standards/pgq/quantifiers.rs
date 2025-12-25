@@ -56,15 +56,17 @@ fn quantifier_minimum() {
 
 #[test]
 fn quantifier_maximum() {
+    // Note: {,5} syntax is normalized to *..5 (star-range form) in graph patterns
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[:KNOWS{,5}]->(b) COLUMNS (a.id, b.id))",
+        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[:KNOWS*..5]->(b) COLUMNS (a.id, b.id))",
     );
 }
 
 #[test]
 fn quantifier_range() {
+    // Note: {1,5} syntax is normalized to *1..5 (star-range form) in graph patterns
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[:KNOWS{1,5}]->(b) COLUMNS (a.id, b.id))",
+        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[:KNOWS*1..5]->(b) COLUMNS (a.id, b.id))",
     );
 }
 

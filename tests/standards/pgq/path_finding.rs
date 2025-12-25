@@ -64,7 +64,7 @@ fn path_finding_shortest_k_path_groups() {
 #[test]
 fn path_finding_all_with_limit() {
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH ALL (a)-[*{,10}]->(b) COLUMNS (a.id, b.id))",
+        "SELECT * FROM GRAPH_TABLE (g MATCH ALL (a)-[*..10]->(b) COLUMNS (a.id, b.id))",
     );
 }
 

@@ -63,10 +63,11 @@ pub use self::ddl::{
     ClusteredBy, ColumnDef, ColumnOption, ColumnOptionDef, ColumnOptions, ColumnPolicy,
     ColumnPolicyProperty, ConstraintCharacteristics, CreateAssertion, CreateConnector,
     CreateDomain, CreateExtension, CreateFunction, CreateIndex, CreateOperator,
-    CreateOperatorClass, CreateOperatorFamily, CreateTable, CreateTableSystemVersioning,
+    CreateOperatorClass, CreateOperatorFamily, CreatePropertyGraph, CreateTable, CreateTableSystemVersioning,
     CreateTrigger, CreateView, Deduplicate, DeferrableInitial, DropBehavior, DropExtension,
-    DropFunction, DropTrigger, GeneratedAs, GeneratedExpressionMode, IdentityParameters,
-    IdentityProperty, IdentityPropertyFormatKind, IdentityPropertyKind, IdentityPropertyOrder,
+    DropFunction, DropPropertyGraph, DropTrigger, GeneratedAs, GeneratedExpressionMode, GraphEdgeEndpoint,
+    GraphEdgeTableDefinition, GraphKeyClause, GraphPropertiesClause, GraphVertexTableDefinition,
+    IdentityParameters, IdentityProperty, IdentityPropertyFormatKind, IdentityPropertyKind, IdentityPropertyOrder,
     IndexColumn, IndexOption, IndexType, KeyOrIndexDisplay, Msck, NullsDistinctOption,
     OperatorArgTypes, OperatorClassItem, OperatorPurpose, Owner, Partition, ProcedureParam,
     ReferentialAction, RenameTableNameKind, ReplicaIdentity, TagsColumnOption, TriggerObjectKind,
@@ -77,26 +78,29 @@ pub use self::ddl::{
 pub use self::dml::{Delete, ForPortionOf, Insert, Update};
 pub use self::operator::{BinaryOperator, UnaryOperator};
 pub use self::query::{
-    AfterMatchSkip, ConnectBy, Cte, CteAsMaterialized, CycleClause, Distinct, EmptyMatchesMode,
-    ExceptSelectItem, ExcludeSelectItem, ExprWithAlias, ExprWithAliasAndOrderBy, Fetch, ForClause,
-    ForJson, ForXml, FormatClause, GroupByExpr, GroupByWithModifier, IdentWithAlias,
-    IlikeSelectItem, InputFormatClause, Interpolate, InterpolateExpr, Join, JoinConstraint,
-    JoinOperator, JsonTableColumn, JsonTableColumnErrorHandling, JsonTableNamedColumn,
-    JsonTableNestedColumn, LateralView, LimitClause, LockClause, LockType, MatchRecognizePattern,
-    MatchRecognizeSymbol, Measure, NamedWindowDefinition, NamedWindowExpr, NonBlock, Offset,
-    OffsetRows, OpenJsonTableColumn, OrderBy, OrderByExpr, OrderByKind, OrderByOptions,
-    PipeOperator, PivotValueSource, ProjectionSelect, Query, RenameSelectItem,
-    RepetitionQuantifier, ReplaceSelectElement, ReplaceSelectItem, RowsPerMatch, SearchClause,
-    SearchOrder, Select, SelectFlavor, SelectInto, SelectItem, SelectItemQualifiedWildcardKind,
-    SetExpr, SetOperator, SetQuantifier, Setting, SubsetDefinition, SymbolDefinition, Table,
-    TableAlias, TableAliasColumnDef, TableFactor, TableFunctionArgs, TableIndexHintForClause,
-    TableIndexHintType, TableIndexHints, TableIndexType, TableSample, TableSampleBucket,
-    TableSampleKind, TableSampleMethod, TableSampleModifier, TableSampleQuantity, TableSampleSeed,
-    TableSampleSeedModifier, TableSampleUnit, TableVersion, TableWithJoins, Top, TopQuantity,
-    UpdateTableFromKind, ValueTableMode, Values, WildcardAdditionalOptions, With, WithFill,
-    XmlAttribute, XmlDocumentOrContent, XmlForestElement, XmlNamespaceDefinition,
-    XmlPassingArgument, XmlPassingClause, XmlTableColumn, XmlTableColumnOption, XmlTableOnError,
-    XmlWhitespace,
+    AfterMatchSkip, ConnectBy, Cte, CteAsMaterialized, CycleClause, Distinct, EdgeDirection,
+    EmptyMatchesMode, ExceptSelectItem, ExcludeSelectItem, ExprWithAlias, ExprWithAliasAndOrderBy,
+    Fetch, ForClause, ForJson, ForXml, FormatClause, GraphColumn, GraphColumnsClause,
+    GraphMatchClause, GraphPattern, GraphPatternElement, GraphPatternExpr, GraphSubquery, GroupByExpr,
+    GroupByWithModifier, IdentWithAlias, IlikeSelectItem, InputFormatClause, Interpolate,
+    InterpolateExpr, Join, JoinConstraint, JoinOperator, JsonTableColumn,
+    JsonTableColumnErrorHandling, JsonTableNamedColumn, JsonTableNestedColumn, KeepClause,
+    LabelExpression, LateralView, LimitClause, LockClause, LockType, MatchRecognizePattern,
+    MatchRecognizeSymbol, Measure, NamedWindowDefinition, NamedWindowExpr, NodePattern, NonBlock,
+    Offset, OffsetRows, OpenJsonTableColumn, OrderBy, OrderByExpr, OrderByKind, OrderByOptions,
+    PathFinding, PathMode, PathVariant, PipeOperator, PivotValueSource, ProjectionSelect,
+    PropertyKeyValue, Query, RenameSelectItem, RepetitionQuantifier, ReplaceSelectElement,
+    ReplaceSelectItem, RowLimiting, RowsPerMatch, SearchClause, SearchOrder, Select, SelectFlavor, SelectInto,
+    SelectItem, SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, Setting,
+    SubsetDefinition, SymbolDefinition, Table, TableAlias, TableAliasColumnDef, EdgePattern,
+    TableFactor, TableFunctionArgs, TableIndexHintForClause, TableIndexHintType, TableIndexHints,
+    TableIndexType, TableSample, TableSampleBucket, TableSampleKind, TableSampleMethod,
+    TableSampleModifier, TableSampleQuantity, TableSampleSeed, TableSampleSeedModifier,
+    TableSampleUnit, TableVersion, TableWithJoins, Top, TopQuantity, UpdateTableFromKind,
+    ValueTableMode, Values,
+    WildcardAdditionalOptions, With, WithFill, XmlAttribute, XmlDocumentOrContent,
+    XmlForestElement, XmlNamespaceDefinition, XmlPassingArgument, XmlPassingClause,
+    XmlTableColumn, XmlTableColumnOption, XmlTableOnError, XmlWhitespace,
 };
 
 pub use self::trigger::{
@@ -720,6 +724,28 @@ pub enum CeilFloorKind {
     Scale(Value),
 }
 
+/// The kind of quantified predicate: ALL or ANY
+///
+/// Used in SQL/PGQ for path element quantification:
+/// - `ALL(x IN e | predicate)` - true if predicate holds for all elements
+/// - `ANY(x IN e | predicate)` - true if predicate holds for any element
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum QuantifiedPredicateKind {
+    All,
+    Any,
+}
+
+impl fmt::Display for QuantifiedPredicateKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            QuantifiedPredicateKind::All => write!(f, "ALL"),
+            QuantifiedPredicateKind::Any => write!(f, "ANY"),
+        }
+    }
+}
+
 /// A WHEN clause in a CASE expression containing both
 /// the condition and its corresponding result
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
@@ -882,6 +908,116 @@ pub enum Expr {
         expr: Box<Expr>,
         /// Whether the predicate is negated (IS NOT CONTENT)
         negated: bool,
+    },
+    /// `<expr> IS [ NOT ] LABELED <label>`
+    ///
+    /// See ISO/IEC 9075-16:2023 (SQL/PGQ) - Graph label predicate.
+    IsLabeled {
+        /// The expression to test (typically a node reference)
+        expr: Box<Expr>,
+        /// Whether the predicate is negated (IS NOT LABELED)
+        negated: bool,
+        /// The label to test for
+        label: Ident,
+    },
+    /// `<node_expr> IS SOURCE OF <edge_expr>`
+    ///
+    /// See ISO/IEC 9075-16:2023 (SQL/PGQ) - Graph endpoint predicate.
+    IsSourceOf {
+        /// The node expression
+        node: Box<Expr>,
+        /// The edge expression
+        edge: Box<Expr>,
+    },
+    /// `<node_expr> IS DESTINATION OF <edge_expr>`
+    ///
+    /// See ISO/IEC 9075-16:2023 (SQL/PGQ) - Graph endpoint predicate.
+    IsDestinationOf {
+        /// The node expression
+        node: Box<Expr>,
+        /// The edge expression
+        edge: Box<Expr>,
+    },
+    /// `<expr1> IS SAME AS <expr2>`
+    ///
+    /// See ISO/IEC 9075-16:2023 (SQL/PGQ) - Graph identity predicate.
+    IsSameAs {
+        /// The first expression
+        left: Box<Expr>,
+        /// The second expression
+        right: Box<Expr>,
+    },
+    /// `[ NOT ] EXISTS { <graph_pattern> }`
+    ///
+    /// See ISO/IEC 9075-16:2023 (SQL/PGQ) - Graph pattern existence predicate.
+    GraphExists {
+        /// Whether the predicate is negated (NOT EXISTS)
+        negated: bool,
+        /// The graph pattern (MATCH clause)
+        pattern: Box<GraphMatchClause>,
+    },
+    /// `COUNT { [DISTINCT] <graph_pattern> [RETURN <expr>] }`
+    ///
+    /// See ISO/IEC 9075-16:2023 (SQL/PGQ) - Graph element COUNT subquery.
+    GraphCount {
+        /// The graph subquery
+        subquery: Box<GraphSubquery>,
+    },
+    /// `VALUE { <graph_pattern> RETURN <expr> }`
+    ///
+    /// See ISO/IEC 9075-16:2023 (SQL/PGQ) - Graph element scalar subquery.
+    GraphValue {
+        /// The graph subquery (must have RETURN clause)
+        subquery: Box<GraphSubquery>,
+    },
+    /// `COLLECT { <graph_pattern> RETURN <expr> [ORDER BY ...] [LIMIT ...] }`
+    ///
+    /// See ISO/IEC 9075-16:2023 (SQL/PGQ) - Graph element COLLECT subquery.
+    GraphCollect {
+        /// The graph subquery (must have RETURN clause)
+        subquery: Box<GraphSubquery>,
+    },
+    /// `SUM { <graph_pattern> RETURN <expr> }`
+    ///
+    /// See ISO/IEC 9075-16:2023 (SQL/PGQ) - Graph element aggregate subquery.
+    GraphSum {
+        /// The graph subquery (must have RETURN clause)
+        subquery: Box<GraphSubquery>,
+    },
+    /// `AVG { <graph_pattern> RETURN <expr> }`
+    ///
+    /// See ISO/IEC 9075-16:2023 (SQL/PGQ) - Graph element aggregate subquery.
+    GraphAvg {
+        /// The graph subquery (must have RETURN clause)
+        subquery: Box<GraphSubquery>,
+    },
+    /// `MIN { <graph_pattern> RETURN <expr> }`
+    ///
+    /// See ISO/IEC 9075-16:2023 (SQL/PGQ) - Graph element aggregate subquery.
+    GraphMin {
+        /// The graph subquery (must have RETURN clause)
+        subquery: Box<GraphSubquery>,
+    },
+    /// `MAX { <graph_pattern> RETURN <expr> }`
+    ///
+    /// See ISO/IEC 9075-16:2023 (SQL/PGQ) - Graph element aggregate subquery.
+    GraphMax {
+        /// The graph subquery (must have RETURN clause)
+        subquery: Box<GraphSubquery>,
+    },
+    /// `ALL(x IN collection | predicate)` or `ANY(x IN collection | predicate)`
+    ///
+    /// SQL/PGQ quantified predicate for path element quantification.
+    /// See ISO/IEC 9075-16:2023 (SQL/PGQ) - Quantified predicates.
+    QuantifiedPredicate {
+        /// ALL or ANY
+        quantifier: QuantifiedPredicateKind,
+        /// Bound variable(s): x or (x, y)
+        variables: OneOrManyWithParens<Ident>,
+        /// The collection expression: e
+        collection: Box<Expr>,
+        /// The predicate expression: x.active = true
+        predicate: Box<Expr>,
     },
     /// `[ NOT ] IN (val1, val2, ...)`
     InList {
@@ -1769,6 +1905,56 @@ impl fmt::Display for Expr {
             Expr::IsContent { expr, negated } => {
                 let not_ = if *negated { "NOT " } else { "" };
                 write!(f, "{expr} IS {not_}CONTENT")
+            }
+            Expr::IsLabeled {
+                expr,
+                negated,
+                label,
+            } => {
+                let not_ = if *negated { "NOT " } else { "" };
+                write!(f, "{expr} IS {not_}LABELED {label}")
+            }
+            Expr::IsSourceOf { node, edge } => {
+                write!(f, "{node} IS SOURCE OF {edge}")
+            }
+            Expr::IsDestinationOf { node, edge } => {
+                write!(f, "{node} IS DESTINATION OF {edge}")
+            }
+            Expr::IsSameAs { left, right } => {
+                write!(f, "{left} IS SAME AS {right}")
+            }
+            Expr::GraphExists { negated, pattern } => {
+                let not_ = if *negated { "NOT " } else { "" };
+                write!(f, "{not_}EXISTS {{ {pattern} }}")
+            }
+            Expr::GraphCount { subquery } => {
+                write!(f, "COUNT {{ {subquery} }}")
+            }
+            Expr::GraphValue { subquery } => {
+                write!(f, "VALUE {{ {subquery} }}")
+            }
+            Expr::GraphCollect { subquery } => {
+                write!(f, "COLLECT {{ {subquery} }}")
+            }
+            Expr::GraphSum { subquery } => {
+                write!(f, "SUM {{ {subquery} }}")
+            }
+            Expr::GraphAvg { subquery } => {
+                write!(f, "AVG {{ {subquery} }}")
+            }
+            Expr::GraphMin { subquery } => {
+                write!(f, "MIN {{ {subquery} }}")
+            }
+            Expr::GraphMax { subquery } => {
+                write!(f, "MAX {{ {subquery} }}")
+            }
+            Expr::QuantifiedPredicate {
+                quantifier,
+                variables,
+                collection,
+                predicate,
+            } => {
+                write!(f, "{quantifier}({variables} IN {collection} | {predicate})")
             }
             Expr::SimilarTo {
                 negated,
@@ -4127,6 +4313,11 @@ pub enum Statement {
     /// SQL:2016 F491: Schema-level CHECK constraint
     CreateAssertion(CreateAssertion),
     /// ```sql
+    /// CREATE PROPERTY GRAPH
+    /// ```
+    /// SQL/PGQ (ISO/IEC 9075-16:2023)
+    CreatePropertyGraph(CreatePropertyGraph),
+    /// ```sql
     /// ALTER TABLE
     /// ```
     AlterTable(AlterTable),
@@ -4264,6 +4455,11 @@ pub enum Statement {
     /// ```
     /// SQL:2016 F491: Drop schema-level CHECK constraint
     DropAssertion(DropAssertion),
+    /// ```sql
+    /// DROP PROPERTY GRAPH
+    /// ```
+    /// SQL/PGQ (ISO/IEC 9075-16:2023)
+    DropPropertyGraph(DropPropertyGraph),
     /// ```sql
     /// DROP PROCEDURE
     /// ```
@@ -5683,6 +5879,7 @@ impl fmt::Display for Statement {
             }
             Statement::CreateOperatorClass(create_operator_class) => create_operator_class.fmt(f),
             Statement::CreateAssertion(create_assertion) => write!(f, "{create_assertion}"),
+            Statement::CreatePropertyGraph(create_property_graph) => write!(f, "{create_property_graph}"),
             Statement::AlterTable(alter_table) => write!(f, "{alter_table}"),
             Statement::AlterIndex { name, operation } => {
                 write!(f, "ALTER INDEX {name} {operation}")
@@ -5822,6 +6019,7 @@ impl fmt::Display for Statement {
                 Ok(())
             }
             Statement::DropAssertion(drop_assertion) => write!(f, "{drop_assertion}"),
+            Statement::DropPropertyGraph(drop_property_graph) => write!(f, "{drop_property_graph}"),
             Statement::DropProcedure {
                 if_exists,
                 proc_desc,
@@ -11792,6 +11990,18 @@ impl From<CreateServerStatement> for Statement {
 impl From<CreateConnector> for Statement {
     fn from(c: CreateConnector) -> Self {
         Self::CreateConnector(c)
+    }
+}
+
+impl From<CreatePropertyGraph> for Statement {
+    fn from(c: CreatePropertyGraph) -> Self {
+        Self::CreatePropertyGraph(c)
+    }
+}
+
+impl From<DropPropertyGraph> for Statement {
+    fn from(d: DropPropertyGraph) -> Self {
+        Self::DropPropertyGraph(d)
     }
 }
 
