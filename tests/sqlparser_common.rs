@@ -15954,7 +15954,8 @@ fn parse_create_procedure_with_language() {
         } => {
             assert_eq!(or_alter, false);
             assert_eq!(name.to_string(), "test_proc");
-            assert_eq!(params, Some(vec![]));
+            // No parentheses in SQL means params is None
+            assert_eq!(params, None);
             assert_eq!(
                 language,
                 Some(Ident {
@@ -15973,7 +15974,7 @@ fn parse_create_procedure_with_language() {
 
 #[test]
 fn parse_create_procedure_with_parameter_modes() {
-    let sql = r#"CREATE PROCEDURE test_proc (IN a INTEGER, OUT b TEXT, INOUT c TIMESTAMP, d BOOL) AS BEGIN SELECT 1; END"#;
+    let sql = r#"CREATE PROCEDURE test_proc(IN a INTEGER, OUT b TEXT, INOUT c TIMESTAMP, d BOOL) AS BEGIN SELECT 1; END"#;
     match verified_stmt(sql) {
         Statement::CreateProcedure {
             or_alter,
@@ -16037,7 +16038,7 @@ fn parse_create_procedure_with_parameter_modes() {
     }
 
     // parameters with default values
-    let sql = r#"CREATE PROCEDURE test_proc (IN a INTEGER = 1, OUT b TEXT = '2', INOUT c TIMESTAMP = NULL, d BOOL = 0) AS BEGIN SELECT 1; END"#;
+    let sql = r#"CREATE PROCEDURE test_proc(IN a INTEGER = 1, OUT b TEXT = '2', INOUT c TIMESTAMP = NULL, d BOOL = 0) AS BEGIN SELECT 1; END"#;
     match verified_stmt(sql) {
         Statement::CreateProcedure {
             or_alter,
@@ -17270,7 +17271,7 @@ fn parse_leave_statement() {
     let stmt = verified_stmt(sql);
     match stmt {
         Statement::Leave(LeaveStatement { label }) => {
-            assert_eq!(label.to_string(), "my_loop");
+            assert_eq!(label.unwrap().to_string(), "my_loop");
         }
         _ => unreachable!(),
     }
@@ -17282,7 +17283,7 @@ fn parse_iterate_statement() {
     let stmt = verified_stmt(sql);
     match stmt {
         Statement::Iterate(IterateStatement { label }) => {
-            assert_eq!(label.to_string(), "my_loop");
+            assert_eq!(label.unwrap().to_string(), "my_loop");
         }
         _ => unreachable!(),
     }

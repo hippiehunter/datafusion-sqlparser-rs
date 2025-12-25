@@ -469,6 +469,9 @@ impl Spanned for Statement {
             Statement::Vacuum(..) => Span::empty(),
             Statement::AlterUser(..) => Span::empty(),
             Statement::Reset(..) => Span::empty(),
+            Statement::Signal(..) => Span::empty(),
+            Statement::Resignal(..) => Span::empty(),
+            Statement::LabeledBlock(..) => Span::empty(),
         }
     }
 }
@@ -666,9 +669,20 @@ impl Spanned for IfStatement {
 
 impl Spanned for WhileStatement {
     fn span(&self) -> Span {
-        let WhileStatement { while_block } = self;
+        let WhileStatement {
+            label: _,
+            condition: _,
+            body,
+            end_label: _,
+            has_do_keyword: _,
+            while_block,
+        } = self;
 
-        while_block.span()
+        if let Some(wb) = while_block {
+            wb.span()
+        } else {
+            body.span()
+        }
     }
 }
 
@@ -698,14 +712,14 @@ impl Spanned for RepeatStatement {
 impl Spanned for LeaveStatement {
     fn span(&self) -> Span {
         let LeaveStatement { label } = self;
-        label.span
+        label.as_ref().map(|l| l.span).unwrap_or(Span::empty())
     }
 }
 
 impl Spanned for IterateStatement {
     fn span(&self) -> Span {
         let IterateStatement { label } = self;
-        label.span
+        label.as_ref().map(|l| l.span).unwrap_or(Span::empty())
     }
 }
 

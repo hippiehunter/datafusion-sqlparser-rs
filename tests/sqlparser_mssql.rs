@@ -101,7 +101,7 @@ fn parse_mssql_delimited_identifiers() {
 
 #[test]
 fn parse_create_procedure() {
-    let sql = "CREATE OR ALTER PROCEDURE test (@foo INT, @bar VARCHAR(256)) AS BEGIN SELECT 1; END";
+    let sql = "CREATE OR ALTER PROCEDURE test(@foo INT, @bar VARCHAR(256)) AS BEGIN SELECT 1; END";
 
     assert_eq!(
         ms().verified_stmt(sql),
@@ -179,6 +179,7 @@ fn parse_create_procedure() {
                 span: Span::empty(),
             }]),
             language: None,
+            has_as: true,
         }
     )
 }
@@ -192,7 +193,7 @@ fn parse_mssql_create_procedure() {
         "CREATE PROCEDURE foo AS BEGIN SELECT [myColumn] FROM [myschema].[mytable]; END",
     );
     let _ = ms_and_generic().verified_stmt(
-        "CREATE PROCEDURE foo (@CustomerName NVARCHAR(50)) AS BEGIN SELECT * FROM DEV; END",
+        "CREATE PROCEDURE foo(@CustomerName NVARCHAR(50)) AS BEGIN SELECT * FROM DEV; END",
     );
     let _ = ms().verified_stmt("CREATE PROCEDURE [foo] AS BEGIN UPDATE bar SET col = 'test'; END");
     // Test a statement with END in it
@@ -201,7 +202,7 @@ fn parse_mssql_create_procedure() {
     let _ = ms().verified_stmt("CREATE PROCEDURE [foo] AS BEGIN UPDATE bar SET col = 'test'; SELECT [foo] FROM BAR WHERE [FOO] > 10; END");
 
     // parameters with default values
-    let sql = r#"CREATE PROCEDURE foo (IN @a INTEGER = 1, OUT @b TEXT = '2', INOUT @c DATETIME = NULL, @d BOOL = 0) AS BEGIN SELECT 1; END"#;
+    let sql = r#"CREATE PROCEDURE foo(IN @a INTEGER = 1, OUT @b TEXT = '2', INOUT @c DATETIME = NULL, @d BOOL = 0) AS BEGIN SELECT 1; END"#;
     let _ = ms().verified_stmt(sql);
 }
 
@@ -1449,7 +1450,8 @@ fn parse_mssql_declare() {
                     sensitive: None,
                     scroll: None,
                     hold: None,
-                    for_query: None
+                    for_query: None,
+                    handler_body: None
                 },
                 Declare {
                     names: vec![Ident {
@@ -1464,7 +1466,8 @@ fn parse_mssql_declare() {
                     sensitive: None,
                     scroll: None,
                     hold: None,
-                    for_query: None
+                    for_query: None,
+                    handler_body: None
                 },
                 Declare {
                     names: vec![Ident {
@@ -1481,7 +1484,8 @@ fn parse_mssql_declare() {
                     sensitive: None,
                     scroll: None,
                     hold: None,
-                    for_query: None
+                    for_query: None,
+                    handler_body: None
                 }
             ]
         }],
@@ -1502,7 +1506,8 @@ fn parse_mssql_declare() {
                     sensitive: None,
                     scroll: None,
                     hold: None,
-                    for_query: None
+                    for_query: None,
+                    handler_body: None
                 }]
             },
             Statement::Set(Set::SingleAssignment {
@@ -1594,7 +1599,12 @@ fn test_mssql_while_statement() {
     assert_eq!(
         stmt,
         Statement::While(sqlparser::ast::WhileStatement {
-            while_block: ConditionalStatementBlock {
+            label: None,
+            condition: None,
+            body: ConditionalStatements::Sequence { statements: vec![] },
+            end_label: None,
+            has_do_keyword: false,
+            while_block: Some(ConditionalStatementBlock {
                 start_token: AttachedToken(TokenWithSpan {
                     token: Token::Word(Word {
                         value: "WHILE".to_string().into(),
@@ -1621,7 +1631,7 @@ fn test_mssql_while_statement() {
                         )),
                     })],
                 }
-            }
+            })
         })
     );
 

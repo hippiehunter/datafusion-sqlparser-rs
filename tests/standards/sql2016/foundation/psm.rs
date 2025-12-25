@@ -787,10 +787,12 @@ mod integration_tests {
 
     #[test]
     fn repeat_with_begin_end() {
-        // REPEAT with BEGIN...END blocks - NOT YET IMPLEMENTED
-        // BEGIN as statement not supported
-        verified_standard_stmt(
+        // REPEAT with BEGIN...END blocks
+        // Semicolon after END is optional and normalized away
+        use crate::standards::common::one_statement_parses_to_std;
+        one_statement_parses_to_std(
             "my_repeat: REPEAT BEGIN SELECT x; SELECT y; END; UNTIL x > 100 END REPEAT",
+            "my_repeat: REPEAT BEGIN SELECT x; SELECT y; END UNTIL x > 100 END REPEAT",
         );
     }
 
@@ -810,9 +812,13 @@ mod integration_tests {
 
     #[test]
     fn complex_nested_structure() {
-        // Complex nested control structures - NOT YET IMPLEMENTED
-        // Labels and BEGIN blocks not fully supported
-        verified_standard_stmt("outer: BEGIN inner_loop: LOOP IF x > 100 THEN LEAVE outer; END IF; CASE x % 3 WHEN 0 THEN SELECT 'divisible by 3'; WHEN 1 THEN ITERATE inner_loop; ELSE BEGIN SELECT x; SELECT x * 2; END; END CASE; END LOOP; END");
+        // Complex nested control structures
+        // Semicolon after END in ELSE branch is optional and normalized away
+        use crate::standards::common::one_statement_parses_to_std;
+        one_statement_parses_to_std(
+            "outer: BEGIN inner_loop: LOOP IF x > 100 THEN LEAVE outer; END IF; CASE x % 3 WHEN 0 THEN SELECT 'divisible by 3'; WHEN 1 THEN ITERATE inner_loop; ELSE BEGIN SELECT x; SELECT x * 2; END; END CASE; END LOOP; END",
+            "outer: BEGIN inner_loop: LOOP IF x > 100 THEN LEAVE outer; END IF; CASE x % 3 WHEN 0 THEN SELECT 'divisible by 3'; WHEN 1 THEN ITERATE inner_loop; ELSE BEGIN SELECT x; SELECT x * 2; END END CASE; END LOOP; END",
+        );
     }
 
     #[test]
@@ -833,16 +839,14 @@ mod integration_tests {
     #[test]
     fn procedure_with_control_flow() {
         // CREATE PROCEDURE with control flow
-        // Note: The parser may normalize empty parameter lists - we test the canonical form
-        use crate::standards::common::one_statement_parses_to_std;
-
-        let stmt = one_statement_parses_to_std(
-            "CREATE PROCEDURE process_data() AS BEGIN my_loop: LOOP IF finished THEN LEAVE my_loop; END IF; CASE status WHEN 'pending' THEN SELECT 'processing'; WHEN 'error' THEN LEAVE my_loop; END CASE; END LOOP; END",
-            "CREATE PROCEDURE process_data AS BEGIN my_loop: LOOP IF finished THEN LEAVE my_loop; END IF; CASE status WHEN 'pending' THEN SELECT 'processing'; WHEN 'error' THEN LEAVE my_loop; END CASE; END LOOP; END"
+        // Empty parens () round-trip to (), no parens round-trips to no parens
+        let stmt = verified_standard_stmt(
+            "CREATE PROCEDURE process_data() AS BEGIN my_loop: LOOP IF finished THEN LEAVE my_loop; END IF; CASE status WHEN 'pending' THEN SELECT 'processing'; WHEN 'error' THEN LEAVE my_loop; END CASE; END LOOP; END"
         );
         match stmt {
-            Statement::CreateProcedure { name, body, .. } => {
+            Statement::CreateProcedure { name, params, body, .. } => {
                 assert_eq!(name.to_string(), "process_data");
+                assert_eq!(params, Some(vec![]));
                 // Verify the body contains BEGIN...END with a labeled LOOP
                 match body {
                     _ => {

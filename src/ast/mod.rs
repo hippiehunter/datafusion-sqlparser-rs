@@ -2611,13 +2611,47 @@ impl fmt::Display for IfStatement {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct WhileStatement {
-    pub while_block: ConditionalStatementBlock,
+    /// Optional label before the WHILE keyword
+    pub label: Option<Ident>,
+    /// The loop condition
+    pub condition: Option<Expr>,
+    /// The body of the loop
+    pub body: ConditionalStatements,
+    /// Optional label after END WHILE (must match start label if present)
+    pub end_label: Option<Ident>,
+    /// Whether the DO keyword is present (SQL:2016 syntax)
+    pub has_do_keyword: bool,
+    /// Legacy support: the while block for old-style WHILE
+    pub while_block: Option<ConditionalStatementBlock>,
 }
 
 impl fmt::Display for WhileStatement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let WhileStatement { while_block } = self;
-        write!(f, "{while_block}")?;
+        // Legacy format (MSSQL style): use while_block if present
+        // No END WHILE terminator for this format
+        if let Some(while_block) = &self.while_block {
+            write!(f, "{while_block}")?;
+            return Ok(());
+        }
+
+        // SQL:2016 format: WHILE condition DO statements; END WHILE
+        if let Some(label) = &self.label {
+            write!(f, "{label}: ")?;
+        }
+        write!(f, "WHILE")?;
+        if let Some(condition) = &self.condition {
+            write!(f, " {condition}")?;
+        }
+        if self.has_do_keyword {
+            write!(f, " DO")?;
+        }
+        if !self.body.statements().is_empty() {
+            write!(f, " {}", self.body)?;
+        }
+        write!(f, " END WHILE")?;
+        if let Some(end_label) = &self.end_label {
+            write!(f, " {end_label}")?;
+        }
         Ok(())
     }
 }
@@ -2652,6 +2686,65 @@ impl fmt::Display for LoopStatement {
             write!(f, "{label}: ")?;
         }
         write!(f, "LOOP {} END LOOP", self.body)?;
+        if let Some(end_label) = &self.end_label {
+            write!(f, " {end_label}")?;
+        }
+        Ok(())
+    }
+}
+
+/// A labeled `BEGIN...END` block statement.
+///
+/// Example:
+/// ```sql
+/// my_block: BEGIN
+///     SELECT 1;
+///     LEAVE my_block;
+/// END my_block
+/// ```
+///
+/// [SQL:2016](https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#sql-compound-statement)
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct LabeledBlock {
+    /// Optional label before the BEGIN keyword
+    pub label: Option<Ident>,
+    /// The statements within the block
+    pub statements: Vec<Statement>,
+    /// Optional exception handlers
+    pub exception: Option<Vec<ExceptionWhen>>,
+    /// Optional label after END (must match start label if present)
+    pub end_label: Option<Ident>,
+}
+
+impl fmt::Display for LabeledBlock {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Some(label) = &self.label {
+            write!(f, "{label}: ")?;
+        }
+        write!(f, "BEGIN")?;
+        if !self.statements.is_empty() {
+            write!(f, " ")?;
+            format_statement_list(f, &self.statements)?;
+        }
+        if let Some(exception) = &self.exception {
+            write!(f, " EXCEPTION")?;
+            for when in exception {
+                write!(f, " WHEN ")?;
+                let mut first = true;
+                for ident in &when.idents {
+                    if !first {
+                        write!(f, " OR ")?;
+                    }
+                    first = false;
+                    write!(f, "{ident}")?;
+                }
+                write!(f, " THEN ")?;
+                format_statement_list(f, &when.statements)?;
+            }
+        }
+        write!(f, " END")?;
         if let Some(end_label) = &self.end_label {
             write!(f, " {end_label}")?;
         }
@@ -2711,13 +2804,17 @@ impl fmt::Display for RepeatStatement {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct LeaveStatement {
-    /// The label of the block/loop to exit
-    pub label: Ident,
+    /// The label of the block/loop to exit (optional for bare LEAVE)
+    pub label: Option<Ident>,
 }
 
 impl fmt::Display for LeaveStatement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "LEAVE {}", self.label)
+        write!(f, "LEAVE")?;
+        if let Some(label) = &self.label {
+            write!(f, " {}", label)?;
+        }
+        Ok(())
     }
 }
 
@@ -2734,13 +2831,17 @@ impl fmt::Display for LeaveStatement {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct IterateStatement {
-    /// The label of the loop to continue
-    pub label: Ident,
+    /// The label of the loop to continue (optional for bare ITERATE)
+    pub label: Option<Ident>,
 }
 
 impl fmt::Display for IterateStatement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "ITERATE {}", self.label)
+        write!(f, "ITERATE")?;
+        if let Some(label) = &self.label {
+            write!(f, " {}", label)?;
+        }
+        Ok(())
     }
 }
 
@@ -3039,6 +3140,90 @@ impl fmt::Display for RaiseStatementValue {
     }
 }
 
+/// Represents a `SIGNAL` statement for exception handling.
+///
+/// Examples:
+/// ```sql
+/// SIGNAL SQLSTATE '45000'
+/// SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Custom error'
+/// ```
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct SignalStatement {
+    pub sqlstate: String,
+    pub set_items: Vec<SignalSetItem>,
+}
+
+impl fmt::Display for SignalStatement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "SIGNAL SQLSTATE '{}'", self.sqlstate)?;
+        if !self.set_items.is_empty() {
+            write!(f, " SET ")?;
+            write!(
+                f,
+                "{}",
+                display_comma_separated(&self.set_items)
+            )?;
+        }
+        Ok(())
+    }
+}
+
+/// Represents a `RESIGNAL` statement for exception re-raising.
+///
+/// Examples:
+/// ```sql
+/// RESIGNAL
+/// RESIGNAL SQLSTATE '45000'
+/// ```
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct ResignalStatement {
+    pub sqlstate: Option<String>,
+    pub set_items: Vec<SignalSetItem>,
+}
+
+impl fmt::Display for ResignalStatement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "RESIGNAL")?;
+        if let Some(sqlstate) = &self.sqlstate {
+            write!(f, " SQLSTATE '{}'", sqlstate)?;
+        }
+        if !self.set_items.is_empty() {
+            write!(f, " SET ")?;
+            write!(
+                f,
+                "{}",
+                display_comma_separated(&self.set_items)
+            )?;
+        }
+        Ok(())
+    }
+}
+
+/// Represents a SET item in a SIGNAL or RESIGNAL statement.
+///
+/// Examples:
+/// ```sql
+/// MESSAGE_TEXT = 'Custom error'
+/// MYSQL_ERRNO = 1234
+/// ```
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct SignalSetItem {
+    pub name: Ident,
+    pub value: Expr,
+}
+
+impl fmt::Display for SignalSetItem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} = {}", self.name, self.value)
+    }
+}
+
 /// Represents an expression assignment within a variable `DECLARE` statement.
 ///
 /// Examples:
@@ -3103,35 +3288,61 @@ impl fmt::Display for DeclareAssignment {
     }
 }
 
+/// Handler type for DECLARE HANDLER statements.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum DeclareHandlerType {
+    Continue,
+    Exit,
+    Undo,
+}
+
+impl fmt::Display for DeclareHandlerType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            DeclareHandlerType::Continue => write!(f, "CONTINUE"),
+            DeclareHandlerType::Exit => write!(f, "EXIT"),
+            DeclareHandlerType::Undo => write!(f, "UNDO"),
+        }
+    }
+}
+
 /// Represents the type of a `DECLARE` statement.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub enum DeclareType {
-    /// Cursor variable type. e.g. [Snowflake] [PostgreSQL] [MsSql]
+    /// Cursor variable type. [PostgreSQL] [MsSql]
     ///
-    /// [Snowflake]: https://docs.snowflake.com/en/developer-guide/snowflake-scripting/cursors#declaring-a-cursor
     /// [PostgreSQL]: https://www.postgresql.org/docs/current/plpgsql-cursors.html
     /// [MsSql]: https://learn.microsoft.com/en-us/sql/t-sql/language-elements/declare-cursor-transact-sql
     Cursor,
 
-    /// Result set variable type. [Snowflake]
-    ///
-    /// Syntax:
-    /// ```text
-    /// <resultset_name> RESULTSET [ { DEFAULT | := } ( <query> ) ] ;
-    /// ```
-    /// [Snowflake]: https://docs.snowflake.com/en/sql-reference/snowflake-scripting/declare#resultset-declaration-syntax
+    /// Result set variable type.
     ResultSet,
 
-    /// Exception declaration syntax. [Snowflake]
+    /// Exception declaration syntax.
+    Exception,
+
+    /// Condition declaration syntax. [SQL:2016]
     ///
     /// Syntax:
     /// ```text
-    /// <exception_name> EXCEPTION [ ( <exception_number> , '<exception_message>' ) ] ;
+    /// DECLARE <condition_name> CONDITION FOR SQLSTATE '<value>'
     /// ```
-    /// [Snowflake]: https://docs.snowflake.com/en/sql-reference/snowflake-scripting/declare#exception-declaration-syntax
-    Exception,
+    Condition,
+
+    /// Handler declaration syntax. [SQL:2016]
+    ///
+    /// Syntax:
+    /// ```text
+    /// DECLARE <handler_type> HANDLER FOR <condition> <statement>
+    /// ```
+    /// where handler_type is CONTINUE, EXIT, or UNDO
+    Handler {
+        handler_type: DeclareHandlerType,
+    },
 }
 
 impl fmt::Display for DeclareType {
@@ -3146,12 +3357,18 @@ impl fmt::Display for DeclareType {
             DeclareType::Exception => {
                 write!(f, "EXCEPTION")
             }
+            DeclareType::Condition => {
+                write!(f, "CONDITION")
+            }
+            DeclareType::Handler { handler_type } => {
+                write!(f, "{handler_type} HANDLER")
+            }
         }
     }
 }
 
 /// A `DECLARE` statement.
-/// [PostgreSQL] [Snowflake] [BigQuery]
+/// [PostgreSQL] [BigQuery]
 ///
 /// Examples:
 /// ```sql
@@ -3192,6 +3409,8 @@ pub struct Declare {
     pub hold: Option<bool>,
     /// `FOR <query>` clause in a CURSOR declaration.
     pub for_query: Option<Box<Query>>,
+    /// Handler body statement for DECLARE HANDLER.
+    pub handler_body: Option<Box<Statement>>,
 }
 
 impl fmt::Display for Declare {
@@ -3206,7 +3425,29 @@ impl fmt::Display for Declare {
             scroll,
             hold,
             for_query,
+            handler_body,
         } = self;
+
+        // Handle special CONDITION format
+        if let Some(DeclareType::Condition) = declare_type {
+            write!(f, "{}", display_comma_separated(names))?;
+            write!(f, " CONDITION")?;
+            if let Some(DeclareAssignment::For(expr)) = assignment {
+                write!(f, " FOR SQLSTATE {expr}")?;
+            }
+            return Ok(());
+        }
+
+        // Handle special HANDLER format
+        if let Some(DeclareType::Handler { handler_type }) = declare_type {
+            write!(f, "{handler_type} HANDLER FOR {}", display_comma_separated(names))?;
+            if let Some(body) = handler_body {
+                write!(f, " {body}")?;
+            }
+            return Ok(());
+        }
+
+        // Standard format
         write!(f, "{}", display_comma_separated(names))?;
 
         if let Some(true) = binary {
@@ -3712,10 +3953,16 @@ pub enum Statement {
     Leave(LeaveStatement),
     /// An `ITERATE` statement (continue loop).
     Iterate(IterateStatement),
+    /// A labeled `BEGIN...END` block.
+    LabeledBlock(LabeledBlock),
     /// A `GET DIAGNOSTICS` statement.
     GetDiagnostics(GetDiagnosticsStatement),
     /// A `RAISE` statement.
     Raise(RaiseStatement),
+    /// A `SIGNAL` statement.
+    Signal(SignalStatement),
+    /// A `RESIGNAL` statement.
+    Resignal(ResignalStatement),
     /// ```sql
     /// CALL <function>
     /// ```
@@ -4341,6 +4588,8 @@ pub enum Statement {
         name: ObjectName,
         params: Option<Vec<ProcedureParam>>,
         language: Option<Ident>,
+        /// Whether AS keyword was used before the body
+        has_as: bool,
         body: ConditionalStatements,
     },
     /// ```sql
@@ -4948,7 +5197,7 @@ impl fmt::Display for Statement {
             Statement::Query(s) => s.fmt(f),
             Statement::Declare { stmts } => {
                 write!(f, "DECLARE ")?;
-                write!(f, "{}", display_separated(stmts, "; "))
+                write!(f, "{}", display_separated(stmts, ", "))
             }
             Statement::Fetch {
                 name,
@@ -5006,10 +5255,19 @@ impl fmt::Display for Statement {
             Statement::Iterate(stmt) => {
                 write!(f, "{stmt}")
             }
+            Statement::LabeledBlock(stmt) => {
+                write!(f, "{stmt}")
+            }
             Statement::GetDiagnostics(stmt) => {
                 write!(f, "{stmt}")
             }
             Statement::Raise(stmt) => {
+                write!(f, "{stmt}")
+            }
+            Statement::Signal(stmt) => {
+                write!(f, "{stmt}")
+            }
+            Statement::Resignal(stmt) => {
                 write!(f, "{stmt}")
             }
             Statement::AttachDatabase {
@@ -5189,6 +5447,7 @@ impl fmt::Display for Statement {
                 or_alter,
                 params,
                 language,
+                has_as,
                 body,
             } => {
                 write!(
@@ -5199,16 +5458,18 @@ impl fmt::Display for Statement {
                 )?;
 
                 if let Some(p) = params {
-                    if !p.is_empty() {
-                        write!(f, " ({})", display_comma_separated(p))?;
-                    }
+                    write!(f, "({})", display_comma_separated(p))?;
                 }
 
                 if let Some(language) = language {
                     write!(f, " LANGUAGE {language}")?;
                 }
 
-                write!(f, " AS {body}")
+                if *has_as {
+                    write!(f, " AS {body}")
+                } else {
+                    write!(f, " {body}")
+                }
             }
             Statement::CreateMacro {
                 or_replace,

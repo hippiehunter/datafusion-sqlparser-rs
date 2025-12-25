@@ -562,7 +562,7 @@ impl<'a> Parser<'a> {
                 }
                 Keyword::WHILE => {
                     self.prev_token();
-                    self.parse_while()
+                    self.parse_while(None)
                 }
                 Keyword::LOOP => {
                     self.prev_token();
@@ -583,6 +583,14 @@ impl<'a> Parser<'a> {
                 Keyword::RAISE => {
                     self.prev_token();
                     self.parse_raise_stmt()
+                }
+                Keyword::SIGNAL => {
+                    self.prev_token();
+                    self.parse_signal()
+                }
+                Keyword::RESIGNAL => {
+                    self.prev_token();
+                    self.parse_resignal()
                 }
                 Keyword::SELECT | Keyword::WITH | Keyword::VALUES | Keyword::FROM => {
                     self.prev_token();
@@ -671,9 +679,9 @@ impl<'a> Parser<'a> {
                 }
                 Keyword::RESET => self.parse_reset(),
                 _ => {
-                    // Check for labeled statement: identifier COLON (LOOP | REPEAT)
-                    if w.keyword == Keyword::NoKeyword && self.consume_token(&BorrowedToken::Colon)
-                    {
+                    // Check for labeled statement: identifier COLON (LOOP | REPEAT | WHILE | BEGIN)
+                    // Note: Even keywords can be used as labels (e.g., "outer: LOOP" where OUTER is a keyword)
+                    if self.consume_token(&BorrowedToken::Colon) {
                         let label = w.clone().into_ident(next_token.span);
                         let next_keyword = self.peek_token();
                         match &next_keyword.token {
@@ -683,8 +691,14 @@ impl<'a> Parser<'a> {
                             BorrowedToken::Word(w2) if w2.keyword == Keyword::REPEAT => {
                                 return self.parse_repeat(Some(label));
                             }
+                            BorrowedToken::Word(w2) if w2.keyword == Keyword::WHILE => {
+                                return self.parse_while(Some(label));
+                            }
+                            BorrowedToken::Word(w2) if w2.keyword == Keyword::BEGIN => {
+                                return self.parse_begin_end_statement(Some(label));
+                            }
                             _ => {
-                                return self.expected("LOOP or REPEAT after label", next_keyword);
+                                return self.expected("LOOP, REPEAT, WHILE, or BEGIN after label", next_keyword);
                             }
                         }
                     }
@@ -778,12 +792,84 @@ impl<'a> Parser<'a> {
 
     /// Parse a `WHILE` statement.
     ///
+    /// Supports SQL:2016 syntax: [label:] WHILE condition DO statements; END WHILE [label]
+    ///
     /// See [Statement::While]
-    fn parse_while(&self) -> Result<Statement, ParserError> {
-        self.expect_keyword_is(Keyword::WHILE)?;
-        let while_block = self.parse_conditional_statement_block(&[Keyword::END])?;
+    fn parse_while(&self, label: Option<Ident>) -> Result<Statement, ParserError> {
+        // Get the WHILE token before advancing
+        let while_token = self.expect_keyword(Keyword::WHILE)?;
 
-        Ok(Statement::While(WhileStatement { while_block }))
+        let condition = self.parse_expr()?;
+
+        // Check for DO keyword (SQL:2016 standard)
+        let has_do_keyword = self.parse_keyword(Keyword::DO);
+
+        if has_do_keyword {
+            // SQL:2016 syntax: WHILE condition DO statements; END WHILE
+            let body = self.parse_conditional_statements(&[Keyword::END])?;
+
+            self.expect_keywords(&[Keyword::END, Keyword::WHILE])?;
+
+            // Parse optional end label
+            let end_label = if self.peek_token().token != BorrowedToken::SemiColon
+                && self.peek_token().token != BorrowedToken::EOF
+                && !self.peek_keyword(Keyword::END)
+                && !self.peek_keyword(Keyword::ELSE)
+                && !self.peek_keyword(Keyword::ELSEIF)
+                && !self.peek_keyword(Keyword::WHEN)
+                && !self.peek_keyword(Keyword::UNTIL)
+            {
+                Some(self.parse_identifier()?)
+            } else {
+                None
+            };
+
+            return Ok(Statement::While(WhileStatement {
+                label,
+                condition: Some(condition),
+                body,
+                end_label,
+                has_do_keyword: true,
+                while_block: None,
+            }));
+        }
+
+        // Legacy/MSSQL syntax: WHILE condition statement (no END WHILE)
+        // Can be either BEGIN...END block or a single statement
+        let conditional_statements = if self.peek_keyword(Keyword::BEGIN) {
+            // BEGIN...END block
+            let begin_token = self.expect_keyword(Keyword::BEGIN)?;
+            let statements = self.parse_statement_list(&[Keyword::END])?;
+            let end_token = self.expect_keyword(Keyword::END)?;
+
+            ConditionalStatements::BeginEnd(BeginEndStatements {
+                begin_token: AttachedToken(begin_token.to_static()),
+                statements,
+                end_token: AttachedToken(end_token.to_static()),
+            })
+        } else {
+            // Single statement
+            let stmt = self.parse_statement()?;
+            ConditionalStatements::Sequence {
+                statements: vec![stmt],
+            }
+        };
+
+        let while_block = ConditionalStatementBlock {
+            start_token: AttachedToken(while_token.to_static()),
+            condition: Some(condition),
+            then_token: None,
+            conditional_statements,
+        };
+
+        Ok(Statement::While(WhileStatement {
+            label,
+            condition: None,
+            body: ConditionalStatements::Sequence { statements: vec![] },
+            end_label: None,
+            has_do_keyword: false,
+            while_block: Some(while_block),
+        }))
     }
 
     /// Parse a `LOOP` statement.
@@ -851,19 +937,47 @@ impl<'a> Parser<'a> {
 
     /// Parse a `LEAVE` statement.
     ///
+    /// Supports both `LEAVE label` and bare `LEAVE` (SQL:2016).
+    ///
     /// See [Statement::Leave]
     fn parse_leave(&self) -> Result<Statement, ParserError> {
         self.expect_keyword_is(Keyword::LEAVE)?;
-        let label = self.parse_identifier()?;
+        // Label is optional - check if there's an identifier before semicolon
+        let label = if self.peek_token().token != BorrowedToken::SemiColon
+            && self.peek_token().token != BorrowedToken::EOF
+            && !self.peek_keyword(Keyword::END)
+            && !self.peek_keyword(Keyword::ELSE)
+            && !self.peek_keyword(Keyword::ELSEIF)
+            && !self.peek_keyword(Keyword::WHEN)
+            && !self.peek_keyword(Keyword::UNTIL)
+        {
+            Some(self.parse_identifier()?)
+        } else {
+            None
+        };
         Ok(Statement::Leave(LeaveStatement { label }))
     }
 
     /// Parse an `ITERATE` statement.
     ///
+    /// Supports both `ITERATE label` and bare `ITERATE` (SQL:2016).
+    ///
     /// See [Statement::Iterate]
     fn parse_iterate(&self) -> Result<Statement, ParserError> {
         self.expect_keyword_is(Keyword::ITERATE)?;
-        let label = self.parse_identifier()?;
+        // Label is optional - check if there's an identifier before semicolon
+        let label = if self.peek_token().token != BorrowedToken::SemiColon
+            && self.peek_token().token != BorrowedToken::EOF
+            && !self.peek_keyword(Keyword::END)
+            && !self.peek_keyword(Keyword::ELSE)
+            && !self.peek_keyword(Keyword::ELSEIF)
+            && !self.peek_keyword(Keyword::WHEN)
+            && !self.peek_keyword(Keyword::UNTIL)
+        {
+            Some(self.parse_identifier()?)
+        } else {
+            None
+        };
         Ok(Statement::Iterate(IterateStatement { label }))
     }
 
@@ -977,8 +1091,12 @@ impl<'a> Parser<'a> {
     ) -> Result<ConditionalStatements, ParserError> {
         let conditional_statements = if self.peek_keyword(Keyword::BEGIN) {
             let begin_token = self.expect_keyword(Keyword::BEGIN)?;
-            let statements = self.parse_statement_list(terminal_keywords)?;
+            // When inside BEGIN...END, stop at END (not the outer terminal keywords)
+            let statements = self.parse_statement_list(&[Keyword::END])?;
             let end_token = self.expect_keyword(Keyword::END)?;
+
+            // Consume optional trailing semicolon after BEGIN...END block
+            let _ = self.consume_token(&BorrowedToken::SemiColon);
 
             ConditionalStatements::BeginEnd(BeginEndStatements {
                 begin_token: AttachedToken(begin_token.to_static()),
@@ -1007,6 +1125,49 @@ impl<'a> Parser<'a> {
         };
 
         Ok(Statement::Raise(RaiseStatement { value }))
+    }
+
+    pub fn parse_signal(&self) -> Result<Statement, ParserError> {
+        self.expect_keyword_is(Keyword::SIGNAL)?;
+        self.expect_keyword_is(Keyword::SQLSTATE)?;
+
+        let sqlstate = self.parse_literal_string()?;
+
+        let set_items = if self.parse_keyword(Keyword::SET) {
+            self.parse_comma_separated(|parser| {
+                let name = parser.parse_identifier()?;
+                parser.expect_token(&BorrowedToken::Eq)?;
+                let value = parser.parse_expr()?;
+                Ok(SignalSetItem { name, value })
+            })?
+        } else {
+            Vec::new()
+        };
+
+        Ok(Statement::Signal(SignalStatement { sqlstate, set_items }))
+    }
+
+    pub fn parse_resignal(&self) -> Result<Statement, ParserError> {
+        self.expect_keyword_is(Keyword::RESIGNAL)?;
+
+        let sqlstate = if self.parse_keyword(Keyword::SQLSTATE) {
+            Some(self.parse_literal_string()?)
+        } else {
+            None
+        };
+
+        let set_items = if self.parse_keyword(Keyword::SET) {
+            self.parse_comma_separated(|parser| {
+                let name = parser.parse_identifier()?;
+                parser.expect_token(&BorrowedToken::Eq)?;
+                let value = parser.parse_expr()?;
+                Ok(SignalSetItem { name, value })
+            })?
+        } else {
+            Vec::new()
+        };
+
+        Ok(Statement::Resignal(ResignalStatement { sqlstate, set_items }))
     }
 
     pub fn parse_comment(&self) -> Result<Statement, ParserError> {
@@ -7357,57 +7518,199 @@ impl<'a> Parser<'a> {
             return self.parse_mssql_declare();
         }
 
-        let name = self.parse_identifier()?;
+        // Check if this is a HANDLER declaration (starts with CONTINUE/EXIT/UNDO)
+        if let Some(handler_type) = self.parse_one_of_keywords(&[
+            Keyword::CONTINUE,
+            Keyword::EXIT,
+            Keyword::UNDO,
+        ]) {
+            self.expect_keyword_is(Keyword::HANDLER)?;
+            self.expect_keyword_is(Keyword::FOR)?;
 
-        let binary = Some(self.parse_keyword(Keyword::BINARY));
-        let sensitive = if self.parse_keyword(Keyword::INSENSITIVE) {
-            Some(true)
-        } else if self.parse_keyword(Keyword::ASENSITIVE) {
-            Some(false)
-        } else {
-            None
-        };
-        let scroll = if self.parse_keyword(Keyword::SCROLL) {
-            Some(true)
-        } else if self.parse_keywords(&[Keyword::NO, Keyword::SCROLL]) {
-            Some(false)
-        } else {
-            None
-        };
-
-        self.expect_keyword_is(Keyword::CURSOR)?;
-        let declare_type = Some(DeclareType::Cursor);
-
-        let hold = match self.parse_one_of_keywords(&[Keyword::WITH, Keyword::WITHOUT]) {
-            Some(keyword) => {
-                self.expect_keyword_is(Keyword::HOLD)?;
-
-                match keyword {
-                    Keyword::WITH => Some(true),
-                    Keyword::WITHOUT => Some(false),
-                    _ => unreachable!(),
+            // Parse condition values (SQLEXCEPTION, SQLWARNING, NOT FOUND, etc.)
+            let mut conditions = vec![];
+            loop {
+                if self.parse_keyword(Keyword::SQLEXCEPTION) {
+                    conditions.push(Ident::new("SQLEXCEPTION"));
+                } else if self.parse_keyword(Keyword::SQLWARNING) {
+                    conditions.push(Ident::new("SQLWARNING"));
+                } else if self.parse_keywords(&[Keyword::NOT, Keyword::FOUND]) {
+                    conditions.push(Ident::new("NOT FOUND"));
+                } else {
+                    conditions.push(self.parse_identifier()?);
+                }
+                if !self.consume_token(&BorrowedToken::Comma) {
+                    break;
                 }
             }
-            None => None,
+
+            // Parse handler body (typically BEGIN...END)
+            let body = self.parse_statement()?;
+
+            let handler_type_enum = match handler_type {
+                Keyword::CONTINUE => DeclareHandlerType::Continue,
+                Keyword::EXIT => DeclareHandlerType::Exit,
+                Keyword::UNDO => DeclareHandlerType::Undo,
+                _ => unreachable!(),
+            };
+
+            return Ok(Statement::Declare {
+                stmts: vec![Declare {
+                    names: conditions,
+                    data_type: None,
+                    assignment: None,
+                    declare_type: Some(DeclareType::Handler {
+                        handler_type: handler_type_enum,
+                    }),
+                    binary: None,
+                    sensitive: None,
+                    scroll: None,
+                    hold: None,
+                    for_query: None,
+                    handler_body: Some(Box::new(body)),
+                }],
+            });
+        }
+
+        let name = self.parse_identifier()?;
+
+        // Check for CONDITION declaration
+        if self.parse_keyword(Keyword::CONDITION) {
+            self.expect_keyword_is(Keyword::FOR)?;
+            self.expect_keyword_is(Keyword::SQLSTATE)?;
+            let sqlstate = self.parse_literal_string()?;
+
+            return Ok(Statement::Declare {
+                stmts: vec![Declare {
+                    names: vec![name],
+                    data_type: None,
+                    assignment: Some(DeclareAssignment::For(Box::new(
+                        Expr::Value(Value::SingleQuotedString(sqlstate).with_empty_span())
+                    ))),
+                    declare_type: Some(DeclareType::Condition),
+                    binary: None,
+                    sensitive: None,
+                    scroll: None,
+                    hold: None,
+                    for_query: None,
+                    handler_body: None,
+                }],
+            });
+        }
+
+        // Check if this is a cursor declaration
+        let is_cursor = self.peek_keyword(Keyword::BINARY)
+            || self.peek_keyword(Keyword::INSENSITIVE)
+            || self.peek_keyword(Keyword::ASENSITIVE)
+            || self.peek_keyword(Keyword::SCROLL)
+            || self.peek_keyword(Keyword::CURSOR)
+            || (self.peek_keyword(Keyword::NO)
+                && matches!(
+                    self.peek_nth_token(1).token,
+                    BorrowedToken::Word(ref w) if w.keyword == Keyword::SCROLL
+                ));
+
+        if is_cursor {
+            // Parse cursor declaration
+            let binary = Some(self.parse_keyword(Keyword::BINARY));
+            let sensitive = if self.parse_keyword(Keyword::INSENSITIVE) {
+                Some(true)
+            } else if self.parse_keyword(Keyword::ASENSITIVE) {
+                Some(false)
+            } else {
+                None
+            };
+            let scroll = if self.parse_keyword(Keyword::SCROLL) {
+                Some(true)
+            } else if self.parse_keywords(&[Keyword::NO, Keyword::SCROLL]) {
+                Some(false)
+            } else {
+                None
+            };
+
+            self.expect_keyword_is(Keyword::CURSOR)?;
+            let declare_type = Some(DeclareType::Cursor);
+
+            let hold = match self.parse_one_of_keywords(&[Keyword::WITH, Keyword::WITHOUT]) {
+                Some(keyword) => {
+                    self.expect_keyword_is(Keyword::HOLD)?;
+                    match keyword {
+                        Keyword::WITH => Some(true),
+                        Keyword::WITHOUT => Some(false),
+                        _ => unreachable!(),
+                    }
+                }
+                None => None,
+            };
+
+            self.expect_keyword_is(Keyword::FOR)?;
+            let query = Some(self.parse_query()?);
+
+            return Ok(Statement::Declare {
+                stmts: vec![Declare {
+                    names: vec![name],
+                    data_type: None,
+                    assignment: None,
+                    declare_type,
+                    binary,
+                    sensitive,
+                    scroll,
+                    hold,
+                    for_query: query,
+                    handler_body: None,
+                }],
+            });
+        }
+
+        // Variable declaration: DECLARE name TYPE [DEFAULT expr] [, name2 TYPE2 ...]
+        let mut stmts = vec![];
+
+        // Parse first variable
+        let data_type = Some(self.parse_data_type()?);
+        let assignment = if self.parse_keyword(Keyword::DEFAULT) {
+            Some(DeclareAssignment::Default(Box::new(self.parse_expr()?)))
+        } else {
+            None
         };
 
-        self.expect_keyword_is(Keyword::FOR)?;
+        stmts.push(Declare {
+            names: vec![name],
+            data_type,
+            assignment,
+            declare_type: None,
+            binary: None,
+            sensitive: None,
+            scroll: None,
+            hold: None,
+            handler_body: None,
+            for_query: None,
+        });
 
-        let query = Some(self.parse_query()?);
+        // Parse additional comma-separated variables
+        while self.consume_token(&BorrowedToken::Comma) {
+            let var_name = self.parse_identifier()?;
+            let var_type = Some(self.parse_data_type()?);
+            let var_assignment = if self.parse_keyword(Keyword::DEFAULT) {
+                Some(DeclareAssignment::Default(Box::new(self.parse_expr()?)))
+            } else {
+                None
+            };
 
-        Ok(Statement::Declare {
-            stmts: vec![Declare {
-                names: vec![name],
-                data_type: None,
-                assignment: None,
-                declare_type,
-                binary,
-                sensitive,
-                scroll,
-                hold,
-                for_query: query,
-            }],
-        })
+            stmts.push(Declare {
+                names: vec![var_name],
+                data_type: var_type,
+                assignment: var_assignment,
+                declare_type: None,
+                binary: None,
+                sensitive: None,
+                scroll: None,
+                hold: None,
+                for_query: None,
+                handler_body: None,
+            });
+        }
+
+        Ok(Statement::Declare { stmts })
     }
 
     /// Parse a [BigQuery] `DECLARE` statement.
@@ -7449,11 +7752,12 @@ impl<'a> Parser<'a> {
                 scroll: None,
                 hold: None,
                 for_query: None,
+                handler_body: None,
             }],
         })
     }
 
-    /// Parse a [Snowflake] `DECLARE` statement.
+    /// Parse a `DECLARE` statement.
     ///
     /// Syntax:
     /// ```text
@@ -7543,6 +7847,7 @@ impl<'a> Parser<'a> {
                 scroll: None,
                 hold: None,
                 for_query,
+                handler_body: None,
             };
 
             stmts.push(stmt);
@@ -7647,6 +7952,7 @@ impl<'a> Parser<'a> {
             scroll: None,
             hold: None,
             for_query,
+            handler_body: None,
         })
     }
 
@@ -8590,11 +8896,15 @@ impl<'a> Parser<'a> {
     pub fn parse_optional_procedure_parameters(
         &self,
     ) -> Result<Option<Vec<ProcedureParam>>, ParserError> {
-        let mut params = vec![];
-        if !self.consume_token(&BorrowedToken::LParen) || self.consume_token(&BorrowedToken::RParen)
-        {
-            return Ok(Some(params));
+        // No opening paren means no parameter list at all
+        if !self.consume_token(&BorrowedToken::LParen) {
+            return Ok(None);
         }
+        // Empty parens "()" means empty parameter list
+        if self.consume_token(&BorrowedToken::RParen) {
+            return Ok(Some(vec![]));
+        }
+        let mut params = vec![];
         loop {
             if let BorrowedToken::Word(_) = self.peek_token().token {
                 params.push(self.parse_procedure_param()?)
@@ -17622,6 +17932,48 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_begin(&self) -> Result<Statement, ParserError> {
+        // Check if this is a procedural BEGIN...END block or a transaction BEGIN
+        //
+        // Transaction BEGIN patterns:
+        // - BEGIN (bare, with or without TRANSACTION/WORK)
+        // - BEGIN DEFERRED/IMMEDIATE/EXCLUSIVE/TRY/CATCH (dialect-specific)
+        //
+        // Procedural block patterns:
+        // - BEGIN <statement>... END
+        // - BEGIN <statement>... EXCEPTION WHEN ... THEN ... END
+        //
+        // The distinguishing factor:
+        // - If we see transaction keywords (TRANSACTION, WORK, or modifiers), it's a transaction
+        // - If we see EOF or semicolon immediately after BEGIN, it's a transaction
+        // - Otherwise, it's a procedural block
+
+        let is_transaction = if self.dialect.supports_start_transaction_modifier() {
+            self.peek_keyword(Keyword::DEFERRED)
+                || self.peek_keyword(Keyword::IMMEDIATE)
+                || self.peek_keyword(Keyword::EXCLUSIVE)
+                || self.peek_keyword(Keyword::TRY)
+                || self.peek_keyword(Keyword::CATCH)
+                || self.peek_keyword(Keyword::TRANSACTION)
+                || self.peek_keyword(Keyword::WORK)
+        } else {
+            self.peek_keyword(Keyword::TRANSACTION) || self.peek_keyword(Keyword::WORK)
+        };
+
+        // Also check if we're at EOF or semicolon (bare BEGIN for transaction)
+        let at_end = matches!(
+            self.peek_token().token,
+            BorrowedToken::SemiColon | BorrowedToken::EOF
+        );
+
+        // If we have transaction keywords or are at end, parse as transaction
+        if is_transaction || at_end {
+            // Parse as transaction
+        } else {
+            // Try to parse as BEGIN...EXCEPTION...END block
+            return self.parse_begin_exception_end();
+        }
+
+        // Otherwise, parse as transaction
         let modifier = if !self.dialect.supports_start_transaction_modifier() {
             None
         } else if self.parse_keyword(Keyword::DEFERRED) {
@@ -17696,6 +18048,62 @@ impl<'a> Parser<'a> {
             modifier: None,
             modes: Default::default(),
         })
+    }
+
+    /// Parse a labeled BEGIN...END block (for use with labeled statements).
+    ///
+    /// Syntax: [label:] BEGIN statements; END [label]
+    pub fn parse_begin_end_statement(
+        &self,
+        label: Option<Ident>,
+    ) -> Result<Statement, ParserError> {
+        self.expect_keyword_is(Keyword::BEGIN)?;
+
+        let statements = self.parse_statement_list(&[Keyword::EXCEPTION, Keyword::END])?;
+
+        let exception = if self.parse_keyword(Keyword::EXCEPTION) {
+            let mut when = Vec::new();
+            while !self.peek_keyword(Keyword::END) {
+                self.expect_keyword(Keyword::WHEN)?;
+                let mut idents = Vec::new();
+                while !self.parse_keyword(Keyword::THEN) {
+                    let ident = self.parse_identifier()?;
+                    idents.push(ident);
+                    let _ = self.parse_keyword(Keyword::OR);
+                }
+                let stmts = self.parse_statement_list(&[Keyword::WHEN, Keyword::END])?;
+                when.push(ExceptionWhen {
+                    idents,
+                    statements: stmts,
+                });
+            }
+            Some(when)
+        } else {
+            None
+        };
+
+        self.expect_keyword(Keyword::END)?;
+
+        // Parse optional end label (must match start label if present)
+        let end_label = if self.peek_token().token != BorrowedToken::SemiColon
+            && self.peek_token().token != BorrowedToken::EOF
+            && !self.peek_keyword(Keyword::END)
+            && !self.peek_keyword(Keyword::ELSE)
+            && !self.peek_keyword(Keyword::ELSEIF)
+            && !self.peek_keyword(Keyword::WHEN)
+            && !self.peek_keyword(Keyword::UNTIL)
+        {
+            Some(self.parse_identifier()?)
+        } else {
+            None
+        };
+
+        Ok(Statement::LabeledBlock(LabeledBlock {
+            label,
+            statements,
+            exception,
+            end_label,
+        }))
     }
 
     pub fn parse_end(&self) -> Result<Statement, ParserError> {
@@ -18378,7 +18786,8 @@ impl<'a> Parser<'a> {
             None
         };
 
-        self.expect_keyword_is(Keyword::AS)?;
+        // AS is optional before BEGIN for SQL:2016 PSM compatibility
+        let has_as = self.parse_keyword(Keyword::AS);
 
         let body = self.parse_conditional_statements(&[Keyword::END])?;
 
@@ -18387,6 +18796,7 @@ impl<'a> Parser<'a> {
             or_alter,
             params,
             language,
+            has_as,
             body,
         })
     }
