@@ -698,7 +698,10 @@ impl<'a> Parser<'a> {
                                 return self.parse_begin_end_statement(Some(label));
                             }
                             _ => {
-                                return self.expected("LOOP, REPEAT, WHILE, or BEGIN after label", next_keyword);
+                                return self.expected(
+                                    "LOOP, REPEAT, WHILE, or BEGIN after label",
+                                    next_keyword,
+                                );
                             }
                         }
                     }
@@ -1144,7 +1147,10 @@ impl<'a> Parser<'a> {
             Vec::new()
         };
 
-        Ok(Statement::Signal(SignalStatement { sqlstate, set_items }))
+        Ok(Statement::Signal(SignalStatement {
+            sqlstate,
+            set_items,
+        }))
     }
 
     pub fn parse_resignal(&self) -> Result<Statement, ParserError> {
@@ -1167,7 +1173,10 @@ impl<'a> Parser<'a> {
             Vec::new()
         };
 
-        Ok(Statement::Resignal(ResignalStatement { sqlstate, set_items }))
+        Ok(Statement::Resignal(ResignalStatement {
+            sqlstate,
+            set_items,
+        }))
     }
 
     pub fn parse_comment(&self) -> Result<Statement, ParserError> {
@@ -1737,6 +1746,13 @@ impl<'a> Parser<'a> {
             }
             Keyword::PERIOD if self.peek_token() == BorrowedToken::LParen => {
                 Ok(Some(self.parse_period_constructor()?))
+            }
+            // SQL:2016 T176: NEXT VALUE FOR sequence_name
+            Keyword::NEXT if self.peek_keyword(Keyword::VALUE) => {
+                self.expect_keyword(Keyword::VALUE)?;
+                self.expect_keyword(Keyword::FOR)?;
+                let sequence_name = self.parse_object_name(false)?;
+                Ok(Some(Expr::NextValueFor { sequence_name }))
             }
             _ if self.dialect.supports_geometric_types() => match w.keyword {
                 Keyword::CIRCLE => Ok(Some(self.parse_geometric_type(GeometricTypeKind::Circle)?)),
@@ -4385,6 +4401,12 @@ impl<'a> Parser<'a> {
     ///
     /// Parser is right after `[`
     fn parse_subscript_inner(&self) -> Result<Subscript, ParserError> {
+        // Check for wildcard subscript [*]
+        if self.consume_token(&BorrowedToken::Mul) {
+            self.expect_token(&BorrowedToken::RBracket)?;
+            return Ok(Subscript::Wildcard);
+        }
+
         // at either `<lower>:(rest)` or `:(rest)]`
         let lower_bound = if self.consume_token(&BorrowedToken::Colon) {
             None
@@ -4562,8 +4584,16 @@ impl<'a> Parser<'a> {
         Ok(in_op)
     }
 
-    /// Parses `BETWEEN <low> AND <high>`, assuming the `BETWEEN` keyword was already consumed.
+    /// Parses `BETWEEN [SYMMETRIC|ASYMMETRIC] <low> AND <high>`, assuming the `BETWEEN` keyword was already consumed.
     pub fn parse_between(&self, expr: Expr, negated: bool) -> Result<Expr, ParserError> {
+        // SQL:2016 T461: Parse optional SYMMETRIC or ASYMMETRIC keyword
+        let symmetric = if self.parse_keyword(Keyword::SYMMETRIC) {
+            BetweenSymmetric::Symmetric
+        } else if self.parse_keyword(Keyword::ASYMMETRIC) {
+            BetweenSymmetric::Asymmetric
+        } else {
+            BetweenSymmetric::None
+        };
         // Stop parsing subexpressions for <low> and <high> on tokens with
         // precedence lower than that of `BETWEEN`, such as `AND`, `IS`, etc.
         let low = self.parse_subexpr(self.dialect.prec_value(Precedence::Between))?;
@@ -4572,6 +4602,7 @@ impl<'a> Parser<'a> {
         Ok(Expr::Between {
             expr: Box::new(expr),
             negated,
+            symmetric,
             low: Box::new(low),
             high: Box::new(high),
         })
@@ -7519,11 +7550,9 @@ impl<'a> Parser<'a> {
         }
 
         // Check if this is a HANDLER declaration (starts with CONTINUE/EXIT/UNDO)
-        if let Some(handler_type) = self.parse_one_of_keywords(&[
-            Keyword::CONTINUE,
-            Keyword::EXIT,
-            Keyword::UNDO,
-        ]) {
+        if let Some(handler_type) =
+            self.parse_one_of_keywords(&[Keyword::CONTINUE, Keyword::EXIT, Keyword::UNDO])
+        {
             self.expect_keyword_is(Keyword::HANDLER)?;
             self.expect_keyword_is(Keyword::FOR)?;
 
@@ -7584,9 +7613,9 @@ impl<'a> Parser<'a> {
                 stmts: vec![Declare {
                     names: vec![name],
                     data_type: None,
-                    assignment: Some(DeclareAssignment::For(Box::new(
-                        Expr::Value(Value::SingleQuotedString(sqlstate).with_empty_span())
-                    ))),
+                    assignment: Some(DeclareAssignment::For(Box::new(Expr::Value(
+                        Value::SingleQuotedString(sqlstate).with_empty_span(),
+                    )))),
                     declare_type: Some(DeclareType::Condition),
                     binary: None,
                     sensitive: None,
@@ -8432,18 +8461,18 @@ impl<'a> Parser<'a> {
 
         // Parse optional WITH SYSTEM VERSIONING (SQL:2016 Temporal) BEFORE parse_optional_create_table_config()
         // to avoid WITH being consumed by parse_options(Keyword::WITH)
-        let system_versioning = if self.parse_keywords(&[Keyword::WITH, Keyword::SYSTEM, Keyword::VERSIONING])
-        {
-            let history_table = if self.parse_keywords(&[Keyword::WITH, Keyword::HISTORY, Keyword::TABLE])
-            {
-                Some(self.parse_object_name(false)?)
+        let system_versioning =
+            if self.parse_keywords(&[Keyword::WITH, Keyword::SYSTEM, Keyword::VERSIONING]) {
+                let history_table =
+                    if self.parse_keywords(&[Keyword::WITH, Keyword::HISTORY, Keyword::TABLE]) {
+                        Some(self.parse_object_name(false)?)
+                    } else {
+                        None
+                    };
+                Some(CreateTableSystemVersioning { history_table })
             } else {
                 None
             };
-            Some(CreateTableSystemVersioning { history_table })
-        } else {
-            None
-        };
 
         let create_table_config = self.parse_optional_create_table_config()?;
 
@@ -10428,6 +10457,7 @@ impl<'a> Parser<'a> {
             Keyword::ICEBERG,
             Keyword::SCHEMA,
             Keyword::USER,
+            Keyword::SEQUENCE,
         ])?;
         match object_type {
             Keyword::SCHEMA => {
@@ -10464,9 +10494,58 @@ impl<'a> Parser<'a> {
             Keyword::POLICY => self.parse_alter_policy(),
             Keyword::CONNECTOR => self.parse_alter_connector(),
             Keyword::USER => self.parse_alter_user(),
+            Keyword::SEQUENCE => self.parse_alter_sequence(),
             // unreachable because expect_one_of_keywords used above
             _ => unreachable!(),
         }
+    }
+
+    /// Parse ALTER SEQUENCE statement (SQL:2016 T174)
+    pub fn parse_alter_sequence(&self) -> Result<Statement, ParserError> {
+        let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
+        let name = self.parse_object_name(false)?;
+        let mut sequence_options = Vec::new();
+        let mut owned_by: Option<ObjectName> = None;
+
+        // Parse sequence options
+        loop {
+            if self.parse_keyword(Keyword::RESTART) {
+                let with = self.parse_keyword(Keyword::WITH);
+                let value = if with
+                    || self.peek_token() != BorrowedToken::SemiColon
+                        && self.peek_token() != BorrowedToken::EOF
+                        && !self.peek_keyword(Keyword::OWNED)
+                        && !self.peek_keyword(Keyword::INCREMENT)
+                        && !self.peek_keyword(Keyword::MINVALUE)
+                        && !self.peek_keyword(Keyword::MAXVALUE)
+                        && !self.peek_keyword(Keyword::START)
+                        && !self.peek_keyword(Keyword::CACHE)
+                        && !self.peek_keyword(Keyword::NO)
+                        && !self.peek_keyword(Keyword::CYCLE)
+                {
+                    if with {
+                        Some(self.parse_expr()?)
+                    } else {
+                        self.maybe_parse(|p| p.parse_expr())?.map(|e| e)
+                    }
+                } else {
+                    None
+                };
+                sequence_options.push(SequenceOptions::Restart { with, value });
+            } else if self.parse_keyword(Keyword::OWNED) {
+                self.expect_keyword(Keyword::BY)?;
+                owned_by = Some(self.parse_object_name(false)?);
+            } else {
+                break;
+            }
+        }
+
+        Ok(Statement::AlterSequence {
+            name,
+            if_exists,
+            sequence_options,
+            owned_by,
+        })
     }
 
     /// Parse a [Statement::AlterTable]
@@ -12540,7 +12619,10 @@ impl<'a> Parser<'a> {
                 let period_ident = match col.column.expr {
                     Expr::Identifier(ident) => ident,
                     _ => {
-                        return self.expected("period identifier before WITHOUT OVERLAPS", self.peek_token());
+                        return self.expected(
+                            "period identifier before WITHOUT OVERLAPS",
+                            self.peek_token(),
+                        );
                     }
                 };
                 period_without_overlaps = Some(period_ident);
@@ -13056,10 +13138,19 @@ impl<'a> Parser<'a> {
         let _guard = self.recursion_counter.try_decrease()?;
         let with = if self.parse_keyword(Keyword::WITH) {
             let with_token = self.get_current_token().clone();
+            let recursive = self.parse_keyword(Keyword::RECURSIVE);
+            let cte_tables = self.parse_comma_separated(Parser::parse_cte)?;
+
+            // SQL:2016 T133: Parse optional SEARCH and CYCLE clauses for recursive CTEs
+            let search = self.parse_cte_search_clause()?;
+            let cycle = self.parse_cte_cycle_clause()?;
+
             Some(With {
                 with_token: with_token.to_static().into(),
-                recursive: self.parse_keyword(Keyword::RECURSIVE),
-                cte_tables: self.parse_comma_separated(Parser::parse_cte)?,
+                recursive,
+                cte_tables,
+                search,
+                cycle,
             })
         } else {
             None
@@ -13581,6 +13672,75 @@ impl<'a> Parser<'a> {
         Ok(cte)
     }
 
+    /// Parse optional SEARCH clause for recursive CTEs (SQL:2016 T133)
+    /// ```sql
+    /// SEARCH DEPTH FIRST BY col1, col2 SET ordering_col
+    /// SEARCH BREADTH FIRST BY col1, col2 SET ordering_col
+    /// ```
+    pub fn parse_cte_search_clause(&self) -> Result<Option<SearchClause>, ParserError> {
+        if !self.parse_keyword(Keyword::SEARCH) {
+            return Ok(None);
+        }
+
+        let order = if self.parse_keywords(&[Keyword::DEPTH, Keyword::FIRST]) {
+            SearchOrder::DepthFirst
+        } else if self.parse_keywords(&[Keyword::BREADTH, Keyword::FIRST]) {
+            SearchOrder::BreadthFirst
+        } else {
+            return self.expected("DEPTH FIRST or BREADTH FIRST", self.peek_token());
+        };
+
+        self.expect_keyword(Keyword::BY)?;
+        let by_columns = self.parse_comma_separated(Parser::parse_identifier)?;
+        self.expect_keyword(Keyword::SET)?;
+        let set_column = self.parse_identifier()?;
+
+        Ok(Some(SearchClause {
+            order,
+            by_columns,
+            set_column,
+        }))
+    }
+
+    /// Parse optional CYCLE clause for recursive CTEs (SQL:2016 T133, SQL:2023)
+    /// ```sql
+    /// CYCLE col1, col2 SET is_cycle USING path
+    /// CYCLE col1, col2 SET is_cycle TO 'Y' DEFAULT 'N' USING path  -- SQL:2023
+    /// ```
+    pub fn parse_cte_cycle_clause(&self) -> Result<Option<CycleClause>, ParserError> {
+        if !self.parse_keyword(Keyword::CYCLE) {
+            return Ok(None);
+        }
+
+        let columns = self.parse_comma_separated(Parser::parse_identifier)?;
+        self.expect_keyword(Keyword::SET)?;
+        let set_column = self.parse_identifier()?;
+
+        // SQL:2023: TO <cycle_value> DEFAULT <non_cycle_value>
+        let cycle_value = if self.parse_keyword(Keyword::TO) {
+            Some(self.parse_expr()?)
+        } else {
+            None
+        };
+
+        let non_cycle_value = if self.parse_keyword(Keyword::DEFAULT) {
+            Some(self.parse_expr()?)
+        } else {
+            None
+        };
+
+        self.expect_keyword(Keyword::USING)?;
+        let using_column = self.parse_identifier()?;
+
+        Ok(Some(CycleClause {
+            columns,
+            set_column,
+            cycle_value,
+            non_cycle_value,
+            using_column,
+        }))
+    }
+
     /// Parse a "query body", which is an expression with roughly the
     /// following grammar:
     /// ```sql
@@ -14045,7 +14205,8 @@ impl<'a> Parser<'a> {
         let (all, constraints) = if self.parse_keyword(Keyword::ALL) {
             (true, vec![])
         } else {
-            let constraints = self.parse_comma_separated(|parser| parser.parse_object_name(false))?;
+            let constraints =
+                self.parse_comma_separated(|parser| parser.parse_object_name(false))?;
             (false, constraints)
         };
 
@@ -15514,9 +15675,8 @@ impl<'a> Parser<'a> {
             self.parse_comma_separated(|p| {
                 let name = p.parse_identifier()?;
                 p.expect_token(&BorrowedToken::Eq)?;
-                let symbols = p.parse_parenthesized(|p| {
-                    p.parse_comma_separated(Parser::parse_identifier)
-                })?;
+                let symbols =
+                    p.parse_parenthesized(|p| p.parse_comma_separated(Parser::parse_identifier))?;
                 Ok(SubsetDefinition { name, symbols })
             })?
         } else {
@@ -15705,7 +15865,10 @@ impl<'a> Parser<'a> {
                 } else if self.parse_keyword(Keyword::ALL) {
                     return Ok(Some(TableVersion::ForSystemTimeAll));
                 } else {
-                    return self.expected("AS OF, FROM, BETWEEN, CONTAINED IN, or ALL after FOR SYSTEM_TIME", self.peek_token());
+                    return self.expected(
+                        "AS OF, FROM, BETWEEN, CONTAINED IN, or ALL after FOR SYSTEM_TIME",
+                        self.peek_token(),
+                    );
                 }
             } else if self.peek_keyword(Keyword::AT) || self.peek_keyword(Keyword::BEFORE) {
                 let func_name = self.parse_object_name(true)?;
@@ -17178,16 +17341,14 @@ impl<'a> Parser<'a> {
         let source = if self.peek_keywords(&[Keyword::SELECT])
             || self.peek_keywords(&[Keyword::VALUES])
             || self.peek_keywords(&[Keyword::WITH])
-            || (self.peek_token() == BorrowedToken::LParen
-                && {
-                    self.next_token();
-                    let is_query = self.peek_keywords(&[Keyword::SELECT])
-                        || self.peek_keywords(&[Keyword::VALUES])
-                        || self.peek_keywords(&[Keyword::WITH]);
-                    self.prev_token();
-                    is_query
-                })
-        {
+            || (self.peek_token() == BorrowedToken::LParen && {
+                self.next_token();
+                let is_query = self.peek_keywords(&[Keyword::SELECT])
+                    || self.peek_keywords(&[Keyword::VALUES])
+                    || self.peek_keywords(&[Keyword::WITH]);
+                self.prev_token();
+                is_query
+            }) {
             // Parse as subquery - could be (SELECT ...) or SELECT ...
             if self.consume_token(&BorrowedToken::LParen) {
                 let query = self.parse_query()?;
@@ -17210,7 +17371,8 @@ impl<'a> Parser<'a> {
             None
         };
 
-        let pass_through_columns = self.parse_keywords(&[Keyword::PASS, Keyword::THROUGH, Keyword::COLUMNS]);
+        let pass_through_columns =
+            self.parse_keywords(&[Keyword::PASS, Keyword::THROUGH, Keyword::COLUMNS]);
 
         let partition_by = if self.parse_keywords(&[Keyword::PARTITION, Keyword::BY]) {
             self.parse_comma_separated(Parser::parse_expr)?
@@ -17365,6 +17527,26 @@ impl<'a> Parser<'a> {
             ));
         }
 
+        // Parse WITH/WITHOUT WRAPPER clause (for JSON_QUERY)
+        if let Some(wrapper) = self.parse_json_query_wrapper() {
+            clauses.push(FunctionArgumentClause::JsonQueryWrapper(wrapper));
+        }
+
+        // Parse WITH/WITHOUT UNIQUE KEYS clause (for JSON_OBJECT, JSON_OBJECTAGG)
+        if let Some(unique_keys) = self.parse_json_unique_keys() {
+            clauses.push(FunctionArgumentClause::JsonUniqueKeys(unique_keys));
+        }
+
+        // Parse ON EMPTY and ON ERROR clauses (atomically with backtracking)
+        if let Some(on_clause) = self.parse_json_on_clause()? {
+            clauses.push(on_clause);
+        }
+
+        // Parse second ON clause if present (either ON EMPTY or ON ERROR)
+        if let Some(on_clause) = self.parse_json_on_clause()? {
+            clauses.push(on_clause);
+        }
+
         self.expect_token(&BorrowedToken::RParen)?;
         Ok(FunctionArgumentList {
             duplicate_treatment,
@@ -17391,6 +17573,81 @@ impl<'a> Parser<'a> {
             Ok(Some(JsonReturningClause { data_type }))
         } else {
             Ok(None)
+        }
+    }
+
+    /// Parses a complete JSON ON EMPTY or ON ERROR clause atomically.
+    /// Returns the clause type and behavior, or None if no valid clause found.
+    /// Uses backtracking to avoid consuming tokens on partial matches.
+    fn parse_json_on_clause(&self) -> Result<Option<FunctionArgumentClause>, ParserError> {
+        let start_idx = self.index.get();
+
+        // Try to parse behavior
+        let behavior = if self.parse_keyword(Keyword::NULL) {
+            JsonOnBehavior::Null
+        } else if self.parse_keyword(Keyword::ERROR) {
+            JsonOnBehavior::Error
+        } else if self.parse_keyword(Keyword::DEFAULT) {
+            let expr = self.parse_expr()?;
+            JsonOnBehavior::Default(Box::new(expr))
+        } else if self.parse_keywords(&[Keyword::EMPTY, Keyword::ARRAY]) {
+            JsonOnBehavior::EmptyArray
+        } else if self.parse_keywords(&[Keyword::EMPTY, Keyword::OBJECT]) {
+            JsonOnBehavior::EmptyObject
+        } else {
+            return Ok(None);
+        };
+
+        // Must be followed by ON EMPTY or ON ERROR
+        if self.parse_keywords(&[Keyword::ON, Keyword::EMPTY]) {
+            Ok(Some(FunctionArgumentClause::JsonOnEmpty(behavior)))
+        } else if self.parse_keywords(&[Keyword::ON, Keyword::ERROR]) {
+            Ok(Some(FunctionArgumentClause::JsonOnError(behavior)))
+        } else {
+            // Rollback - behavior was not part of a valid ON clause
+            self.index.set(start_idx);
+            Ok(None)
+        }
+    }
+
+    /// Parses WITH/WITHOUT WRAPPER clause for JSON_QUERY.
+    /// Checks longest keyword sequences first (4-keyword before 3-keyword before 2-keyword).
+    fn parse_json_query_wrapper(&self) -> Option<JsonQueryWrapper> {
+        // 4-keyword variants first (longest match)
+        if self.parse_keywords(&[Keyword::WITH, Keyword::UNCONDITIONAL, Keyword::ARRAY, Keyword::WRAPPER]) {
+            Some(JsonQueryWrapper::WithUnconditionalArray)
+        } else if self.parse_keywords(&[Keyword::WITH, Keyword::CONDITIONAL, Keyword::ARRAY, Keyword::WRAPPER]) {
+            Some(JsonQueryWrapper::WithConditionalArray)
+        // 3-keyword variants
+        } else if self.parse_keywords(&[Keyword::WITH, Keyword::UNCONDITIONAL, Keyword::WRAPPER]) {
+            Some(JsonQueryWrapper::WithUnconditional)
+        } else if self.parse_keywords(&[Keyword::WITH, Keyword::CONDITIONAL, Keyword::WRAPPER]) {
+            Some(JsonQueryWrapper::WithConditional)
+        } else if self.parse_keywords(&[Keyword::WITH, Keyword::ARRAY, Keyword::WRAPPER]) {
+            Some(JsonQueryWrapper::WithArray)
+        // 2-keyword variants
+        } else if self.parse_keywords(&[Keyword::WITH, Keyword::WRAPPER]) {
+            Some(JsonQueryWrapper::With)
+        } else if self.parse_keywords(&[Keyword::WITHOUT, Keyword::WRAPPER]) {
+            Some(JsonQueryWrapper::Without)
+        } else {
+            None
+        }
+    }
+
+    /// Parses WITH/WITHOUT UNIQUE KEYS clause for JSON_OBJECT and JSON_OBJECTAGG.
+    fn parse_json_unique_keys(&self) -> Option<JsonPredicateUniqueKeyConstraint> {
+        if self.parse_keywords(&[Keyword::WITH, Keyword::UNIQUE, Keyword::KEYS]) {
+            Some(JsonPredicateUniqueKeyConstraint::WithUniqueKeys)
+        } else if self.parse_keywords(&[Keyword::WITHOUT, Keyword::UNIQUE, Keyword::KEYS]) {
+            Some(JsonPredicateUniqueKeyConstraint::WithoutUniqueKeys)
+        } else if self.parse_keywords(&[Keyword::WITH, Keyword::UNIQUE]) {
+            // SQL:2016 allows omitting KEYS
+            Some(JsonPredicateUniqueKeyConstraint::WithUniqueKeys)
+        } else if self.parse_keywords(&[Keyword::WITHOUT, Keyword::UNIQUE]) {
+            Some(JsonPredicateUniqueKeyConstraint::WithoutUniqueKeys)
+        } else {
+            None
         }
     }
 

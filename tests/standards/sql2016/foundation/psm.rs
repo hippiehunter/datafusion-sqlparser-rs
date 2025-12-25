@@ -844,7 +844,9 @@ mod integration_tests {
             "CREATE PROCEDURE process_data() AS BEGIN my_loop: LOOP IF finished THEN LEAVE my_loop; END IF; CASE status WHEN 'pending' THEN SELECT 'processing'; WHEN 'error' THEN LEAVE my_loop; END CASE; END LOOP; END"
         );
         match stmt {
-            Statement::CreateProcedure { name, params, body, .. } => {
+            Statement::CreateProcedure {
+                name, params, body, ..
+            } => {
                 assert_eq!(name.to_string(), "process_data");
                 assert_eq!(params, Some(vec![]));
                 // Verify the body contains BEGIN...END with a labeled LOOP

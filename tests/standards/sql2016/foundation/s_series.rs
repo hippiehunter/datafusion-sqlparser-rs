@@ -255,7 +255,7 @@ fn s301_02_unnest_with_alias() {
     // SQL:2016 S301: UNNEST with table alias
     // Note: Parser adds space before column list
     verified_standard_stmt("SELECT * FROM UNNEST(ARRAY[1, 2, 3]) AS t");
-    verified_standard_stmt("SELECT x FROM UNNEST(ARRAY[1, 2, 3]) AS t(x)");
+    verified_standard_stmt("SELECT x FROM UNNEST(ARRAY[1, 2, 3]) AS t (x)");
 }
 
 #[test]
@@ -271,7 +271,7 @@ fn s301_04_unnest_with_ordinality() {
     // Note: Parser adds space before column list
     verified_standard_stmt("SELECT * FROM UNNEST(ARRAY[10, 20, 30]) WITH ORDINALITY");
     verified_standard_stmt(
-        "SELECT * FROM UNNEST(ARRAY['a', 'b', 'c']) WITH ORDINALITY AS t(val, idx)",
+        "SELECT * FROM UNNEST(ARRAY['a', 'b', 'c']) WITH ORDINALITY AS t (val, idx)",
     );
 }
 
@@ -280,7 +280,7 @@ fn s301_05_unnest_multiple_arrays() {
     // SQL:2016 S301: UNNEST with multiple arrays
     // Note: Parser adds space before column list
     verified_standard_stmt("SELECT * FROM UNNEST(ARRAY[1, 2], ARRAY[3, 4])");
-    verified_standard_stmt("SELECT * FROM UNNEST(ARRAY['a', 'b'], ARRAY['c', 'd']) AS t(x, y)");
+    verified_standard_stmt("SELECT * FROM UNNEST(ARRAY['a', 'b'], ARRAY['c', 'd']) AS t (x, y)");
 }
 
 #[test]
@@ -296,7 +296,7 @@ fn s301_08_unnest_lateral() {
     // Note: Parser adds space before column list
     verified_standard_stmt("SELECT * FROM t, LATERAL UNNEST(t.arr) AS elem");
     verified_standard_stmt(
-        "SELECT t1.id, u.val FROM t1 JOIN LATERAL UNNEST(t1.arr) AS u(val) ON true",
+        "SELECT t1.id, u.val FROM t1 JOIN LATERAL UNNEST(t1.arr) AS u (val) ON true",
     );
 }
 

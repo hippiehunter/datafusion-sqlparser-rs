@@ -61,23 +61,23 @@ pub use self::ddl::{
     AlterTableLock, AlterTableOperation, AlterTableType, AlterType, AlterTypeAddValue,
     AlterTypeAddValuePosition, AlterTypeOperation, AlterTypeRename, AlterTypeRenameValue,
     ClusteredBy, ColumnDef, ColumnOption, ColumnOptionDef, ColumnOptions, ColumnPolicy,
-    ColumnPolicyProperty, ConstraintCharacteristics, CreateAssertion, CreateConnector, CreateDomain,
-    CreateExtension, CreateFunction, CreateIndex, CreateOperator, CreateOperatorClass,
-    CreateOperatorFamily, CreateTable, CreateTableSystemVersioning, CreateTrigger, CreateView,
-    Deduplicate, DeferrableInitial,
-    DropBehavior, DropExtension, DropFunction, DropTrigger, GeneratedAs, GeneratedExpressionMode,
-    IdentityParameters, IdentityProperty, IdentityPropertyFormatKind, IdentityPropertyKind,
-    IdentityPropertyOrder, IndexColumn, IndexOption, IndexType, KeyOrIndexDisplay, Msck,
-    NullsDistinctOption, OperatorArgTypes, OperatorClassItem, OperatorPurpose, Owner, Partition,
-    ProcedureParam, ReferentialAction, RenameTableNameKind, ReplicaIdentity, TagsColumnOption,
-    TriggerObjectKind, Truncate, UserDefinedTypeCompositeAttributeDef,
-    UserDefinedTypeInternalLength, UserDefinedTypeRangeOption, UserDefinedTypeRepresentation,
-    UserDefinedTypeSqlDefinitionOption, UserDefinedTypeStorage, ViewColumnDef,
+    ColumnPolicyProperty, ConstraintCharacteristics, CreateAssertion, CreateConnector,
+    CreateDomain, CreateExtension, CreateFunction, CreateIndex, CreateOperator,
+    CreateOperatorClass, CreateOperatorFamily, CreateTable, CreateTableSystemVersioning,
+    CreateTrigger, CreateView, Deduplicate, DeferrableInitial, DropBehavior, DropExtension,
+    DropFunction, DropTrigger, GeneratedAs, GeneratedExpressionMode, IdentityParameters,
+    IdentityProperty, IdentityPropertyFormatKind, IdentityPropertyKind, IdentityPropertyOrder,
+    IndexColumn, IndexOption, IndexType, KeyOrIndexDisplay, Msck, NullsDistinctOption,
+    OperatorArgTypes, OperatorClassItem, OperatorPurpose, Owner, Partition, ProcedureParam,
+    ReferentialAction, RenameTableNameKind, ReplicaIdentity, TagsColumnOption, TriggerObjectKind,
+    Truncate, UserDefinedTypeCompositeAttributeDef, UserDefinedTypeInternalLength,
+    UserDefinedTypeRangeOption, UserDefinedTypeRepresentation, UserDefinedTypeSqlDefinitionOption,
+    UserDefinedTypeStorage, ViewColumnDef,
 };
 pub use self::dml::{Delete, ForPortionOf, Insert, Update};
 pub use self::operator::{BinaryOperator, UnaryOperator};
 pub use self::query::{
-    AfterMatchSkip, ConnectBy, Cte, CteAsMaterialized, Distinct, EmptyMatchesMode,
+    AfterMatchSkip, ConnectBy, Cte, CteAsMaterialized, CycleClause, Distinct, EmptyMatchesMode,
     ExceptSelectItem, ExcludeSelectItem, ExprWithAlias, ExprWithAliasAndOrderBy, Fetch, ForClause,
     ForJson, ForXml, FormatClause, GroupByExpr, GroupByWithModifier, IdentWithAlias,
     IlikeSelectItem, InputFormatClause, Interpolate, InterpolateExpr, Join, JoinConstraint,
@@ -86,16 +86,17 @@ pub use self::query::{
     MatchRecognizeSymbol, Measure, NamedWindowDefinition, NamedWindowExpr, NonBlock, Offset,
     OffsetRows, OpenJsonTableColumn, OrderBy, OrderByExpr, OrderByKind, OrderByOptions,
     PipeOperator, PivotValueSource, ProjectionSelect, Query, RenameSelectItem,
-    RepetitionQuantifier, ReplaceSelectElement, ReplaceSelectItem, RowsPerMatch, Select,
-    SelectFlavor, SelectInto, SelectItem, SelectItemQualifiedWildcardKind, SetExpr, SetOperator,
-    SetQuantifier, Setting, SubsetDefinition, SymbolDefinition, Table, TableAlias, TableAliasColumnDef, TableFactor,
-    TableFunctionArgs, TableIndexHintForClause, TableIndexHintType, TableIndexHints,
-    TableIndexType, TableSample, TableSampleBucket, TableSampleKind, TableSampleMethod,
-    TableSampleModifier, TableSampleQuantity, TableSampleSeed, TableSampleSeedModifier,
-    TableSampleUnit, TableVersion, TableWithJoins, Top, TopQuantity, UpdateTableFromKind,
-    ValueTableMode, Values, WildcardAdditionalOptions, With, WithFill, XmlAttribute,
-    XmlDocumentOrContent, XmlForestElement, XmlNamespaceDefinition, XmlPassingArgument,
-    XmlPassingClause, XmlTableColumn, XmlTableColumnOption, XmlTableOnError, XmlWhitespace,
+    RepetitionQuantifier, ReplaceSelectElement, ReplaceSelectItem, RowsPerMatch, SearchClause,
+    SearchOrder, Select, SelectFlavor, SelectInto, SelectItem, SelectItemQualifiedWildcardKind,
+    SetExpr, SetOperator, SetQuantifier, Setting, SubsetDefinition, SymbolDefinition, Table,
+    TableAlias, TableAliasColumnDef, TableFactor, TableFunctionArgs, TableIndexHintForClause,
+    TableIndexHintType, TableIndexHints, TableIndexType, TableSample, TableSampleBucket,
+    TableSampleKind, TableSampleMethod, TableSampleModifier, TableSampleQuantity, TableSampleSeed,
+    TableSampleSeedModifier, TableSampleUnit, TableVersion, TableWithJoins, Top, TopQuantity,
+    UpdateTableFromKind, ValueTableMode, Values, WildcardAdditionalOptions, With, WithFill,
+    XmlAttribute, XmlDocumentOrContent, XmlForestElement, XmlNamespaceDefinition,
+    XmlPassingArgument, XmlPassingClause, XmlTableColumn, XmlTableColumnOption, XmlTableOnError,
+    XmlWhitespace,
 };
 
 pub use self::trigger::{
@@ -752,6 +753,29 @@ impl fmt::Display for CaseWhen {
 /// [README.md]: https://github.com/apache/datafusion-sqlparser-rs/blob/main/README.md#syntax-vs-semantics
 ///
 /// # Equality and Hashing Does not Include Source Locations
+/// SQL:2016 T461: BETWEEN SYMMETRIC/ASYMMETRIC modifier
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum BetweenSymmetric {
+    /// No SYMMETRIC or ASYMMETRIC keyword (default ASYMMETRIC behavior)
+    None,
+    /// SYMMETRIC keyword - matches if value is between low and high regardless of order
+    Symmetric,
+    /// ASYMMETRIC keyword - explicitly requires low <= high
+    Asymmetric,
+}
+
+impl fmt::Display for BetweenSymmetric {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            BetweenSymmetric::None => Ok(()),
+            BetweenSymmetric::Symmetric => write!(f, "SYMMETRIC "),
+            BetweenSymmetric::Asymmetric => write!(f, "ASYMMETRIC "),
+        }
+    }
+}
+
 ///
 /// The `Expr` type implements `PartialEq` and `Eq` based on the semantic value
 /// of the expression (not bitwise comparison). This means that `Expr` instances
@@ -877,10 +901,12 @@ pub enum Expr {
         array_expr: Box<Expr>,
         negated: bool,
     },
-    /// `<expr> [ NOT ] BETWEEN <low> AND <high>`
+    /// `<expr> [ NOT ] BETWEEN [ SYMMETRIC | ASYMMETRIC ] <low> AND <high>`
     Between {
         expr: Box<Expr>,
         negated: bool,
+        /// SYMMETRIC or ASYMMETRIC (SQL:2016 T461)
+        symmetric: BetweenSymmetric,
         low: Box<Expr>,
         high: Box<Expr>,
     },
@@ -1270,6 +1296,10 @@ pub enum Expr {
         start: Box<Expr>,
         end: Box<Expr>,
     },
+    /// SQL:2016 T176: `NEXT VALUE FOR <sequence_name>`
+    NextValueFor {
+        sequence_name: ObjectName,
+    },
 }
 
 impl Expr {
@@ -1313,6 +1343,15 @@ pub enum Subscript {
         upper_bound: Option<Expr>,
         stride: Option<Expr>,
     },
+
+    /// Wildcard subscript `[*]` for JSON array access (SQL:2023).
+    ///
+    /// This allows accessing all elements of a JSON array:
+    ///
+    /// ```sql
+    /// SELECT t.data.items[*].price FROM products t
+    /// ```
+    Wildcard,
 }
 
 impl fmt::Display for Subscript {
@@ -1337,6 +1376,7 @@ impl fmt::Display for Subscript {
                 }
                 Ok(())
             }
+            Subscript::Wildcard => write!(f, "*"),
         }
     }
 }
@@ -1612,13 +1652,15 @@ impl fmt::Display for Expr {
             Expr::Between {
                 expr,
                 negated,
+                symmetric,
                 low,
                 high,
             } => write!(
                 f,
-                "{} {}BETWEEN {} AND {}",
+                "{} {}BETWEEN {}{} AND {}",
                 expr,
                 if *negated { "NOT " } else { "" },
+                symmetric,
                 low,
                 high
             ),
@@ -2152,6 +2194,9 @@ impl fmt::Display for Expr {
             Expr::Lambda(lambda) => write!(f, "{lambda}"),
             Expr::MemberOf(member_of) => write!(f, "{member_of}"),
             Expr::Period { start, end } => write!(f, "PERIOD ({start}, {end})"),
+            Expr::NextValueFor { sequence_name } => {
+                write!(f, "NEXT VALUE FOR {sequence_name}")
+            }
         }
     }
 }
@@ -3160,11 +3205,7 @@ impl fmt::Display for SignalStatement {
         write!(f, "SIGNAL SQLSTATE '{}'", self.sqlstate)?;
         if !self.set_items.is_empty() {
             write!(f, " SET ")?;
-            write!(
-                f,
-                "{}",
-                display_comma_separated(&self.set_items)
-            )?;
+            write!(f, "{}", display_comma_separated(&self.set_items))?;
         }
         Ok(())
     }
@@ -3193,11 +3234,7 @@ impl fmt::Display for ResignalStatement {
         }
         if !self.set_items.is_empty() {
             write!(f, " SET ")?;
-            write!(
-                f,
-                "{}",
-                display_comma_separated(&self.set_items)
-            )?;
+            write!(f, "{}", display_comma_separated(&self.set_items))?;
         }
         Ok(())
     }
@@ -3340,9 +3377,7 @@ pub enum DeclareType {
     /// DECLARE <handler_type> HANDLER FOR <condition> <statement>
     /// ```
     /// where handler_type is CONTINUE, EXIT, or UNDO
-    Handler {
-        handler_type: DeclareHandlerType,
-    },
+    Handler { handler_type: DeclareHandlerType },
 }
 
 impl fmt::Display for DeclareType {
@@ -3440,7 +3475,11 @@ impl fmt::Display for Declare {
 
         // Handle special HANDLER format
         if let Some(DeclareType::Handler { handler_type }) = declare_type {
-            write!(f, "{handler_type} HANDLER FOR {}", display_comma_separated(names))?;
+            write!(
+                f,
+                "{handler_type} HANDLER FOR {}",
+                display_comma_separated(names)
+            )?;
             if let Some(body) = handler_body {
                 write!(f, " {body}")?;
             }
@@ -4160,6 +4199,16 @@ pub enum Statement {
         set: bool,
         /// The session parameters to set or unset
         session_params: KeyValueOptions,
+    },
+    /// ```sql
+    /// ALTER SEQUENCE sequence_name [sequence_options]
+    /// ```
+    /// SQL:2016 T174: Sequence generator support
+    AlterSequence {
+        name: ObjectName,
+        if_exists: bool,
+        sequence_options: Vec<SequenceOptions>,
+        owned_by: Option<ObjectName>,
     },
     /// ```sql
     /// ATTACH DATABASE 'path/to/file' AS alias
@@ -5711,6 +5760,25 @@ impl fmt::Display for Statement {
                 }
                 Ok(())
             }
+            Statement::AlterSequence {
+                name,
+                if_exists,
+                sequence_options,
+                owned_by,
+            } => {
+                write!(
+                    f,
+                    "ALTER SEQUENCE {if_exists}{name}",
+                    if_exists = if *if_exists { "IF EXISTS " } else { "" }
+                )?;
+                for option in sequence_options {
+                    write!(f, "{option}")?;
+                }
+                if let Some(owner) = owned_by {
+                    write!(f, " OWNED BY {owner}")?;
+                }
+                Ok(())
+            }
             Statement::Drop {
                 object_type,
                 if_exists,
@@ -6475,6 +6543,11 @@ pub enum SequenceOptions {
     StartWith(Expr, bool),
     Cache(Expr),
     Cycle(bool),
+    /// SQL:2016 T174: RESTART [ WITH value ]
+    Restart {
+        with: bool,
+        value: Option<Expr>,
+    },
 }
 
 impl fmt::Display for SequenceOptions {
@@ -6513,6 +6586,16 @@ impl fmt::Display for SequenceOptions {
             }
             SequenceOptions::Cycle(no) => {
                 write!(f, " {}CYCLE", if *no { "NO " } else { "" })
+            }
+            SequenceOptions::Restart { with, value } => {
+                write!(f, " RESTART")?;
+                if *with {
+                    write!(f, " WITH")?;
+                }
+                if let Some(v) = value {
+                    write!(f, " {v}")?;
+                }
+                Ok(())
             }
         }
     }
@@ -7710,7 +7793,11 @@ impl fmt::Display for PtfTableArg {
             write!(f, " PASS THROUGH COLUMNS")?;
         }
         if !self.partition_by.is_empty() {
-            write!(f, " PARTITION BY {}", display_comma_separated(&self.partition_by))?;
+            write!(
+                f,
+                " PARTITION BY {}",
+                display_comma_separated(&self.partition_by)
+            )?;
         }
         if !self.order_by.is_empty() {
             write!(f, " ORDER BY {}", display_comma_separated(&self.order_by))?;
@@ -8106,6 +8193,14 @@ pub enum FunctionArgumentClause {
     ///
     /// [`JSON_OBJECT`](https://www.postgresql.org/docs/current/functions-json.html#:~:text=json_object)
     JsonReturningClause(JsonReturningClause),
+    /// ON EMPTY clause for JSON_VALUE, JSON_QUERY
+    JsonOnEmpty(JsonOnBehavior),
+    /// ON ERROR clause for JSON_VALUE, JSON_QUERY
+    JsonOnError(JsonOnBehavior),
+    /// WITH/WITHOUT WRAPPER for JSON_QUERY
+    JsonQueryWrapper(JsonQueryWrapper),
+    /// WITH/WITHOUT UNIQUE KEYS for JSON_OBJECT, JSON_OBJECTAGG
+    JsonUniqueKeys(JsonPredicateUniqueKeyConstraint),
 }
 
 impl fmt::Display for FunctionArgumentClause {
@@ -8125,6 +8220,14 @@ impl fmt::Display for FunctionArgumentClause {
             FunctionArgumentClause::JsonReturningClause(returning_clause) => {
                 write!(f, "{returning_clause}")
             }
+            FunctionArgumentClause::JsonOnEmpty(behavior) => {
+                write!(f, "{} ON EMPTY", behavior)
+            }
+            FunctionArgumentClause::JsonOnError(behavior) => {
+                write!(f, "{} ON ERROR", behavior)
+            }
+            FunctionArgumentClause::JsonQueryWrapper(wrapper) => write!(f, "{wrapper}"),
+            FunctionArgumentClause::JsonUniqueKeys(unique_keys) => write!(f, "{unique_keys}"),
         }
     }
 }
@@ -10690,6 +10793,71 @@ pub struct JsonReturningClause {
 impl Display for JsonReturningClause {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "RETURNING {}", self.data_type)
+    }
+}
+
+/// The behavior for JSON functions when the path returns empty results or errors.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum JsonOnBehavior {
+    /// NULL ON EMPTY/ERROR
+    Null,
+    /// ERROR ON EMPTY/ERROR
+    Error,
+    /// DEFAULT <expr> ON EMPTY/ERROR
+    Default(Box<Expr>),
+    /// EMPTY ARRAY ON EMPTY/ERROR (JSON_QUERY only)
+    EmptyArray,
+    /// EMPTY OBJECT ON EMPTY/ERROR (JSON_QUERY only)
+    EmptyObject,
+}
+
+impl Display for JsonOnBehavior {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            JsonOnBehavior::Null => write!(f, "NULL"),
+            JsonOnBehavior::Error => write!(f, "ERROR"),
+            JsonOnBehavior::Default(expr) => write!(f, "DEFAULT {}", expr),
+            JsonOnBehavior::EmptyArray => write!(f, "EMPTY ARRAY"),
+            JsonOnBehavior::EmptyObject => write!(f, "EMPTY OBJECT"),
+        }
+    }
+}
+
+/// The wrapper option for JSON_QUERY function.
+/// Controls whether the result is wrapped in a JSON array.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum JsonQueryWrapper {
+    /// WITHOUT WRAPPER (default - return unwrapped)
+    Without,
+    /// WITH WRAPPER (shorthand for WITH UNCONDITIONAL ARRAY WRAPPER)
+    With,
+    /// WITH ARRAY WRAPPER
+    WithArray,
+    /// WITH CONDITIONAL WRAPPER (wrap only if not already array)
+    WithConditional,
+    /// WITH UNCONDITIONAL WRAPPER (always wrap in array)
+    WithUnconditional,
+    /// WITH CONDITIONAL ARRAY WRAPPER (explicit form)
+    WithConditionalArray,
+    /// WITH UNCONDITIONAL ARRAY WRAPPER (explicit form)
+    WithUnconditionalArray,
+}
+
+impl Display for JsonQueryWrapper {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            JsonQueryWrapper::Without => write!(f, "WITHOUT WRAPPER"),
+            JsonQueryWrapper::With => write!(f, "WITH WRAPPER"),
+            JsonQueryWrapper::WithArray => write!(f, "WITH ARRAY WRAPPER"),
+            JsonQueryWrapper::WithConditional => write!(f, "WITH CONDITIONAL WRAPPER"),
+            JsonQueryWrapper::WithUnconditional => write!(f, "WITH UNCONDITIONAL WRAPPER"),
+            JsonQueryWrapper::WithConditionalArray => write!(f, "WITH CONDITIONAL ARRAY WRAPPER"),
+            JsonQueryWrapper::WithUnconditionalArray => write!(f, "WITH UNCONDITIONAL ARRAY WRAPPER"),
+        }
     }
 }
 

@@ -1180,7 +1180,7 @@ fn parse_select_count_wildcard() {
                 clauses: vec![],
             }),
             null_treatment: None,
-                    nth_value_order: None,
+            nth_value_order: None,
             filter: None,
             over: None,
             within_group: vec![]
@@ -1207,7 +1207,7 @@ fn parse_select_count_distinct() {
                 clauses: vec![],
             }),
             null_treatment: None,
-                    nth_value_order: None,
+            nth_value_order: None,
             within_group: vec![],
             filter: None,
             over: None
@@ -1927,9 +1927,10 @@ fn parse_not_precedence() {
             op: UnaryOperator::Not,
             expr: Box::new(Expr::Between {
                 expr: Box::new(Expr::value(number("1"))),
+                negated: true,
+                symmetric: BetweenSymmetric::None,
                 low: Box::new(Expr::value(number("1"))),
                 high: Box::new(Expr::value(number("2"))),
-                negated: true,
             }),
         },
     );
@@ -2390,9 +2391,10 @@ fn parse_between() {
         assert_eq!(
             Expr::Between {
                 expr: Box::new(Expr::Identifier(Ident::new("age"))),
+                negated,
+                symmetric: BetweenSymmetric::None,
                 low: Box::new(Expr::value(number("25"))),
                 high: Box::new(Expr::value(number("32"))),
-                negated,
             },
             select.selection.unwrap()
         );
@@ -2409,6 +2411,8 @@ fn parse_between_with_expr() {
     assert_eq!(
         Expr::IsNull(Box::new(Expr::Between {
             expr: Box::new(Expr::value(number("1"))),
+            negated: false,
+            symmetric: BetweenSymmetric::None,
             low: Box::new(Expr::BinaryOp {
                 left: Box::new(Expr::value(number("1"))),
                 op: Plus,
@@ -2419,7 +2423,6 @@ fn parse_between_with_expr() {
                 op: Plus,
                 right: Box::new(Expr::value(number("4"))),
             }),
-            negated: false,
         })),
         select.selection.unwrap()
     );
@@ -2440,9 +2443,10 @@ fn parse_between_with_expr() {
                     op: BinaryOperator::Plus,
                     right: Box::new(Expr::Identifier(Ident::new("x"))),
                 }),
+                negated: false,
+                symmetric: BetweenSymmetric::None,
                 low: Box::new(Expr::value(number("1"))),
                 high: Box::new(Expr::value(number("2"))),
-                negated: false,
             }),
         },
         select.selection.unwrap(),
@@ -2816,7 +2820,7 @@ fn parse_select_having() {
                     clauses: vec![],
                 }),
                 null_treatment: None,
-                    nth_value_order: None,
+                nth_value_order: None,
                 filter: None,
                 over: None,
                 within_group: vec![]
@@ -2848,7 +2852,7 @@ fn parse_select_qualify() {
                     clauses: vec![],
                 }),
                 null_treatment: None,
-                    nth_value_order: None,
+                nth_value_order: None,
                 filter: None,
                 over: Some(WindowType::WindowSpec(WindowSpec {
                     window_name: None,
@@ -3281,7 +3285,7 @@ fn parse_listagg() {
             }),
             filter: None,
             null_treatment: None,
-                    nth_value_order: None,
+            nth_value_order: None,
             over: None,
             within_group: vec![
                 OrderByExpr {
@@ -5441,7 +5445,7 @@ fn parse_named_argument_function() {
                 clauses: vec![],
             }),
             null_treatment: None,
-                    nth_value_order: None,
+            nth_value_order: None,
             filter: None,
             over: None,
             within_group: vec![]
@@ -5483,7 +5487,7 @@ fn parse_window_functions() {
                 clauses: vec![],
             }),
             null_treatment: None,
-                    nth_value_order: None,
+            nth_value_order: None,
             filter: None,
             over: Some(WindowType::WindowSpec(WindowSpec {
                 window_name: None,
@@ -10291,7 +10295,7 @@ fn parse_time_functions() {
                 clauses: vec![],
             }),
             null_treatment: None,
-                    nth_value_order: None,
+            nth_value_order: None,
             filter: None,
             over: None,
             within_group: vec![],
@@ -11840,7 +11844,7 @@ fn parse_call() {
             name: ObjectName::from(vec![Ident::new("my_procedure")]),
             filter: None,
             null_treatment: None,
-                    nth_value_order: None,
+            nth_value_order: None,
             over: None,
             within_group: vec![],
         })
@@ -14358,7 +14362,7 @@ fn parse_composite_access_expr() {
                     clauses: vec![],
                 }),
                 null_treatment: None,
-                    nth_value_order: None,
+                nth_value_order: None,
                 filter: None,
                 over: None,
                 within_group: vec![]
@@ -14383,7 +14387,7 @@ fn parse_composite_access_expr() {
                     clauses: vec![],
                 }),
                 null_treatment: None,
-                    nth_value_order: None,
+                nth_value_order: None,
                 filter: None,
                 over: None,
                 within_group: vec![]
@@ -14410,7 +14414,7 @@ fn parse_composite_access_expr() {
                 clauses: vec![],
             }),
             null_treatment: None,
-                    nth_value_order: None,
+            nth_value_order: None,
             filter: None,
             over: None,
             within_group: vec![],

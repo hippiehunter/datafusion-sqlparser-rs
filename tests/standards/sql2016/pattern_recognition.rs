@@ -74,13 +74,15 @@ fn r011_04_first_last() {
 
 #[test]
 fn r012_01_one_or_more() {
-    verified_standard_stmt("SELECT * FROM t MATCH_RECOGNIZE(ORDER BY ts PATTERN (A+) DEFINE A AS A.flag = true)",
+    verified_standard_stmt(
+        "SELECT * FROM t MATCH_RECOGNIZE(ORDER BY ts PATTERN (A+) DEFINE A AS A.flag = true)",
     );
 }
 
 #[test]
 fn r012_02_zero_or_more() {
-    verified_standard_stmt("SELECT * FROM t MATCH_RECOGNIZE(ORDER BY ts PATTERN (A*) DEFINE A AS A.flag = true)",
+    verified_standard_stmt(
+        "SELECT * FROM t MATCH_RECOGNIZE(ORDER BY ts PATTERN (A*) DEFINE A AS A.flag = true)",
     );
 }
 
@@ -92,25 +94,29 @@ fn r012_03_optional() {
 
 #[test]
 fn r012_04_exact_count() {
-    verified_standard_stmt("SELECT * FROM t MATCH_RECOGNIZE(ORDER BY ts PATTERN (A{3}) DEFINE A AS A.flag = true)",
+    verified_standard_stmt(
+        "SELECT * FROM t MATCH_RECOGNIZE(ORDER BY ts PATTERN (A{3}) DEFINE A AS A.flag = true)",
     );
 }
 
 #[test]
 fn r012_05_range_quantifier() {
-    verified_standard_stmt("SELECT * FROM t MATCH_RECOGNIZE(ORDER BY ts PATTERN (A{2,5}) DEFINE A AS A.flag = true)",
+    verified_standard_stmt(
+        "SELECT * FROM t MATCH_RECOGNIZE(ORDER BY ts PATTERN (A{2,5}) DEFINE A AS A.flag = true)",
     );
 }
 
 #[test]
 fn r012_06_minimum_quantifier() {
-    verified_standard_stmt("SELECT * FROM t MATCH_RECOGNIZE(ORDER BY ts PATTERN (A{3,}) DEFINE A AS A.flag = true)",
+    verified_standard_stmt(
+        "SELECT * FROM t MATCH_RECOGNIZE(ORDER BY ts PATTERN (A{3,}) DEFINE A AS A.flag = true)",
     );
 }
 
 #[test]
 fn r012_07_reluctant_quantifier() {
-    verified_standard_stmt("SELECT * FROM t MATCH_RECOGNIZE(ORDER BY ts PATTERN (A+?) DEFINE A AS A.value > 0)",
+    verified_standard_stmt(
+        "SELECT * FROM t MATCH_RECOGNIZE(ORDER BY ts PATTERN (A+?) DEFINE A AS A.value > 0)",
     );
 }
 

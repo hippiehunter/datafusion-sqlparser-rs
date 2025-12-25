@@ -988,7 +988,7 @@ mod e051_basic_query_specification {
     #[test]
     fn e051_09_rename_columns_in_from() {
         // SQL:2016 E051-09: Rename columns in FROM clause
-        verified_with_ast!("SELECT x, y FROM t AS s(x, y)", |stmt: Statement| {
+        verified_with_ast!("SELECT x, y FROM t AS s (x, y)", |stmt: Statement| {
             if let Statement::Query(query) = stmt {
                 if let SetExpr::Select(select) = query.body.as_ref() {
                     if let TableFactor::Table { alias, .. } = &select.from[0].relation {

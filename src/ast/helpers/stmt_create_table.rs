@@ -28,8 +28,8 @@ use crate::ast::{
     ClusteredBy, ColumnDef, CommentDef, CreateTable, CreateTableLikeKind, CreateTableOptions,
     CreateTableSystemVersioning, Expr, FileFormat, HiveDistributionStyle, HiveFormat, Ident,
     InitializeKind, ObjectName, OnCommit, OneOrManyWithParens, Query, RefreshModeKind,
-    RowAccessPolicy, Statement,
-    StorageSerializationPolicy, TableConstraint, TableVersion, Tag, WrappedCollection,
+    RowAccessPolicy, Statement, StorageSerializationPolicy, TableConstraint, TableVersion, Tag,
+    WrappedCollection,
 };
 
 use crate::parser::ParserError;
@@ -434,7 +434,10 @@ impl CreateTableBuilder {
         self
     }
 
-    pub fn system_versioning(mut self, system_versioning: Option<CreateTableSystemVersioning>) -> Self {
+    pub fn system_versioning(
+        mut self,
+        system_versioning: Option<CreateTableSystemVersioning>,
+    ) -> Self {
         self.system_versioning = system_versioning;
         self
     }

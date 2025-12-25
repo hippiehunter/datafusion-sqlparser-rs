@@ -2612,7 +2612,7 @@ mod f591_derived_tables {
     fn f591_02_column_aliases_for_derived_tables() {
         // F591-02: Column aliases for derived tables
         verified_with_ast!(
-            "SELECT * FROM (SELECT a, b FROM t) AS sub(x, y)",
+            "SELECT * FROM (SELECT a, b FROM t) AS sub (x, y)",
             |stmt: Statement| {
                 if let Statement::Query(q) = stmt {
                     if let sqlparser::ast::SetExpr::Select(select) = q.body.as_ref() {

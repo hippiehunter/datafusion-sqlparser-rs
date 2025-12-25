@@ -34,8 +34,8 @@ use super::{
     ExprWithAlias, Fetch, ForPortionOf, FromTable, Function, FunctionArg, FunctionArgExpr,
     FunctionArgumentClause, FunctionArgumentList, FunctionArguments, GroupByExpr, HavingBound,
     IfStatement, IlikeSelectItem, IndexColumn, Insert, Interpolate, InterpolateExpr,
-    IterateStatement, Join, JoinConstraint, JoinOperator, JsonPath, JsonPathElem, LateralView,
-    LeaveStatement, LimitClause, LoopStatement, MatchRecognizePattern, Measure,
+    IterateStatement, Join, JoinConstraint, JoinOperator, JsonOnBehavior, JsonPath, JsonPathElem,
+    LateralView, LeaveStatement, LimitClause, LoopStatement, MatchRecognizePattern, Measure,
     NamedParenthesizedList, NamedWindowDefinition, ObjectName, ObjectNamePart, Offset, OnConflict,
     OnConflictAction, OnInsert, OpenStatement, OrderBy, OrderByExpr, OrderByKind, Partition,
     PivotValueSource, ProjectionSelect, Query, RaiseStatement, RaiseStatementValue,
@@ -170,6 +170,8 @@ impl Spanned for With {
             with_token,
             recursive: _, // bool
             cte_tables,
+            search: _,
+            cycle: _,
         } = self;
 
         union_spans(
@@ -378,6 +380,7 @@ impl Spanned for Statement {
             Statement::AlterType { .. } => Span::empty(),
             Statement::AlterRole { .. } => Span::empty(),
             Statement::AlterSession { .. } => Span::empty(),
+            Statement::AlterSequence { .. } => Span::empty(),
             Statement::AttachDatabase { .. } => Span::empty(),
             Statement::Drop { .. } => Span::empty(),
             Statement::DropFunction(drop_function) => drop_function.span(),
@@ -1451,6 +1454,7 @@ impl Spanned for Expr {
             Expr::Between {
                 expr,
                 negated: _,
+                symmetric: _,
                 low,
                 high,
             } => expr.span().union(&low.span()).union(&high.span()),
@@ -1482,14 +1486,8 @@ impl Spanned for Expr {
                 json_predicate_type: _,
                 unique_keys: _,
             } => expr.span(),
-            Expr::IsDocument {
-                expr,
-                negated: _,
-            } => expr.span(),
-            Expr::IsContent {
-                expr,
-                negated: _,
-            } => expr.span(),
+            Expr::IsDocument { expr, negated: _ } => expr.span(),
+            Expr::IsContent { expr, negated: _ } => expr.span(),
             Expr::SimilarTo {
                 negated: _,
                 expr,
@@ -1518,9 +1516,9 @@ impl Spanned for Expr {
             Expr::Function(function) => function.span(),
             Expr::XmlParse { expr, .. } => expr.span(),
             Expr::XmlSerialize { expr, .. } => expr.span(),
-            Expr::XmlPi { name, content } => name
-                .span
-                .union_opt(&content.as_ref().map(|c| c.span())),
+            Expr::XmlPi { name, content } => {
+                name.span.union_opt(&content.as_ref().map(|c| c.span()))
+            }
             Expr::XmlElement {
                 name,
                 attributes,
@@ -1537,9 +1535,7 @@ impl Spanned for Expr {
                 }
                 span
             }
-            Expr::XmlForest { elements } => {
-                union_spans(elements.iter().map(|e| e.expr.span()))
-            }
+            Expr::XmlForest { elements } => union_spans(elements.iter().map(|e| e.expr.span())),
             Expr::GroupingSets(vec) => {
                 union_spans(vec.iter().flat_map(|i| i.iter().map(|k| k.span())))
             }
@@ -1654,6 +1650,7 @@ impl Spanned for Expr {
             Expr::Lambda(_) => Span::empty(),
             Expr::MemberOf(member_of) => member_of.value.span().union(&member_of.array.span()),
             Expr::Period { start, end } => start.span().union(&end.span()),
+            Expr::NextValueFor { sequence_name } => sequence_name.span(),
         }
     }
 }
@@ -1675,6 +1672,7 @@ impl Spanned for Subscript {
                 .into_iter()
                 .flatten(),
             ),
+            Subscript::Wildcard => Span::empty(),
         }
     }
 }
@@ -1786,6 +1784,16 @@ impl Spanned for FunctionArgumentClause {
             FunctionArgumentClause::Separator(value) => value.span(),
             FunctionArgumentClause::JsonNullClause(_) => Span::empty(),
             FunctionArgumentClause::JsonReturningClause(_) => Span::empty(),
+            FunctionArgumentClause::JsonOnEmpty(behavior) => match behavior {
+                JsonOnBehavior::Default(expr) => expr.span(),
+                _ => Span::empty(),
+            },
+            FunctionArgumentClause::JsonOnError(behavior) => match behavior {
+                JsonOnBehavior::Default(expr) => expr.span(),
+                _ => Span::empty(),
+            },
+            FunctionArgumentClause::JsonQueryWrapper(_) => Span::empty(),
+            FunctionArgumentClause::JsonUniqueKeys(_) => Span::empty(),
         }
     }
 }
@@ -2101,9 +2109,7 @@ impl Spanned for SubsetDefinition {
     fn span(&self) -> Span {
         let SubsetDefinition { name, symbols } = self;
 
-        union_spans(
-            core::iter::once(name.span).chain(symbols.iter().map(|i| i.span))
-        )
+        union_spans(core::iter::once(name.span).chain(symbols.iter().map(|i| i.span)))
     }
 }
 

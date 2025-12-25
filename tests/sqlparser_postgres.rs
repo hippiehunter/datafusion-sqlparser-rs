@@ -2621,7 +2621,7 @@ fn parse_create_indices_with_operator_classes() {
                         }),
                         filter: None,
                         null_treatment: None,
-                    nth_value_order: None,
+                        nth_value_order: None,
                         over: None,
                         within_group: vec![],
                     }),
@@ -3087,7 +3087,7 @@ fn parse_array_subquery_expr() {
             })),
             filter: None,
             null_treatment: None,
-                    nth_value_order: None,
+            nth_value_order: None,
             over: None,
             within_group: vec![]
         }),
@@ -3530,7 +3530,7 @@ fn test_composite_value() {
                     clauses: vec![],
                 }),
                 null_treatment: None,
-                    nth_value_order: None,
+                nth_value_order: None,
                 filter: None,
                 over: None,
                 within_group: vec![],
@@ -3698,7 +3698,7 @@ fn parse_current_functions() {
             parameters: FunctionArguments::None,
             args: FunctionArguments::None,
             null_treatment: None,
-                    nth_value_order: None,
+            nth_value_order: None,
             filter: None,
             over: None,
             within_group: vec![],
@@ -3712,7 +3712,7 @@ fn parse_current_functions() {
             parameters: FunctionArguments::None,
             args: FunctionArguments::None,
             null_treatment: None,
-                    nth_value_order: None,
+            nth_value_order: None,
             filter: None,
             over: None,
             within_group: vec![],
@@ -3726,7 +3726,7 @@ fn parse_current_functions() {
             parameters: FunctionArguments::None,
             args: FunctionArguments::None,
             null_treatment: None,
-                    nth_value_order: None,
+            nth_value_order: None,
             filter: None,
             over: None,
             within_group: vec![],
@@ -3740,7 +3740,7 @@ fn parse_current_functions() {
             parameters: FunctionArguments::None,
             args: FunctionArguments::None,
             null_treatment: None,
-                    nth_value_order: None,
+            nth_value_order: None,
             filter: None,
             over: None,
             within_group: vec![],
@@ -4193,7 +4193,7 @@ fn parse_delimited_identifiers() {
                 clauses: vec![],
             }),
             null_treatment: None,
-                    nth_value_order: None,
+            nth_value_order: None,
             filter: None,
             over: None,
             within_group: vec![],
@@ -4539,7 +4539,8 @@ fn parse_drop_function() {
                 }]),
                 args: Some(vec![
                     OperateFunctionArg::with_name("a", DataType::Integer(None)),
-                    OperateFunctionArg { xml_passing: None,
+                    OperateFunctionArg {
+                        xml_passing: None,
                         mode: Some(ArgMode::In),
                         name: Some("b".into()),
                         data_type: DataType::Integer(None),
@@ -4567,7 +4568,8 @@ fn parse_drop_function() {
                     }]),
                     args: Some(vec![
                         OperateFunctionArg::with_name("a", DataType::Integer(None)),
-                        OperateFunctionArg { xml_passing: None,
+                        OperateFunctionArg {
+                            xml_passing: None,
                             mode: Some(ArgMode::In),
                             name: Some("b".into()),
                             data_type: DataType::Integer(None),
@@ -4585,7 +4587,8 @@ fn parse_drop_function() {
                     }]),
                     args: Some(vec![
                         OperateFunctionArg::with_name("a", DataType::Varchar(None)),
-                        OperateFunctionArg { xml_passing: None,
+                        OperateFunctionArg {
+                            xml_passing: None,
                             mode: Some(ArgMode::In),
                             name: Some("b".into()),
                             data_type: DataType::Integer(None),
@@ -4693,7 +4696,8 @@ fn parse_drop_procedure() {
                 }]),
                 args: Some(vec![
                     OperateFunctionArg::with_name("a", DataType::Integer(None)),
-                    OperateFunctionArg { xml_passing: None,
+                    OperateFunctionArg {
+                        xml_passing: None,
                         mode: Some(ArgMode::In),
                         name: Some("b".into()),
                         data_type: DataType::Integer(None),
@@ -4721,7 +4725,8 @@ fn parse_drop_procedure() {
                     }]),
                     args: Some(vec![
                         OperateFunctionArg::with_name("a", DataType::Integer(None)),
-                        OperateFunctionArg { xml_passing: None,
+                        OperateFunctionArg {
+                            xml_passing: None,
                             mode: Some(ArgMode::In),
                             name: Some("b".into()),
                             data_type: DataType::Integer(None),
@@ -4739,7 +4744,8 @@ fn parse_drop_procedure() {
                     }]),
                     args: Some(vec![
                         OperateFunctionArg::with_name("a", DataType::Varchar(None)),
-                        OperateFunctionArg { xml_passing: None,
+                        OperateFunctionArg {
+                            xml_passing: None,
                             mode: Some(ArgMode::In),
                             name: Some("b".into()),
                             data_type: DataType::Integer(None),

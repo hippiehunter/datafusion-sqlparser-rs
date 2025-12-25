@@ -47,9 +47,9 @@ use crate::ast::{
     FunctionParallel, HiveDistributionStyle, HiveFormat, HiveIOFormat, HiveRowFormat,
     HiveSetLocation, Ident, InitializeKind, MySQLColumnPosition, ObjectName, OnCommit,
     OneOrManyWithParens, OperateFunctionArg, OrderByExpr, ProjectionSelect, Query, RefreshModeKind,
-    RowAccessPolicy, SequenceOptions, SqlDataAccess, Spanned, SqlOption, StorageSerializationPolicy,
-    TableVersion, Tag, TriggerEvent, TriggerExecBody, TriggerObject, TriggerPeriod,
-    TriggerReferencing, Value, ValueWithSpan, WrappedCollection,
+    RowAccessPolicy, SequenceOptions, Spanned, SqlDataAccess, SqlOption,
+    StorageSerializationPolicy, TableVersion, Tag, TriggerEvent, TriggerExecBody, TriggerObject,
+    TriggerPeriod, TriggerReferencing, Value, ValueWithSpan, WrappedCollection,
 };
 use crate::display_utils::{DisplayCommaSeparated, Indent, NewLine, SpaceOrNewline};
 use crate::keywords::Keyword;

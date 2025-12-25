@@ -604,6 +604,89 @@ pub struct With {
     pub with_token: AttachedToken,
     pub recursive: bool,
     pub cte_tables: Vec<Cte>,
+    /// SQL:2016 T133: SEARCH clause for recursive CTEs
+    pub search: Option<SearchClause>,
+    /// SQL:2016 T133: CYCLE clause for recursive CTEs
+    pub cycle: Option<CycleClause>,
+}
+
+/// SQL:2016 T133: SEARCH clause for recursive CTEs
+/// ```sql
+/// SEARCH DEPTH FIRST BY col1, col2 SET ordering_col
+/// SEARCH BREADTH FIRST BY col1, col2 SET ordering_col
+/// ```
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct SearchClause {
+    /// DEPTH FIRST or BREADTH FIRST
+    pub order: SearchOrder,
+    /// Columns to order by
+    pub by_columns: Vec<Ident>,
+    /// Column name to store ordering value
+    pub set_column: Ident,
+}
+
+impl fmt::Display for SearchClause {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "SEARCH {} BY ", self.order)?;
+        display_comma_separated(&self.by_columns).fmt(f)?;
+        write!(f, " SET {}", self.set_column)
+    }
+}
+
+/// Search order for SEARCH clause
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum SearchOrder {
+    DepthFirst,
+    BreadthFirst,
+}
+
+impl fmt::Display for SearchOrder {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            SearchOrder::DepthFirst => write!(f, "DEPTH FIRST"),
+            SearchOrder::BreadthFirst => write!(f, "BREADTH FIRST"),
+        }
+    }
+}
+
+/// SQL:2016 T133: CYCLE clause for recursive CTEs
+/// ```sql
+/// CYCLE col1, col2 SET is_cycle USING path
+/// CYCLE col1, col2 SET is_cycle TO 'Y' DEFAULT 'N' USING path  -- SQL:2023
+/// ```
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct CycleClause {
+    /// Columns to detect cycles on
+    pub columns: Vec<Ident>,
+    /// Column name to mark cycles
+    pub set_column: Ident,
+    /// SQL:2023: Value when cycle detected (TO value)
+    pub cycle_value: Option<Expr>,
+    /// SQL:2023: Value when no cycle (DEFAULT value)
+    pub non_cycle_value: Option<Expr>,
+    /// Column name for the path array
+    pub using_column: Ident,
+}
+
+impl fmt::Display for CycleClause {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "CYCLE ")?;
+        display_comma_separated(&self.columns).fmt(f)?;
+        write!(f, " SET {}", self.set_column)?;
+        if let Some(ref cycle_val) = self.cycle_value {
+            write!(f, " TO {}", cycle_val)?;
+        }
+        if let Some(ref non_cycle_val) = self.non_cycle_value {
+            write!(f, " DEFAULT {}", non_cycle_val)?;
+        }
+        write!(f, " USING {}", self.using_column)
+    }
 }
 
 impl fmt::Display for With {
@@ -613,6 +696,12 @@ impl fmt::Display for With {
             f.write_str("RECURSIVE ")?;
         }
         display_comma_separated(&self.cte_tables).fmt(f)?;
+        if let Some(ref search) = self.search {
+            write!(f, " {}", search)?;
+        }
+        if let Some(ref cycle) = self.cycle {
+            write!(f, " {}", cycle)?;
+        }
         Ok(())
     }
 }
@@ -1781,7 +1870,12 @@ pub struct SubsetDefinition {
 
 impl fmt::Display for SubsetDefinition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} = ({})", self.name, display_comma_separated(&self.symbols))
+        write!(
+            f,
+            "{} = ({})",
+            self.name,
+            display_comma_separated(&self.symbols)
+        )
     }
 }
 
