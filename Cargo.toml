@@ -49,6 +49,7 @@ bigdecimal = { version = "0.4.1", features = ["serde"], optional = true }
 log = "0.4"
 recursive = { version = "0.1.1", optional = true}
 unicase = "2.7"
+strsim = "0.11"
 
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc"], optional = true }
 # serde_json is only used in examples/cli, but we have to put it outside

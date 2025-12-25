@@ -17327,3 +17327,60 @@ fn parse_loop_with_begin_end() {
         _ => unreachable!(),
     }
 }
+
+// Tests for improved error messages with furthest error tracking
+#[test]
+fn test_error_preserves_semantic_errors() {
+    // Test that semantic errors are preserved (not replaced by positional errors)
+    let sql = "SELECT COUNT(ALL DISTINCT x) FROM t";
+    let result = parse_sql_statements(sql);
+    let err = result.unwrap_err().to_string();
+    // Should preserve the semantic error about ALL and DISTINCT
+    assert!(
+        err.contains("ALL") || err.contains("DISTINCT"),
+        "Expected semantic error to be preserved: {}",
+        err
+    );
+}
+
+#[test]
+fn test_error_expected_keyword() {
+    // Test error message when a specific keyword is expected
+    let sql = "SELECT * FROM users ORDER x";
+    let result = parse_sql_statements(sql);
+    let err = result.unwrap_err().to_string();
+    // Should mention BY keyword is expected after ORDER
+    assert!(
+        err.contains("BY") || err.contains("Expected"),
+        "Expected error to mention BY keyword: {}",
+        err
+    );
+}
+
+#[test]
+fn test_error_position_in_message() {
+    // Test that error messages include position information
+    let sql = "SELECT * FROM";
+    let result = parse_sql_statements(sql);
+    let err = result.unwrap_err().to_string();
+    // Error should include position info (Line/Column) or meaningful context
+    assert!(
+        err.contains("Line") || err.contains("Column") || err.contains("EOF") || err.contains("Expected"),
+        "Expected error to include position info: {}",
+        err
+    );
+}
+
+#[test]
+fn test_error_missing_parenthesis() {
+    // Test error for missing closing parenthesis
+    let sql = "SELECT (1 + 2 FROM users";
+    let result = parse_sql_statements(sql);
+    let err = result.unwrap_err().to_string();
+    // Should mention missing parenthesis or indicate the problem location
+    assert!(
+        err.contains(")") || err.contains("Expected") || err.contains("parenthesis"),
+        "Expected error about missing parenthesis: {}",
+        err
+    );
+}

@@ -30,6 +30,7 @@ use helpers::attached_token::AttachedToken;
 use std::borrow::Cow;
 
 use log::debug;
+use strsim::jaro_winkler;
 
 use recursion::RecursionCounter;
 use IsLateral::*;
@@ -46,7 +47,7 @@ use crate::ast::*;
 use crate::dialect::*;
 use crate::keywords::{Keyword, ALL_KEYWORDS};
 use crate::tokenizer::*;
-use core::cell::Cell;
+use core::cell::{Cell, RefCell};
 use sqlparser::parser::ParserState::ColumnDefinition;
 
 mod alter;
@@ -63,6 +64,252 @@ macro_rules! parser_err {
     ($MSG:expr, $loc:expr) => {
         Err(ParserError::ParserError(format!("{}{}", $MSG, $loc)))
     };
+}
+
+/// Context for where an error occurred in parsing.
+/// Used to provide human-friendly error messages like "in SELECT clause".
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ParseContext {
+    SelectClause,
+    FromClause,
+    WhereClause,
+    GroupByClause,
+    HavingClause,
+    OrderByClause,
+    LimitClause,
+    JoinClause,
+    Subquery,
+    Expression,
+    TableName,
+    ColumnDefinition,
+    InsertStatement,
+    UpdateStatement,
+    DeleteStatement,
+    CreateStatement,
+    AlterStatement,
+    DropStatement,
+    CaseExpression,
+    FunctionCall,
+    WindowClause,
+    ValuesClause,
+    SetClause,
+    ReturningClause,
+}
+
+impl ParseContext {
+    /// Returns a human-friendly display name for this context
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            ParseContext::SelectClause => "SELECT clause",
+            ParseContext::FromClause => "FROM clause",
+            ParseContext::WhereClause => "WHERE clause",
+            ParseContext::GroupByClause => "GROUP BY clause",
+            ParseContext::HavingClause => "HAVING clause",
+            ParseContext::OrderByClause => "ORDER BY clause",
+            ParseContext::LimitClause => "LIMIT clause",
+            ParseContext::JoinClause => "JOIN clause",
+            ParseContext::Subquery => "subquery",
+            ParseContext::Expression => "expression",
+            ParseContext::TableName => "table name",
+            ParseContext::ColumnDefinition => "column definition",
+            ParseContext::InsertStatement => "INSERT statement",
+            ParseContext::UpdateStatement => "UPDATE statement",
+            ParseContext::DeleteStatement => "DELETE statement",
+            ParseContext::CreateStatement => "CREATE statement",
+            ParseContext::AlterStatement => "ALTER statement",
+            ParseContext::DropStatement => "DROP statement",
+            ParseContext::CaseExpression => "CASE expression",
+            ParseContext::FunctionCall => "function call",
+            ParseContext::WindowClause => "WINDOW clause",
+            ParseContext::ValuesClause => "VALUES clause",
+            ParseContext::SetClause => "SET clause",
+            ParseContext::ReturningClause => "RETURNING clause",
+        }
+    }
+}
+
+/// What the parser expected at an error position
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExpectedItem {
+    /// A specific token (e.g., comma, parenthesis)
+    Token(String),
+    /// A specific keyword
+    Keyword(Keyword),
+    /// A descriptive category (e.g., "expression", "identifier")
+    Category(String),
+}
+
+impl fmt::Display for ExpectedItem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ExpectedItem::Token(t) => write!(f, "{}", t),
+            ExpectedItem::Keyword(k) => write!(f, "{:?}", k),
+            ExpectedItem::Category(c) => write!(f, "{}", c),
+        }
+    }
+}
+
+/// Tracks the furthest position reached during parsing for better error messages.
+///
+/// When backtracking parsers like `maybe_parse()` fail, this struct remembers
+/// the deepest error position and what tokens were expected there. This allows
+/// the final error message to point to the actual problem location rather than
+/// where parsing gave up.
+#[derive(Debug)]
+pub struct ErrorTracker {
+    /// The furthest token index where an error was encountered
+    furthest_index: Cell<usize>,
+    /// What was expected at the furthest position
+    expected_items: RefCell<Vec<ExpectedItem>>,
+    /// Stack of parsing contexts for error messages
+    context_stack: RefCell<Vec<ParseContext>>,
+    /// Optional typo hint (e.g., "Did you mean 'FROM'?")
+    typo_hint: RefCell<Option<String>>,
+}
+
+impl Default for ErrorTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ErrorTracker {
+    /// Create a new error tracker
+    pub fn new() -> Self {
+        Self {
+            furthest_index: Cell::new(0),
+            expected_items: RefCell::new(Vec::new()),
+            context_stack: RefCell::new(Vec::new()),
+            typo_hint: RefCell::new(None),
+        }
+    }
+
+    /// Reset the tracker (call when starting a new parse)
+    pub fn reset(&self) {
+        self.furthest_index.set(0);
+        self.expected_items.borrow_mut().clear();
+        self.context_stack.borrow_mut().clear();
+        *self.typo_hint.borrow_mut() = None;
+    }
+
+    /// Record an expectation at the given token index
+    pub fn record(&self, index: usize, expected: ExpectedItem) {
+        let current = self.furthest_index.get();
+        if index > current {
+            // New furthest position - clear old expectations
+            self.furthest_index.set(index);
+            let mut items = self.expected_items.borrow_mut();
+            items.clear();
+            items.push(expected);
+            // Clear typo hint since we're at a new position
+            *self.typo_hint.borrow_mut() = None;
+        } else if index == current {
+            // Same position - accumulate expectations
+            let mut items = self.expected_items.borrow_mut();
+            if !items.contains(&expected) {
+                items.push(expected);
+            }
+        }
+        // If index < current, this expectation is not useful
+    }
+
+    /// Get the furthest index
+    pub fn furthest_index(&self) -> usize {
+        self.furthest_index.get()
+    }
+
+    /// Check if we have a tracked error that's further than the given index
+    pub fn has_better_error(&self, current_index: usize) -> bool {
+        self.furthest_index.get() > current_index
+    }
+
+    /// Push a parsing context onto the stack
+    pub fn push_context(&self, ctx: ParseContext) {
+        self.context_stack.borrow_mut().push(ctx);
+    }
+
+    /// Pop a parsing context from the stack
+    pub fn pop_context(&self) {
+        self.context_stack.borrow_mut().pop();
+    }
+
+    /// Set a typo hint for the current error position
+    pub fn set_typo_hint(&self, hint: String) {
+        *self.typo_hint.borrow_mut() = Some(hint);
+    }
+
+    /// Infer a category name when there are too many expected items
+    fn infer_category(items: &[ExpectedItem]) -> &'static str {
+        // Check if all items are keywords
+        let all_keywords = items.iter().all(|i| matches!(i, ExpectedItem::Keyword(_)));
+        if all_keywords {
+            return "keyword";
+        }
+
+        // Check if all items are tokens (punctuation)
+        let all_tokens = items.iter().all(|i| matches!(i, ExpectedItem::Token(_)));
+        if all_tokens {
+            return "token";
+        }
+
+        // Default to a generic category
+        "syntax element"
+    }
+
+    /// Format the expected items as a user-friendly string
+    /// Uses category fallback when there are more than 3 items
+    pub fn format_expected(&self) -> String {
+        let items = self.expected_items.borrow();
+        if items.is_empty() {
+            return String::new();
+        }
+        if items.len() == 1 {
+            return format!("{}", items[0]);
+        }
+        if items.len() <= 3 {
+            // List all items
+            let formatted: Vec<String> = items.iter().map(|i| format!("{}", i)).collect();
+            return format!("one of {}", formatted.join(", "));
+        }
+        // Category fallback for >3 items
+        Self::infer_category(&items).to_string()
+    }
+
+    /// Format a complete error message with context and typo hints
+    pub fn format_error(&self, found: &TokenWithSpan) -> String {
+        let expected_str = self.format_expected();
+        let context = self.context_stack.borrow();
+        let hint = self.typo_hint.borrow();
+
+        // Format context (use the innermost context)
+        let context_str = context
+            .last()
+            .map(|c| format!(" in {}", c.display_name()))
+            .unwrap_or_default();
+
+        // Build the message
+        let mut msg = if expected_str.is_empty() {
+            format!("Unexpected token: {}", found)
+        } else {
+            format!("Expected {}{}, found: {}", expected_str, context_str, found)
+        };
+
+        // Add typo hint if present
+        if let Some(h) = hint.as_ref() {
+            msg.push_str(&format!(". {}", h));
+        }
+
+        msg
+    }
+}
+
+/// RAII guard that pops context on drop
+pub struct ContextGuard<'a>(&'a ErrorTracker);
+
+impl Drop for ContextGuard<'_> {
+    fn drop(&mut self) {
+        self.0.pop_context();
+    }
 }
 
 #[cfg(feature = "std")]
@@ -346,6 +593,8 @@ pub struct Parser<'a> {
     options: ParserOptions,
     /// Ensures the stack does not overflow by limiting recursion depth.
     recursion_counter: RecursionCounter,
+    /// Tracks the furthest error position for better error messages.
+    error_tracker: ErrorTracker,
 }
 
 impl<'a> Parser<'a> {
@@ -372,7 +621,101 @@ impl<'a> Parser<'a> {
             dialect,
             recursion_counter: RecursionCounter::new(DEFAULT_REMAINING_DEPTH),
             options: ParserOptions::new().with_trailing_commas(dialect.supports_trailing_commas()),
+            error_tracker: ErrorTracker::new(),
         }
+    }
+
+    /// Enter a parsing context for error tracking.
+    ///
+    /// Returns a guard that will automatically pop the context when dropped.
+    /// This is used to provide helpful context in error messages like
+    /// "in SELECT clause" or "in WHERE clause".
+    fn enter_context(&self, ctx: ParseContext) -> ContextGuard<'_> {
+        self.error_tracker.push_context(ctx);
+        ContextGuard(&self.error_tracker)
+    }
+
+    /// Check if the current token is a typo of the expected keyword.
+    ///
+    /// If the current token is an identifier that is similar to the expected keyword
+    /// (using Jaro-Winkler similarity > 0.85), sets a typo hint in the error tracker.
+    fn check_typo_hint(&self, expected: Keyword) {
+        let token = self.peek_token_ref();
+        if let BorrowedToken::Word(w) = &token.token {
+            // Only check if the word is an identifier (not already a keyword)
+            if w.keyword == Keyword::NoKeyword {
+                let expected_str = format!("{:?}", expected);
+                let similarity = jaro_winkler(&w.value.to_uppercase(), &expected_str);
+                if similarity > 0.85 {
+                    self.error_tracker
+                        .set_typo_hint(format!("Did you mean '{}'?", expected_str));
+                }
+            }
+        }
+    }
+
+    /// Returns the best error - either the tracked furthest error or the given error.
+    ///
+    /// If the error tracker has recorded an error at a position further than the
+    /// current index, and the fallback error is a generic "Expected X, found Y" error,
+    /// builds a new error using that tracked information for a more accurate error message.
+    ///
+    /// Semantic errors are preserved because they provide more specific information
+    /// than positional errors. We are conservative about replacement to avoid
+    /// breaking existing error message expectations.
+    fn build_best_error<T>(&self, fallback: ParserError) -> Result<T, ParserError> {
+        // Check if the fallback is a generic "Expected" error that should be replaced
+        // We're very conservative: only replace errors about keywords (words with letters)
+        // Preserve errors about tokens, punctuation, and descriptive phrases
+        let should_replace = match &fallback {
+            ParserError::ParserError(msg) => {
+                // Only consider replacing if it starts with "Expected:"
+                if let Some(rest) = msg.strip_prefix("Expected: ") {
+                    if let Some(expected_part) = rest.split(", found:").next() {
+                        // Only replace if the expected part is:
+                        // 1. A simple word (contains only letters, no spaces, no punctuation)
+                        // 2. All uppercase (likely a keyword like "FROM", "WHERE")
+                        expected_part.chars().all(|c| c.is_ascii_alphabetic())
+                            && expected_part.chars().any(|c| c.is_ascii_uppercase())
+                            && !expected_part.is_empty()
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        };
+
+        // Only use the tracked error if:
+        // 1. It's at a further position than current
+        // 2. The fallback is a generic keyword error that should be replaced
+        // 3. The tracked error provides specific information (not a category/description)
+        if should_replace && self.error_tracker.has_better_error(self.index.get()) {
+            // Check if the tracked error is specific (concrete tokens/keywords)
+            // Don't replace with descriptive categories like "syntax element", "argument operator"
+            let expected_str = self.error_tracker.format_expected();
+
+            // A "specific" error must:
+            // 1. Not be empty
+            // 2. Not be a category fallback (keyword, token, syntax element)
+            // 3. Not contain spaces (descriptions like "argument operator" contain spaces)
+            // 4. Start with "one of" (multiple specific items) OR be a single keyword/token
+            let is_specific = !expected_str.is_empty()
+                && expected_str != "keyword"
+                && expected_str != "token"
+                && expected_str != "syntax element"
+                && (expected_str.starts_with("one of ") || !expected_str.contains(' '));
+
+            if is_specific {
+                let furthest_idx = self.error_tracker.furthest_index();
+                let found = self.tokens.get(furthest_idx).unwrap_or(&EOF_TOKEN);
+                let msg = self.error_tracker.format_error(found);
+                return parser_err!(msg, found.span.start);
+            }
+        }
+        Err(fallback)
     }
 
     /// Specify the maximum recursion limit while parsing.
@@ -433,6 +776,7 @@ impl<'a> Parser<'a> {
     pub fn with_tokens_with_locations(mut self, tokens: Vec<TokenWithSpan<'a>>) -> Self {
         self.tokens = tokens;
         self.index = Cell::new(0);
+        self.error_tracker.reset();
         self
     }
 
@@ -507,7 +851,10 @@ impl<'a> Parser<'a> {
                 return self.expected("end of statement", self.peek_token());
             }
 
-            let statement = self.parse_statement()?;
+            let statement = match self.parse_statement() {
+                Ok(stmt) => stmt,
+                Err(e) => return self.build_best_error(e),
+            };
             stmts.push(statement);
             expecting_statement_delimiter = true;
         }
@@ -5077,6 +5424,8 @@ impl<'a> Parser<'a> {
 
     /// Report `found` was encountered instead of `expected`
     pub fn expected<T>(&self, expected: &str, found: TokenWithSpan) -> Result<T, ParserError> {
+        self.error_tracker
+            .record(self.index.get(), ExpectedItem::Category(expected.to_string()));
         parser_err!(
             format!("Expected: {expected}, found: {found}"),
             found.span.start
@@ -5085,6 +5434,8 @@ impl<'a> Parser<'a> {
 
     /// report `found` was encountered instead of `expected`
     pub fn expected_ref<T>(&self, expected: &str, found: &TokenWithSpan) -> Result<T, ParserError> {
+        self.error_tracker
+            .record(self.index.get(), ExpectedItem::Category(expected.to_string()));
         parser_err!(
             format!("Expected: {expected}, found: {found}"),
             found.span.start
@@ -5094,6 +5445,8 @@ impl<'a> Parser<'a> {
     /// Report that the token at `index` was found instead of `expected`.
     pub fn expected_at<T>(&self, expected: &str, index: usize) -> Result<T, ParserError> {
         let found = self.tokens.get(index).unwrap_or(&EOF_TOKEN);
+        self.error_tracker
+            .record(index, ExpectedItem::Category(expected.to_string()));
         parser_err!(
             format!("Expected: {expected}, found: {found}"),
             found.span.start
@@ -5227,6 +5580,9 @@ impl<'a> Parser<'a> {
         if self.parse_keyword(expected) {
             Ok(self.get_current_token().clone())
         } else {
+            self.error_tracker
+                .record(self.index.get(), ExpectedItem::Keyword(expected));
+            self.check_typo_hint(expected);
             self.expected_ref(format!("{:?}", &expected).as_str(), self.peek_token_ref())
         }
     }
@@ -5240,6 +5596,9 @@ impl<'a> Parser<'a> {
         if self.parse_keyword(expected) {
             Ok(())
         } else {
+            self.error_tracker
+                .record(self.index.get(), ExpectedItem::Keyword(expected));
+            self.check_typo_hint(expected);
             self.expected_ref(format!("{:?}", &expected).as_str(), self.peek_token_ref())
         }
     }
@@ -5289,6 +5648,8 @@ impl<'a> Parser<'a> {
         if self.peek_token_ref() == expected {
             Ok(self.next_token())
         } else {
+            self.error_tracker
+                .record(self.index.get(), ExpectedItem::Token(expected.to_string()));
             self.expected_ref(&expected.to_string(), self.peek_token_ref())
         }
     }
@@ -5307,6 +5668,7 @@ impl<'a> Parser<'a> {
 
     /// Parse a comma-separated list of 1+ SelectItem
     pub fn parse_projection(&self) -> Result<Vec<SelectItem>, ParserError> {
+        let _guard = self.enter_context(ParseContext::SelectClause);
         // BigQuery and Snowflake allow trailing commas, but only in project lists
         // e.g. `SELECT 1, 2, FROM t`
         // https://cloud.google.com/bigquery/docs/reference/standard-sql/lexical#trailing_commas
@@ -5347,6 +5709,7 @@ impl<'a> Parser<'a> {
 
     /// Parse a list of [TableWithJoins]
     fn parse_table_with_joins(&self) -> Result<Vec<TableWithJoins>, ParserError> {
+        let _guard = self.enter_context(ParseContext::FromClause);
         let trailing_commas = self.dialect.supports_from_trailing_commas();
 
         self.parse_comma_separated_with_trailing_commas(
@@ -13334,6 +13697,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_delete(&self, delete_token: TokenWithSpan) -> Result<Statement, ParserError> {
+        let _guard = self.enter_context(ParseContext::DeleteStatement);
         let (tables, with_from_keyword) = if !self.parse_keyword(Keyword::FROM) {
             // `FROM` keyword is optional in BigQuery SQL.
             // https://cloud.google.com/bigquery/docs/reference/standard-sql/dml-syntax#delete_statement
@@ -15120,6 +15484,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_joins(&self) -> Result<Vec<Join>, ParserError> {
+        let _guard = self.enter_context(ParseContext::JoinClause);
         let mut joins = vec![];
         loop {
             let global = self.parse_keyword(Keyword::GLOBAL);
@@ -18058,6 +18423,7 @@ impl<'a> Parser<'a> {
 
     /// Parse an INSERT statement
     pub fn parse_insert(&self, insert_token: TokenWithSpan) -> Result<Statement, ParserError> {
+        let _guard = self.enter_context(ParseContext::InsertStatement);
         let or = self.parse_conflict_clause();
         let priority = if !dialect_of!(self is MySqlDialect | GenericDialect) {
             None
@@ -18320,6 +18686,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_update(&self, update_token: TokenWithSpan) -> Result<Statement, ParserError> {
+        let _guard = self.enter_context(ParseContext::UpdateStatement);
         let or = self.parse_conflict_clause();
         let table = self.parse_table_and_joins()?;
         let for_portion_of = if self.parse_keywords(&[Keyword::FOR, Keyword::PORTION, Keyword::OF])
