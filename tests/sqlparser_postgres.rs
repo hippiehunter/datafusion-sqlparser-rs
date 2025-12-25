@@ -4275,6 +4275,8 @@ $$"#;
             determinism_specifier: None,
             options: None,
             remote_connection: None,
+            polymorphic: false,
+            sql_data_access: None,
         })
     );
 
@@ -4313,6 +4315,8 @@ $$"#;
             determinism_specifier: None,
             options: None,
             remote_connection: None,
+            polymorphic: false,
+            sql_data_access: None,
         })
     );
 
@@ -4355,6 +4359,8 @@ $$"#;
             determinism_specifier: None,
             options: None,
             remote_connection: None,
+            polymorphic: false,
+            sql_data_access: None,
         })
     );
 
@@ -4397,6 +4403,8 @@ $$"#;
             determinism_specifier: None,
             options: None,
             remote_connection: None,
+            polymorphic: false,
+            sql_data_access: None,
         })
     );
 
@@ -4436,6 +4444,8 @@ $$"#;
             determinism_specifier: None,
             options: None,
             remote_connection: None,
+            polymorphic: false,
+            sql_data_access: None,
         })
     );
 
@@ -4470,6 +4480,8 @@ fn parse_create_function() {
             determinism_specifier: None,
             options: None,
             remote_connection: None,
+            polymorphic: false,
+            sql_data_access: None,
         })
     );
 }
@@ -6103,7 +6115,9 @@ fn parse_trigger_related_functions() {
             language: Some(Ident::new("plpgsql")),
             determinism_specifier: None,
             options: None,
-            remote_connection: None
+            remote_connection: None,
+            polymorphic: false,
+            sql_data_access: None,
         }
     ));
 

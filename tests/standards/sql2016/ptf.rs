@@ -33,7 +33,7 @@ fn b200_01_table_function_basic() {
 #[test]
 fn b200_02_table_function_with_alias() {
     verified_standard_stmt(
-        "SELECT t.col1, t.col2 FROM TABLE(generate_series(1, 10)) AS t(col1, col2)",
+        "SELECT t.col1, t.col2 FROM TABLE(generate_series(1, 10)) AS t (col1, col2)",
     );
 }
 
@@ -105,7 +105,7 @@ fn ptf_type_set_semantics() {
 fn create_ptf_basic() {
     verified_standard_stmt(
         "CREATE FUNCTION split_string(input_string VARCHAR, delimiter CHAR) \
-         RETURNS TABLE (part VARCHAR, position INT) \
+         RETURNS TABLE(part VARCHAR, position INT) \
          LANGUAGE SQL",
     );
 }
@@ -124,7 +124,7 @@ fn create_ptf_generic() {
 fn create_ptf_with_columns() {
     verified_standard_stmt(
         "CREATE FUNCTION csv_reader(file_path VARCHAR) \
-         RETURNS TABLE (line_number INT, line_content VARCHAR) \
+         RETURNS TABLE(line_number INT, line_content VARCHAR) \
          LANGUAGE SQL \
          READS SQL DATA",
     );
@@ -155,8 +155,7 @@ fn ptf_multiple_descriptors() {
 #[test]
 fn ptf_window_function_emulation() {
     verified_standard_stmt(
-        "SELECT * FROM TABLE(running_total( \
-         TABLE transactions PARTITION BY account_id ORDER BY tx_date, \
+        "SELECT * FROM TABLE(running_total(TABLE transactions PARTITION BY account_id ORDER BY tx_date, \
          DESCRIPTOR(amount)))",
     );
 }
@@ -164,8 +163,7 @@ fn ptf_window_function_emulation() {
 #[test]
 fn ptf_json_table_alternative() {
     verified_standard_stmt(
-        "SELECT * FROM TABLE(json_extract( \
-         TABLE documents, \
+        "SELECT * FROM TABLE(json_extract(TABLE documents, \
          '$.items[*]', \
          COLUMNS(id INT PATH '$.id', name VARCHAR PATH '$.name')))",
     );
@@ -179,8 +177,7 @@ fn ptf_with_scalar_args() {
 #[test]
 fn ptf_chained() {
     verified_standard_stmt(
-        "SELECT * FROM TABLE(filter_rows( \
-         TABLE(add_derived_columns(TABLE raw_data)), \
+        "SELECT * FROM TABLE(filter_rows(TABLE(add_derived_columns(TABLE raw_data)), \
          'status = active'))",
     );
 }
@@ -190,9 +187,7 @@ fn ptf_chained() {
 #[test]
 fn ptf_in_with_clause() {
     verified_standard_stmt(
-        "WITH expanded AS ( \
-           SELECT * FROM TABLE(unnest_array(TABLE arrays_table, DESCRIPTOR(array_col))) \
-         ) \
+        "WITH expanded AS (SELECT * FROM TABLE(unnest_array(TABLE arrays_table, DESCRIPTOR(array_col)))) \
          SELECT * FROM expanded WHERE value > 10",
     );
 }

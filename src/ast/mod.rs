@@ -7391,6 +7391,107 @@ impl fmt::Display for FunctionArgOperator {
     }
 }
 
+/// SQL:2016 PTF table argument source
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum PtfTableSource {
+    Table(ObjectName),
+    Subquery(Box<Query>),
+}
+
+impl fmt::Display for PtfTableSource {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            PtfTableSource::Table(name) => write!(f, "{name}"),
+            PtfTableSource::Subquery(query) => write!(f, "({query})"),
+        }
+    }
+}
+
+/// SQL:2016 PTF semantics (ROW SEMANTICS or SET SEMANTICS)
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum PtfSemantics {
+    RowSemantics,
+    SetSemantics,
+}
+
+impl fmt::Display for PtfSemantics {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            PtfSemantics::RowSemantics => write!(f, "ROW SEMANTICS"),
+            PtfSemantics::SetSemantics => write!(f, "SET SEMANTICS"),
+        }
+    }
+}
+
+/// SQL:2016 PTF table argument with optional modifiers
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct PtfTableArg {
+    pub source: PtfTableSource,
+    pub semantics: Option<PtfSemantics>,
+    pub pass_through_columns: bool,
+    pub partition_by: Vec<Expr>,
+    pub order_by: Vec<OrderByExpr>,
+}
+
+impl fmt::Display for PtfTableArg {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "TABLE {}", self.source)?;
+        if let Some(semantics) = &self.semantics {
+            write!(f, " {semantics}")?;
+        }
+        if self.pass_through_columns {
+            write!(f, " PASS THROUGH COLUMNS")?;
+        }
+        if !self.partition_by.is_empty() {
+            write!(f, " PARTITION BY {}", display_comma_separated(&self.partition_by))?;
+        }
+        if !self.order_by.is_empty() {
+            write!(f, " ORDER BY {}", display_comma_separated(&self.order_by))?;
+        }
+        Ok(())
+    }
+}
+
+/// SQL:2016 DESCRIPTOR for column specifications
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct Descriptor {
+    pub columns: Vec<Ident>,
+}
+
+impl fmt::Display for Descriptor {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "DESCRIPTOR({})", display_comma_separated(&self.columns))
+    }
+}
+
+/// SQL:2016 PTF COLUMNS clause for JSON extraction
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct PtfColumn {
+    pub name: Ident,
+    pub data_type: DataType,
+    pub path: Option<String>,
+}
+
+impl fmt::Display for PtfColumn {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} {}", self.name, self.data_type)?;
+        if let Some(path) = &self.path {
+            write!(f, " PATH '{path}'")?;
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -7412,6 +7513,12 @@ pub enum FunctionArg {
         operator: FunctionArgOperator,
     },
     Unnamed(FunctionArgExpr),
+    /// SQL:2016 PTF TABLE argument
+    Table(PtfTableArg),
+    /// SQL:2016 DESCRIPTOR argument
+    Descriptor(Descriptor),
+    /// SQL:2016 PTF COLUMNS clause
+    Columns(Vec<PtfColumn>),
 }
 
 impl fmt::Display for FunctionArg {
@@ -7428,6 +7535,11 @@ impl fmt::Display for FunctionArg {
                 operator,
             } => write!(f, "{name} {operator} {arg}"),
             FunctionArg::Unnamed(unnamed_arg) => write!(f, "{unnamed_arg}"),
+            FunctionArg::Table(table_arg) => write!(f, "{table_arg}"),
+            FunctionArg::Descriptor(descriptor) => write!(f, "{descriptor}"),
+            FunctionArg::Columns(columns) => {
+                write!(f, "COLUMNS({})", display_comma_separated(columns))
+            }
         }
     }
 }
@@ -9514,6 +9626,28 @@ impl fmt::Display for FunctionParallel {
             FunctionParallel::Unsafe => write!(f, "PARALLEL UNSAFE"),
             FunctionParallel::Restricted => write!(f, "PARALLEL RESTRICTED"),
             FunctionParallel::Safe => write!(f, "PARALLEL SAFE"),
+        }
+    }
+}
+
+/// SQL:2016 SQL data access characteristic for functions
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum SqlDataAccess {
+    ReadsSqlData,
+    ModifiesSqlData,
+    ContainsSql,
+    NoSql,
+}
+
+impl fmt::Display for SqlDataAccess {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            SqlDataAccess::ReadsSqlData => write!(f, "READS SQL DATA"),
+            SqlDataAccess::ModifiesSqlData => write!(f, "MODIFIES SQL DATA"),
+            SqlDataAccess::ContainsSql => write!(f, "CONTAINS SQL"),
+            SqlDataAccess::NoSql => write!(f, "NO SQL"),
         }
     }
 }

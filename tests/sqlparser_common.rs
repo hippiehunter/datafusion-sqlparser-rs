@@ -10453,7 +10453,7 @@ fn parse_is_boolean() {
     let res = parse_sql_statements(sql);
     assert_eq!(
         ParserError::ParserError(
-            "Expected: [NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED | JSON after IS, found: 0"
+            "Expected: [NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED | JSON | DOCUMENT | CONTENT after IS, found: 0"
                 .to_string()
         ),
         res.unwrap_err()
@@ -10463,7 +10463,7 @@ fn parse_is_boolean() {
     let res = parse_sql_statements(sql);
     assert_eq!(
         ParserError::ParserError(
-            "Expected: [NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED | JSON after IS, found: XYZ"
+            "Expected: [NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED | JSON | DOCUMENT | CONTENT after IS, found: XYZ"
                 .to_string()
         ),
         res.unwrap_err()
@@ -10473,7 +10473,7 @@ fn parse_is_boolean() {
     let res = parse_sql_statements(sql);
     assert_eq!(
         ParserError::ParserError(
-            "Expected: [NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED | JSON after IS, found: FROM"
+            "Expected: [NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED | JSON | DOCUMENT | CONTENT after IS, found: FROM"
                 .to_string()
         ),
         res.unwrap_err()
@@ -10483,7 +10483,7 @@ fn parse_is_boolean() {
     let res = parse_sql_statements(sql);
     assert_eq!(
         ParserError::ParserError(
-            "Expected: [NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED | JSON after IS, found: TRIM"
+            "Expected: [NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED | JSON | DOCUMENT | CONTENT after IS, found: TRIM"
                 .to_string()
         ),
         res.unwrap_err()

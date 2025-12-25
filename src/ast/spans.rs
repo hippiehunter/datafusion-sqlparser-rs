@@ -2140,6 +2140,10 @@ impl Spanned for FunctionArg {
                 arg,
                 operator: _,
             } => name.span().union(&arg.span()),
+            // PTF arguments don't have span information yet
+            FunctionArg::Table(_) => Span::empty(),
+            FunctionArg::Descriptor(_) => Span::empty(),
+            FunctionArg::Columns(_) => Span::empty(),
         }
     }
 }

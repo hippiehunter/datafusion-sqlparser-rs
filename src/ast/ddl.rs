@@ -47,9 +47,9 @@ use crate::ast::{
     FunctionParallel, HiveDistributionStyle, HiveFormat, HiveIOFormat, HiveRowFormat,
     HiveSetLocation, Ident, InitializeKind, MySQLColumnPosition, ObjectName, OnCommit,
     OneOrManyWithParens, OperateFunctionArg, OrderByExpr, ProjectionSelect, Query, RefreshModeKind,
-    RowAccessPolicy, SequenceOptions, Spanned, SqlOption, StorageSerializationPolicy, TableVersion,
-    Tag, TriggerEvent, TriggerExecBody, TriggerObject, TriggerPeriod, TriggerReferencing, Value,
-    ValueWithSpan, WrappedCollection,
+    RowAccessPolicy, SequenceOptions, SqlDataAccess, Spanned, SqlOption, StorageSerializationPolicy,
+    TableVersion, Tag, TriggerEvent, TriggerExecBody, TriggerObject, TriggerPeriod,
+    TriggerReferencing, Value, ValueWithSpan, WrappedCollection,
 };
 use crate::display_utils::{DisplayCommaSeparated, Indent, NewLine, SpaceOrNewline};
 use crate::keywords::Keyword;
@@ -3110,6 +3110,12 @@ pub struct CreateFunction {
     /// ```
     /// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#create_a_remote_function)
     pub remote_connection: Option<ObjectName>,
+    /// SQL:2016 SQL data access characteristic
+    ///
+    /// READS SQL DATA | MODIFIES SQL DATA | CONTAINS SQL | NO SQL
+    pub sql_data_access: Option<SqlDataAccess>,
+    /// SQL:2016 POLYMORPHIC keyword for PTF
+    pub polymorphic: bool,
 }
 
 impl fmt::Display for CreateFunction {
@@ -3133,11 +3139,17 @@ impl fmt::Display for CreateFunction {
         if let Some(return_type) = &self.return_type {
             write!(f, " RETURNS {return_type}")?;
         }
+        if self.polymorphic {
+            write!(f, " POLYMORPHIC")?;
+        }
         if let Some(determinism_specifier) = &self.determinism_specifier {
             write!(f, " {determinism_specifier}")?;
         }
         if let Some(language) = &self.language {
             write!(f, " LANGUAGE {language}")?;
+        }
+        if let Some(sql_data_access) = &self.sql_data_access {
+            write!(f, " {sql_data_access}")?;
         }
         if let Some(behavior) = &self.behavior {
             write!(f, " {behavior}")?;

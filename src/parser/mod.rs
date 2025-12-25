@@ -5641,6 +5641,8 @@ impl<'a> Parser<'a> {
             function_body: Option<CreateFunctionBody>,
             called_on_null: Option<FunctionCalledOnNull>,
             parallel: Option<FunctionParallel>,
+            sql_data_access: Option<SqlDataAccess>,
+            polymorphic: bool,
         }
         let mut body = Body::default();
         loop {
@@ -5721,6 +5723,20 @@ impl<'a> Parser<'a> {
                 } else {
                     return self.expected("one of UNSAFE | RESTRICTED | SAFE", self.peek_token());
                 }
+            } else if self.parse_keywords(&[Keyword::READS, Keyword::SQL, Keyword::DATA]) {
+                ensure_not_set(&body.sql_data_access, "SQL data access")?;
+                body.sql_data_access = Some(SqlDataAccess::ReadsSqlData);
+            } else if self.parse_keywords(&[Keyword::MODIFIES, Keyword::SQL, Keyword::DATA]) {
+                ensure_not_set(&body.sql_data_access, "SQL data access")?;
+                body.sql_data_access = Some(SqlDataAccess::ModifiesSqlData);
+            } else if self.parse_keywords(&[Keyword::CONTAINS, Keyword::SQL]) {
+                ensure_not_set(&body.sql_data_access, "SQL data access")?;
+                body.sql_data_access = Some(SqlDataAccess::ContainsSql);
+            } else if self.parse_keywords(&[Keyword::NO, Keyword::SQL]) {
+                ensure_not_set(&body.sql_data_access, "SQL data access")?;
+                body.sql_data_access = Some(SqlDataAccess::NoSql);
+            } else if self.parse_keyword(Keyword::POLYMORPHIC) {
+                body.polymorphic = true;
             } else if self.parse_keyword(Keyword::RETURN) {
                 ensure_not_set(&body.function_body, "RETURN")?;
                 body.function_body = Some(CreateFunctionBody::Return(self.parse_expr()?));
@@ -5757,6 +5773,8 @@ impl<'a> Parser<'a> {
             determinism_specifier: None,
             options: None,
             remote_connection: None,
+            sql_data_access: body.sql_data_access,
+            polymorphic: body.polymorphic,
         }))
     }
 
@@ -5846,6 +5864,8 @@ impl<'a> Parser<'a> {
             behavior: None,
             called_on_null: None,
             parallel: None,
+            sql_data_access: None,
+            polymorphic: false,
         }))
     }
 
@@ -16742,6 +16762,39 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_function_args(&self) -> Result<FunctionArg, ParserError> {
+        // Check for PTF-specific argument types first
+        // For TABLE, we need to distinguish:
+        // - TABLE table_name or TABLE (SELECT...) -> PTF TABLE argument
+        // - TABLE(function(...)) -> regular table function expression
+        if self.parse_keyword(Keyword::TABLE) {
+            // Look ahead to see what follows
+            if self.peek_token() == BorrowedToken::LParen {
+                // Could be TABLE(SELECT...) or TABLE(function(...))
+                self.next_token(); // consume (
+                let is_query = self.peek_keywords(&[Keyword::SELECT])
+                    || self.peek_keywords(&[Keyword::VALUES])
+                    || self.peek_keywords(&[Keyword::WITH]);
+                self.prev_token(); // put ( back
+
+                if is_query {
+                    // TABLE(SELECT...) - PTF TABLE argument
+                    return Ok(FunctionArg::Table(self.parse_ptf_table_arg()?));
+                } else {
+                    // TABLE(function(...)) - regular expression, backtrack and parse normally
+                    self.prev_token(); // put TABLE back
+                }
+            } else {
+                // TABLE table_name - PTF TABLE argument
+                return Ok(FunctionArg::Table(self.parse_ptf_table_arg()?));
+            }
+        }
+        if self.parse_keyword(Keyword::DESCRIPTOR) {
+            return Ok(FunctionArg::Descriptor(self.parse_descriptor()?));
+        }
+        if self.parse_keyword(Keyword::COLUMNS) {
+            return Ok(FunctionArg::Columns(self.parse_ptf_columns()?));
+        }
+
         let arg = if self.dialect.supports_named_fn_args_with_expr_name() {
             self.maybe_parse(|p| {
                 let name = p.parse_expr()?;
@@ -16808,6 +16861,95 @@ impl<'a> Parser<'a> {
             self.expect_token(&BorrowedToken::RParen)?;
             Ok(args)
         }
+    }
+
+    /// Parse SQL:2016 PTF TABLE argument
+    fn parse_ptf_table_arg(&self) -> Result<PtfTableArg, ParserError> {
+        let source = if self.peek_keywords(&[Keyword::SELECT])
+            || self.peek_keywords(&[Keyword::VALUES])
+            || self.peek_keywords(&[Keyword::WITH])
+            || (self.peek_token() == BorrowedToken::LParen
+                && {
+                    self.next_token();
+                    let is_query = self.peek_keywords(&[Keyword::SELECT])
+                        || self.peek_keywords(&[Keyword::VALUES])
+                        || self.peek_keywords(&[Keyword::WITH]);
+                    self.prev_token();
+                    is_query
+                })
+        {
+            // Parse as subquery - could be (SELECT ...) or SELECT ...
+            if self.consume_token(&BorrowedToken::LParen) {
+                let query = self.parse_query()?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                PtfTableSource::Subquery(query)
+            } else {
+                PtfTableSource::Subquery(self.parse_query()?)
+            }
+        } else {
+            // Parse as table name (which might be a function call like "TABLE func_name(...)")
+            let name = self.parse_object_name(false)?;
+            PtfTableSource::Table(name)
+        };
+
+        let semantics = if self.parse_keywords(&[Keyword::ROW, Keyword::SEMANTICS]) {
+            Some(PtfSemantics::RowSemantics)
+        } else if self.parse_keywords(&[Keyword::SET, Keyword::SEMANTICS]) {
+            Some(PtfSemantics::SetSemantics)
+        } else {
+            None
+        };
+
+        let pass_through_columns = self.parse_keywords(&[Keyword::PASS, Keyword::THROUGH, Keyword::COLUMNS]);
+
+        let partition_by = if self.parse_keywords(&[Keyword::PARTITION, Keyword::BY]) {
+            self.parse_comma_separated(Parser::parse_expr)?
+        } else {
+            vec![]
+        };
+
+        let order_by = if self.parse_keywords(&[Keyword::ORDER, Keyword::BY]) {
+            self.parse_comma_separated(Parser::parse_order_by_expr)?
+        } else {
+            vec![]
+        };
+
+        Ok(PtfTableArg {
+            source,
+            semantics,
+            pass_through_columns,
+            partition_by,
+            order_by,
+        })
+    }
+
+    /// Parse SQL:2016 DESCRIPTOR for column specifications
+    fn parse_descriptor(&self) -> Result<Descriptor, ParserError> {
+        self.expect_token(&BorrowedToken::LParen)?;
+        let columns = self.parse_comma_separated(|p| p.parse_identifier())?;
+        self.expect_token(&BorrowedToken::RParen)?;
+        Ok(Descriptor { columns })
+    }
+
+    /// Parse SQL:2016 PTF COLUMNS clause
+    fn parse_ptf_columns(&self) -> Result<Vec<PtfColumn>, ParserError> {
+        self.expect_token(&BorrowedToken::LParen)?;
+        let columns = self.parse_comma_separated(|p| {
+            let name = p.parse_identifier()?;
+            let data_type = p.parse_data_type()?;
+            let path = if p.parse_keyword(Keyword::PATH) {
+                Some(p.parse_literal_string()?)
+            } else {
+                None
+            };
+            Ok(PtfColumn {
+                name,
+                data_type,
+                path,
+            })
+        })?;
+        self.expect_token(&BorrowedToken::RParen)?;
+        Ok(columns)
     }
 
     fn parse_table_function_args(&self) -> Result<TableFunctionArgs, ParserError> {
@@ -19643,7 +19785,7 @@ mod tests {
         assert_eq!(
             ast,
             Err(ParserError::ParserError(
-                "Expected: [NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED | JSON after IS, found: a at Line: 1, Column: 16"
+                "Expected: [NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED | JSON | DOCUMENT | CONTENT after IS, found: a at Line: 1, Column: 16"
                     .to_string()
             ))
         );
