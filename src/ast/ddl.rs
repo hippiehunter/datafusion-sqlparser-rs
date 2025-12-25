@@ -1731,6 +1731,8 @@ impl fmt::Display for ColumnOption {
             }
             Unique(constraint) => {
                 write!(f, "UNIQUE")?;
+                // Output NULLS DISTINCT (SQL:2023 standard position for inline constraints)
+                write!(f, "{}", constraint.nulls_distinct)?;
                 if let Some(characteristics) = &constraint.characteristics {
                     write!(f, " {characteristics}")?;
                 }

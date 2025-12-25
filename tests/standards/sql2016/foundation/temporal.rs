@@ -17,7 +17,7 @@
 
 //! SQL:2016 Temporal Table Tests (ISO/IEC 9075-2, Features T180-T187)
 
-use crate::standards::common::verified_standard_stmt;
+use crate::standards::common::{one_statement_parses_to_std, verified_standard_stmt};
 
 // ==================== T180: System-Versioned Tables ====================
 
@@ -80,9 +80,11 @@ fn t180_07_for_system_time_all() {
 
 #[test]
 fn t180_08_system_time_in_join() {
-    verified_standard_stmt(
+    one_statement_parses_to_std(
         "SELECT e.name, d.dept_name FROM employees FOR SYSTEM_TIME AS OF TIMESTAMP '2023-06-01' e \
          JOIN departments FOR SYSTEM_TIME AS OF TIMESTAMP '2023-06-01' d ON e.dept_id = d.id",
+        "SELECT e.name, d.dept_name FROM employees FOR SYSTEM_TIME AS OF TIMESTAMP '2023-06-01' AS e \
+         JOIN departments FOR SYSTEM_TIME AS OF TIMESTAMP '2023-06-01' AS d ON e.dept_id = d.id"
     );
 }
 

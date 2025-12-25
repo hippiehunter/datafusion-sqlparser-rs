@@ -586,10 +586,10 @@ fn parse_update_or() {
 
 #[test]
 fn parse_select_with_table_alias_as() {
-    // AS is optional - implicit form (no AS) is preserved in round-trip
+    // AS is always output in Display for consistency
     one_statement_parses_to(
         "SELECT a, b, c FROM lineitem l (A, B, C)",
-        "SELECT a, b, c FROM lineitem l (A, B, C)",
+        "SELECT a, b, c FROM lineitem AS l (A, B, C)",
     );
 }
 
@@ -7188,7 +7188,7 @@ fn parse_joins_on() {
     );
     one_statement_parses_to(
         "SELECT * FROM t1 JOIN t2 foo ON c1 = c2",
-        "SELECT * FROM t1 JOIN t2 foo ON c1 = c2",
+        "SELECT * FROM t1 JOIN t2 AS foo ON c1 = c2",
     );
     // Test parsing of different join operators
     assert_eq!(
@@ -7325,10 +7325,10 @@ fn parse_joins_using() {
             JoinOperator::Join,
         )]
     );
-    // Implicit alias form (no AS) is preserved in round-trip
+    // AS is always output in Display for consistency
     one_statement_parses_to(
         "SELECT * FROM t1 JOIN t2 foo USING(c1)",
-        "SELECT * FROM t1 JOIN t2 foo USING(c1)",
+        "SELECT * FROM t1 JOIN t2 AS foo USING(c1)",
     );
     // Test parsing of different join operators
     assert_eq!(
@@ -11355,11 +11355,11 @@ fn parse_select_table_with_index_hints() {
     );
 
     // Test that dialects that don't support table hints will keep parsing the USE as table alias
-    // Input has implicit alias (no AS) which is preserved in round-trip
+    // AS is always output in Display for consistency
     let sql = "SELECT * FROM T USE LIMIT 1";
     let unsupported_dialects = all_dialects_where(|d| !d.supports_table_hints());
     let select = unsupported_dialects
-        .verified_only_select_with_canonical(sql, "SELECT * FROM T USE LIMIT 1");
+        .verified_only_select_with_canonical(sql, "SELECT * FROM T AS USE LIMIT 1");
     assert_eq!(
         select.from,
         vec![TableWithJoins {
@@ -15576,7 +15576,7 @@ fn parse_pipeline_operator() {
     // join pipe operator with alias
     dialects.verified_query_with_canonical(
         "SELECT * FROM users |> JOIN orders o ON users.id = o.user_id",
-        "SELECT * FROM users |> JOIN orders o ON users.id = o.user_id",
+        "SELECT * FROM users |> JOIN orders AS o ON users.id = o.user_id",
     );
     dialects.verified_stmt("SELECT * FROM users |> LEFT JOIN orders AS o ON users.id = o.user_id");
 

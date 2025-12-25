@@ -2629,7 +2629,7 @@ mod f591_derived_tables {
                 }
             }
         );
-        verified_standard_stmt("SELECT x, y FROM (SELECT a, b FROM t) AS derived(x, y)");
+        verified_standard_stmt("SELECT x, y FROM (SELECT a, b FROM t) AS derived (x, y)");
     }
 
     #[test]
@@ -2666,7 +2666,7 @@ mod f591_derived_tables {
             }
         );
         verified_standard_stmt(
-            "SELECT x FROM (SELECT y FROM (SELECT a AS y FROM t) AS sub1) AS sub2(x)",
+            "SELECT x FROM (SELECT y FROM (SELECT a AS y FROM t) AS sub1) AS sub2 (x)",
         );
     }
 

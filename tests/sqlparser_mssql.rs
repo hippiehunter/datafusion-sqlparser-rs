@@ -92,10 +92,10 @@ fn parse_mssql_single_quoted_aliases() {
 
 #[test]
 fn parse_mssql_delimited_identifiers() {
-    // SELECT aliases always get AS, table aliases preserve implicit form (no AS)
+    // AS is always output in Display for both SELECT and table aliases
     let _ = ms().one_statement_parses_to(
         "SELECT [a.b!] [FROM] FROM foo [WHERE]",
-        "SELECT [a.b!] AS [FROM] FROM foo [WHERE]",
+        "SELECT [a.b!] AS [FROM] FROM foo AS [WHERE]",
     );
 }
 

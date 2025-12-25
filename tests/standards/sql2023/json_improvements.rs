@@ -230,15 +230,19 @@ fn t861_03_json_array_multiple_subscripts() {
 #[test]
 fn t862_01_json_array_wildcard() {
     // SQL:2023 T862: JSON array wildcard accessor
-    // NOT YET IMPLEMENTED
-    verified_standard_stmt("SELECT t.data.items[*].price FROM products t");
+    one_statement_parses_to_std(
+        "SELECT t.data.items[*].price FROM products t",
+        "SELECT t.data.items[*].price FROM products AS t",
+    );
 }
 
 #[test]
 fn t862_02_json_array_wildcard_nested() {
     // SQL:2023 T862: JSON array wildcard with nested fields
-    // NOT YET IMPLEMENTED
-    verified_standard_stmt("SELECT doc.orders[*].items[*].sku FROM documents doc");
+    one_statement_parses_to_std(
+        "SELECT doc.orders[*].items[*].sku FROM documents doc",
+        "SELECT doc.orders[*].items[*].sku FROM documents AS doc",
+    );
 }
 
 #[test]

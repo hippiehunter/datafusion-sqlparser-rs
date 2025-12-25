@@ -602,9 +602,10 @@ fn parse_alter_table_constraints_rename() {
 
 #[test]
 fn parse_alter_table_constraints_unique_nulls_distinct() {
-    match pg_and_generic()
-        .verified_stmt("ALTER TABLE t ADD CONSTRAINT b UNIQUE NULLS NOT DISTINCT (c)")
-    {
+    // Test PostgreSQL legacy position (before columns) - parses but outputs in SQL:2023 position
+    let sql_legacy = "ALTER TABLE t ADD CONSTRAINT b UNIQUE NULLS NOT DISTINCT (c)";
+    let sql_standard = "ALTER TABLE t ADD CONSTRAINT b UNIQUE (c) NULLS NOT DISTINCT";
+    match pg_and_generic().one_statement_parses_to(sql_legacy, sql_standard) {
         Statement::AlterTable(alter_table) => match &alter_table.operations[0] {
             AlterTableOperation::AddConstraint {
                 constraint: TableConstraint::Unique(constraint),
@@ -617,7 +618,9 @@ fn parse_alter_table_constraints_unique_nulls_distinct() {
         },
         _ => unreachable!(),
     }
-    pg_and_generic().verified_stmt("ALTER TABLE t ADD CONSTRAINT b UNIQUE NULLS DISTINCT (c)");
+
+    // Test SQL:2023 standard position (after columns)
+    pg_and_generic().verified_stmt("ALTER TABLE t ADD CONSTRAINT b UNIQUE (c) NULLS DISTINCT");
     pg_and_generic().verified_stmt("ALTER TABLE t ADD CONSTRAINT b UNIQUE (c)");
 }
 

@@ -220,8 +220,8 @@ fn s201_02_array_function_return() {
 #[test]
 fn s202_01_array_in_procedures() {
     // SQL:2016 S202: Array parameters in procedures
-    // Note: Parser normalizes "INTEGER ARRAY" to "INTEGER[]" and adds space before (
-    verified_standard_stmt("CREATE PROCEDURE process (arr INTEGER[]) AS BEGIN SELECT 1; END");
+    // Note: Parser normalizes "INTEGER ARRAY" to "INTEGER[]"
+    verified_standard_stmt("CREATE PROCEDURE process(arr INTEGER[]) AS BEGIN SELECT 1; END");
 }
 
 // ==================== S211: User-Defined Cast Functions ====================

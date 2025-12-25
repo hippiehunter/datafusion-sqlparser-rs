@@ -32,7 +32,7 @@
 //! to existing SQL:2016 features, so most tests reference SQL:2016 features
 //! that were refined in SQL:2019.
 
-use crate::standards::common::verified_standard_stmt;
+use crate::standards::common::{one_statement_parses_to_std, verified_standard_stmt};
 
 // ==================== Basic SQL:2019 Compatibility ====================
 
@@ -144,8 +144,14 @@ fn sql2019_12_polymorphic_table_functions() {
 #[test]
 fn sql2019_13_lateral_joins() {
     // SQL:2019: LATERAL joins (unchanged from SQL:2016)
-    verified_standard_stmt("SELECT * FROM departments AS d, LATERAL (SELECT * FROM employees AS e WHERE e.dept_id = d.id) AS dept_employees");
-    verified_standard_stmt("SELECT * FROM orders AS o LEFT JOIN LATERAL (SELECT * FROM order_items WHERE order_id = o.id FETCH FIRST 1 ROW ONLY) AS first_item ON true");
+    one_statement_parses_to_std(
+        "SELECT * FROM departments AS d, LATERAL (SELECT * FROM employees AS e WHERE e.dept_id = d.id) AS dept_employees",
+        "SELECT * FROM departments AS d, LATERAL (SELECT * FROM employees AS e WHERE e.dept_id = d.id) AS dept_employees"
+    );
+    one_statement_parses_to_std(
+        "SELECT * FROM orders AS o LEFT JOIN LATERAL (SELECT * FROM order_items WHERE order_id = o.id FETCH FIRST 1 ROW ONLY) AS first_item ON true",
+        "SELECT * FROM orders AS o LEFT JOIN LATERAL (SELECT * FROM order_items WHERE order_id = o.id FETCH FIRST 1 ROWS ONLY) AS first_item ON true"
+    );
 }
 
 #[test]

@@ -32,7 +32,7 @@
 //! - X400: Name and identifier mapping
 //! - X410: Alter column data type: XML type
 
-use crate::standards::common::verified_standard_stmt;
+use crate::standards::common::{one_statement_parses_to_std, verified_standard_stmt};
 
 // ==================== X010-X016: XML Type ====================
 
@@ -300,8 +300,8 @@ fn x120_02_xml_function_return() {
 #[test]
 fn x121_01_xml_procedure_parameter() {
     // SQL:2016 X121: XML in procedure
-    // Note: XML parsed as Custom type, space added before (
-    verified_standard_stmt("CREATE PROCEDURE proc (doc XML) AS BEGIN SELECT 1; END");
+    // Note: XML parsed as Custom type
+    verified_standard_stmt("CREATE PROCEDURE proc(doc XML) AS BEGIN SELECT 1; END");
 }
 
 // ==================== X221: XML Passing Mechanism ====================
@@ -455,7 +455,10 @@ fn x_series_xmltable_join() {
 #[test]
 fn x_series_xmltable_lateral() {
     // SQL:2016 X-series: XMLTABLE with LATERAL - NOT YET IMPLEMENTED
-    verified_standard_stmt("SELECT t.id, x.* FROM t, LATERAL XMLTABLE('/items/item' PASSING t.xml_data COLUMNS name VARCHAR(50) PATH 'name') x");
+    one_statement_parses_to_std(
+        "SELECT t.id, x.* FROM t, LATERAL XMLTABLE('/items/item' PASSING t.xml_data COLUMNS name VARCHAR(50) PATH 'name') x",
+        "SELECT t.id, x.* FROM t, LATERAL XMLTABLE('/items/item' PASSING t.xml_data COLUMNS name VARCHAR(50) PATH 'name') AS x"
+    );
 }
 
 #[test]
@@ -473,7 +476,10 @@ fn x_series_xml_update() {
 #[test]
 fn x_series_nested_xml_construction() {
     // SQL:2016 X-series: Deeply nested XML construction - NOT YET IMPLEMENTED
-    verified_standard_stmt("SELECT XMLELEMENT(NAME 'order', XMLELEMENT(NAME 'customer', XMLFOREST(c.name, c.address)), XMLAGG(XMLELEMENT(NAME 'item', i.product))) FROM customers c JOIN items i ON c.id = i.customer_id GROUP BY c.id");
+    one_statement_parses_to_std(
+        "SELECT XMLELEMENT(NAME 'order', XMLELEMENT(NAME 'customer', XMLFOREST(c.name, c.address)), XMLAGG(XMLELEMENT(NAME 'item', i.product))) FROM customers c JOIN items i ON c.id = i.customer_id GROUP BY c.id",
+        "SELECT XMLELEMENT(NAME 'order', XMLELEMENT(NAME 'customer', XMLFOREST(c.name, c.address)), XMLAGG(XMLELEMENT(NAME 'item', i.product))) FROM customers AS c JOIN items AS i ON c.id = i.customer_id GROUP BY c.id"
+    );
 }
 
 #[test]

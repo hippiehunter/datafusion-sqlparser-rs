@@ -1006,7 +1006,7 @@ mod e051_basic_query_specification {
         });
 
         verified_with_ast!(
-            "SELECT col1, col2 FROM (SELECT a, b FROM t) AS derived(col1, col2)",
+            "SELECT col1, col2 FROM (SELECT a, b FROM t) AS derived (col1, col2)",
             |stmt: Statement| {
                 if let Statement::Query(query) = stmt {
                     if let SetExpr::Select(select) = query.body.as_ref() {
@@ -1024,7 +1024,7 @@ mod e051_basic_query_specification {
         );
 
         verified_with_ast!(
-            "SELECT first, last FROM users AS u(first, last)",
+            "SELECT first, last FROM users AS u (first, last)",
             |stmt: Statement| {
                 if let Statement::Query(query) = stmt {
                     if let SetExpr::Select(select) = query.body.as_ref() {

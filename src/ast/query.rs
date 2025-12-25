@@ -2021,11 +2021,7 @@ impl fmt::Display for TableFactor {
                     write!(f, " {version}")?;
                 }
                 if let Some(alias) = alias {
-                    if alias.implicit {
-                        write!(f, " {alias}")?;
-                    } else {
-                        write!(f, " AS {alias}")?;
-                    }
+                    write!(f, " AS {alias}")?;
                 }
                 if !index_hints.is_empty() {
                     write!(f, " {}", display_separated(index_hints, " "))?;
@@ -2052,11 +2048,7 @@ impl fmt::Display for TableFactor {
                 NewLine.fmt(f)?;
                 f.write_str(")")?;
                 if let Some(alias) = alias {
-                    if alias.implicit {
-                        write!(f, " {alias}")?;
-                    } else {
-                        write!(f, " AS {alias}")?;
-                    }
+                    write!(f, " AS {alias}")?;
                 }
                 Ok(())
             }
@@ -2288,11 +2280,7 @@ impl fmt::Display for TableFactor {
                     columns = display_comma_separated(columns)
                 )?;
                 if let Some(alias) = alias {
-                    if alias.implicit {
-                        write!(f, " {alias}")?;
-                    } else {
-                        write!(f, " AS {alias}")?;
-                    }
+                    write!(f, " AS {alias}")?;
                 }
                 Ok(())
             }
@@ -2341,8 +2329,8 @@ pub struct TableAlias {
     pub name: Ident,
     pub columns: Vec<TableAliasColumnDef>,
     /// Whether the alias was specified without the `AS` keyword (implicit alias).
-    /// When true, display will omit `AS` for round-trip compatibility.
-    /// Note: This field is excluded from PartialEq and Hash to allow `table t` and `table AS t`
+    /// Note: Display always outputs `AS` regardless of this field's value.
+    /// This field is excluded from PartialEq and Hash to allow `table t` and `table AS t`
     /// to compare as equal for AST comparison purposes.
     #[cfg_attr(feature = "serde", serde(default))]
     pub implicit: bool,

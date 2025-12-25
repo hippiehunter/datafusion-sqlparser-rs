@@ -9114,6 +9114,7 @@ impl<'a> Parser<'a> {
                 .into(),
             ))
         } else if self.parse_keyword(Keyword::UNIQUE) {
+            let nulls_distinct = self.parse_optional_nulls_distinct()?;
             let characteristics = self.parse_constraint_characteristics()?;
             Ok(Some(
                 UniqueConstraint {
@@ -9124,7 +9125,7 @@ impl<'a> Parser<'a> {
                     columns: vec![],
                     index_options: vec![],
                     characteristics,
-                    nulls_distinct: NullsDistinctOption::None,
+                    nulls_distinct,
                 }
                 .into(),
             ))
@@ -9526,13 +9527,25 @@ impl<'a> Parser<'a> {
                         .expected("`index_name` or `(column_name [, ...])`", self.peek_token());
                 }
 
-                let nulls_distinct = self.parse_optional_nulls_distinct()?;
+                // Parse NULLS DISTINCT before columns (PostgreSQL legacy position)
+                let nulls_distinct_before = self.parse_optional_nulls_distinct()?;
 
                 // optional index name
                 let index_name = self.parse_optional_ident()?;
                 let index_type = self.parse_optional_using_then_index_type()?;
 
                 let columns = self.parse_parenthesized_index_column_list()?;
+
+                // Parse NULLS DISTINCT after columns (SQL:2023 standard position)
+                let nulls_distinct_after = self.parse_optional_nulls_distinct()?;
+
+                // Use the one that was specified (after takes precedence if both present)
+                let nulls_distinct = if nulls_distinct_after != NullsDistinctOption::None {
+                    nulls_distinct_after
+                } else {
+                    nulls_distinct_before
+                };
+
                 let index_options = self.parse_index_options()?;
                 let characteristics = self.parse_constraint_characteristics()?;
                 Ok(Some(

@@ -544,14 +544,16 @@ impl fmt::Display for UniqueConstraint {
         use crate::ast::ddl::{display_constraint_name, display_option, display_option_spaced};
         write!(
             f,
-            "{}UNIQUE{}{:>}{}{} ({})",
+            "{}UNIQUE{:>}{}{} ({})",
             display_constraint_name(&self.name),
-            self.nulls_distinct,
             self.index_type_display,
             display_option_spaced(&self.index_name),
             display_option(" USING ", "", &self.index_type),
             display_comma_separated(&self.columns),
         )?;
+
+        // Output NULLS DISTINCT after columns (SQL:2023 standard position)
+        write!(f, "{}", self.nulls_distinct)?;
 
         if !self.index_options.is_empty() {
             write!(f, " {}", display_separated(&self.index_options, " "))?;

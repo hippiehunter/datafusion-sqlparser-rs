@@ -47,7 +47,7 @@
 //!   - UNIQUE NULLS DISTINCT
 //!   - UNIQUE NULLS NOT DISTINCT
 
-use crate::standards::common::verified_standard_stmt;
+use crate::standards::common::{one_statement_parses_to_std, verified_standard_stmt};
 use crate::verified_with_ast;
 use sqlparser::ast::{
     ColumnDef, CreateTable, DataType, Expr, Function, FunctionArg, FunctionArgExpr,
@@ -799,13 +799,19 @@ fn t133_01_cycle_basic() {
 #[test]
 fn t133_02_cycle_boolean_values() {
     // SQL:2023 T133: Enhanced cycle marks with boolean type - NOT YET IMPLEMENTED
-    verified_standard_stmt("WITH RECURSIVE hierarchy AS (SELECT id, parent_id FROM employees UNION ALL SELECT e.id, e.parent_id FROM employees e JOIN hierarchy h ON e.parent_id = h.id) CYCLE id SET has_cycle TO '1' DEFAULT '0' USING traversal_path SELECT * FROM hierarchy");
+    one_statement_parses_to_std(
+        "WITH RECURSIVE hierarchy AS (SELECT id, parent_id FROM employees UNION ALL SELECT e.id, e.parent_id FROM employees e JOIN hierarchy h ON e.parent_id = h.id) CYCLE id SET has_cycle TO '1' DEFAULT '0' USING traversal_path SELECT * FROM hierarchy",
+        "WITH RECURSIVE hierarchy AS (SELECT id, parent_id FROM employees UNION ALL SELECT e.id, e.parent_id FROM employees AS e JOIN hierarchy AS h ON e.parent_id = h.id) CYCLE id SET has_cycle TO '1' DEFAULT '0' USING traversal_path SELECT * FROM hierarchy"
+    );
 }
 
 #[test]
 fn t133_03_cycle_complex() {
     // SQL:2023 T133: CYCLE with multiple columns - NOT YET IMPLEMENTED
-    verified_standard_stmt("WITH RECURSIVE graph AS (SELECT node1, node2 FROM edges UNION ALL SELECT e.node1, e.node2 FROM edges e JOIN graph g ON e.node1 = g.node2) CYCLE node1, node2 SET is_cyclic TO 'Y' DEFAULT 'N' USING path_array SELECT * FROM graph");
+    one_statement_parses_to_std(
+        "WITH RECURSIVE graph AS (SELECT node1, node2 FROM edges UNION ALL SELECT e.node1, e.node2 FROM edges e JOIN graph g ON e.node1 = g.node2) CYCLE node1, node2 SET is_cyclic TO 'Y' DEFAULT 'N' USING path_array SELECT * FROM graph",
+        "WITH RECURSIVE graph AS (SELECT node1, node2 FROM edges UNION ALL SELECT e.node1, e.node2 FROM edges AS e JOIN graph AS g ON e.node1 = g.node2) CYCLE node1, node2 SET is_cyclic TO 'Y' DEFAULT 'N' USING path_array SELECT * FROM graph"
+    );
 }
 
 // ==================== T626: ANY_VALUE Aggregate Function ====================
