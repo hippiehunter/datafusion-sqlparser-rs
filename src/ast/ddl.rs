@@ -4347,7 +4347,11 @@ pub struct GraphEdgeTableDefinition {
 
 impl fmt::Display for GraphEdgeTableDefinition {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} SOURCE {} DESTINATION {}", self.table, self.source, self.destination)?;
+        write!(
+            f,
+            "{} SOURCE {} DESTINATION {}",
+            self.table, self.source, self.destination
+        )?;
         if let Some(label) = &self.label {
             write!(f, " LABEL {}", label)?;
         }
@@ -4384,14 +4388,22 @@ impl fmt::Display for CreatePropertyGraph {
         write!(f, "{} ", self.name)?;
 
         if !self.vertex_tables.is_empty() {
-            write!(f, "VERTEX TABLES ({})", display_comma_separated(&self.vertex_tables))?;
+            write!(
+                f,
+                "VERTEX TABLES ({})",
+                display_comma_separated(&self.vertex_tables)
+            )?;
             if !self.edge_tables.is_empty() {
                 write!(f, " ")?;
             }
         }
 
         if !self.edge_tables.is_empty() {
-            write!(f, "EDGE TABLES ({})", display_comma_separated(&self.edge_tables))?;
+            write!(
+                f,
+                "EDGE TABLES ({})",
+                display_comma_separated(&self.edge_tables)
+            )?;
         }
 
         Ok(())

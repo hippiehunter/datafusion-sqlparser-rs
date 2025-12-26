@@ -1566,12 +1566,13 @@ impl<'a> Tokenizer<'a> {
 
                     match chars.peek() {
                         Some('-') => {
-                            let is_comment = if self.dialect.requires_single_line_comment_whitespace() {
-                                Some(' ') == chars.peekable.clone().nth(1)
-                            } else {
-                                // Don't treat --> as a comment (used in SQL/PGQ graph patterns)
-                                Some('>') != chars.peekable.clone().nth(1)
-                            };
+                            let is_comment =
+                                if self.dialect.requires_single_line_comment_whitespace() {
+                                    Some(' ') == chars.peekable.clone().nth(1)
+                                } else {
+                                    // Don't treat --> as a comment (used in SQL/PGQ graph patterns)
+                                    Some('>') != chars.peekable.clone().nth(1)
+                                };
 
                             if is_comment {
                                 chars.next(); // consume second '-'

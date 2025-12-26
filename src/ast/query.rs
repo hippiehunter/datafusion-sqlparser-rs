@@ -2175,7 +2175,7 @@ impl fmt::Display for EdgePattern {
                 // For Range and AtMost quantifiers, use *n..m syntax (star-range form)
                 // Other quantifiers (*, +, ?, {n}, {n,}) use their default Display
                 match quantifier {
-                    RepetitionQuantifier::Range(0, m) => write!(f, "*..{m}")?,  // *..5 means 0 to 5
+                    RepetitionQuantifier::Range(0, m) => write!(f, "*..{m}")?, // *..5 means 0 to 5
                     RepetitionQuantifier::Range(n, m) => write!(f, "*{n}..{m}")?,
                     RepetitionQuantifier::AtMost(m) => write!(f, "*..{m}")?,
                     _ => write!(f, "{quantifier}")?,

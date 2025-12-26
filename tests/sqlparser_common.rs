@@ -17365,7 +17365,10 @@ fn test_error_position_in_message() {
     let err = result.unwrap_err().to_string();
     // Error should include position info (Line/Column) or meaningful context
     assert!(
-        err.contains("Line") || err.contains("Column") || err.contains("EOF") || err.contains("Expected"),
+        err.contains("Line")
+            || err.contains("Column")
+            || err.contains("EOF")
+            || err.contains("Expected"),
         "Expected error to include position info: {}",
         err
     );

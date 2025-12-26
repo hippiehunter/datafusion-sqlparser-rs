@@ -41,7 +41,7 @@ fn b200_02_table_function_with_alias() {
 fn b200_03_table_function_in_join() {
     one_statement_parses_to_std(
         "SELECT * FROM orders o JOIN TABLE(get_order_items(o.id)) AS items ON true",
-        "SELECT * FROM orders AS o JOIN TABLE(get_order_items(o.id)) AS items ON true"
+        "SELECT * FROM orders AS o JOIN TABLE(get_order_items(o.id)) AS items ON true",
     );
 }
 
@@ -49,7 +49,7 @@ fn b200_03_table_function_in_join() {
 fn b200_04_table_function_lateral() {
     one_statement_parses_to_std(
         "SELECT * FROM customers c, LATERAL TABLE(get_customer_orders(c.id)) AS orders",
-        "SELECT * FROM customers AS c, LATERAL TABLE(get_customer_orders(c.id)) AS orders"
+        "SELECT * FROM customers AS c, LATERAL TABLE(get_customer_orders(c.id)) AS orders",
     );
 }
 
@@ -200,7 +200,7 @@ fn ptf_in_exists() {
         "SELECT * FROM customers c \
          WHERE EXISTS (SELECT 1 FROM TABLE(get_active_subscriptions(c.id)))",
         "SELECT * FROM customers AS c \
-         WHERE EXISTS (SELECT 1 FROM TABLE(get_active_subscriptions(c.id)))"
+         WHERE EXISTS (SELECT 1 FROM TABLE(get_active_subscriptions(c.id)))",
     );
 }
 
