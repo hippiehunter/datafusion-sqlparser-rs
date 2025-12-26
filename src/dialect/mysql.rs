@@ -19,10 +19,11 @@
 use alloc::boxed::Box;
 
 use crate::{
-    ast::{BinaryOperator, Expr, LockTable, LockTableType, Statement},
+    ast::{AttachedToken, BinaryOperator, Expr, LockTable, LockTableType, Statement},
     dialect::Dialect,
     keywords::Keyword,
     parser::{Parser, ParserError},
+    tokenizer::TokenWithSpan,
 };
 
 use super::keywords;
@@ -103,10 +104,23 @@ impl Dialect for MySqlDialect {
     }
 
     fn parse_statement(&self, parser: &Parser) -> Option<Result<Statement, ParserError>> {
-        if parser.parse_keywords(&[Keyword::LOCK, Keyword::TABLES]) {
-            Some(parse_lock_tables(parser))
-        } else if parser.parse_keywords(&[Keyword::UNLOCK, Keyword::TABLES]) {
-            Some(parse_unlock_tables(parser))
+        // Need to peek first to get the token before consuming
+        if parser.peek_keyword(Keyword::LOCK) {
+            let lock_token = parser.next_token();
+            if parser.parse_keyword(Keyword::TABLES) {
+                Some(parse_lock_tables(parser, lock_token))
+            } else {
+                parser.prev_token();
+                None
+            }
+        } else if parser.peek_keyword(Keyword::UNLOCK) {
+            let unlock_token = parser.next_token();
+            if parser.parse_keyword(Keyword::TABLES) {
+                Some(parse_unlock_tables(parser, unlock_token))
+            } else {
+                parser.prev_token();
+                None
+            }
         } else {
             None
         }
@@ -171,9 +185,12 @@ impl Dialect for MySqlDialect {
 
 /// `LOCK TABLES`
 /// <https://dev.mysql.com/doc/refman/8.0/en/lock-tables.html>
-fn parse_lock_tables(parser: &Parser) -> Result<Statement, ParserError> {
+fn parse_lock_tables(parser: &Parser, lock_token: TokenWithSpan) -> Result<Statement, ParserError> {
     let tables = parser.parse_comma_separated(parse_lock_table)?;
-    Ok(Statement::LockTables { tables })
+    Ok(Statement::LockTables {
+        lock_token: AttachedToken(lock_token.to_static()),
+        tables,
+    })
 }
 
 // tbl_name [[AS] alias] lock_type
@@ -211,6 +228,8 @@ fn parse_lock_tables_type(parser: &Parser) -> Result<LockTableType, ParserError>
 
 /// UNLOCK TABLES
 /// <https://dev.mysql.com/doc/refman/8.0/en/lock-tables.html>
-fn parse_unlock_tables(_parser: &Parser) -> Result<Statement, ParserError> {
-    Ok(Statement::UnlockTables)
+fn parse_unlock_tables(_parser: &Parser, unlock_token: TokenWithSpan) -> Result<Statement, ParserError> {
+    Ok(Statement::UnlockTables {
+        unlock_token: AttachedToken(unlock_token.to_static()),
+    })
 }

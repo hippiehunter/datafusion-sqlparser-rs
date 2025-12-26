@@ -24,7 +24,7 @@ use alloc::{
     vec,
     vec::Vec,
 };
-use helpers::attached_token::AttachedToken;
+pub use helpers::attached_token::AttachedToken;
 
 use core::cmp::Ordering;
 use core::ops::Deref;
@@ -854,21 +854,53 @@ pub enum Expr {
         path: JsonPath,
     },
     /// `IS FALSE` operator
-    IsFalse(Box<Expr>),
+    IsFalse {
+        expr: Box<Expr>,
+        /// Token for the last keyword in the expression (for span tracking)
+        suffix_token: AttachedToken,
+    },
     /// `IS NOT FALSE` operator
-    IsNotFalse(Box<Expr>),
+    IsNotFalse {
+        expr: Box<Expr>,
+        /// Token for the last keyword in the expression (for span tracking)
+        suffix_token: AttachedToken,
+    },
     /// `IS TRUE` operator
-    IsTrue(Box<Expr>),
+    IsTrue {
+        expr: Box<Expr>,
+        /// Token for the last keyword in the expression (for span tracking)
+        suffix_token: AttachedToken,
+    },
     /// `IS NOT TRUE` operator
-    IsNotTrue(Box<Expr>),
+    IsNotTrue {
+        expr: Box<Expr>,
+        /// Token for the last keyword in the expression (for span tracking)
+        suffix_token: AttachedToken,
+    },
     /// `IS NULL` operator
-    IsNull(Box<Expr>),
+    IsNull {
+        expr: Box<Expr>,
+        /// Token for the last keyword in the expression (for span tracking)
+        suffix_token: AttachedToken,
+    },
     /// `IS NOT NULL` operator
-    IsNotNull(Box<Expr>),
+    IsNotNull {
+        expr: Box<Expr>,
+        /// Token for the last keyword in the expression (for span tracking)
+        suffix_token: AttachedToken,
+    },
     /// `IS UNKNOWN` operator
-    IsUnknown(Box<Expr>),
+    IsUnknown {
+        expr: Box<Expr>,
+        /// Token for the last keyword in the expression (for span tracking)
+        suffix_token: AttachedToken,
+    },
     /// `IS NOT UNKNOWN` operator
-    IsNotUnknown(Box<Expr>),
+    IsNotUnknown {
+        expr: Box<Expr>,
+        /// Token for the last keyword in the expression (for span tracking)
+        suffix_token: AttachedToken,
+    },
     /// `IS DISTINCT FROM` operator
     IsDistinctFrom(Box<Expr>, Box<Expr>),
     /// `IS NOT DISTINCT FROM` operator
@@ -1745,14 +1777,14 @@ impl fmt::Display for Expr {
                 }
                 Ok(())
             }
-            Expr::IsTrue(ast) => write!(f, "{ast} IS TRUE"),
-            Expr::IsNotTrue(ast) => write!(f, "{ast} IS NOT TRUE"),
-            Expr::IsFalse(ast) => write!(f, "{ast} IS FALSE"),
-            Expr::IsNotFalse(ast) => write!(f, "{ast} IS NOT FALSE"),
-            Expr::IsNull(ast) => write!(f, "{ast} IS NULL"),
-            Expr::IsNotNull(ast) => write!(f, "{ast} IS NOT NULL"),
-            Expr::IsUnknown(ast) => write!(f, "{ast} IS UNKNOWN"),
-            Expr::IsNotUnknown(ast) => write!(f, "{ast} IS NOT UNKNOWN"),
+            Expr::IsTrue { expr, .. } => write!(f, "{expr} IS TRUE"),
+            Expr::IsNotTrue { expr, .. } => write!(f, "{expr} IS NOT TRUE"),
+            Expr::IsFalse { expr, .. } => write!(f, "{expr} IS FALSE"),
+            Expr::IsNotFalse { expr, .. } => write!(f, "{expr} IS NOT FALSE"),
+            Expr::IsNull { expr, .. } => write!(f, "{expr} IS NULL"),
+            Expr::IsNotNull { expr, .. } => write!(f, "{expr} IS NOT NULL"),
+            Expr::IsUnknown { expr, .. } => write!(f, "{expr} IS UNKNOWN"),
+            Expr::IsNotUnknown { expr, .. } => write!(f, "{expr} IS NOT UNKNOWN"),
             Expr::InList {
                 expr,
                 list,
@@ -2940,6 +2972,8 @@ impl fmt::Display for LoopStatement {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct LabeledBlock {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
     /// Optional label before the BEGIN keyword
     pub label: Option<Ident>,
     /// The statements within the block
@@ -2952,15 +2986,16 @@ pub struct LabeledBlock {
 
 impl fmt::Display for LabeledBlock {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if let Some(label) = &self.label {
+        let LabeledBlock { token: _, label, statements, exception, end_label } = self;
+        if let Some(label) = label {
             write!(f, "{label}: ")?;
         }
         write!(f, "BEGIN")?;
-        if !self.statements.is_empty() {
+        if !statements.is_empty() {
             write!(f, " ")?;
-            format_statement_list(f, &self.statements)?;
+            format_statement_list(f, statements)?;
         }
-        if let Some(exception) = &self.exception {
+        if let Some(exception) = exception {
             write!(f, " EXCEPTION")?;
             for when in exception {
                 write!(f, " WHEN ")?;
@@ -2977,7 +3012,7 @@ impl fmt::Display for LabeledBlock {
             }
         }
         write!(f, " END")?;
-        if let Some(end_label) = &self.end_label {
+        if let Some(end_label) = end_label {
             write!(f, " {end_label}")?;
         }
         Ok(())
@@ -3044,6 +3079,8 @@ impl fmt::Display for RepeatStatement {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct ForStatement {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
     /// Optional label before the FOR keyword
     pub label: Option<Ident>,
     /// The loop variable name (holds the row data in each iteration)
@@ -3060,15 +3097,16 @@ pub struct ForStatement {
 
 impl fmt::Display for ForStatement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if let Some(label) = &self.label {
+        let ForStatement { token: _, label, loop_name, cursor_name, query, body, end_label } = self;
+        if let Some(label) = label {
             write!(f, "{label}: ")?;
         }
-        write!(f, "FOR {} AS ", self.loop_name)?;
-        if let Some(cursor_name) = &self.cursor_name {
+        write!(f, "FOR {} AS ", loop_name)?;
+        if let Some(cursor_name) = cursor_name {
             write!(f, "{cursor_name} CURSOR FOR ")?;
         }
-        write!(f, "{} DO {} END FOR", self.query, self.body)?;
-        if let Some(end_label) = &self.end_label {
+        write!(f, "{} DO {} END FOR", query, body)?;
+        if let Some(end_label) = end_label {
             write!(f, " {end_label}")?;
         }
         Ok(())
@@ -3136,17 +3174,20 @@ impl fmt::Display for IterateStatement {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct GetDiagnosticsStatement {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
     pub stacked: bool,
     pub kind: GetDiagnosticsKind,
 }
 
 impl fmt::Display for GetDiagnosticsStatement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let GetDiagnosticsStatement { token: _, stacked, kind } = self;
         write!(f, "GET ")?;
-        if self.stacked {
+        if *stacked {
             write!(f, "STACKED ")?;
         }
-        write!(f, "DIAGNOSTICS {}", self.kind)
+        write!(f, "DIAGNOSTICS {}", kind)
     }
 }
 
@@ -3435,16 +3476,19 @@ impl fmt::Display for RaiseStatementValue {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct SignalStatement {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
     pub sqlstate: String,
     pub set_items: Vec<SignalSetItem>,
 }
 
 impl fmt::Display for SignalStatement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "SIGNAL SQLSTATE '{}'", self.sqlstate)?;
-        if !self.set_items.is_empty() {
+        let SignalStatement { token: _, sqlstate, set_items } = self;
+        write!(f, "SIGNAL SQLSTATE '{}'", sqlstate)?;
+        if !set_items.is_empty() {
             write!(f, " SET ")?;
-            write!(f, "{}", display_comma_separated(&self.set_items))?;
+            write!(f, "{}", display_comma_separated(set_items))?;
         }
         Ok(())
     }
@@ -3461,19 +3505,22 @@ impl fmt::Display for SignalStatement {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct ResignalStatement {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
     pub sqlstate: Option<String>,
     pub set_items: Vec<SignalSetItem>,
 }
 
 impl fmt::Display for ResignalStatement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let ResignalStatement { token: _, sqlstate, set_items } = self;
         write!(f, "RESIGNAL")?;
-        if let Some(sqlstate) = &self.sqlstate {
+        if let Some(sqlstate) = sqlstate {
             write!(f, " SQLSTATE '{}'", sqlstate)?;
         }
-        if !self.set_items.is_empty() {
+        if !set_items.is_empty() {
             write!(f, " SET ")?;
-            write!(f, "{}", display_comma_separated(&self.set_items))?;
+            write!(f, "{}", display_comma_separated(set_items))?;
         }
         Ok(())
     }
@@ -3887,6 +3934,22 @@ pub enum CreatePolicyCommand {
     Delete,
 }
 
+/// Wrapper for SET statement with token tracking
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct SetStatement {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
+    pub inner: Set,
+}
+
+impl fmt::Display for SetStatement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.inner)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -4176,7 +4239,7 @@ pub enum Statement {
     /// ```
     /// Analyze (Hive)
     Analyze(Analyze),
-    Set(Set),
+    Set(SetStatement),
     /// ```sql
     /// TRUNCATE
     /// ```
@@ -4318,6 +4381,8 @@ pub enum Statement {
     /// ```
     /// See [DuckDB](https://duckdb.org/docs/sql/statements/create_secret.html)
     CreateSecret {
+        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+        token: AttachedToken,
         or_replace: bool,
         temporary: Option<bool>,
         if_not_exists: bool,
@@ -4333,6 +4398,8 @@ pub enum Statement {
     /// ```
     /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-createpolicy.html)
     CreatePolicy {
+        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+        token: AttachedToken,
         name: Ident,
         #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
         table_name: ObjectName,
@@ -4408,6 +4475,8 @@ pub enum Statement {
     /// ALTER ROLE
     /// ```
     AlterRole {
+        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+        token: AttachedToken,
         name: Ident,
         operation: AlterRoleOperation,
     },
@@ -4416,6 +4485,8 @@ pub enum Statement {
     /// ```
     /// (Postgresql-specific)
     AlterPolicy {
+        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+        token: AttachedToken,
         name: Ident,
         #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
         table_name: ObjectName,
@@ -4441,6 +4512,8 @@ pub enum Statement {
     /// ```
     /// See <https://docs.snowflake.com/en/sql-reference/sql/alter-session>
     AlterSession {
+        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+        token: AttachedToken,
         /// true is to set for the session parameters, false is to unset
         set: bool,
         /// The session parameters to set or unset
@@ -4451,6 +4524,8 @@ pub enum Statement {
     /// ```
     /// SQL:2016 T174: Sequence generator support
     AlterSequence {
+        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+        token: AttachedToken,
         name: ObjectName,
         if_exists: bool,
         sequence_options: Vec<SequenceOptions>,
@@ -4461,6 +4536,8 @@ pub enum Statement {
     /// ```
     /// (SQLite-specific)
     AttachDatabase {
+        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+        token: AttachedToken,
         /// The name to bind to the newly attached database
         schema_name: Ident,
         /// An expression that indicates the path to the database file
@@ -4472,6 +4549,7 @@ pub enum Statement {
     /// DROP [TABLE, VIEW, ...]
     /// ```
     Drop {
+        drop_token: AttachedToken,
         /// The type of the object to drop: TABLE, VIEW, etc.
         object_type: ObjectType,
         /// An optional `IF EXISTS` clause. (Non-standard.)
@@ -4519,6 +4597,8 @@ pub enum Statement {
     /// DROP PROCEDURE
     /// ```
     DropProcedure {
+        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+        token: AttachedToken,
         if_exists: bool,
         /// One or more function to drop
         proc_desc: Vec<FunctionDesc>,
@@ -4529,6 +4609,8 @@ pub enum Statement {
     /// DROP SECRET
     /// ```
     DropSecret {
+        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+        token: AttachedToken,
         if_exists: bool,
         temporary: Option<bool>,
         name: Ident,
@@ -4539,6 +4621,8 @@ pub enum Statement {
     /// ```
     /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-droppolicy.html)
     DropPolicy {
+        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+        token: AttachedToken,
         if_exists: bool,
         name: Ident,
         table_name: ObjectName,
@@ -4560,6 +4644,7 @@ pub enum Statement {
     /// Note: this is a PostgreSQL-specific statement,
     /// but may also compatible with other SQL.
     Declare {
+        declare_token: AttachedToken,
         stmts: Vec<Declare>,
     },
     /// ```sql
@@ -4585,6 +4670,7 @@ pub enum Statement {
     /// Note: this is a PostgreSQL-specific statement,
     /// but may also compatible with other SQL.
     Fetch {
+        fetch_token: AttachedToken,
         /// Cursor name
         name: Ident,
         direction: FetchDirection,
@@ -4599,6 +4685,7 @@ pub enum Statement {
     /// Note: this is a Mysql-specific statement,
     /// but may also compatible with other SQL.
     Flush {
+        flush_token: AttachedToken,
         object_type: FlushType,
         location: Option<FlushLocation>,
         channel: Option<String>,
@@ -4613,12 +4700,15 @@ pub enum Statement {
     /// Note: this is a PostgreSQL-specific statement,
     /// but may also compatible with other SQL.
     Discard {
+        /// The `DISCARD` token
+        discard_token: AttachedToken,
         object_type: DiscardObject,
     },
     /// `SHOW FUNCTIONS`
     ///
     /// Note: this is a Presto-specific statement.
     ShowFunctions {
+        show_token: AttachedToken,
         filter: Option<ShowStatementFilter>,
     },
     /// ```sql
@@ -4627,6 +4717,7 @@ pub enum Statement {
     ///
     /// Note: this is a PostgreSQL-specific statement.
     ShowVariable {
+        show_token: AttachedToken,
         variable: Vec<Ident>,
     },
     /// ```sql
@@ -4635,6 +4726,8 @@ pub enum Statement {
     ///
     /// Note: this is a MySQL-specific statement.
     ShowStatus {
+        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+        token: AttachedToken,
         filter: Option<ShowStatementFilter>,
         global: bool,
         session: bool,
@@ -4645,6 +4738,7 @@ pub enum Statement {
     ///
     /// Note: this is a MySQL-specific statement.
     ShowVariables {
+        show_token: AttachedToken,
         filter: Option<ShowStatementFilter>,
         global: bool,
         session: bool,
@@ -4655,6 +4749,7 @@ pub enum Statement {
     ///
     /// Note: this is a MySQL-specific statement.
     ShowCreate {
+        show_token: AttachedToken,
         obj_type: ShowCreateObject,
         obj_name: ObjectName,
     },
@@ -4662,6 +4757,7 @@ pub enum Statement {
     /// SHOW COLUMNS
     /// ```
     ShowColumns {
+        show_token: AttachedToken,
         extended: bool,
         full: bool,
         show_options: ShowStatementOptions,
@@ -4670,6 +4766,7 @@ pub enum Statement {
     /// SHOW DATABASES
     /// ```
     ShowDatabases {
+        show_token: AttachedToken,
         terse: bool,
         history: bool,
         show_options: ShowStatementOptions,
@@ -4678,6 +4775,7 @@ pub enum Statement {
     /// SHOW SCHEMAS
     /// ```
     ShowSchemas {
+        show_token: AttachedToken,
         terse: bool,
         history: bool,
         show_options: ShowStatementOptions,
@@ -4698,6 +4796,7 @@ pub enum Statement {
     /// SHOW TABLES
     /// ```
     ShowTables {
+        show_token: AttachedToken,
         terse: bool,
         history: bool,
         extended: bool,
@@ -4719,6 +4818,7 @@ pub enum Statement {
     ///
     /// Note: this is a MySQL-specific statement.
     ShowCollation {
+        show_token: AttachedToken,
         filter: Option<ShowStatementFilter>,
     },
     /// ```sql
@@ -4735,6 +4835,8 @@ pub enum Statement {
     /// ```
     /// If `begin` is true
     StartTransaction {
+        /// The `START` or `BEGIN` token
+        start_token: AttachedToken,
         modes: Vec<TransactionMode>,
         begin: bool,
         transaction: Option<BeginTransactionKind>,
@@ -4771,6 +4873,8 @@ pub enum Statement {
     ///
     /// Note: this is a PostgreSQL-specific statement.
     Comment {
+        /// The `COMMENT` token
+        comment_token: AttachedToken,
         object_type: CommentObject,
         object_name: ObjectName,
         comment: Option<String>,
@@ -4788,6 +4892,8 @@ pub enum Statement {
     /// ```
     /// If `end` is true
     Commit {
+        /// The `COMMIT` or `END` token
+        commit_token: AttachedToken,
         chain: bool,
         end: bool,
         modifier: Option<TransactionModifier>,
@@ -4796,6 +4902,8 @@ pub enum Statement {
     /// ROLLBACK [ TRANSACTION | WORK ] [ AND [ NO ] CHAIN ] [ TO [ SAVEPOINT ] savepoint_name ]
     /// ```
     Rollback {
+        /// The `ROLLBACK` token
+        rollback_token: AttachedToken,
         chain: bool,
         savepoint: Option<Ident>,
     },
@@ -4803,6 +4911,8 @@ pub enum Statement {
     /// CREATE SCHEMA
     /// ```
     CreateSchema {
+        /// The `CREATE` token
+        create_token: AttachedToken,
         /// `<schema name> | AUTHORIZATION <schema authorization identifier>  | <schema name>  AUTHORIZATION <schema authorization identifier>`
         schema_name: SchemaName,
         if_not_exists: bool,
@@ -4845,6 +4955,8 @@ pub enum Statement {
     /// See:
     /// <https://docs.snowflake.com/en/sql-reference/sql/create-database>
     CreateDatabase {
+        /// The `CREATE` token
+        create_token: AttachedToken,
         db_name: ObjectName,
         if_not_exists: bool,
         location: Option<String>,
@@ -4884,6 +4996,8 @@ pub enum Statement {
     /// CREATE PROCEDURE
     /// ```
     CreateProcedure {
+        /// The `CREATE` token
+        create_token: AttachedToken,
         or_alter: bool,
         name: ObjectName,
         params: Option<Vec<ProcedureParam>>,
@@ -4899,6 +5013,8 @@ pub enum Statement {
     /// Supported variants:
     /// 1. [DuckDB](https://duckdb.org/docs/sql/statements/create_macro)
     CreateMacro {
+        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+        create_token: AttachedToken,
         or_replace: bool,
         temporary: bool,
         name: ObjectName,
@@ -4909,6 +5025,7 @@ pub enum Statement {
     /// ASSERT <condition> [AS <message>]
     /// ```
     Assert {
+        assert_token: AttachedToken,
         condition: Expr,
         message: Option<Expr>,
     },
@@ -4916,6 +5033,7 @@ pub enum Statement {
     /// GRANT privileges ON objects TO grantees
     /// ```
     Grant {
+        grant_token: AttachedToken,
         privileges: Privileges,
         objects: Option<GrantObjects>,
         grantees: Vec<Grantee>,
@@ -4933,6 +5051,7 @@ pub enum Statement {
     /// REVOKE GRANT OPTION FOR privileges ON objects FROM grantees
     /// ```
     Revoke {
+        revoke_token: AttachedToken,
         privileges: Privileges,
         objects: Option<GrantObjects>,
         grantees: Vec<Grantee>,
@@ -4945,6 +5064,8 @@ pub enum Statement {
     /// GRANT role_name [, role_name ...] TO user [, user ...] [WITH ADMIN OPTION]
     /// ```
     GrantRole {
+        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+        grant_token: AttachedToken,
         /// The roles being granted
         roles: Vec<Ident>,
         /// The recipients of the role grant
@@ -4959,6 +5080,8 @@ pub enum Statement {
     /// REVOKE ADMIN OPTION FOR role_name FROM user
     /// ```
     RevokeRole {
+        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+        revoke_token: AttachedToken,
         /// The roles being revoked
         roles: Vec<Ident>,
         /// The recipients of the role revocation
@@ -4976,6 +5099,8 @@ pub enum Statement {
     ///
     /// Note: this is a PostgreSQL-specific statement.
     Deallocate {
+        /// The `DEALLOCATE` token
+        deallocate_token: AttachedToken,
         name: Ident,
         prepare: bool,
     },
@@ -4988,6 +5113,8 @@ pub enum Statement {
     /// BigQuery: <https://cloud.google.com/bigquery/docs/reference/standard-sql/procedural-language#execute_immediate>
     /// Snowflake: <https://docs.snowflake.com/en/sql-reference/sql/execute-immediate>
     Execute {
+        /// The `EXECUTE` token
+        execute_token: AttachedToken,
         name: Option<ObjectName>,
         parameters: Vec<Expr>,
         has_parentheses: bool,
@@ -5008,6 +5135,8 @@ pub enum Statement {
     ///
     /// Note: this is a PostgreSQL-specific statement.
     Prepare {
+        /// The `PREPARE` token
+        prepare_token: AttachedToken,
         name: Ident,
         data_types: Vec<DataType>,
         statement: Box<Statement>,
@@ -5019,6 +5148,8 @@ pub enum Statement {
     /// See <https://clickhouse.com/docs/en/sql-reference/statements/kill/>
     /// See <https://dev.mysql.com/doc/refman/8.0/en/kill.html>
     Kill {
+        /// The `KILL` token
+        kill_token: AttachedToken,
         modifier: Option<KillType>,
         // processlist_id
         id: u64,
@@ -5028,6 +5159,7 @@ pub enum Statement {
     /// ```
     /// Note: this is a MySQL-specific statement. See <https://dev.mysql.com/doc/refman/8.0/en/explain.html>
     ExplainTable {
+        explain_token: AttachedToken,
         /// `EXPLAIN | DESC | DESCRIBE`
         describe_alias: DescribeAlias,
         /// Hive style `FORMATTED | EXTENDED`
@@ -5045,6 +5177,7 @@ pub enum Statement {
     /// [EXPLAIN | DESC | DESCRIBE]  <statement>
     /// ```
     Explain {
+        explain_token: AttachedToken,
         /// `EXPLAIN | DESC | DESCRIBE`
         describe_alias: DescribeAlias,
         /// Carry out the command and show actual run times and other statistics.
@@ -5071,12 +5204,16 @@ pub enum Statement {
     /// ```
     /// Define a new savepoint within the current transaction
     Savepoint {
+        /// The `SAVEPOINT` token
+        savepoint_token: AttachedToken,
         name: Ident,
     },
     /// ```sql
     /// RELEASE [ SAVEPOINT ] savepoint_name
     /// ```
     ReleaseSavepoint {
+        /// The `RELEASE` token
+        release_token: AttachedToken,
         name: Ident,
     },
     /// A `MERGE` statement.
@@ -5088,6 +5225,7 @@ pub enum Statement {
     /// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/dml-syntax#merge_statement)
     /// [MSSQL](https://learn.microsoft.com/en-us/sql/t-sql/statements/merge-transact-sql?view=sql-server-ver16)
     Merge {
+        merge_token: AttachedToken,
         /// optional INTO keyword
         into: bool,
         /// Specifies the table to merge
@@ -5109,6 +5247,7 @@ pub enum Statement {
     ///
     /// [Spark SQL docs]: https://docs.databricks.com/spark/latest/spark-sql/language-manual/sql-ref-syntax-aux-cache-cache-table.html
     Cache {
+        cache_token: AttachedToken,
         /// Table flag
         table_flag: Option<ObjectName>,
         /// Table name
@@ -5125,6 +5264,7 @@ pub enum Statement {
     /// UNCACHE TABLE [ IF EXISTS ]  <table_name>
     /// ```
     UNCache {
+        uncache_token: AttachedToken,
         /// Table name
         #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
         table_name: ObjectName,
@@ -5135,6 +5275,8 @@ pub enum Statement {
     /// ```
     /// Define a new sequence:
     CreateSequence {
+        /// The `CREATE` token
+        create_token: AttachedToken,
         temporary: bool,
         if_not_exists: bool,
         name: ObjectName,
@@ -5148,6 +5290,8 @@ pub enum Statement {
     /// CREATE TYPE <name>
     /// ```
     CreateType {
+        /// The `CREATE` token
+        create_token: AttachedToken,
         name: ObjectName,
         representation: Option<UserDefinedTypeRepresentation>,
     },
@@ -5155,6 +5299,7 @@ pub enum Statement {
     /// PRAGMA <schema-name>.<pragma-name> = <pragma-value>
     /// ```
     Pragma {
+        pragma_token: AttachedToken,
         name: ObjectName,
         value: Option<Value>,
         is_eq: bool,
@@ -5164,13 +5309,18 @@ pub enum Statement {
     /// ```
     /// Note: this is a MySQL-specific statement. See <https://dev.mysql.com/doc/refman/8.0/en/lock-tables.html>
     LockTables {
+        /// The `LOCK` token
+        lock_token: AttachedToken,
         tables: Vec<LockTable>,
     },
     /// ```sql
     /// UNLOCK TABLES
     /// ```
     /// Note: this is a MySQL-specific statement. See <https://dev.mysql.com/doc/refman/8.0/en/lock-tables.html>
-    UnlockTables,
+    UnlockTables {
+        /// The `UNLOCK` token
+        unlock_token: AttachedToken,
+    },
     /// Unloads the result of a query to file
     ///
     /// [Athena](https://docs.aws.amazon.com/athena/latest/ug/unload.html):
@@ -5183,6 +5333,8 @@ pub enum Statement {
     /// UNLOAD('statement') TO <destination> [ OPTIONS ]
     /// ```
     Unload {
+        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+        unload_token: AttachedToken,
         query: Option<Box<Query>>,
         query_text: Option<String>,
         to: Ident,
@@ -5196,6 +5348,8 @@ pub enum Statement {
     ///
     /// See ClickHouse <https://clickhouse.com/docs/en/sql-reference/statements/optimize>
     OptimizeTable {
+        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+        token: AttachedToken,
         name: ObjectName,
         on_cluster: Option<Ident>,
         partition: Option<Partition>,
@@ -5209,6 +5363,8 @@ pub enum Statement {
     ///
     /// See Postgres <https://www.postgresql.org/docs/current/sql-listen.html>
     LISTEN {
+        /// The `LISTEN` token
+        listen_token: AttachedToken,
         channel: Ident,
     },
     /// ```sql
@@ -5218,6 +5374,8 @@ pub enum Statement {
     ///
     /// See Postgres <https://www.postgresql.org/docs/current/sql-unlisten.html>
     UNLISTEN {
+        /// The `UNLISTEN` token
+        unlisten_token: AttachedToken,
         channel: Ident,
     },
     /// ```sql
@@ -5227,6 +5385,8 @@ pub enum Statement {
     ///
     /// See Postgres <https://www.postgresql.org/docs/current/sql-notify.html>
     NOTIFY {
+        /// The `NOTIFY` token
+        notify_token: AttachedToken,
         channel: Ident,
         payload: Option<String>,
     },
@@ -5239,6 +5399,8 @@ pub enum Statement {
     ///
     /// See Hive <https://cwiki.apache.org/confluence/pages/viewpage.action?pageId=27362036#LanguageManualDML-Loadingfilesintotables>
     LoadData {
+        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+        load_token: AttachedToken,
         local: bool,
         inpath: String,
         overwrite: bool,
@@ -5260,6 +5422,8 @@ pub enum Statement {
     /// [ WITH option [ , ...n ] ]
     /// See <https://learn.microsoft.com/en-us/sql/t-sql/language-elements/raiserror-transact-sql?view=sql-server-ver16>
     RaisError {
+        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+        token: AttachedToken,
         message: Box<Expr>,
         severity: Box<Expr>,
         state: Box<Expr>,
@@ -5402,6 +5566,7 @@ impl fmt::Display for Statement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Statement::Flush {
+                flush_token: _,
                 object_type,
                 location,
                 channel,
@@ -5432,7 +5597,11 @@ impl fmt::Display for Statement {
                     read = if *read_lock { " WITH READ LOCK" } else { "" }
                 )
             }
-            Statement::Kill { modifier, id } => {
+            Statement::Kill {
+                kill_token: _,
+                modifier,
+                id,
+            } => {
                 write!(f, "KILL ")?;
 
                 if let Some(m) = modifier {
@@ -5442,6 +5611,7 @@ impl fmt::Display for Statement {
                 write!(f, "{id}")
             }
             Statement::ExplainTable {
+                explain_token: _,
                 describe_alias,
                 hive_format,
                 has_table_keyword,
@@ -5459,6 +5629,7 @@ impl fmt::Display for Statement {
                 write!(f, "{table_name}")
             }
             Statement::Explain {
+                explain_token: _,
                 describe_alias,
                 verbose,
                 analyze,
@@ -5495,11 +5666,12 @@ impl fmt::Display for Statement {
                 write!(f, "{statement}")
             }
             Statement::Query(s) => s.fmt(f),
-            Statement::Declare { stmts } => {
+            Statement::Declare { declare_token: _, stmts } => {
                 write!(f, "DECLARE ")?;
                 write!(f, "{}", display_separated(stmts, ", "))
             }
             Statement::Fetch {
+                fetch_token: _,
                 name,
                 direction,
                 position,
@@ -5577,6 +5749,7 @@ impl fmt::Display for Statement {
                 schema_name,
                 database_file_name,
                 database,
+                ..
             } => {
                 let keyword = if *database { "DATABASE " } else { "" };
                 write!(f, "ATTACH {keyword}{database_file_name} AS {schema_name}")
@@ -5646,6 +5819,7 @@ impl fmt::Display for Statement {
                 Ok(())
             }
             Statement::CreateDatabase {
+                create_token: _,
                 db_name,
                 if_not_exists,
                 location,
@@ -5746,6 +5920,7 @@ impl fmt::Display for Statement {
             Statement::CreateTrigger(create_trigger) => create_trigger.fmt(f),
             Statement::DropTrigger(drop_trigger) => drop_trigger.fmt(f),
             Statement::CreateProcedure {
+                create_token: _,
                 name,
                 or_alter,
                 params,
@@ -5775,6 +5950,7 @@ impl fmt::Display for Statement {
                 }
             }
             Statement::CreateMacro {
+                create_token: _,
                 or_replace,
                 temporary,
                 name,
@@ -5799,6 +5975,7 @@ impl fmt::Display for Statement {
             Statement::CreateView(create_view) => create_view.fmt(f),
             Statement::CreateTable(create_table) => create_table.fmt(f),
             Statement::LoadData {
+                load_token: _,
                 local,
                 inpath,
                 overwrite,
@@ -5858,6 +6035,7 @@ impl fmt::Display for Statement {
                 storage_specifier,
                 secret_type,
                 options,
+                ..
             } => {
                 write!(
                     f,
@@ -5896,6 +6074,7 @@ impl fmt::Display for Statement {
                 to,
                 using,
                 with_check,
+                ..
             } => {
                 write!(f, "CREATE POLICY {name} ON {table_name}")?;
 
@@ -5959,16 +6138,17 @@ impl fmt::Display for Statement {
                 }
                 write!(f, " AS {query}")
             }
-            Statement::AlterType(AlterType { name, operation }) => {
+            Statement::AlterType(AlterType { name, operation, .. }) => {
                 write!(f, "ALTER TYPE {name} {operation}")
             }
-            Statement::AlterRole { name, operation } => {
+            Statement::AlterRole { name, operation, .. } => {
                 write!(f, "ALTER ROLE {name} {operation}")
             }
             Statement::AlterPolicy {
                 name,
                 table_name,
                 operation,
+                ..
             } => {
                 write!(f, "ALTER POLICY {name} ON {table_name}{operation}")
             }
@@ -5997,6 +6177,7 @@ impl fmt::Display for Statement {
             Statement::AlterSession {
                 set,
                 session_params,
+                ..
             } => {
                 write!(
                     f,
@@ -6022,6 +6203,7 @@ impl fmt::Display for Statement {
                 if_exists,
                 sequence_options,
                 owned_by,
+                ..
             } => {
                 write!(
                     f,
@@ -6037,6 +6219,7 @@ impl fmt::Display for Statement {
                 Ok(())
             }
             Statement::Drop {
+                drop_token: _,
                 object_type,
                 if_exists,
                 names,
@@ -6067,6 +6250,7 @@ impl fmt::Display for Statement {
                 if_exists,
                 name,
                 drop_behavior,
+                ..
             }) => {
                 write!(
                     f,
@@ -6084,6 +6268,7 @@ impl fmt::Display for Statement {
                 if_exists,
                 proc_desc,
                 drop_behavior,
+                ..
             } => {
                 write!(
                     f,
@@ -6101,6 +6286,7 @@ impl fmt::Display for Statement {
                 temporary,
                 name,
                 storage_specifier,
+                ..
             } => {
                 write!(f, "DROP ")?;
                 if let Some(t) = temporary {
@@ -6121,6 +6307,7 @@ impl fmt::Display for Statement {
                 name,
                 table_name,
                 drop_behavior,
+                ..
             } => {
                 write!(f, "DROP POLICY")?;
                 if *if_exists {
@@ -6140,12 +6327,15 @@ impl fmt::Display for Statement {
                 )?;
                 Ok(())
             }
-            Statement::Discard { object_type } => {
+            Statement::Discard {
+                discard_token: _,
+                object_type,
+            } => {
                 write!(f, "DISCARD {object_type}")?;
                 Ok(())
             }
             Self::Set(set) => write!(f, "{set}"),
-            Statement::ShowVariable { variable } => {
+            Statement::ShowVariable { show_token: _, variable } => {
                 write!(f, "SHOW")?;
                 if !variable.is_empty() {
                     write!(f, " {}", display_separated(variable, " "))?;
@@ -6156,6 +6346,7 @@ impl fmt::Display for Statement {
                 filter,
                 global,
                 session,
+                ..
             } => {
                 write!(f, "SHOW")?;
                 if *global {
@@ -6171,6 +6362,7 @@ impl fmt::Display for Statement {
                 Ok(())
             }
             Statement::ShowVariables {
+                show_token: _,
                 filter,
                 global,
                 session,
@@ -6188,11 +6380,12 @@ impl fmt::Display for Statement {
                 }
                 Ok(())
             }
-            Statement::ShowCreate { obj_type, obj_name } => {
+            Statement::ShowCreate { show_token: _, obj_type, obj_name } => {
                 write!(f, "SHOW CREATE {obj_type} {obj_name}",)?;
                 Ok(())
             }
             Statement::ShowColumns {
+                show_token: _,
                 extended,
                 full,
                 show_options,
@@ -6206,6 +6399,7 @@ impl fmt::Display for Statement {
                 Ok(())
             }
             Statement::ShowDatabases {
+                show_token: _,
                 terse,
                 history,
                 show_options,
@@ -6219,6 +6413,7 @@ impl fmt::Display for Statement {
                 Ok(())
             }
             Statement::ShowSchemas {
+                show_token: _,
                 terse,
                 history,
                 show_options,
@@ -6243,6 +6438,7 @@ impl fmt::Display for Statement {
                 Ok(())
             }
             Statement::ShowTables {
+                show_token: _,
                 terse,
                 history,
                 extended,
@@ -6274,7 +6470,7 @@ impl fmt::Display for Statement {
                 )?;
                 Ok(())
             }
-            Statement::ShowFunctions { filter } => {
+            Statement::ShowFunctions { show_token: _, filter } => {
                 write!(f, "SHOW FUNCTIONS")?;
                 if let Some(filter) = filter {
                     write!(f, " {filter}")?;
@@ -6282,7 +6478,7 @@ impl fmt::Display for Statement {
                 Ok(())
             }
             Statement::Use(use_expr) => use_expr.fmt(f),
-            Statement::ShowCollation { filter } => {
+            Statement::ShowCollation { show_token: _, filter } => {
                 write!(f, "SHOW COLLATION")?;
                 if let Some(filter) = filter {
                     write!(f, " {filter}")?;
@@ -6291,6 +6487,7 @@ impl fmt::Display for Statement {
             }
             Statement::ShowCharset(show_stm) => show_stm.fmt(f),
             Statement::StartTransaction {
+                start_token: _,
                 modes,
                 begin: syntax_begin,
                 transaction,
@@ -6330,6 +6527,7 @@ impl fmt::Display for Statement {
                 Ok(())
             }
             Statement::Commit {
+                commit_token: _,
                 chain,
                 end: end_syntax,
                 modifier,
@@ -6347,7 +6545,11 @@ impl fmt::Display for Statement {
                 }
                 Ok(())
             }
-            Statement::Rollback { chain, savepoint } => {
+            Statement::Rollback {
+                rollback_token: _,
+                chain,
+                savepoint,
+            } => {
                 write!(f, "ROLLBACK")?;
 
                 if *chain {
@@ -6361,6 +6563,7 @@ impl fmt::Display for Statement {
                 Ok(())
             }
             Statement::CreateSchema {
+                create_token: _,
                 schema_name,
                 if_not_exists,
                 with,
@@ -6392,7 +6595,7 @@ impl fmt::Display for Statement {
                 }
                 Ok(())
             }
-            Statement::Assert { condition, message } => {
+            Statement::Assert { assert_token: _, condition, message } => {
                 write!(f, "ASSERT {condition}")?;
                 if let Some(m) = message {
                     write!(f, " AS {m}")?;
@@ -6400,6 +6603,7 @@ impl fmt::Display for Statement {
                 Ok(())
             }
             Statement::Grant {
+                grant_token: _,
                 privileges,
                 objects,
                 grantees,
@@ -6429,6 +6633,7 @@ impl fmt::Display for Statement {
             }
             Statement::Deny(s) => write!(f, "{s}"),
             Statement::Revoke {
+                revoke_token: _,
                 privileges,
                 objects,
                 grantees,
@@ -6454,6 +6659,7 @@ impl fmt::Display for Statement {
                 Ok(())
             }
             Statement::GrantRole {
+                grant_token: _,
                 roles,
                 grantees,
                 with_admin_option,
@@ -6474,6 +6680,7 @@ impl fmt::Display for Statement {
                 Ok(())
             }
             Statement::RevokeRole {
+                revoke_token: _,
                 roles,
                 grantees,
                 granted_by,
@@ -6498,13 +6705,14 @@ impl fmt::Display for Statement {
                 }
                 Ok(())
             }
-            Statement::Deallocate { name, prepare } => write!(
+            Statement::Deallocate { deallocate_token: _, name, prepare } => write!(
                 f,
                 "DEALLOCATE {prepare}{name}",
                 prepare = if *prepare { "PREPARE " } else { "" },
                 name = name,
             ),
             Statement::Execute {
+                execute_token: _,
                 name,
                 parameters,
                 has_parentheses,
@@ -6542,6 +6750,7 @@ impl fmt::Display for Statement {
                 Ok(())
             }
             Statement::Prepare {
+                prepare_token: _,
                 name,
                 data_types,
                 statement,
@@ -6553,6 +6762,7 @@ impl fmt::Display for Statement {
                 write!(f, "AS {statement}")
             }
             Statement::Comment {
+                comment_token: _,
                 object_type,
                 object_name,
                 comment,
@@ -6569,14 +6779,21 @@ impl fmt::Display for Statement {
                     write!(f, "NULL")
                 }
             }
-            Statement::Savepoint { name } => {
+            Statement::Savepoint {
+                savepoint_token: _,
+                name,
+            } => {
                 write!(f, "SAVEPOINT ")?;
                 write!(f, "{name}")
             }
-            Statement::ReleaseSavepoint { name } => {
+            Statement::ReleaseSavepoint {
+                release_token: _,
+                name,
+            } => {
                 write!(f, "RELEASE SAVEPOINT {name}")
             }
             Statement::Merge {
+                merge_token: _,
                 into,
                 table,
                 source,
@@ -6597,6 +6814,7 @@ impl fmt::Display for Statement {
                 Ok(())
             }
             Statement::Cache {
+                cache_token: _,
                 table_name,
                 table_flag,
                 has_as,
@@ -6621,6 +6839,7 @@ impl fmt::Display for Statement {
                 }
             }
             Statement::UNCache {
+                uncache_token: _,
                 table_name,
                 if_exists,
             } => {
@@ -6631,6 +6850,7 @@ impl fmt::Display for Statement {
                 }
             }
             Statement::CreateSequence {
+                create_token: _,
                 temporary,
                 if_not_exists,
                 name,
@@ -6662,6 +6882,7 @@ impl fmt::Display for Statement {
                 write!(f, "")
             }
             Statement::CreateType {
+                create_token: _,
                 name,
                 representation,
             } => {
@@ -6671,7 +6892,7 @@ impl fmt::Display for Statement {
                 }
                 Ok(())
             }
-            Statement::Pragma { name, value, is_eq } => {
+            Statement::Pragma { pragma_token: _, name, value, is_eq } => {
                 write!(f, "PRAGMA {name}")?;
                 if value.is_some() {
                     let val = value.as_ref().unwrap();
@@ -6683,13 +6904,15 @@ impl fmt::Display for Statement {
                 }
                 Ok(())
             }
-            Statement::LockTables { tables } => {
-                write!(f, "LOCK TABLES {}", display_comma_separated(tables))
-            }
-            Statement::UnlockTables => {
+            Statement::LockTables {
+                lock_token: _,
+                tables,
+            } => write!(f, "LOCK TABLES {}", display_comma_separated(tables)),
+            Statement::UnlockTables { unlock_token: _ } => {
                 write!(f, "UNLOCK TABLES")
             }
             Statement::Unload {
+                unload_token: _,
                 query,
                 query_text,
                 to,
@@ -6717,6 +6940,7 @@ impl fmt::Display for Statement {
                 Ok(())
             }
             Statement::OptimizeTable {
+                token: _,
                 name,
                 on_cluster,
                 partition,
@@ -6738,15 +6962,25 @@ impl fmt::Display for Statement {
                 }
                 Ok(())
             }
-            Statement::LISTEN { channel } => {
+            Statement::LISTEN {
+                listen_token: _,
+                channel,
+            } => {
                 write!(f, "LISTEN {channel}")?;
                 Ok(())
             }
-            Statement::UNLISTEN { channel } => {
+            Statement::UNLISTEN {
+                unlisten_token: _,
+                channel,
+            } => {
                 write!(f, "UNLISTEN {channel}")?;
                 Ok(())
             }
-            Statement::NOTIFY { channel, payload } => {
+            Statement::NOTIFY {
+                notify_token: _,
+                channel,
+                payload,
+            } => {
                 write!(f, "NOTIFY {channel}")?;
                 if let Some(payload) = payload {
                     write!(f, ", '{payload}'")?;
@@ -6757,6 +6991,7 @@ impl fmt::Display for Statement {
                 write!(f, "RENAME TABLE {}", display_comma_separated(rename_tables))
             }
             Statement::RaisError {
+                token: _,
                 message,
                 severity,
                 state,
@@ -7872,6 +8107,8 @@ impl fmt::Display for GrantObjects {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct DenyStatement {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
     pub privileges: Privileges,
     pub objects: GrantObjects,
     pub grantees: Vec<Grantee>,
@@ -7881,15 +8118,16 @@ pub struct DenyStatement {
 
 impl fmt::Display for DenyStatement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "DENY {}", self.privileges)?;
-        write!(f, " ON {}", self.objects)?;
-        if !self.grantees.is_empty() {
-            write!(f, " TO {}", display_comma_separated(&self.grantees))?;
+        let DenyStatement { token: _, privileges, objects, grantees, granted_by, cascade } = self;
+        write!(f, "DENY {}", privileges)?;
+        write!(f, " ON {}", objects)?;
+        if !grantees.is_empty() {
+            write!(f, " TO {}", display_comma_separated(grantees))?;
         }
-        if let Some(cascade) = &self.cascade {
+        if let Some(cascade) = cascade {
             write!(f, " {cascade}")?;
         }
-        if let Some(granted_by) = &self.granted_by {
+        if let Some(granted_by) = granted_by {
             write!(f, " AS {granted_by}")?;
         }
         Ok(())
@@ -8172,6 +8410,8 @@ impl fmt::Display for CloseCursor {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct DropDomain {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
     /// Whether to drop the domain if it exists
     pub if_exists: bool,
     /// The name of the domain to drop
@@ -8185,6 +8425,8 @@ pub struct DropDomain {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct DropAssertion {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
     /// Whether to drop the assertion if it exists
     pub if_exists: bool,
     /// The name of the assertion to drop
@@ -8193,11 +8435,12 @@ pub struct DropAssertion {
 
 impl fmt::Display for DropAssertion {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let DropAssertion { token: _, if_exists, name } = self;
         write!(
             f,
             "DROP ASSERTION {if_exists}{name}",
-            if_exists = if self.if_exists { "IF EXISTS " } else { "" },
-            name = self.name
+            if_exists = if *if_exists { "IF EXISTS " } else { "" },
+            name = name
         )
     }
 }
@@ -9054,6 +9297,8 @@ impl fmt::Display for SecretOption {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct CreateServerStatement {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
     pub name: ObjectName,
     pub if_not_exists: bool,
     pub server_type: Option<Ident>,
@@ -9071,6 +9316,7 @@ impl fmt::Display for CreateServerStatement {
             version,
             foreign_data_wrapper,
             options,
+            ..
         } = self;
 
         write!(
@@ -10980,6 +11226,8 @@ impl fmt::Display for ShowStatementIn {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct ShowCharset {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
     /// The statement can be written as `SHOW CHARSET` or `SHOW CHARACTER SET`
     /// true means CHARSET was used and false means CHARACTER SET was used
     pub is_shorthand: bool,
@@ -11126,13 +11374,16 @@ impl Display for JsonQueryWrapper {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct RenameTable {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
     pub old_name: ObjectName,
     pub new_name: ObjectName,
 }
 
 impl fmt::Display for RenameTable {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} TO {}", self.old_name, self.new_name)?;
+        let RenameTable { token: _, old_name, new_name } = self;
+        write!(f, "{} TO {}", old_name, new_name)?;
         Ok(())
     }
 }
@@ -11373,12 +11624,15 @@ impl Display for CatalogSyncNamespaceMode {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct PrintStatement {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
     pub message: Box<Expr>,
 }
 
 impl fmt::Display for PrintStatement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "PRINT {}", self.message)
+        let PrintStatement { token: _, message } = self;
+        write!(f, "PRINT {}", message)
     }
 }
 
@@ -11390,12 +11644,15 @@ impl fmt::Display for PrintStatement {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct ReturnStatement {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
     pub value: Option<ReturnStatementValue>,
 }
 
 impl fmt::Display for ReturnStatement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match &self.value {
+        let ReturnStatement { token: _, value } = self;
+        match value {
             Some(ReturnStatementValue::Expr(expr)) => write!(f, "RETURN {expr}"),
             None => write!(f, "RETURN"),
         }
@@ -11506,6 +11763,8 @@ impl fmt::Display for ExportData {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct CreateUser {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
     pub or_replace: bool,
     pub if_not_exists: bool,
     pub name: Ident,
@@ -11516,23 +11775,24 @@ pub struct CreateUser {
 
 impl fmt::Display for CreateUser {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let CreateUser { token: _, or_replace, if_not_exists, name, options, with_tags, tags } = self;
         write!(f, "CREATE")?;
-        if self.or_replace {
+        if *or_replace {
             write!(f, " OR REPLACE")?;
         }
         write!(f, " USER")?;
-        if self.if_not_exists {
+        if *if_not_exists {
             write!(f, " IF NOT EXISTS")?;
         }
-        write!(f, " {}", self.name)?;
-        if !self.options.options.is_empty() {
-            write!(f, " {}", self.options)?;
+        write!(f, " {}", name)?;
+        if !options.options.is_empty() {
+            write!(f, " {}", options)?;
         }
-        if !self.tags.options.is_empty() {
-            if self.with_tags {
+        if !tags.options.is_empty() {
+            if *with_tags {
                 write!(f, " WITH")?;
             }
-            write!(f, " TAG ({})", self.tags)?;
+            write!(f, " TAG ({})", tags)?;
         }
         Ok(())
     }
@@ -11550,6 +11810,8 @@ impl fmt::Display for CreateUser {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct AlterUser {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
     pub if_exists: bool,
     pub name: Ident,
     /// The following fields are Snowflake-specific: <https://docs.snowflake.com/en/sql-reference/sql/alter-user#syntax>
@@ -11857,6 +12119,8 @@ impl fmt::Display for InitializeKind {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct VacuumStatement {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
     pub full: bool,
     pub sort_only: bool,
     pub delete_only: bool,
@@ -11869,22 +12133,23 @@ pub struct VacuumStatement {
 
 impl fmt::Display for VacuumStatement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let VacuumStatement { token: _, full, sort_only, delete_only, reindex, recluster, table_name, threshold, boost } = self;
         write!(
             f,
             "VACUUM{}{}{}{}{}",
-            if self.full { " FULL" } else { "" },
-            if self.sort_only { " SORT ONLY" } else { "" },
-            if self.delete_only { " DELETE ONLY" } else { "" },
-            if self.reindex { " REINDEX" } else { "" },
-            if self.recluster { " RECLUSTER" } else { "" },
+            if *full { " FULL" } else { "" },
+            if *sort_only { " SORT ONLY" } else { "" },
+            if *delete_only { " DELETE ONLY" } else { "" },
+            if *reindex { " REINDEX" } else { "" },
+            if *recluster { " RECLUSTER" } else { "" },
         )?;
-        if let Some(table_name) = &self.table_name {
+        if let Some(table_name) = table_name {
             write!(f, " {table_name}")?;
         }
-        if let Some(threshold) = &self.threshold {
+        if let Some(threshold) = threshold {
             write!(f, " TO {threshold} PERCENT")?;
         }
-        if self.boost {
+        if *boost {
             write!(f, " BOOST")?;
         }
         Ok(())
@@ -11911,21 +12176,18 @@ pub enum Reset {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct ResetStatement {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
     pub reset: Reset,
 }
 
 impl fmt::Display for ResetStatement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match &self.reset {
+        let ResetStatement { token: _, reset } = self;
+        match reset {
             Reset::ALL => write!(f, "RESET ALL"),
             Reset::ConfigurationParameter(param) => write!(f, "RESET {}", param),
         }
-    }
-}
-
-impl From<Set> for Statement {
-    fn from(s: Set) -> Self {
-        Self::Set(s)
     }
 }
 

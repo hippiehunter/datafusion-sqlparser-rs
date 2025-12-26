@@ -246,7 +246,6 @@ impl Spanned for Values {
 /// - [Statement::AlterType]
 /// - [Statement::AlterRole]
 /// - [Statement::AttachDatabase]
-/// - [Statement::Drop]
 /// - [Statement::DropFunction]
 /// - [Statement::DropProcedure]
 /// - [Statement::DropSecret]
@@ -266,32 +265,13 @@ impl Spanned for Values {
 /// - [Statement::ShowCollation]
 /// - [Statement::StartTransaction]
 /// - [Statement::Comment]
-/// - [Statement::Commit]
-/// - [Statement::Rollback]
-/// - [Statement::CreateSchema]
-/// - [Statement::CreateDatabase]
 /// - [Statement::CreateFunction]
 /// - [Statement::CreateTrigger]
 /// - [Statement::DropTrigger]
-/// - [Statement::CreateProcedure]
 /// - [Statement::CreateMacro]
-/// - [Statement::Assert]
-/// - [Statement::Grant]
-/// - [Statement::Revoke]
-/// - [Statement::Deallocate]
-/// - [Statement::Execute]
-/// - [Statement::Prepare]
 /// - [Statement::Kill]
-/// - [Statement::ExplainTable]
-/// - [Statement::Explain]
-/// - [Statement::Savepoint]
-/// - [Statement::ReleaseSavepoint]
-/// - [Statement::Merge]
 /// - [Statement::Cache]
 /// - [Statement::UNCache]
-/// - [Statement::CreateSequence]
-/// - [Statement::CreateType]
-/// - [Statement::Pragma]
 /// - [Statement::LockTables]
 /// - [Statement::UnlockTables]
 /// - [Statement::Unload]
@@ -320,7 +300,7 @@ impl Spanned for Statement {
             Statement::Repeat(stmt) => stmt.span(),
             Statement::Leave(stmt) => stmt.span(),
             Statement::Iterate(stmt) => stmt.span(),
-            Statement::GetDiagnostics(..) => Span::empty(),
+            Statement::GetDiagnostics(stmt) => stmt.token.0.span,
             Statement::Raise(stmt) => stmt.span(),
             Statement::Call(function) => function.span(),
             Statement::Copy {
@@ -354,16 +334,16 @@ impl Spanned for Statement {
             Statement::CreateRole(create_role) => create_role.span(),
             Statement::CreateExtension(create_extension) => create_extension.span(),
             Statement::DropExtension(drop_extension) => drop_extension.span(),
-            Statement::CreateSecret { .. } => Span::empty(),
-            Statement::CreateServer { .. } => Span::empty(),
-            Statement::CreateConnector { .. } => Span::empty(),
+            Statement::CreateSecret { token, .. } => token.0.span,
+            Statement::CreateServer(create_server) => create_server.token.0.span,
+            Statement::CreateConnector(create_connector) => create_connector.token.0.span,
             Statement::CreateOperator(create_operator) => create_operator.span(),
             Statement::CreateOperatorFamily(create_operator_family) => {
                 create_operator_family.span()
             }
             Statement::CreateOperatorClass(create_operator_class) => create_operator_class.span(),
-            Statement::CreateAssertion { .. } => Span::empty(),
-            Statement::CreatePropertyGraph { .. } => Span::empty(),
+            Statement::CreateAssertion(create_assertion) => create_assertion.token.0.span,
+            Statement::CreatePropertyGraph(create_property_graph) => create_property_graph.token.0.span,
             Statement::AlterTable(alter_table) => alter_table.span(),
             Statement::AlterIndex { name, operation } => name.span().union(&operation.span()),
             Statement::AlterView {
@@ -378,86 +358,183 @@ impl Spanned for Statement {
                     .chain(with_options.iter().map(|i| i.span())),
             ),
             // These statements need to be implemented
-            Statement::AlterType { .. } => Span::empty(),
-            Statement::AlterRole { .. } => Span::empty(),
-            Statement::AlterSession { .. } => Span::empty(),
-            Statement::AlterSequence { .. } => Span::empty(),
-            Statement::AttachDatabase { .. } => Span::empty(),
-            Statement::Drop { .. } => Span::empty(),
+            Statement::AlterType(alter_type) => alter_type.token.0.span,
+            Statement::AlterRole { token, .. } => token.0.span,
+            Statement::AlterSession { token, .. } => token.0.span,
+            Statement::AlterSequence { token, .. } => token.0.span,
+            Statement::AttachDatabase { token, .. } => token.0.span,
+            Statement::Drop { drop_token, .. } => drop_token.0.span,
             Statement::DropFunction(drop_function) => drop_function.span(),
-            Statement::DropDomain { .. } => Span::empty(),
-            Statement::DropAssertion { .. } => Span::empty(),
-            Statement::DropPropertyGraph { .. } => Span::empty(),
-            Statement::DropProcedure { .. } => Span::empty(),
-            Statement::DropSecret { .. } => Span::empty(),
-            Statement::Declare { .. } => Span::empty(),
-            Statement::Fetch { .. } => Span::empty(),
-            Statement::Flush { .. } => Span::empty(),
-            Statement::Discard { .. } => Span::empty(),
-            Statement::Set(_) => Span::empty(),
-            Statement::ShowFunctions { .. } => Span::empty(),
-            Statement::ShowVariable { .. } => Span::empty(),
-            Statement::ShowStatus { .. } => Span::empty(),
-            Statement::ShowVariables { .. } => Span::empty(),
-            Statement::ShowCreate { .. } => Span::empty(),
-            Statement::ShowColumns { .. } => Span::empty(),
-            Statement::ShowTables { .. } => Span::empty(),
-            Statement::ShowCollation { .. } => Span::empty(),
-            Statement::ShowCharset { .. } => Span::empty(),
+            Statement::DropDomain(drop_domain) => drop_domain.token.0.span,
+            Statement::DropAssertion(drop_assertion) => drop_assertion.token.0.span,
+            Statement::DropPropertyGraph(drop_property_graph) => drop_property_graph.token.0.span,
+            Statement::DropProcedure { token, .. } => token.0.span,
+            Statement::DropSecret { token, .. } => token.0.span,
+            Statement::Declare { declare_token, .. } => declare_token.0.span,
+            Statement::Fetch { fetch_token, .. } => fetch_token.0.span,
+            Statement::Flush { flush_token, .. } => flush_token.0.span,
+            Statement::Discard { discard_token, .. } => discard_token.0.span,
+            Statement::Set(set_stmt) => set_stmt.token.0.span,
+            Statement::ShowFunctions { show_token, .. } => show_token.0.span,
+            Statement::ShowVariable { show_token, .. } => show_token.0.span,
+            Statement::ShowStatus { token, .. } => token.0.span,
+            Statement::ShowVariables { show_token, .. } => show_token.0.span,
+            Statement::ShowCreate { show_token, .. } => show_token.0.span,
+            Statement::ShowColumns { show_token, .. } => show_token.0.span,
+            Statement::ShowTables { show_token, .. } => show_token.0.span,
+            Statement::ShowCollation { show_token, .. } => show_token.0.span,
+            Statement::ShowCharset(show_charset) => show_charset.token.0.span,
             Statement::Use(u) => u.span(),
-            Statement::StartTransaction { .. } => Span::empty(),
-            Statement::Comment { .. } => Span::empty(),
-            Statement::Commit { .. } => Span::empty(),
-            Statement::Rollback { .. } => Span::empty(),
-            Statement::CreateSchema { .. } => Span::empty(),
-            Statement::CreateDatabase { .. } => Span::empty(),
-            Statement::CreateFunction { .. } => Span::empty(),
-            Statement::CreateDomain { .. } => Span::empty(),
-            Statement::CreateTrigger { .. } => Span::empty(),
-            Statement::DropTrigger { .. } => Span::empty(),
-            Statement::CreateProcedure { .. } => Span::empty(),
-            Statement::CreateMacro { .. } => Span::empty(),
-            Statement::Assert { .. } => Span::empty(),
-            Statement::Grant { .. } => Span::empty(),
-            Statement::Deny { .. } => Span::empty(),
-            Statement::Revoke { .. } => Span::empty(),
-            Statement::GrantRole { .. } => Span::empty(),
-            Statement::RevokeRole { .. } => Span::empty(),
-            Statement::Deallocate { .. } => Span::empty(),
-            Statement::Execute { .. } => Span::empty(),
-            Statement::Prepare { .. } => Span::empty(),
-            Statement::Kill { .. } => Span::empty(),
-            Statement::ExplainTable { .. } => Span::empty(),
-            Statement::Explain { .. } => Span::empty(),
-            Statement::Savepoint { .. } => Span::empty(),
-            Statement::ReleaseSavepoint { .. } => Span::empty(),
-            Statement::Merge { .. } => Span::empty(),
-            Statement::Cache { .. } => Span::empty(),
-            Statement::UNCache { .. } => Span::empty(),
-            Statement::CreateSequence { .. } => Span::empty(),
-            Statement::CreateType { .. } => Span::empty(),
-            Statement::Pragma { .. } => Span::empty(),
-            Statement::LockTables { .. } => Span::empty(),
-            Statement::UnlockTables => Span::empty(),
-            Statement::Unload { .. } => Span::empty(),
-            Statement::OptimizeTable { .. } => Span::empty(),
-            Statement::CreatePolicy { .. } => Span::empty(),
-            Statement::AlterPolicy { .. } => Span::empty(),
+            Statement::StartTransaction {
+                start_token,
+                statements,
+                ..
+            } => {
+                if !statements.is_empty() {
+                    Span::union_iter(
+                        core::iter::once(start_token.0.span)
+                            .chain(statements.iter().map(|s| s.span())),
+                    )
+                } else {
+                    start_token.0.span
+                }
+            }
+            Statement::Comment {
+                comment_token,
+                object_name,
+                ..
+            } => comment_token.0.span.union(&object_name.span()),
+            Statement::Commit { commit_token, .. } => commit_token.0.span,
+            Statement::Rollback {
+                rollback_token,
+                savepoint,
+                ..
+            } => rollback_token
+                .0
+                .span
+                .union_opt(&savepoint.as_ref().map(|i| i.span)),
+            Statement::CreateSchema {
+                create_token,
+                schema_name,
+                clone,
+                ..
+            } => create_token
+                .0
+                .span
+                .union(&schema_name.span())
+                .union_opt(&clone.as_ref().map(|c| c.span())),
+            Statement::CreateDatabase {
+                create_token,
+                db_name,
+                clone,
+                ..
+            } => create_token
+                .0
+                .span
+                .union(&db_name.span())
+                .union_opt(&clone.as_ref().map(|c| c.span())),
+            Statement::CreateFunction(create_function) => create_function.token.0.span,
+            Statement::CreateDomain(create_domain) => create_domain.token.0.span,
+            Statement::CreateTrigger(create_trigger) => create_trigger.token.0.span,
+            Statement::DropTrigger(drop_trigger) => drop_trigger.token.0.span,
+            Statement::CreateProcedure {
+                create_token,
+                name,
+                body,
+                ..
+            } => create_token
+                .0
+                .span
+                .union(&name.span())
+                .union(&body.span()),
+            Statement::CreateMacro { create_token, .. } => create_token.0.span,
+            Statement::Assert { assert_token, .. } => assert_token.0.span,
+            Statement::Grant { grant_token, .. } => grant_token.0.span,
+            Statement::Deny(deny_stmt) => deny_stmt.token.0.span,
+            Statement::Revoke { revoke_token, .. } => revoke_token.0.span,
+            Statement::GrantRole { grant_token, .. } => grant_token.0.span,
+            Statement::RevokeRole { revoke_token, .. } => revoke_token.0.span,
+            Statement::Deallocate { deallocate_token, name, .. } => deallocate_token.0.span.union(&name.span),
+            Statement::Execute { execute_token, name, using, .. } => {
+                let mut span = execute_token.0.span;
+                if let Some(n) = name {
+                    span = span.union(&n.span());
+                }
+                for u in using {
+                    span = span.union(&u.span());
+                }
+                span
+            },
+            Statement::Prepare { prepare_token, name, statement, .. } => {
+                prepare_token.0.span.union(&name.span).union(&statement.span())
+            },
+            Statement::Kill { kill_token, .. } => kill_token.0.span,
+            Statement::ExplainTable { explain_token, .. } => explain_token.0.span,
+            Statement::Explain { explain_token, .. } => explain_token.0.span,
+            Statement::Savepoint {
+                savepoint_token,
+                name,
+            } => savepoint_token.0.span.union(&name.span),
+            Statement::ReleaseSavepoint {
+                release_token,
+                name,
+            } => release_token.0.span.union(&name.span),
+            Statement::Merge { merge_token, .. } => merge_token.0.span,
+            Statement::Cache { cache_token, .. } => cache_token.0.span,
+            Statement::UNCache { uncache_token, .. } => uncache_token.0.span,
+            Statement::CreateSequence {
+                create_token,
+                name,
+                owned_by,
+                ..
+            } => create_token
+                .0
+                .span
+                .union(&name.span())
+                .union_opt(&owned_by.as_ref().map(|o| o.span())),
+            Statement::CreateType {
+                create_token,
+                name,
+                ..
+            } => create_token.0.span.union(&name.span()),
+            Statement::Pragma { pragma_token, .. } => pragma_token.0.span,
+            Statement::LockTables { lock_token, .. } => lock_token.0.span,
+            Statement::UnlockTables { unlock_token } => unlock_token.0.span,
+            Statement::Unload { unload_token, .. } => unload_token.0.span,
+            Statement::OptimizeTable { token, .. } => token.0.span,
+            Statement::CreatePolicy { token, .. } => token.0.span,
+            Statement::AlterPolicy { token, .. } => token.0.span,
             Statement::AlterConnector { .. } => Span::empty(),
-            Statement::DropPolicy { .. } => Span::empty(),
+            Statement::DropPolicy { token, .. } => token.0.span,
             Statement::DropConnector { .. } => Span::empty(),
-            Statement::ShowDatabases { .. } => Span::empty(),
-            Statement::ShowSchemas { .. } => Span::empty(),
+            Statement::ShowDatabases { show_token, .. } => show_token.0.span,
+            Statement::ShowSchemas { show_token, .. } => show_token.0.span,
             Statement::ShowObjects { .. } => Span::empty(),
             Statement::ShowViews { .. } => Span::empty(),
-            Statement::LISTEN { .. } => Span::empty(),
-            Statement::NOTIFY { .. } => Span::empty(),
-            Statement::LoadData { .. } => Span::empty(),
-            Statement::UNLISTEN { .. } => Span::empty(),
-            Statement::RenameTable { .. } => Span::empty(),
-            Statement::RaisError { .. } => Span::empty(),
-            Statement::Print { .. } => Span::empty(),
-            Statement::Return { .. } => Span::empty(),
+            Statement::LISTEN {
+                listen_token,
+                channel,
+            } => listen_token.0.span.union(&channel.span),
+            Statement::NOTIFY {
+                notify_token,
+                channel,
+                ..
+            } => notify_token.0.span.union(&channel.span),
+            Statement::LoadData { load_token, .. } => load_token.0.span,
+            Statement::UNLISTEN {
+                unlisten_token,
+                channel,
+            } => unlisten_token.0.span.union(&channel.span),
+            Statement::RenameTable(rename_tables) => {
+                if let Some(first) = rename_tables.first() {
+                    first.token.0.span
+                } else {
+                    Span::empty()
+                }
+            }
+            Statement::RaisError { token, .. } => token.0.span,
+            Statement::Print(stmt) => stmt.token.0.span,
+            Statement::Return(stmt) => stmt.token.0.span,
             Statement::ExportData(ExportData {
                 options,
                 query,
@@ -469,15 +546,15 @@ impl Spanned for Statement {
                     .chain(core::iter::once(query.span()))
                     .chain(connection.iter().map(|i| i.span())),
             ),
-            Statement::CreateUser(..) => Span::empty(),
+            Statement::CreateUser(stmt) => stmt.token.0.span,
             Statement::AlterSchema(s) => s.span(),
-            Statement::Vacuum(..) => Span::empty(),
-            Statement::AlterUser(..) => Span::empty(),
-            Statement::Reset(..) => Span::empty(),
-            Statement::Signal(..) => Span::empty(),
-            Statement::Resignal(..) => Span::empty(),
-            Statement::LabeledBlock(..) => Span::empty(),
-            Statement::For(..) => Span::empty(),
+            Statement::Vacuum(stmt) => stmt.token.0.span,
+            Statement::AlterUser(stmt) => stmt.token.0.span,
+            Statement::Reset(stmt) => stmt.token.0.span,
+            Statement::Signal(stmt) => stmt.token.0.span,
+            Statement::Resignal(stmt) => stmt.token.0.span,
+            Statement::LabeledBlock(stmt) => stmt.token.0.span,
+            Statement::For(stmt) => stmt.token.0.span,
         }
     }
 }
@@ -1427,14 +1504,14 @@ impl Spanned for Expr {
             Expr::CompoundFieldAccess { root, access_chain } => {
                 union_spans(iter::once(root.span()).chain(access_chain.iter().map(|i| i.span())))
             }
-            Expr::IsFalse(expr) => expr.span(),
-            Expr::IsNotFalse(expr) => expr.span(),
-            Expr::IsTrue(expr) => expr.span(),
-            Expr::IsNotTrue(expr) => expr.span(),
-            Expr::IsNull(expr) => expr.span(),
-            Expr::IsNotNull(expr) => expr.span(),
-            Expr::IsUnknown(expr) => expr.span(),
-            Expr::IsNotUnknown(expr) => expr.span(),
+            Expr::IsFalse { expr, suffix_token } => expr.span().union(&suffix_token.0.span),
+            Expr::IsNotFalse { expr, suffix_token } => expr.span().union(&suffix_token.0.span),
+            Expr::IsTrue { expr, suffix_token } => expr.span().union(&suffix_token.0.span),
+            Expr::IsNotTrue { expr, suffix_token } => expr.span().union(&suffix_token.0.span),
+            Expr::IsNull { expr, suffix_token } => expr.span().union(&suffix_token.0.span),
+            Expr::IsNotNull { expr, suffix_token } => expr.span().union(&suffix_token.0.span),
+            Expr::IsUnknown { expr, suffix_token } => expr.span().union(&suffix_token.0.span),
+            Expr::IsNotUnknown { expr, suffix_token } => expr.span().union(&suffix_token.0.span),
             Expr::IsDistinctFrom(lhs, rhs) => lhs.span().union(&rhs.span()),
             Expr::IsNotDistinctFrom(lhs, rhs) => lhs.span().union(&rhs.span()),
             Expr::InList {
@@ -1730,6 +1807,23 @@ impl Spanned for ObjectNamePart {
                 .name
                 .span
                 .union(&union_spans(func.args.iter().map(|i| i.span()))),
+        }
+    }
+}
+
+impl Spanned for crate::ast::Ident {
+    fn span(&self) -> Span {
+        self.span
+    }
+}
+
+impl Spanned for crate::ast::SchemaName {
+    fn span(&self) -> Span {
+        use crate::ast::SchemaName;
+        match self {
+            SchemaName::Simple(name) => name.span(),
+            SchemaName::UnnamedAuthorization(ident) => ident.span(),
+            SchemaName::NamedAuthorization(name, ident) => name.span().union(&ident.span()),
         }
     }
 }

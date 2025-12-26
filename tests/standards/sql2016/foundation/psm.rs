@@ -502,7 +502,7 @@ mod declare_statements {
         // SQL:2016 PSM: DECLARE CURSOR
         let stmt = verified_standard_stmt("DECLARE cur CURSOR FOR SELECT * FROM t");
         match stmt {
-            Statement::Declare { stmts } => {
+            Statement::Declare { stmts, .. } => {
                 assert_eq!(stmts.len(), 1);
                 let decl = &stmts[0];
                 assert_eq!(decl.names.len(), 1);
@@ -600,6 +600,7 @@ mod cursor_operations {
                 into,
                 direction,
                 position,
+                ..
             } => {
                 assert_eq!(name.value, "cur");
                 assert_eq!(direction, FetchDirection::Next);
@@ -630,6 +631,7 @@ mod cursor_operations {
                 direction,
                 position,
                 into,
+                ..
             } => {
                 assert_eq!(name.value, "cur");
                 assert_eq!(direction, FetchDirection::Next);
@@ -650,6 +652,7 @@ mod cursor_operations {
                 direction,
                 position,
                 into,
+                ..
             } => {
                 assert_eq!(name.value, "cur");
                 assert_eq!(direction, FetchDirection::Prior);
@@ -670,6 +673,7 @@ mod cursor_operations {
                 direction,
                 position,
                 into,
+                ..
             } => {
                 assert_eq!(name.value, "cur");
                 assert_eq!(direction, FetchDirection::First);
@@ -687,6 +691,7 @@ mod cursor_operations {
                 direction,
                 position,
                 into,
+                ..
             } => {
                 assert_eq!(name.value, "cur");
                 assert_eq!(direction, FetchDirection::Last);

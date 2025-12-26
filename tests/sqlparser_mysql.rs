@@ -66,6 +66,7 @@ fn parse_flush() {
     assert_eq!(
         mysql_and_generic().verified_stmt("FLUSH OPTIMIZER_COSTS"),
         Statement::Flush {
+            flush_token: AttachedToken::empty(),
             location: None,
             object_type: FlushType::OptimizerCosts,
             channel: None,
@@ -77,6 +78,7 @@ fn parse_flush() {
     assert_eq!(
         mysql_and_generic().verified_stmt("FLUSH BINARY LOGS"),
         Statement::Flush {
+            flush_token: AttachedToken::empty(),
             location: None,
             object_type: FlushType::BinaryLogs,
             channel: None,
@@ -88,6 +90,7 @@ fn parse_flush() {
     assert_eq!(
         mysql_and_generic().verified_stmt("FLUSH ENGINE LOGS"),
         Statement::Flush {
+            flush_token: AttachedToken::empty(),
             location: None,
             object_type: FlushType::EngineLogs,
             channel: None,
@@ -99,6 +102,7 @@ fn parse_flush() {
     assert_eq!(
         mysql_and_generic().verified_stmt("FLUSH ERROR LOGS"),
         Statement::Flush {
+            flush_token: AttachedToken::empty(),
             location: None,
             object_type: FlushType::ErrorLogs,
             channel: None,
@@ -110,6 +114,7 @@ fn parse_flush() {
     assert_eq!(
         mysql_and_generic().verified_stmt("FLUSH NO_WRITE_TO_BINLOG GENERAL LOGS"),
         Statement::Flush {
+            flush_token: AttachedToken::empty(),
             location: Some(FlushLocation::NoWriteToBinlog),
             object_type: FlushType::GeneralLogs,
             channel: None,
@@ -121,6 +126,7 @@ fn parse_flush() {
     assert_eq!(
         mysql_and_generic().verified_stmt("FLUSH RELAY LOGS FOR CHANNEL test"),
         Statement::Flush {
+            flush_token: AttachedToken::empty(),
             location: None,
             object_type: FlushType::RelayLogs,
             channel: Some("test".to_string()),
@@ -132,6 +138,7 @@ fn parse_flush() {
     assert_eq!(
         mysql_and_generic().verified_stmt("FLUSH LOCAL SLOW LOGS"),
         Statement::Flush {
+            flush_token: AttachedToken::empty(),
             location: Some(FlushLocation::Local),
             object_type: FlushType::SlowLogs,
             channel: None,
@@ -143,6 +150,7 @@ fn parse_flush() {
     assert_eq!(
         mysql_and_generic().verified_stmt("FLUSH TABLES `mek`.`table1`, table2"),
         Statement::Flush {
+            flush_token: AttachedToken::empty(),
             location: None,
             object_type: FlushType::Tables,
             channel: None,
@@ -172,6 +180,7 @@ fn parse_flush() {
     assert_eq!(
         mysql_and_generic().verified_stmt("FLUSH TABLES WITH READ LOCK"),
         Statement::Flush {
+            flush_token: AttachedToken::empty(),
             location: None,
             object_type: FlushType::Tables,
             channel: None,
@@ -183,6 +192,7 @@ fn parse_flush() {
     assert_eq!(
         mysql_and_generic().verified_stmt("FLUSH TABLES `mek`.`table1`, table2 WITH READ LOCK"),
         Statement::Flush {
+            flush_token: AttachedToken::empty(),
             location: None,
             object_type: FlushType::Tables,
             channel: None,
@@ -212,6 +222,7 @@ fn parse_flush() {
     assert_eq!(
         mysql_and_generic().verified_stmt("FLUSH TABLES `mek`.`table1`, table2 FOR EXPORT"),
         Statement::Flush {
+            flush_token: AttachedToken::empty(),
             location: None,
             object_type: FlushType::Tables,
             channel: None,
@@ -245,6 +256,7 @@ fn parse_show_columns() {
     assert_eq!(
         mysql_and_generic().verified_stmt("SHOW COLUMNS FROM mytable"),
         Statement::ShowColumns {
+            show_token: AttachedToken::empty(),
             extended: false,
             full: false,
             show_options: ShowStatementOptions {
@@ -263,6 +275,7 @@ fn parse_show_columns() {
     assert_eq!(
         mysql_and_generic().verified_stmt("SHOW COLUMNS FROM mydb.mytable"),
         Statement::ShowColumns {
+            show_token: AttachedToken::empty(),
             extended: false,
             full: false,
             show_options: ShowStatementOptions {
@@ -284,6 +297,7 @@ fn parse_show_columns() {
     assert_eq!(
         mysql_and_generic().verified_stmt("SHOW EXTENDED COLUMNS FROM mytable"),
         Statement::ShowColumns {
+            show_token: AttachedToken::empty(),
             extended: true,
             full: false,
             show_options: ShowStatementOptions {
@@ -302,6 +316,7 @@ fn parse_show_columns() {
     assert_eq!(
         mysql_and_generic().verified_stmt("SHOW FULL COLUMNS FROM mytable"),
         Statement::ShowColumns {
+            show_token: AttachedToken::empty(),
             extended: false,
             full: true,
             show_options: ShowStatementOptions {
@@ -320,6 +335,7 @@ fn parse_show_columns() {
     assert_eq!(
         mysql_and_generic().verified_stmt("SHOW COLUMNS FROM mytable LIKE 'pattern'"),
         Statement::ShowColumns {
+            show_token: AttachedToken::empty(),
             extended: false,
             full: false,
             show_options: ShowStatementOptions {
@@ -340,6 +356,7 @@ fn parse_show_columns() {
     assert_eq!(
         mysql_and_generic().verified_stmt("SHOW COLUMNS FROM mytable WHERE 1 = 2"),
         Statement::ShowColumns {
+            show_token: AttachedToken::empty(),
             extended: false,
             full: false,
             show_options: ShowStatementOptions {
@@ -374,6 +391,7 @@ fn parse_show_status() {
     assert_eq!(
         mysql_and_generic().verified_stmt("SHOW SESSION STATUS LIKE 'ssl_cipher'"),
         Statement::ShowStatus {
+            token: AttachedToken::empty(),
             filter: Some(ShowStatementFilter::Like("ssl_cipher".into())),
             session: true,
             global: false
@@ -382,6 +400,7 @@ fn parse_show_status() {
     assert_eq!(
         mysql_and_generic().verified_stmt("SHOW GLOBAL STATUS LIKE 'ssl_cipher'"),
         Statement::ShowStatus {
+            token: AttachedToken::empty(),
             filter: Some(ShowStatementFilter::Like("ssl_cipher".into())),
             session: false,
             global: true
@@ -390,6 +409,7 @@ fn parse_show_status() {
     assert_eq!(
         mysql_and_generic().verified_stmt("SHOW STATUS WHERE value = 2"),
         Statement::ShowStatus {
+            token: AttachedToken::empty(),
             filter: Some(ShowStatementFilter::Where(
                 mysql_and_generic().verified_expr("value = 2")
             )),
@@ -404,6 +424,7 @@ fn parse_show_tables() {
     assert_eq!(
         mysql_and_generic().verified_stmt("SHOW TABLES"),
         Statement::ShowTables {
+            show_token: AttachedToken::empty(),
             terse: false,
             history: false,
             extended: false,
@@ -421,6 +442,7 @@ fn parse_show_tables() {
     assert_eq!(
         mysql_and_generic().verified_stmt("SHOW TABLES FROM mydb"),
         Statement::ShowTables {
+            show_token: AttachedToken::empty(),
             terse: false,
             history: false,
             extended: false,
@@ -442,6 +464,7 @@ fn parse_show_tables() {
     assert_eq!(
         mysql_and_generic().verified_stmt("SHOW EXTENDED TABLES"),
         Statement::ShowTables {
+            show_token: AttachedToken::empty(),
             terse: false,
             history: false,
             extended: true,
@@ -459,6 +482,7 @@ fn parse_show_tables() {
     assert_eq!(
         mysql_and_generic().verified_stmt("SHOW FULL TABLES"),
         Statement::ShowTables {
+            show_token: AttachedToken::empty(),
             terse: false,
             history: false,
             extended: false,
@@ -476,6 +500,7 @@ fn parse_show_tables() {
     assert_eq!(
         mysql_and_generic().verified_stmt("SHOW TABLES LIKE 'pattern'"),
         Statement::ShowTables {
+            show_token: AttachedToken::empty(),
             terse: false,
             history: false,
             extended: false,
@@ -495,6 +520,7 @@ fn parse_show_tables() {
     assert_eq!(
         mysql_and_generic().verified_stmt("SHOW TABLES WHERE 1 = 2"),
         Statement::ShowTables {
+            show_token: AttachedToken::empty(),
             terse: false,
             history: false,
             extended: false,
@@ -550,6 +576,7 @@ fn parse_show_create() {
         assert_eq!(
             mysql_and_generic().verified_stmt(format!("SHOW CREATE {obj_type} myident").as_str()),
             Statement::ShowCreate {
+            show_token: AttachedToken::empty(),
                 obj_type: *obj_type,
                 obj_name: obj_name.clone(),
             }
@@ -561,17 +588,19 @@ fn parse_show_create() {
 fn parse_show_collation() {
     assert_eq!(
         mysql_and_generic().verified_stmt("SHOW COLLATION"),
-        Statement::ShowCollation { filter: None }
+        Statement::ShowCollation { show_token: AttachedToken::empty(), filter: None }
     );
     assert_eq!(
         mysql_and_generic().verified_stmt("SHOW COLLATION LIKE 'pattern'"),
         Statement::ShowCollation {
+            show_token: AttachedToken::empty(),
             filter: Some(ShowStatementFilter::Like("pattern".into())),
         }
     );
     assert_eq!(
         mysql_and_generic().verified_stmt("SHOW COLLATION WHERE 1 = 2"),
         Statement::ShowCollation {
+            show_token: AttachedToken::empty(),
             filter: Some(ShowStatementFilter::Where(
                 mysql_and_generic().verified_expr("1 = 2")
             )),
@@ -616,11 +645,14 @@ fn parse_set_variables() {
     mysql_and_generic().verified_stmt("SET sql_mode = CONCAT(@@sql_mode, ',STRICT_TRANS_TABLES')");
     assert_eq!(
         mysql_and_generic().verified_stmt("SET LOCAL autocommit = 1"),
-        Statement::Set(Set::SingleAssignment {
-            scope: Some(ContextModifier::Local),
-            hivevar: false,
-            variable: ObjectName::from(vec!["autocommit".into()]),
-            values: vec![Expr::value(number("1"))],
+        Statement::Set(SetStatement {
+            token: AttachedToken::empty(),
+            inner: Set::SingleAssignment {
+                scope: Some(ContextModifier::Local),
+                hivevar: false,
+                variable: ObjectName::from(vec!["autocommit".into()]),
+                values: vec![Expr::value(number("1"))],
+            }
         })
     );
 }
@@ -3311,6 +3343,7 @@ fn parse_kill() {
     assert_eq!(
         stmt,
         Statement::Kill {
+            kill_token: AttachedToken::empty(),
             modifier: Some(KillType::Connection),
             id: 5,
         }
@@ -3320,6 +3353,7 @@ fn parse_kill() {
     assert_eq!(
         stmt,
         Statement::Kill {
+            kill_token: AttachedToken::empty(),
             modifier: Some(KillType::Query),
             id: 5,
         }
@@ -3329,6 +3363,7 @@ fn parse_kill() {
     assert_eq!(
         stmt,
         Statement::Kill {
+            kill_token: AttachedToken::empty(),
             modifier: None,
             id: 5,
         }
@@ -3362,18 +3397,24 @@ fn parse_set_names() {
     let stmt = mysql_and_generic().verified_stmt("SET NAMES utf8mb4");
     assert_eq!(
         stmt,
-        Statement::Set(Set::SetNames {
-            charset_name: "utf8mb4".into(),
-            collation_name: None,
+        Statement::Set(SetStatement {
+            token: AttachedToken::empty(),
+            inner: Set::SetNames {
+                charset_name: "utf8mb4".into(),
+                collation_name: None,
+            }
         })
     );
 
     let stmt = mysql_and_generic().verified_stmt("SET NAMES utf8mb4 COLLATE bogus");
     assert_eq!(
         stmt,
-        Statement::Set(Set::SetNames {
-            charset_name: "utf8mb4".into(),
-            collation_name: Some("bogus".to_string()),
+        Statement::Set(SetStatement {
+            token: AttachedToken::empty(),
+            inner: Set::SetNames {
+                charset_name: "utf8mb4".into(),
+                collation_name: Some("bogus".to_string()),
+            }
         })
     );
 
@@ -3382,14 +3423,23 @@ fn parse_set_names() {
         .unwrap();
     assert_eq!(
         stmt,
-        vec![Statement::Set(Set::SetNames {
-            charset_name: "utf8mb4".into(),
-            collation_name: Some("bogus".to_string()),
+        vec![Statement::Set(SetStatement {
+            token: AttachedToken::empty(),
+            inner: Set::SetNames {
+                charset_name: "utf8mb4".into(),
+                collation_name: Some("bogus".to_string()),
+            }
         })]
     );
 
     let stmt = mysql_and_generic().verified_stmt("SET NAMES DEFAULT");
-    assert_eq!(stmt, Statement::Set(Set::SetNamesDefault {}));
+    assert_eq!(
+        stmt,
+        Statement::Set(SetStatement {
+            token: AttachedToken::empty(),
+            inner: Set::SetNamesDefault {}
+        })
+    );
 }
 
 #[test]
@@ -3805,6 +3855,7 @@ fn parse_grant() {
         as_grantor: _,
         granted_by,
         current_grants: _,
+        ..
     } = stmt
     {
         assert_eq!(
@@ -4048,6 +4099,7 @@ fn parse_create_trigger() {
     assert_eq!(
         create_stmt,
         Statement::CreateTrigger(CreateTrigger {
+            token: AttachedToken::empty(),
             or_alter: false,
             temporary: false,
             or_replace: false,
@@ -4088,6 +4140,7 @@ fn parse_drop_trigger() {
     assert_eq!(
         drop_stmt,
         Statement::DropTrigger(DropTrigger {
+            token: AttachedToken::empty(),
             if_exists: false,
             trigger_name: ObjectName::from(vec![Ident::new("emp_stamp")]),
             table_name: None,
@@ -4277,6 +4330,7 @@ fn parse_drop_index() {
             purge,
             temporary,
             table,
+            ..
         } => {
             assert!(!if_exists);
             assert_eq!(ObjectType::Index, object_type);
@@ -4336,6 +4390,7 @@ fn parse_show_charset() {
     assert_eq!(
         res,
         Statement::ShowCharset(ShowCharset {
+            token: AttachedToken::empty(),
             is_shorthand: false,
             filter: None
         })

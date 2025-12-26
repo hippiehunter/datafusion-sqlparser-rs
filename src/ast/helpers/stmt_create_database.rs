@@ -25,9 +25,10 @@ use serde::{Deserialize, Serialize};
 use sqlparser_derive::{Visit, VisitMut};
 
 use crate::ast::{
-    CatalogSyncNamespaceMode, ContactEntry, ObjectName, Statement, StorageSerializationPolicy, Tag,
+    AttachedToken, CatalogSyncNamespaceMode, ContactEntry, ObjectName, Statement, StorageSerializationPolicy, Tag,
 };
 use crate::parser::ParserError;
+use crate::tokenizer::{Token, TokenWithSpan};
 
 /// Builder for create database statement variant ([1]).
 ///
@@ -212,6 +213,7 @@ impl CreateDatabaseBuilder {
 
     pub fn build(self) -> Statement {
         Statement::CreateDatabase {
+            create_token: AttachedToken(TokenWithSpan::wrap(Token::make_word("CREATE", None))),
             db_name: self.db_name,
             if_not_exists: self.if_not_exists,
             managed_location: self.managed_location,
@@ -242,6 +244,7 @@ impl TryFrom<Statement> for CreateDatabaseBuilder {
     fn try_from(stmt: Statement) -> Result<Self, Self::Error> {
         match stmt {
             Statement::CreateDatabase {
+                create_token: _,
                 db_name,
                 if_not_exists,
                 location,
@@ -294,7 +297,7 @@ impl TryFrom<Statement> for CreateDatabaseBuilder {
 #[cfg(test)]
 mod tests {
     use crate::ast::helpers::stmt_create_database::CreateDatabaseBuilder;
-    use crate::ast::{Ident, ObjectName, Statement};
+    use crate::ast::{AttachedToken, Ident, ObjectName, Statement};
     use crate::parser::ParserError;
 
     #[test]
@@ -309,6 +312,7 @@ mod tests {
     #[test]
     pub fn test_from_invalid_statement() {
         let stmt = Statement::Commit {
+            commit_token: AttachedToken::empty(),
             chain: false,
             end: false,
             modifier: None,

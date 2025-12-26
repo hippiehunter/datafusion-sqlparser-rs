@@ -1738,22 +1738,20 @@ fn parse_mod_no_spaces() {
 
 #[test]
 fn parse_is_null() {
-    use self::Expr::*;
     let sql = "a IS NULL";
-    assert_eq!(
-        IsNull(Box::new(Identifier(Ident::new("a")))),
-        verified_expr(sql)
-    );
+    assert!(matches!(
+        verified_expr(sql),
+        Expr::IsNull { expr, .. } if matches!(*expr, Expr::Identifier(_))
+    ));
 }
 
 #[test]
 fn parse_is_not_null() {
-    use self::Expr::*;
     let sql = "a IS NOT NULL";
-    assert_eq!(
-        IsNotNull(Box::new(Identifier(Ident::new("a")))),
-        verified_expr(sql)
-    );
+    assert!(matches!(
+        verified_expr(sql),
+        Expr::IsNotNull { expr, .. } if matches!(*expr, Expr::Identifier(_))
+    ));
 }
 
 #[test]
@@ -2062,18 +2060,10 @@ fn parse_ilike() {
             if negated { "NOT " } else { "" }
         );
         let select = verified_only_select(sql);
-        assert_eq!(
-            Expr::IsNull(Box::new(Expr::ILike {
-                expr: Box::new(Expr::Identifier(Ident::new("name"))),
-                negated,
-                pattern: Box::new(Expr::Value(
-                    (Value::SingleQuotedString("%a".to_string())).with_empty_span()
-                )),
-                escape_char: None,
-                any: false,
-            })),
-            select.selection.unwrap()
-        );
+        assert!(matches!(
+            select.selection.unwrap(),
+            Expr::IsNull { expr, .. } if matches!(*expr, Expr::ILike { negated: n, .. } if n == negated)
+        ));
     }
     chk(false);
     chk(true);
@@ -2126,18 +2116,10 @@ fn parse_like() {
             if negated { "NOT " } else { "" }
         );
         let select = verified_only_select(sql);
-        assert_eq!(
-            Expr::IsNull(Box::new(Expr::Like {
-                expr: Box::new(Expr::Identifier(Ident::new("name"))),
-                negated,
-                pattern: Box::new(Expr::Value(
-                    (Value::SingleQuotedString("%a".to_string())).with_empty_span()
-                )),
-                escape_char: None,
-                any: false,
-            })),
-            select.selection.unwrap()
-        );
+        assert!(matches!(
+            select.selection.unwrap(),
+            Expr::IsNull { expr, .. } if matches!(*expr, Expr::Like { negated: n, .. } if n == negated)
+        ));
     }
     chk(false);
     chk(true);
@@ -2204,17 +2186,10 @@ fn parse_similar_to() {
             if negated { "NOT " } else { "" }
         );
         let select = verified_only_select(sql);
-        assert_eq!(
-            Expr::IsNull(Box::new(Expr::SimilarTo {
-                expr: Box::new(Expr::Identifier(Ident::new("name"))),
-                negated,
-                pattern: Box::new(Expr::Value(
-                    (Value::SingleQuotedString("%a".to_string())).with_empty_span()
-                )),
-                escape_char: Some(Value::SingleQuotedString('^'.to_string())),
-            })),
-            select.selection.unwrap()
-        );
+        assert!(matches!(
+            select.selection.unwrap(),
+            Expr::IsNull { expr, .. } if matches!(*expr, Expr::SimilarTo { negated: n, .. } if n == negated)
+        ));
     }
     chk(false);
     chk(true);
@@ -2408,24 +2383,10 @@ fn parse_between_with_expr() {
     use self::BinaryOperator::*;
     let sql = "SELECT * FROM t WHERE 1 BETWEEN 1 + 2 AND 3 + 4 IS NULL";
     let select = verified_only_select(sql);
-    assert_eq!(
-        Expr::IsNull(Box::new(Expr::Between {
-            expr: Box::new(Expr::value(number("1"))),
-            negated: false,
-            symmetric: BetweenSymmetric::None,
-            low: Box::new(Expr::BinaryOp {
-                left: Box::new(Expr::value(number("1"))),
-                op: Plus,
-                right: Box::new(Expr::value(number("2"))),
-            }),
-            high: Box::new(Expr::BinaryOp {
-                left: Box::new(Expr::value(number("3"))),
-                op: Plus,
-                right: Box::new(Expr::value(number("4"))),
-            }),
-        })),
-        select.selection.unwrap()
-    );
+    assert!(matches!(
+        select.selection.unwrap(),
+        Expr::IsNull { expr, .. } if matches!(*expr, Expr::Between { negated: false, .. })
+    ));
 
     let sql = "SELECT * FROM t WHERE 1 = 1 AND 1 + x BETWEEN 1 AND 2";
     let select = verified_only_select(sql);
@@ -4274,6 +4235,7 @@ fn parse_assert() {
         Statement::Assert {
             condition: _condition,
             message,
+            ..
         } => {
             assert_eq!(message, None);
         }
@@ -4293,6 +4255,7 @@ fn parse_assert_message() {
         Statement::Assert {
             condition: _condition,
             message: Some(message),
+            ..
         } => {
             match message {
                 Expr::Value(ValueWithSpan {
@@ -4782,6 +4745,7 @@ fn parse_rename_table() {
         Statement::RenameTable(rename_tables) => {
             assert_eq!(
                 vec![RenameTable {
+                    token: AttachedToken::empty(),
                     old_name: ObjectName::from(vec![
                         Ident::new("test".to_string()),
                         Ident::new("test1".to_string()),
@@ -4804,14 +4768,17 @@ fn parse_rename_table() {
             assert_eq!(
                 vec![
                     RenameTable {
+                        token: AttachedToken::empty(),
                         old_name: ObjectName::from(vec![Ident::new("old_table1".to_string())]),
                         new_name: ObjectName::from(vec![Ident::new("new_table1".to_string())]),
                     },
                     RenameTable {
+                        token: AttachedToken::empty(),
                         old_name: ObjectName::from(vec![Ident::new("old_table2".to_string())]),
                         new_name: ObjectName::from(vec![Ident::new("new_table2".to_string())]),
                     },
                     RenameTable {
+                        token: AttachedToken::empty(),
                         old_name: ObjectName::from(vec![Ident::new("old_table3".to_string())]),
                         new_name: ObjectName::from(vec![Ident::new("new_table3".to_string())]),
                     }
@@ -5222,6 +5189,7 @@ fn run_explain_analyze(
             statement,
             format,
             options,
+            ..
         } => {
             assert_eq!(verbose, expected_verbose);
             assert_eq!(analyze, expected_analyze);
@@ -5245,6 +5213,7 @@ fn parse_explain_table() {
                     hive_format,
                     has_table_keyword,
                     table_name,
+                    ..
                 } => {
                     assert_eq!(describe_alias, expected_describe_alias);
                     assert_eq!(hive_format, None);
@@ -6994,7 +6963,10 @@ fn parse_searched_case_expr() {
             operand: None,
             conditions: vec![
                 CaseWhen {
-                    condition: IsNull(Box::new(Identifier(Ident::new("bar")))),
+                    condition: Expr::IsNull {
+                        expr: Box::new(Identifier(Ident::new("bar"))),
+                        suffix_token: AttachedToken::empty(),
+                    },
                     result: Expr::value(Value::SingleQuotedString("null".to_string())),
                 },
                 CaseWhen {
@@ -8889,10 +8861,13 @@ fn parse_set_transaction() {
     // TRANSACTION, so no need to duplicate the tests here. We just do a quick
     // sanity check.
     match verified_stmt("SET TRANSACTION READ ONLY, READ WRITE, ISOLATION LEVEL SERIALIZABLE") {
-        Statement::Set(Set::SetTransaction {
-            modes,
-            session,
-            snapshot,
+        Statement::Set(SetStatement {
+            inner: Set::SetTransaction {
+                modes,
+                session,
+                snapshot,
+            },
+            ..
         }) => {
             assert_eq!(
                 modes,
@@ -8912,11 +8887,14 @@ fn parse_set_transaction() {
 #[test]
 fn parse_set_variable() {
     match verified_stmt("SET SOMETHING = '1'") {
-        Statement::Set(Set::SingleAssignment {
-            scope,
-            hivevar,
-            variable,
-            values,
+        Statement::Set(SetStatement {
+            inner: Set::SingleAssignment {
+                scope,
+                hivevar,
+                variable,
+                values,
+            },
+            ..
         }) => {
             assert_eq!(scope, None);
             assert!(!hivevar);
@@ -8932,11 +8910,14 @@ fn parse_set_variable() {
     }
 
     match verified_stmt("SET GLOBAL VARIABLE = 'Value'") {
-        Statement::Set(Set::SingleAssignment {
-            scope,
-            hivevar,
-            variable,
-            values,
+        Statement::Set(SetStatement {
+            inner: Set::SingleAssignment {
+                scope,
+                hivevar,
+                variable,
+                values,
+            },
+            ..
         }) => {
             assert_eq!(scope, Some(ContextModifier::Global));
             assert!(!hivevar);
@@ -8954,7 +8935,10 @@ fn parse_set_variable() {
     let multi_variable_dialects = all_dialects_where(|d| d.supports_parenthesized_set_variables());
     let sql = r#"SET (a, b, c) = (1, 2, 3)"#;
     match multi_variable_dialects.verified_stmt(sql) {
-        Statement::Set(Set::ParenthesizedAssignments { variables, values }) => {
+        Statement::Set(SetStatement {
+            inner: Set::ParenthesizedAssignments { variables, values },
+            ..
+        }) => {
             assert_eq!(
                 variables,
                 vec![
@@ -9024,11 +9008,14 @@ fn parse_set_variable() {
 #[test]
 fn parse_set_role_as_variable() {
     match verified_stmt("SET role = 'foobar'") {
-        Statement::Set(Set::SingleAssignment {
-            scope,
-            hivevar,
-            variable,
-            values,
+        Statement::Set(SetStatement {
+            inner: Set::SingleAssignment {
+                scope,
+                hivevar,
+                variable,
+                values,
+            },
+            ..
         }) => {
             assert_eq!(scope, None);
             assert!(!hivevar);
@@ -9071,11 +9058,14 @@ fn parse_double_colon_cast_at_timezone() {
 #[test]
 fn parse_set_time_zone() {
     match verified_stmt("SET TIMEZONE = 'UTC'") {
-        Statement::Set(Set::SingleAssignment {
-            scope,
-            hivevar,
-            variable,
-            values,
+        Statement::Set(SetStatement {
+            inner: Set::SingleAssignment {
+                scope,
+                hivevar,
+                variable,
+                values,
+            },
+            ..
         }) => {
             assert_eq!(scope, None);
             assert!(!hivevar);
@@ -9135,6 +9125,7 @@ fn parse_rollback() {
         Statement::Rollback {
             chain: false,
             savepoint: None,
+            ..
         } => (),
         _ => unreachable!(),
     }
@@ -9143,6 +9134,7 @@ fn parse_rollback() {
         Statement::Rollback {
             chain: true,
             savepoint: None,
+            ..
         } => (),
         _ => unreachable!(),
     }
@@ -9151,6 +9143,7 @@ fn parse_rollback() {
         Statement::Rollback {
             chain: false,
             savepoint,
+            ..
         } => {
             assert_eq!(savepoint, Some(Ident::new("test1")));
         }
@@ -9161,6 +9154,7 @@ fn parse_rollback() {
         Statement::Rollback {
             chain: true,
             savepoint,
+            ..
         } => {
             assert_eq!(savepoint, Some(Ident::new("test1")));
         }
@@ -10363,28 +10357,28 @@ fn parse_is_boolean() {
     use self::Expr::*;
 
     let sql = "a IS TRUE";
-    assert_eq!(
-        IsTrue(Box::new(Identifier(Ident::new("a")))),
-        verified_expr(sql)
-    );
+    assert!(matches!(
+        verified_expr(sql),
+        Expr::IsTrue { expr, .. } if matches!(*expr, Identifier(_))
+    ));
 
     let sql = "a IS NOT TRUE";
-    assert_eq!(
-        IsNotTrue(Box::new(Identifier(Ident::new("a")))),
-        verified_expr(sql)
-    );
+    assert!(matches!(
+        verified_expr(sql),
+        Expr::IsNotTrue { expr, .. } if matches!(*expr, Identifier(_))
+    ));
 
     let sql = "a IS FALSE";
-    assert_eq!(
-        IsFalse(Box::new(Identifier(Ident::new("a")))),
-        verified_expr(sql)
-    );
+    assert!(matches!(
+        verified_expr(sql),
+        Expr::IsFalse { expr, .. } if matches!(*expr, Identifier(_))
+    ));
 
     let sql = "a IS NOT FALSE";
-    assert_eq!(
-        IsNotFalse(Box::new(Identifier(Ident::new("a")))),
-        verified_expr(sql)
-    );
+    assert!(matches!(
+        verified_expr(sql),
+        Expr::IsNotFalse { expr, .. } if matches!(*expr, Identifier(_))
+    ));
 
     let sql = "a IS NORMALIZED";
     assert_eq!(
@@ -10427,16 +10421,16 @@ fn parse_is_boolean() {
     );
 
     let sql = "a IS UNKNOWN";
-    assert_eq!(
-        IsUnknown(Box::new(Identifier(Ident::new("a")))),
-        verified_expr(sql)
-    );
+    assert!(matches!(
+        verified_expr(sql),
+        Expr::IsUnknown { expr, .. } if matches!(*expr, Identifier(_))
+    ));
 
     let sql = "a IS NOT UNKNOWN";
-    assert_eq!(
-        IsNotUnknown(Box::new(Identifier(Ident::new("a")))),
-        verified_expr(sql)
-    );
+    assert!(matches!(
+        verified_expr(sql),
+        Expr::IsNotUnknown { expr, .. } if matches!(*expr, Identifier(_))
+    ));
 
     verified_stmt("SELECT f FROM foo WHERE field IS TRUE");
     verified_stmt("SELECT f FROM foo WHERE field IS NOT TRUE");
@@ -10546,6 +10540,7 @@ fn parse_show_functions() {
     assert_eq!(
         verified_stmt("SHOW FUNCTIONS LIKE 'pattern'"),
         Statement::ShowFunctions {
+            show_token: AttachedToken::empty(),
             filter: Some(ShowStatementFilter::Like("pattern".into())),
         }
     );
@@ -10561,6 +10556,7 @@ fn parse_cache_table() {
     assert_eq!(
         verified_stmt(format!("CACHE TABLE '{cache_table_name}'").as_str()),
         Statement::Cache {
+            cache_token: AttachedToken::empty(),
             table_flag: None,
             table_name: ObjectName::from(vec![Ident::with_quote('\'', cache_table_name)]),
             has_as: false,
@@ -10572,6 +10568,7 @@ fn parse_cache_table() {
     assert_eq!(
         verified_stmt(format!("CACHE {table_flag} TABLE '{cache_table_name}'").as_str()),
         Statement::Cache {
+            cache_token: AttachedToken::empty(),
             table_flag: Some(ObjectName::from(vec![Ident::new(table_flag)])),
             table_name: ObjectName::from(vec![Ident::with_quote('\'', cache_table_name)]),
             has_as: false,
@@ -10588,6 +10585,7 @@ fn parse_cache_table() {
             .as_str()
         ),
         Statement::Cache {
+            cache_token: AttachedToken::empty(),
             table_flag: Some(ObjectName::from(vec![Ident::new(table_flag)])),
             table_name: ObjectName::from(vec![Ident::with_quote('\'', cache_table_name)]),
             has_as: false,
@@ -10613,6 +10611,7 @@ fn parse_cache_table() {
                 .as_str()
         ),
         Statement::Cache {
+            cache_token: AttachedToken::empty(),
             table_flag: Some(ObjectName::from(vec![Ident::new(table_flag)])),
             table_name: ObjectName::from(vec![Ident::with_quote('\'', cache_table_name)]),
             has_as: false,
@@ -10638,6 +10637,7 @@ fn parse_cache_table() {
                 .as_str()
         ),
         Statement::Cache {
+            cache_token: AttachedToken::empty(),
             table_flag: Some(ObjectName::from(vec![Ident::new(table_flag)])),
             table_name: ObjectName::from(vec![Ident::with_quote('\'', cache_table_name)]),
             has_as: true,
@@ -10658,6 +10658,7 @@ fn parse_cache_table() {
     assert_eq!(
         verified_stmt(format!("CACHE {table_flag} TABLE '{cache_table_name}' {sql}").as_str()),
         Statement::Cache {
+            cache_token: AttachedToken::empty(),
             table_flag: Some(ObjectName::from(vec![Ident::new(table_flag)])),
             table_name: ObjectName::from(vec![Ident::with_quote('\'', cache_table_name)]),
             has_as: false,
@@ -10669,6 +10670,7 @@ fn parse_cache_table() {
     assert_eq!(
         verified_stmt(format!("CACHE {table_flag} TABLE '{cache_table_name}' AS {sql}").as_str()),
         Statement::Cache {
+            cache_token: AttachedToken::empty(),
             table_flag: Some(ObjectName::from(vec![Ident::new(table_flag)])),
             table_name: ObjectName::from(vec![Ident::with_quote('\'', cache_table_name)]),
             has_as: true,
@@ -10733,6 +10735,7 @@ fn parse_uncache_table() {
     assert_eq!(
         verified_stmt("UNCACHE TABLE 'table_name'"),
         Statement::UNCache {
+            uncache_token: AttachedToken::empty(),
             table_name: ObjectName::from(vec![Ident::with_quote('\'', "table_name")]),
             if_exists: false,
         }
@@ -10741,6 +10744,7 @@ fn parse_uncache_table() {
     assert_eq!(
         verified_stmt("UNCACHE TABLE IF EXISTS 'table_name'"),
         Statement::UNCache {
+            uncache_token: AttachedToken::empty(),
             table_name: ObjectName::from(vec![Ident::with_quote('\'', "table_name")]),
             if_exists: true,
         }
@@ -11530,6 +11534,7 @@ fn parse_create_type() {
         Statement::CreateType {
             name,
             representation,
+            ..
         } => {
             assert_eq!(name.to_string(), "mytype");
             assert!(representation.is_none());
@@ -11542,6 +11547,7 @@ fn parse_create_type() {
         Statement::CreateType {
             name,
             representation,
+            ..
         } => {
             assert_eq!(name.to_string(), "address");
             match representation {
@@ -11576,6 +11582,7 @@ fn parse_create_type() {
         Statement::CreateType {
             name,
             representation,
+            ..
         } => {
             assert_eq!(name.to_string(), "mood");
             match representation {
@@ -11594,6 +11601,7 @@ fn parse_create_type() {
         Statement::CreateType {
             name,
             representation,
+            ..
         } => {
             assert_eq!(name.to_string(), "int4range");
             match representation {
@@ -11622,6 +11630,7 @@ fn parse_create_type() {
         Statement::CreateType {
             name,
             representation,
+            ..
         } => {
             assert_eq!(name.to_string(), "int4range");
             match representation {
@@ -11650,6 +11659,7 @@ fn parse_create_type() {
         Statement::CreateType {
             name,
             representation,
+            ..
         } => {
             assert_eq!(name.to_string(), "int4range");
             match representation {
@@ -11678,6 +11688,7 @@ fn parse_create_type() {
         Statement::CreateType {
             name,
             representation,
+            ..
         } => {
             assert_eq!(name.to_string(), "int4range");
             match representation {
@@ -11716,6 +11727,7 @@ fn parse_create_type() {
         Statement::CreateType {
             name,
             representation,
+            ..
         } => {
             assert_eq!(name.to_string(), "mytype");
             match representation {
@@ -11854,6 +11866,7 @@ fn parse_call() {
 #[test]
 fn parse_execute_stored_procedure() {
     let expected = Statement::Execute {
+        execute_token: AttachedToken::empty(),
         name: Some(ObjectName::from(vec![
             Ident {
                 value: "my_schema".to_string(),
@@ -11980,6 +11993,7 @@ fn parse_unload() {
     assert_eq!(
         unload,
         Statement::Unload {
+            unload_token: AttachedToken::empty(),
             query: Some(Box::new(Query {
                 body: Box::new(SetExpr::Select(Box::new(Select {
                     select_token: AttachedToken::empty(),
@@ -12151,7 +12165,7 @@ fn parse_unload() {
 #[test]
 fn test_savepoint() {
     match verified_stmt("SAVEPOINT test1") {
-        Statement::Savepoint { name } => {
+        Statement::Savepoint { name, .. } => {
             assert_eq!(Ident::new("test1"), name);
         }
         _ => unreachable!(),
@@ -12161,7 +12175,7 @@ fn test_savepoint() {
 #[test]
 fn test_release_savepoint() {
     match verified_stmt("RELEASE SAVEPOINT test1") {
-        Statement::ReleaseSavepoint { name } => {
+        Statement::ReleaseSavepoint { name, .. } => {
             assert_eq!(Ident::new("test1"), name);
         }
         _ => unreachable!(),
@@ -12419,9 +12433,10 @@ fn test_selective_aggregation() {
                     ))],
                     clauses: vec![],
                 }),
-                filter: Some(Box::new(Expr::IsNotNull(Box::new(Expr::Identifier(
-                    Ident::new("name")
-                ))))),
+                filter: Some(Box::new(Expr::IsNotNull {
+                    expr: Box::new(Expr::Identifier(Ident::new("name"))),
+                    suffix_token: AttachedToken::empty(),
+                })),
                 nth_value_order: None,
                 null_treatment: None,
                 over: None,
@@ -13593,6 +13608,7 @@ fn test_drop_policy() {
             name,
             table_name,
             drop_behavior,
+            ..
         } => {
             assert_eq!(if_exists, true);
             assert_eq!(name.to_string(), "my_policy");
@@ -14010,7 +14026,7 @@ fn parse_listen_channel() {
     let dialects = all_dialects_where(|d| d.supports_listen_notify());
 
     match dialects.verified_stmt("LISTEN test1") {
-        Statement::LISTEN { channel } => {
+        Statement::LISTEN { channel, .. } => {
             assert_eq!(Ident::new("test1"), channel);
         }
         _ => unreachable!(),
@@ -14034,14 +14050,14 @@ fn parse_unlisten_channel() {
     let dialects = all_dialects_where(|d| d.supports_listen_notify());
 
     match dialects.verified_stmt("UNLISTEN test1") {
-        Statement::UNLISTEN { channel } => {
+        Statement::UNLISTEN { channel, .. } => {
             assert_eq!(Ident::new("test1"), channel);
         }
         _ => unreachable!(),
     };
 
     match dialects.verified_stmt("UNLISTEN *") {
-        Statement::UNLISTEN { channel } => {
+        Statement::UNLISTEN { channel, .. } => {
             assert_eq!(Ident::new("*"), channel);
         }
         _ => unreachable!(),
@@ -14065,7 +14081,7 @@ fn parse_notify_channel() {
     let dialects = all_dialects_where(|d| d.supports_listen_notify());
 
     match dialects.verified_stmt("NOTIFY test1") {
-        Statement::NOTIFY { channel, payload } => {
+        Statement::NOTIFY { channel, payload, .. } => {
             assert_eq!(Ident::new("test1"), channel);
             assert_eq!(payload, None);
         }
@@ -14076,6 +14092,7 @@ fn parse_notify_channel() {
         Statement::NOTIFY {
             channel,
             payload: Some(payload),
+            ..
         } => {
             assert_eq!(Ident::new("test1"), channel);
             assert_eq!("this is a test notification", payload);
@@ -14211,6 +14228,7 @@ fn parse_comments() {
             object_name,
             comment: Some(comment),
             if_exists,
+            ..
         } => {
             assert_eq!("comment", comment);
             assert_eq!("tab.name", object_name.to_string());
@@ -14238,6 +14256,7 @@ fn parse_comments() {
                 object_name,
                 comment: Some(comment),
                 if_exists,
+                ..
             } => {
                 assert_eq!("comment", comment);
                 assert_eq!("db.t0", object_name.to_string());
@@ -14256,6 +14275,7 @@ fn parse_comments() {
             object_name,
             comment: None,
             if_exists,
+            ..
         } => {
             assert_eq!("public.tab", object_name.to_string());
             assert_eq!(CommentObject::Table, object_type);
@@ -14423,7 +14443,10 @@ fn parse_composite_access_expr() {
     };
 
     assert_eq!(stmt.projection[0], SelectItem::UnnamedExpr(expr.clone()));
-    assert_eq!(stmt.selection.unwrap(), Expr::IsNotNull(Box::new(expr)));
+    assert!(matches!(
+        stmt.selection.unwrap(),
+        Expr::IsNotNull { expr: inner, .. } if *inner == expr
+    ));
 
     // Compound access with quoted identifier.
     all_dialects_where(|d| d.is_delimited_identifier_start('"'))
@@ -15797,7 +15820,10 @@ fn parse_multiple_set_statements() -> Result<(), ParserError> {
     let stmt = dialects.verified_stmt("SET @a = 1, b = 2");
 
     match stmt {
-        Statement::Set(Set::MultipleAssignments { assignments }) => {
+        Statement::Set(SetStatement {
+            inner: Set::MultipleAssignments { assignments },
+            ..
+        }) => {
             assert_eq!(
                 assignments,
                 vec![
@@ -15820,7 +15846,10 @@ fn parse_multiple_set_statements() -> Result<(), ParserError> {
     let stmt = dialects.verified_stmt("SET GLOBAL @a = 1, SESSION b = 2, LOCAL c = 3, d = 4");
 
     match stmt {
-        Statement::Set(Set::MultipleAssignments { assignments }) => {
+        Statement::Set(SetStatement {
+            inner: Set::MultipleAssignments { assignments },
+            ..
+        }) => {
             assert_eq!(
                 assignments,
                 vec![
@@ -15856,7 +15885,10 @@ fn parse_multiple_set_statements() -> Result<(), ParserError> {
 #[test]
 fn parse_set_time_zone_alias() {
     match all_dialects().verified_stmt("SET TIME ZONE 'UTC'") {
-        Statement::Set(Set::SetTimeZone { local, value }) => {
+        Statement::Set(SetStatement {
+            inner: Set::SetTimeZone { local, value },
+            ..
+        }) => {
             assert!(!local);
             assert_eq!(
                 value,
@@ -15870,7 +15902,13 @@ fn parse_set_time_zone_alias() {
 #[test]
 fn parse_return() {
     let stmt = all_dialects().verified_stmt("RETURN");
-    assert_eq!(stmt, Statement::Return(ReturnStatement { value: None }));
+    assert_eq!(
+        stmt,
+        Statement::Return(ReturnStatement {
+            token: AttachedToken::empty(),
+            value: None
+        })
+    );
 
     let _ = all_dialects().verified_stmt("RETURN 1");
 }
@@ -16826,12 +16864,14 @@ fn parse_reset_statement() {
     match verified_stmt("RESET some_parameter") {
         Statement::Reset(ResetStatement {
             reset: Reset::ConfigurationParameter(o),
+            ..
         }) => assert_eq!(o, ObjectName::from(vec!["some_parameter".into()])),
         _ => unreachable!(),
     }
     match verified_stmt("RESET some_extension.some_parameter") {
         Statement::Reset(ResetStatement {
             reset: Reset::ConfigurationParameter(o),
+            ..
         }) => assert_eq!(
             o,
             ObjectName::from(vec!["some_extension".into(), "some_parameter".into()])
@@ -16839,7 +16879,7 @@ fn parse_reset_statement() {
         _ => unreachable!(),
     }
     match verified_stmt("RESET ALL") {
-        Statement::Reset(ResetStatement { reset }) => assert_eq!(reset, Reset::ALL),
+        Statement::Reset(ResetStatement { reset, .. }) => assert_eq!(reset, Reset::ALL),
         _ => unreachable!(),
     }
 }
@@ -16849,23 +16889,29 @@ fn test_parse_set_session_authorization() {
     let stmt = verified_stmt("SET SESSION AUTHORIZATION DEFAULT");
     assert_eq!(
         stmt,
-        Statement::Set(Set::SetSessionAuthorization(SetSessionAuthorizationParam {
-            scope: ContextModifier::Session,
-            kind: SetSessionAuthorizationParamKind::Default,
-        }))
+        Statement::Set(SetStatement {
+            token: AttachedToken::empty(),
+            inner: Set::SetSessionAuthorization(SetSessionAuthorizationParam {
+                scope: ContextModifier::Session,
+                kind: SetSessionAuthorizationParamKind::Default,
+            })
+        })
     );
 
     let stmt = verified_stmt("SET SESSION AUTHORIZATION 'username'");
     assert_eq!(
         stmt,
-        Statement::Set(Set::SetSessionAuthorization(SetSessionAuthorizationParam {
-            scope: ContextModifier::Session,
-            kind: SetSessionAuthorizationParamKind::User(Ident {
-                value: "username".to_string(),
-                quote_style: Some('\''),
-                span: Span::empty(),
-            }),
-        }))
+        Statement::Set(SetStatement {
+            token: AttachedToken::empty(),
+            inner: Set::SetSessionAuthorization(SetSessionAuthorizationParam {
+                scope: ContextModifier::Session,
+                kind: SetSessionAuthorizationParamKind::User(Ident {
+                    value: "username".to_string(),
+                    quote_style: Some('\''),
+                    span: Span::empty(),
+                }),
+            })
+        })
     );
 }
 
@@ -17058,6 +17104,7 @@ fn parse_grant_role() {
             grantees,
             with_admin_option,
             granted_by,
+            ..
         } => {
             assert_eq!(roles.len(), 1);
             assert_eq!(roles[0].to_string(), "admin_role");

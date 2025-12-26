@@ -15,7 +15,7 @@
 #[cfg(not(feature = "std"))]
 use alloc::{string::ToString, vec};
 
-use super::{Parser, ParserError};
+use super::{AttachedToken, Parser, ParserError};
 use crate::{
     ast::{
         helpers::key_value_options::{KeyValueOptions, KeyValueOptionsDelimiter},
@@ -54,6 +54,20 @@ impl Parser<'_> {
     ///
     /// [PostgreSQL](https://www.postgresql.org/docs/current/sql-alterpolicy.html)
     pub fn parse_alter_policy(&self) -> Result<Statement, ParserError> {
+        // We need to get the ALTER token which was consumed before this function
+        // The parser is currently at the position after POLICY, so we go back 2 positions
+        let token = {
+            let current_pos = self.index();
+            self.prev_token();
+            self.prev_token();
+            let t = AttachedToken(self.get_current_token().clone().to_static());
+            // Restore position
+            while self.index() < current_pos {
+                self.next_token();
+            }
+            t
+        };
+
         let name = self.parse_identifier()?;
         self.expect_keyword_is(Keyword::ON)?;
         let table_name = self.parse_object_name(false)?;
@@ -62,6 +76,7 @@ impl Parser<'_> {
             self.expect_keyword_is(Keyword::TO)?;
             let new_name = self.parse_identifier()?;
             Ok(Statement::AlterPolicy {
+                token,
                 name,
                 table_name,
                 operation: AlterPolicyOperation::Rename { new_name },
@@ -91,6 +106,7 @@ impl Parser<'_> {
                 None
             };
             Ok(Statement::AlterPolicy {
+                token,
                 name,
                 table_name,
                 operation: AlterPolicyOperation::Apply {
@@ -148,6 +164,7 @@ impl Parser<'_> {
     /// ALTER USER [ IF EXISTS ] [ <name> ] [ OPTIONS ]
     /// ```
     pub fn parse_alter_user(&self) -> Result<Statement, ParserError> {
+        let token = AttachedToken(self.get_current_token().clone().to_static());
         let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
         let name = self.parse_identifier()?;
         let rename_to = if self.parse_keywords(&[Keyword::RENAME, Keyword::TO]) {
@@ -293,6 +310,7 @@ impl Parser<'_> {
         };
 
         Ok(Statement::AlterUser(AlterUser {
+            token,
             if_exists,
             name,
             rename_to,
@@ -327,6 +345,20 @@ impl Parser<'_> {
     }
 
     fn parse_mssql_alter_role(&self) -> Result<Statement, ParserError> {
+        // We need to get the ALTER token which was consumed before this function
+        // The parser is currently at the position after ROLE, so we go back 2 positions
+        let token = {
+            let current_pos = self.index();
+            self.prev_token();
+            self.prev_token();
+            let t = AttachedToken(self.get_current_token().clone().to_static());
+            // Restore position
+            while self.index() < current_pos {
+                self.next_token();
+            }
+            t
+        };
+
         let role_name = self.parse_identifier()?;
 
         let operation = if self.parse_keywords(&[Keyword::ADD, Keyword::MEMBER]) {
@@ -347,12 +379,27 @@ impl Parser<'_> {
         };
 
         Ok(Statement::AlterRole {
+            token,
             name: role_name,
             operation,
         })
     }
 
     fn parse_pg_alter_role(&self) -> Result<Statement, ParserError> {
+        // We need to get the ALTER token which was consumed before this function
+        // The parser is currently at the position after ROLE, so we go back 2 positions
+        let token = {
+            let current_pos = self.index();
+            self.prev_token();
+            self.prev_token();
+            let t = AttachedToken(self.get_current_token().clone().to_static());
+            // Restore position
+            while self.index() < current_pos {
+                self.next_token();
+            }
+            t
+        };
+
         let role_name = self.parse_identifier()?;
 
         // [ IN DATABASE _`database_name`_ ]
@@ -431,6 +478,7 @@ impl Parser<'_> {
         };
 
         Ok(Statement::AlterRole {
+            token,
             name: role_name,
             operation,
         })

@@ -136,14 +136,28 @@ impl Dialect for MsSqlDialect {
         if parser.peek_keyword(Keyword::IF) {
             Some(self.parse_if_stmt(parser))
         } else if parser.parse_keywords(&[Keyword::CREATE, Keyword::TRIGGER]) {
-            Some(self.parse_create_trigger(parser, false))
+            // Keywords already consumed, capture CREATE token by going back then forward
+            parser.prev_token(); // back to TRIGGER
+            parser.prev_token(); // back to CREATE
+            let create_token = AttachedToken(parser.next_token().to_static()); // consume CREATE, get token
+            parser.next_token(); // consume TRIGGER
+            Some(self.parse_create_trigger(parser, create_token, false))
         } else if parser.parse_keywords(&[
             Keyword::CREATE,
             Keyword::OR,
             Keyword::ALTER,
             Keyword::TRIGGER,
         ]) {
-            Some(self.parse_create_trigger(parser, true))
+            // Keywords already consumed, capture CREATE token by going back then forward
+            parser.prev_token(); // back to TRIGGER
+            parser.prev_token(); // back to ALTER
+            parser.prev_token(); // back to OR
+            parser.prev_token(); // back to CREATE
+            let create_token = AttachedToken(parser.next_token().to_static()); // consume CREATE, get token
+            parser.next_token(); // consume OR
+            parser.next_token(); // consume ALTER
+            parser.next_token(); // consume TRIGGER
+            Some(self.parse_create_trigger(parser, create_token, true))
         } else {
             None
         }
@@ -242,6 +256,7 @@ impl MsSqlDialect {
     fn parse_create_trigger(
         &self,
         parser: &Parser,
+        token: AttachedToken,
         or_alter: bool,
     ) -> Result<Statement, ParserError> {
         let name = parser.parse_object_name(false)?;
@@ -254,6 +269,7 @@ impl MsSqlDialect {
         let statements = Some(parser.parse_conditional_statements(&[Keyword::END])?);
 
         Ok(CreateTrigger {
+            token,
             or_alter,
             temporary: false,
             or_replace: false,

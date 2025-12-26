@@ -106,6 +106,7 @@ fn parse_create_procedure() {
     assert_eq!(
         ms().verified_stmt(sql),
         Statement::CreateProcedure {
+            create_token: AttachedToken::empty(),
             or_alter: true,
             body: ConditionalStatements::BeginEnd(BeginEndStatements {
                 begin_token: AttachedToken::empty(),
@@ -212,6 +213,7 @@ fn parse_create_function() {
     assert_eq!(
         ms().verified_stmt(return_expression_function),
         sqlparser::ast::Statement::CreateFunction(CreateFunction {
+            token: AttachedToken::empty(),
             or_alter: false,
             or_replace: false,
             temporary: false,
@@ -240,6 +242,7 @@ fn parse_create_function() {
             function_body: Some(CreateFunctionBody::AsBeginEnd(BeginEndStatements {
                 begin_token: AttachedToken::empty(),
                 statements: vec![Statement::Return(ReturnStatement {
+                    token: AttachedToken::empty(),
                     value: Some(ReturnStatementValue::Expr(Expr::Value(
                         (number("1")).with_empty_span()
                     ))),
@@ -400,6 +403,7 @@ fn parse_create_function_parameter_default_values() {
     assert_eq!(
         ms().verified_stmt(single_default_sql),
         Statement::CreateFunction(CreateFunction {
+            token: AttachedToken::empty(),
             or_alter: false,
             or_replace: false,
             temporary: false,
@@ -416,6 +420,7 @@ fn parse_create_function_parameter_default_values() {
             function_body: Some(CreateFunctionBody::AsBeginEnd(BeginEndStatements {
                 begin_token: AttachedToken::empty(),
                 statements: vec![Statement::Return(ReturnStatement {
+                    token: AttachedToken::empty(),
                     value: Some(ReturnStatementValue::Expr(Expr::Identifier(Ident::new(
                         "@param1"
                     )))),
@@ -818,6 +823,7 @@ fn parse_alter_role() {
     assert_eq!(
         ms().parse_sql_statements(sql).unwrap(),
         [Statement::AlterRole {
+            token: AttachedToken::empty(),
             name: Ident {
                 value: "old_name".into(),
                 quote_style: None,
@@ -837,6 +843,7 @@ fn parse_alter_role() {
     assert_eq!(
         ms().verified_stmt(sql),
         Statement::AlterRole {
+            token: AttachedToken::empty(),
             name: Ident {
                 value: "role_name".into(),
                 quote_style: None,
@@ -856,6 +863,7 @@ fn parse_alter_role() {
     assert_eq!(
         ms().verified_stmt(sql),
         Statement::AlterRole {
+            token: AttachedToken::empty(),
             name: Ident {
                 value: "role_name".into(),
                 quote_style: None,
@@ -1439,6 +1447,7 @@ fn parse_mssql_declare() {
 
     assert_eq!(
         vec![Statement::Declare {
+            declare_token: AttachedToken::empty(),
             stmts: vec![
                 Declare {
                     names: vec![Ident {
@@ -1500,6 +1509,7 @@ fn parse_mssql_declare() {
     assert_eq!(
         vec![
             Statement::Declare {
+            declare_token: AttachedToken::empty(),
                 stmts: vec![Declare {
                     names: vec![Ident::new("@bar"),],
                     data_type: Some(Int(None)),
@@ -1513,13 +1523,16 @@ fn parse_mssql_declare() {
                     handler_body: None
                 }]
             },
-            Statement::Set(Set::SingleAssignment {
-                scope: None,
-                hivevar: false,
-                variable: ObjectName::from(vec![Ident::new("@bar")]),
-                values: vec![Expr::Value(
-                    (Value::Number("2".parse().unwrap(), false)).with_empty_span()
-                )],
+            Statement::Set(SetStatement {
+                token: AttachedToken::empty(),
+                inner: Set::SingleAssignment {
+                    scope: None,
+                    hivevar: false,
+                    variable: ObjectName::from(vec![Ident::new("@bar")]),
+                    values: vec![Expr::Value(
+                        (Value::Number("2".parse().unwrap(), false)).with_empty_span()
+                    )],
+                }
             }),
             Statement::Query(Box::new(Query {
                 with: None,
@@ -1628,6 +1641,7 @@ fn test_mssql_while_statement() {
                 then_token: None,
                 conditional_statements: ConditionalStatements::Sequence {
                     statements: vec![Statement::Print(PrintStatement {
+                        token: AttachedToken::empty(),
                         message: Box::new(Expr::Value(
                             (Value::SingleQuotedString("Hello World".to_string()))
                                 .with_empty_span()
@@ -1663,6 +1677,7 @@ fn test_parse_raiserror() {
     assert_eq!(
         s,
         Statement::RaisError {
+            token: AttachedToken::empty(),
             message: Box::new(Expr::Value(
                 (Value::SingleQuotedString("This is a test".to_string())).with_empty_span()
             )),
@@ -2419,6 +2434,7 @@ fn parse_create_trigger() {
     assert_eq!(
         create_stmt,
         Statement::CreateTrigger(CreateTrigger {
+            token: AttachedToken::empty(),
             or_alter: true,
             temporary: false,
             or_replace: false,
@@ -2436,6 +2452,7 @@ fn parse_create_trigger() {
             statements_as: true,
             statements: Some(ConditionalStatements::Sequence {
                 statements: vec![Statement::RaisError {
+                    token: AttachedToken::empty(),
                     message: Box::new(Expr::Value(
                         (Value::SingleQuotedString("Notify Customer Relations".to_string()))
                             .with_empty_span()
@@ -2511,6 +2528,7 @@ fn parse_drop_trigger() {
     assert_eq!(
         drop_stmt,
         Statement::DropTrigger(DropTrigger {
+            token: AttachedToken::empty(),
             if_exists: false,
             trigger_name: ObjectName::from(vec![Ident::new("emp_stamp")]),
             table_name: None,
@@ -2526,6 +2544,7 @@ fn parse_print() {
     assert_eq!(
         print_stmt,
         Statement::Print(PrintStatement {
+            token: AttachedToken::empty(),
             message: Box::new(Expr::Value(
                 (Value::SingleQuotedString("Hello, world!".to_string())).with_empty_span()
             )),

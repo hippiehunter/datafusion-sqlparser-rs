@@ -1440,76 +1440,94 @@ fn parse_set() {
     let stmt = pg_and_generic().verified_stmt("SET a = b");
     assert_eq!(
         stmt,
-        Statement::Set(Set::SingleAssignment {
-            scope: None,
-            hivevar: false,
-            variable: ObjectName::from(vec![Ident::new("a")]),
-            values: vec![Expr::Identifier(Ident {
-                value: "b".into(),
-                quote_style: None,
-                span: Span::empty(),
-            })],
+        Statement::Set(SetStatement {
+            token: AttachedToken::empty(),
+            inner: Set::SingleAssignment {
+                scope: None,
+                hivevar: false,
+                variable: ObjectName::from(vec![Ident::new("a")]),
+                values: vec![Expr::Identifier(Ident {
+                    value: "b".into(),
+                    quote_style: None,
+                    span: Span::empty(),
+                })],
+            }
         })
     );
 
     let stmt = pg_and_generic().verified_stmt("SET a = 'b'");
     assert_eq!(
         stmt,
-        Statement::Set(Set::SingleAssignment {
-            scope: None,
-            hivevar: false,
-            variable: ObjectName::from(vec![Ident::new("a")]),
-            values: vec![Expr::Value(
-                (Value::SingleQuotedString("b".into())).with_empty_span()
-            )],
+        Statement::Set(SetStatement {
+            token: AttachedToken::empty(),
+            inner: Set::SingleAssignment {
+                scope: None,
+                hivevar: false,
+                variable: ObjectName::from(vec![Ident::new("a")]),
+                values: vec![Expr::Value(
+                    (Value::SingleQuotedString("b".into())).with_empty_span()
+                )],
+            }
         })
     );
 
     let stmt = pg_and_generic().verified_stmt("SET a = 0");
     assert_eq!(
         stmt,
-        Statement::Set(Set::SingleAssignment {
-            scope: None,
-            hivevar: false,
-            variable: ObjectName::from(vec![Ident::new("a")]),
-            values: vec![Expr::value(number("0"))],
+        Statement::Set(SetStatement {
+            token: AttachedToken::empty(),
+            inner: Set::SingleAssignment {
+                scope: None,
+                hivevar: false,
+                variable: ObjectName::from(vec![Ident::new("a")]),
+                values: vec![Expr::value(number("0"))],
+            }
         })
     );
 
     let stmt = pg_and_generic().verified_stmt("SET a = DEFAULT");
     assert_eq!(
         stmt,
-        Statement::Set(Set::SingleAssignment {
-            scope: None,
-            hivevar: false,
-            variable: ObjectName::from(vec![Ident::new("a")]),
-            values: vec![Expr::Identifier(Ident::new("DEFAULT"))],
+        Statement::Set(SetStatement {
+            token: AttachedToken::empty(),
+            inner: Set::SingleAssignment {
+                scope: None,
+                hivevar: false,
+                variable: ObjectName::from(vec![Ident::new("a")]),
+                values: vec![Expr::Identifier(Ident::new("DEFAULT"))],
+            }
         })
     );
 
     let stmt = pg_and_generic().verified_stmt("SET LOCAL a = b");
     assert_eq!(
         stmt,
-        Statement::Set(Set::SingleAssignment {
-            scope: Some(ContextModifier::Local),
-            hivevar: false,
-            variable: ObjectName::from(vec![Ident::new("a")]),
-            values: vec![Expr::Identifier("b".into())],
+        Statement::Set(SetStatement {
+            token: AttachedToken::empty(),
+            inner: Set::SingleAssignment {
+                scope: Some(ContextModifier::Local),
+                hivevar: false,
+                variable: ObjectName::from(vec![Ident::new("a")]),
+                values: vec![Expr::Identifier("b".into())],
+            }
         })
     );
 
     let stmt = pg_and_generic().verified_stmt("SET a.b.c = b");
     assert_eq!(
         stmt,
-        Statement::Set(Set::SingleAssignment {
-            scope: None,
-            hivevar: false,
-            variable: ObjectName::from(vec![Ident::new("a"), Ident::new("b"), Ident::new("c")]),
-            values: vec![Expr::Identifier(Ident {
-                value: "b".into(),
-                quote_style: None,
-                span: Span::empty(),
-            })],
+        Statement::Set(SetStatement {
+            token: AttachedToken::empty(),
+            inner: Set::SingleAssignment {
+                scope: None,
+                hivevar: false,
+                variable: ObjectName::from(vec![Ident::new("a"), Ident::new("b"), Ident::new("c")]),
+                values: vec![Expr::Identifier(Ident {
+                    value: "b".into(),
+                    quote_style: None,
+                    span: Span::empty(),
+                })],
+            }
         })
     );
 
@@ -1519,17 +1537,20 @@ fn parse_set() {
     );
     assert_eq!(
         stmt,
-        Statement::Set(Set::SingleAssignment {
-            scope: None,
-            hivevar: false,
-            variable: ObjectName::from(vec![
-                Ident::new("hive"),
-                Ident::new("tez"),
-                Ident::new("auto"),
-                Ident::new("reducer"),
-                Ident::new("parallelism")
-            ]),
-            values: vec![Expr::Value((Value::Boolean(false)).with_empty_span())],
+        Statement::Set(SetStatement {
+            token: AttachedToken::empty(),
+            inner: Set::SingleAssignment {
+                scope: None,
+                hivevar: false,
+                variable: ObjectName::from(vec![
+                    Ident::new("hive"),
+                    Ident::new("tez"),
+                    Ident::new("auto"),
+                    Ident::new("reducer"),
+                    Ident::new("parallelism")
+                ]),
+                values: vec![Expr::Value((Value::Boolean(false)).with_empty_span())],
+            }
         })
     );
 
@@ -1563,9 +1584,12 @@ fn parse_set_role() {
     let stmt = pg_and_generic().verified_stmt(query);
     assert_eq!(
         stmt,
-        Statement::Set(Set::SetRole {
-            context_modifier: Some(ContextModifier::Session),
-            role_name: None,
+        Statement::Set(SetStatement {
+            token: AttachedToken::empty(),
+            inner: Set::SetRole {
+                context_modifier: Some(ContextModifier::Session),
+                role_name: None,
+            }
         })
     );
     assert_eq!(query, stmt.to_string());
@@ -1574,13 +1598,16 @@ fn parse_set_role() {
     let stmt = pg_and_generic().verified_stmt(query);
     assert_eq!(
         stmt,
-        Statement::Set(Set::SetRole {
-            context_modifier: Some(ContextModifier::Local),
-            role_name: Some(Ident {
-                value: "rolename".to_string(),
-                quote_style: Some('\"'),
-                span: Span::empty(),
-            }),
+        Statement::Set(SetStatement {
+            token: AttachedToken::empty(),
+            inner: Set::SetRole {
+                context_modifier: Some(ContextModifier::Local),
+                role_name: Some(Ident {
+                    value: "rolename".to_string(),
+                    quote_style: Some('\"'),
+                    span: Span::empty(),
+                }),
+            }
         })
     );
     assert_eq!(query, stmt.to_string());
@@ -1589,13 +1616,16 @@ fn parse_set_role() {
     let stmt = pg_and_generic().verified_stmt(query);
     assert_eq!(
         stmt,
-        Statement::Set(Set::SetRole {
-            context_modifier: None,
-            role_name: Some(Ident {
-                value: "rolename".to_string(),
-                quote_style: Some('\''),
-                span: Span::empty(),
-            }),
+        Statement::Set(SetStatement {
+            token: AttachedToken::empty(),
+            inner: Set::SetRole {
+                context_modifier: None,
+                role_name: Some(Ident {
+                    value: "rolename".to_string(),
+                    quote_style: Some('\''),
+                    span: Span::empty(),
+                }),
+            }
         })
     );
     assert_eq!(query, stmt.to_string());
@@ -1607,6 +1637,7 @@ fn parse_show() {
     assert_eq!(
         stmt,
         Statement::ShowVariable {
+            show_token: AttachedToken::empty(),
             variable: vec!["a".into(), "a".into()]
         }
     );
@@ -1615,6 +1646,7 @@ fn parse_show() {
     assert_eq!(
         stmt,
         Statement::ShowVariable {
+            show_token: AttachedToken::empty(),
             variable: vec!["ALL".into(), "ALL".into()]
         }
     )
@@ -1626,6 +1658,7 @@ fn parse_deallocate() {
     assert_eq!(
         stmt,
         Statement::Deallocate {
+            deallocate_token: AttachedToken::empty(),
             name: "a".into(),
             prepare: false,
         }
@@ -1635,6 +1668,7 @@ fn parse_deallocate() {
     assert_eq!(
         stmt,
         Statement::Deallocate {
+            deallocate_token: AttachedToken::empty(),
             name: "ALL".into(),
             prepare: false,
         }
@@ -1644,6 +1678,7 @@ fn parse_deallocate() {
     assert_eq!(
         stmt,
         Statement::Deallocate {
+            deallocate_token: AttachedToken::empty(),
             name: "a".into(),
             prepare: true,
         }
@@ -1653,6 +1688,7 @@ fn parse_deallocate() {
     assert_eq!(
         stmt,
         Statement::Deallocate {
+            deallocate_token: AttachedToken::empty(),
             name: "ALL".into(),
             prepare: true,
         }
@@ -1665,6 +1701,7 @@ fn parse_execute() {
     assert_eq!(
         stmt,
         Statement::Execute {
+            execute_token: AttachedToken::empty(),
             name: Some(ObjectName::from(vec!["a".into()])),
             parameters: vec![],
             has_parentheses: false,
@@ -1680,6 +1717,7 @@ fn parse_execute() {
     assert_eq!(
         stmt,
         Statement::Execute {
+            execute_token: AttachedToken::empty(),
             name: Some(ObjectName::from(vec!["a".into()])),
             parameters: vec![
                 Expr::value(number("1")),
@@ -1699,6 +1737,7 @@ fn parse_execute() {
     assert_eq!(
         stmt,
         Statement::Execute {
+            execute_token: AttachedToken::empty(),
             name: Some(ObjectName::from(vec!["a".into()])),
             parameters: vec![],
             has_parentheses: false,
@@ -3103,23 +3142,29 @@ fn test_transaction_statement() {
     let statement = pg().verified_stmt("SET TRANSACTION SNAPSHOT '000003A1-1'");
     assert_eq!(
         statement,
-        Statement::Set(Set::SetTransaction {
-            modes: vec![],
-            snapshot: Some(Value::SingleQuotedString(String::from("000003A1-1"))),
-            session: false
+        Statement::Set(SetStatement {
+            token: AttachedToken::empty(),
+            inner: Set::SetTransaction {
+                modes: vec![],
+                snapshot: Some(Value::SingleQuotedString(String::from("000003A1-1"))),
+                session: false
+            }
         })
     );
     let statement = pg().verified_stmt("SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY, READ WRITE, ISOLATION LEVEL SERIALIZABLE");
     assert_eq!(
         statement,
-        Statement::Set(Set::SetTransaction {
-            modes: vec![
-                TransactionMode::AccessMode(TransactionAccessMode::ReadOnly),
-                TransactionMode::AccessMode(TransactionAccessMode::ReadWrite),
-                TransactionMode::IsolationLevel(TransactionIsolationLevel::Serializable),
-            ],
-            snapshot: None,
-            session: true
+        Statement::Set(SetStatement {
+            token: AttachedToken::empty(),
+            inner: Set::SetTransaction {
+                modes: vec![
+                    TransactionMode::AccessMode(TransactionAccessMode::ReadOnly),
+                    TransactionMode::AccessMode(TransactionAccessMode::ReadWrite),
+                    TransactionMode::IsolationLevel(TransactionIsolationLevel::Serializable),
+                ],
+                snapshot: None,
+                session: true
+            }
         })
     );
 }
@@ -3937,6 +3982,7 @@ fn parse_alter_role() {
     assert_eq!(
         pg().verified_stmt(sql),
         Statement::AlterRole {
+            token: AttachedToken::empty(),
             name: Ident {
                 value: "old_name".into(),
                 quote_style: None,
@@ -3956,6 +4002,7 @@ fn parse_alter_role() {
     assert_eq!(
         pg().verified_stmt(sql),
         Statement::AlterRole {
+            token: AttachedToken::empty(),
             name: Ident {
                 value: "role_name".into(),
                 quote_style: None,
@@ -3988,6 +4035,7 @@ fn parse_alter_role() {
     assert_eq!(
         pg().verified_stmt(sql),
         Statement::AlterRole {
+            token: AttachedToken::empty(),
             name: Ident {
                 value: "role_name".into(),
                 quote_style: None,
@@ -4012,6 +4060,7 @@ fn parse_alter_role() {
     assert_eq!(
         pg().verified_stmt(sql),
         Statement::AlterRole {
+            token: AttachedToken::empty(),
             name: Ident {
                 value: "role_name".into(),
                 quote_style: None,
@@ -4033,6 +4082,7 @@ fn parse_alter_role() {
     assert_eq!(
         pg().parse_sql_statements(sql).unwrap(),
         [Statement::AlterRole {
+            token: AttachedToken::empty(),
             name: Ident {
                 value: "role_name".into(),
                 quote_style: None,
@@ -4060,6 +4110,7 @@ fn parse_alter_role() {
     assert_eq!(
         pg().verified_stmt(sql),
         Statement::AlterRole {
+            token: AttachedToken::empty(),
             name: Ident {
                 value: "role_name".into(),
                 quote_style: None,
@@ -4087,6 +4138,7 @@ fn parse_alter_role() {
     assert_eq!(
         pg().verified_stmt(sql),
         Statement::AlterRole {
+            token: AttachedToken::empty(),
             name: Ident {
                 value: "role_name".into(),
                 quote_style: None,
@@ -4112,6 +4164,7 @@ fn parse_alter_role() {
     assert_eq!(
         pg().verified_stmt(sql),
         Statement::AlterRole {
+            token: AttachedToken::empty(),
             name: Ident {
                 value: "role_name".into(),
                 quote_style: None,
@@ -4128,6 +4181,7 @@ fn parse_alter_role() {
     assert_eq!(
         pg().verified_stmt(sql),
         Statement::AlterRole {
+            token: AttachedToken::empty(),
             name: Ident {
                 value: "role_name".into(),
                 quote_style: None,
@@ -4251,6 +4305,7 @@ $$"#;
     assert_eq!(
         pg_and_generic().verified_stmt(sql1),
         Statement::CreateFunction(CreateFunction {
+            token: AttachedToken::empty(),
             or_alter: false,
             or_replace: true,
             temporary: false,
@@ -4295,6 +4350,7 @@ $$"#;
     assert_eq!(
         pg_and_generic().verified_stmt(sql2),
         Statement::CreateFunction(CreateFunction {
+            token: AttachedToken::empty(),
             or_alter: false,
             or_replace: true,
             temporary: false,
@@ -4335,6 +4391,7 @@ $$"#;
     assert_eq!(
         pg_and_generic().verified_stmt(sql3),
         Statement::CreateFunction(CreateFunction {
+            token: AttachedToken::empty(),
             or_alter: false,
             or_replace: true,
             temporary: false,
@@ -4379,6 +4436,7 @@ $$"#;
     assert_eq!(
         pg_and_generic().verified_stmt(sql4),
         Statement::CreateFunction(CreateFunction {
+            token: AttachedToken::empty(),
             or_alter: false,
             or_replace: true,
             temporary: false,
@@ -4419,6 +4477,7 @@ $$"#;
     assert_eq!(
         pg_and_generic().verified_stmt(sql5),
         Statement::CreateFunction(CreateFunction {
+            token: AttachedToken::empty(),
             or_alter: false,
             or_replace: true,
             temporary: false,
@@ -4462,6 +4521,7 @@ fn parse_create_function() {
     assert_eq!(
         pg_and_generic().verified_stmt(sql),
         Statement::CreateFunction(CreateFunction {
+            token: AttachedToken::empty(),
             or_alter: false,
             or_replace: false,
             temporary: false,
@@ -4613,6 +4673,7 @@ fn parse_drop_domain() {
     assert_eq!(
         pg().verified_stmt(sql),
         Statement::DropDomain(DropDomain {
+            token: AttachedToken::empty(),
             if_exists: true,
             name: ObjectName::from(vec![Ident {
                 value: "jpeg_domain".to_string(),
@@ -4627,6 +4688,7 @@ fn parse_drop_domain() {
     assert_eq!(
         pg().verified_stmt(sql),
         Statement::DropDomain(DropDomain {
+            token: AttachedToken::empty(),
             if_exists: false,
             name: ObjectName::from(vec![Ident {
                 value: "jpeg_domain".to_string(),
@@ -4641,6 +4703,7 @@ fn parse_drop_domain() {
     assert_eq!(
         pg().verified_stmt(sql),
         Statement::DropDomain(DropDomain {
+            token: AttachedToken::empty(),
             if_exists: true,
             name: ObjectName::from(vec![Ident {
                 value: "jpeg_domain".to_string(),
@@ -4656,6 +4719,7 @@ fn parse_drop_domain() {
     assert_eq!(
         pg().verified_stmt(sql),
         Statement::DropDomain(DropDomain {
+            token: AttachedToken::empty(),
             if_exists: true,
             name: ObjectName::from(vec![Ident {
                 value: "jpeg_domain".to_string(),
@@ -4673,6 +4737,7 @@ fn parse_drop_procedure() {
     assert_eq!(
         pg().verified_stmt(sql),
         Statement::DropProcedure {
+            token: AttachedToken::empty(),
             if_exists: true,
             proc_desc: vec![FunctionDesc {
                 name: ObjectName::from(vec![Ident {
@@ -4690,6 +4755,7 @@ fn parse_drop_procedure() {
     assert_eq!(
         pg().verified_stmt(sql),
         Statement::DropProcedure {
+            token: AttachedToken::empty(),
             if_exists: true,
             proc_desc: vec![FunctionDesc {
                 name: ObjectName::from(vec![Ident {
@@ -4718,6 +4784,7 @@ fn parse_drop_procedure() {
     assert_eq!(
         pg().verified_stmt(sql),
         Statement::DropProcedure {
+            token: AttachedToken::empty(),
             if_exists: true,
             proc_desc: vec![
                 FunctionDesc {
@@ -5570,6 +5637,7 @@ fn test_escaped_string_literal() {
 fn parse_create_domain() {
     let sql1 = "CREATE DOMAIN my_domain AS INTEGER CHECK (VALUE > 0)";
     let expected = Statement::CreateDomain(CreateDomain {
+        token: AttachedToken::empty(),
         name: ObjectName::from(vec![Ident::new("my_domain")]),
         data_type: DataType::Integer(None),
         collation: None,
@@ -5590,6 +5658,7 @@ fn parse_create_domain() {
 
     let sql2 = "CREATE DOMAIN my_domain AS INTEGER COLLATE \"en_US\" CHECK (VALUE > 0)";
     let expected = Statement::CreateDomain(CreateDomain {
+        token: AttachedToken::empty(),
         name: ObjectName::from(vec![Ident::new("my_domain")]),
         data_type: DataType::Integer(None),
         collation: Some(Ident::with_quote('"', "en_US")),
@@ -5610,6 +5679,7 @@ fn parse_create_domain() {
 
     let sql3 = "CREATE DOMAIN my_domain AS INTEGER DEFAULT 1 CHECK (VALUE > 0)";
     let expected = Statement::CreateDomain(CreateDomain {
+        token: AttachedToken::empty(),
         name: ObjectName::from(vec![Ident::new("my_domain")]),
         data_type: DataType::Integer(None),
         collation: None,
@@ -5630,6 +5700,7 @@ fn parse_create_domain() {
 
     let sql4 = "CREATE DOMAIN my_domain AS INTEGER COLLATE \"en_US\" DEFAULT 1 CHECK (VALUE > 0)";
     let expected = Statement::CreateDomain(CreateDomain {
+        token: AttachedToken::empty(),
         name: ObjectName::from(vec![Ident::new("my_domain")]),
         data_type: DataType::Integer(None),
         collation: Some(Ident::with_quote('"', "en_US")),
@@ -5650,6 +5721,7 @@ fn parse_create_domain() {
 
     let sql5 = "CREATE DOMAIN my_domain AS INTEGER CONSTRAINT my_constraint CHECK (VALUE > 0)";
     let expected = Statement::CreateDomain(CreateDomain {
+        token: AttachedToken::empty(),
         name: ObjectName::from(vec![Ident::new("my_domain")]),
         data_type: DataType::Integer(None),
         collation: None,
@@ -5673,6 +5745,7 @@ fn parse_create_domain() {
 fn parse_create_simple_before_insert_trigger() {
     let sql = "CREATE TRIGGER check_insert BEFORE INSERT ON accounts FOR EACH ROW EXECUTE FUNCTION check_account_insert";
     let expected = Statement::CreateTrigger(CreateTrigger {
+        token: AttachedToken::empty(),
         or_alter: false,
         temporary: false,
         or_replace: false,
@@ -5705,6 +5778,7 @@ fn parse_create_simple_before_insert_trigger() {
 fn parse_create_after_update_trigger_with_condition() {
     let sql = "CREATE TRIGGER check_update AFTER UPDATE ON accounts FOR EACH ROW WHEN (NEW.balance > 10000) EXECUTE FUNCTION check_account_update";
     let expected = Statement::CreateTrigger(CreateTrigger {
+        token: AttachedToken::empty(),
         or_alter: false,
         temporary: false,
         or_replace: false,
@@ -5744,6 +5818,7 @@ fn parse_create_after_update_trigger_with_condition() {
 fn parse_create_instead_of_delete_trigger() {
     let sql = "CREATE TRIGGER check_delete INSTEAD OF DELETE ON accounts FOR EACH ROW EXECUTE FUNCTION check_account_deletes";
     let expected = Statement::CreateTrigger(CreateTrigger {
+        token: AttachedToken::empty(),
         or_alter: false,
         temporary: false,
         or_replace: false,
@@ -5776,6 +5851,7 @@ fn parse_create_instead_of_delete_trigger() {
 fn parse_create_trigger_with_multiple_events_and_deferrable() {
     let sql = "CREATE CONSTRAINT TRIGGER check_multiple_events BEFORE INSERT OR UPDATE OR DELETE ON accounts DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION check_account_changes";
     let expected = Statement::CreateTrigger(CreateTrigger {
+        token: AttachedToken::empty(),
         or_alter: false,
         temporary: false,
         or_replace: false,
@@ -5816,6 +5892,7 @@ fn parse_create_trigger_with_multiple_events_and_deferrable() {
 fn parse_create_trigger_with_referencing() {
     let sql = "CREATE TRIGGER check_referencing BEFORE INSERT ON accounts REFERENCING NEW TABLE AS new_accounts OLD TABLE AS old_accounts FOR EACH ROW EXECUTE FUNCTION check_account_referencing";
     let expected = Statement::CreateTrigger(CreateTrigger {
+        token: AttachedToken::empty(),
         or_alter: false,
         temporary: false,
         or_replace: false,
@@ -5903,6 +5980,7 @@ fn parse_drop_trigger() {
             assert_eq!(
                 pg().verified_stmt(sql),
                 Statement::DropTrigger(DropTrigger {
+                    token: AttachedToken::empty(),
                     if_exists,
                     trigger_name: ObjectName::from(vec![Ident::new("check_update")]),
                     table_name: Some(ObjectName::from(vec![Ident::new("table_name")])),
@@ -6096,6 +6174,7 @@ fn parse_trigger_related_functions() {
     assert_eq!(
         create_function,
         Statement::CreateFunction(CreateFunction {
+            token: AttachedToken::empty(),
             or_alter: false,
             or_replace: false,
             temporary: false,
@@ -6135,6 +6214,7 @@ fn parse_trigger_related_functions() {
     assert_eq!(
         create_trigger,
         Statement::CreateTrigger(CreateTrigger {
+            token: AttachedToken::empty(),
             or_alter: false,
             temporary: false,
             or_replace: false,
@@ -6165,6 +6245,7 @@ fn parse_trigger_related_functions() {
     assert_eq!(
         drop_trigger,
         Statement::DropTrigger(DropTrigger {
+            token: AttachedToken::empty(),
             if_exists: false,
             trigger_name: ObjectName::from(vec![Ident::new("emp_stamp")]),
             table_name: Some(ObjectName::from(vec![Ident::new("emp")])),
@@ -6264,6 +6345,7 @@ fn parse_create_type_as_enum() {
         Statement::CreateType {
             name,
             representation: Some(UserDefinedTypeRepresentation::Enum { labels }),
+            ..
         } => {
             assert_eq!("public.my_type", name.to_string());
             assert_eq!(
@@ -6360,7 +6442,7 @@ fn parse_alter_type() {
     .enumerate()
     .for_each(|(index, tc)| {
         let statement = pg_and_generic().verified_stmt(tc.sql);
-        if let Statement::AlterType(AlterType { name, operation }) = statement {
+        if let Statement::AlterType(AlterType { name, operation, .. }) = statement {
             assert_eq!(tc.name, name.to_string(), "TestCase[{index}].name");
             assert_eq!(tc.operation, operation, "TestCase[{index}].operation");
         } else {
@@ -6510,6 +6592,7 @@ fn parse_create_server() {
         (
             "CREATE SERVER myserver FOREIGN DATA WRAPPER postgres_fdw",
             CreateServerStatement {
+                token: AttachedToken::empty(),
                 name: ObjectName::from(vec!["myserver".into()]),
                 if_not_exists: false,
                 server_type: None,
@@ -6521,6 +6604,7 @@ fn parse_create_server() {
         (
             "CREATE SERVER IF NOT EXISTS myserver TYPE 'server_type' VERSION 'server_version' FOREIGN DATA WRAPPER postgres_fdw",
             CreateServerStatement {
+            token: AttachedToken::empty(),
             name: ObjectName::from(vec!["myserver".into()]),
             if_not_exists: true,
             server_type: Some(Ident {
@@ -6540,6 +6624,7 @@ fn parse_create_server() {
         (
             "CREATE SERVER myserver2 FOREIGN DATA WRAPPER postgres_fdw OPTIONS (host 'foo', dbname 'foodb', port '5432')",
             CreateServerStatement {
+                token: AttachedToken::empty(),
                 name: ObjectName::from(vec!["myserver2".into()]),
                 if_not_exists: false,
                 server_type: None,

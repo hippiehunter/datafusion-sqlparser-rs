@@ -1322,7 +1322,7 @@ mod e061_basic_predicates {
         verified_with_ast!("SELECT * FROM t WHERE a IS NULL", |stmt: Statement| {
             if let Statement::Query(query) = stmt {
                 if let SetExpr::Select(select) = query.body.as_ref() {
-                    if let Some(Expr::IsNull(_)) = &select.selection {
+                    if let Some(Expr::IsNull { .. }) = &select.selection {
                         // IS NULL predicate found
                     } else {
                         panic!("Expected IsNull expression");
@@ -1334,7 +1334,7 @@ mod e061_basic_predicates {
         verified_with_ast!("SELECT * FROM t WHERE b IS NOT NULL", |stmt: Statement| {
             if let Statement::Query(query) = stmt {
                 if let SetExpr::Select(select) = query.body.as_ref() {
-                    if let Some(Expr::IsNotNull(_)) = &select.selection {
+                    if let Some(Expr::IsNotNull { .. }) = &select.selection {
                         // IS NOT NULL predicate found
                     } else {
                         panic!("Expected IsNotNull expression");

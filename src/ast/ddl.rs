@@ -911,6 +911,8 @@ impl fmt::Display for AlterIndexOperation {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct AlterType {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
     pub name: ObjectName,
     pub operation: AlterTypeOperation,
 }
@@ -2989,13 +2991,16 @@ impl fmt::Display for CreateTable {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct CreateAssertion {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
     pub name: ObjectName,
     pub expr: Box<Expr>,
 }
 
 impl fmt::Display for CreateAssertion {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "CREATE ASSERTION {} CHECK ({})", self.name, self.expr)
+        let CreateAssertion { token: _, name, expr } = self;
+        write!(f, "CREATE ASSERTION {} CHECK ({})", name, expr)
     }
 }
 
@@ -3015,6 +3020,8 @@ impl fmt::Display for CreateAssertion {
 /// ```
 /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-createdomain.html)
 pub struct CreateDomain {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
     /// The name of the domain to be created.
     pub name: ObjectName,
     /// The data type of the domain.
@@ -3029,20 +3036,23 @@ pub struct CreateDomain {
 
 impl fmt::Display for CreateDomain {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "CREATE DOMAIN {name} AS {data_type}",
-            name = self.name,
-            data_type = self.data_type
-        )?;
-        if let Some(collation) = &self.collation {
+        let CreateDomain {
+            token: _,
+            name,
+            data_type,
+            collation,
+            default,
+            constraints,
+        } = self;
+        write!(f, "CREATE DOMAIN {name} AS {data_type}")?;
+        if let Some(collation) = collation {
             write!(f, " COLLATE {collation}")?;
         }
-        if let Some(default) = &self.default {
+        if let Some(default) = default {
             write!(f, " DEFAULT {default}")?;
         }
-        if !self.constraints.is_empty() {
-            write!(f, " {}", display_separated(&self.constraints, " "))?;
+        if !constraints.is_empty() {
+            write!(f, " {}", display_separated(constraints, " "))?;
         }
         Ok(())
     }
@@ -3052,6 +3062,8 @@ impl fmt::Display for CreateDomain {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct CreateFunction {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
     /// True if this is a `CREATE OR ALTER FUNCTION` statement
     ///
     /// [MsSql](https://learn.microsoft.com/en-us/sql/t-sql/statements/create-function-transact-sql?view=sql-server-ver16#or-alter)
@@ -3210,6 +3222,8 @@ impl fmt::Display for CreateFunction {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct CreateConnector {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
     pub name: Ident,
     pub if_not_exists: bool,
     pub connector_type: Option<String>,
@@ -3398,6 +3412,8 @@ impl Display for TriggerObjectKind {
 /// Postgres: <https://www.postgresql.org/docs/current/sql-createtrigger.html>
 /// SQL Server: <https://learn.microsoft.com/en-us/sql/t-sql/statements/create-trigger-transact-sql>
 pub struct CreateTrigger {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
     /// True if this is a `CREATE OR ALTER TRIGGER` statement
     ///
     /// [MsSql](https://learn.microsoft.com/en-us/sql/t-sql/statements/create-trigger-transact-sql?view=sql-server-ver16#arguments)
@@ -3502,6 +3518,7 @@ pub struct CreateTrigger {
 impl Display for CreateTrigger {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let CreateTrigger {
+            token: _,
             or_alter,
             temporary,
             or_replace,
@@ -3588,6 +3605,8 @@ impl Display for CreateTrigger {
 /// ```
 ///
 pub struct DropTrigger {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
     /// Whether to include the `IF EXISTS` clause.
     pub if_exists: bool,
     /// The name of the trigger to be dropped.
@@ -3601,6 +3620,7 @@ pub struct DropTrigger {
 impl fmt::Display for DropTrigger {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let DropTrigger {
+            token: _,
             if_exists,
             trigger_name,
             table_name,
@@ -4367,6 +4387,8 @@ impl fmt::Display for GraphEdgeTableDefinition {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct CreatePropertyGraph {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
     pub or_replace: bool,
     pub if_not_exists: bool,
     #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
@@ -4377,32 +4399,33 @@ pub struct CreatePropertyGraph {
 
 impl fmt::Display for CreatePropertyGraph {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let CreatePropertyGraph { token: _, or_replace, if_not_exists, name, vertex_tables, edge_tables } = self;
         write!(f, "CREATE ")?;
-        if self.or_replace {
+        if *or_replace {
             write!(f, "OR REPLACE ")?;
         }
         write!(f, "PROPERTY GRAPH ")?;
-        if self.if_not_exists {
+        if *if_not_exists {
             write!(f, "IF NOT EXISTS ")?;
         }
-        write!(f, "{} ", self.name)?;
+        write!(f, "{} ", name)?;
 
-        if !self.vertex_tables.is_empty() {
+        if !vertex_tables.is_empty() {
             write!(
                 f,
                 "VERTEX TABLES ({})",
-                display_comma_separated(&self.vertex_tables)
+                display_comma_separated(vertex_tables)
             )?;
-            if !self.edge_tables.is_empty() {
+            if !edge_tables.is_empty() {
                 write!(f, " ")?;
             }
         }
 
-        if !self.edge_tables.is_empty() {
+        if !edge_tables.is_empty() {
             write!(
                 f,
                 "EDGE TABLES ({})",
-                display_comma_separated(&self.edge_tables)
+                display_comma_separated(edge_tables)
             )?;
         }
 
@@ -4415,6 +4438,8 @@ impl fmt::Display for CreatePropertyGraph {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct DropPropertyGraph {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
     pub if_exists: bool,
     #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
     pub name: ObjectName,
@@ -4423,12 +4448,13 @@ pub struct DropPropertyGraph {
 
 impl fmt::Display for DropPropertyGraph {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let DropPropertyGraph { token: _, if_exists, name, drop_behavior } = self;
         write!(f, "DROP PROPERTY GRAPH ")?;
-        if self.if_exists {
+        if *if_exists {
             write!(f, "IF EXISTS ")?;
         }
-        write!(f, "{}", self.name)?;
-        if let Some(drop_behavior) = &self.drop_behavior {
+        write!(f, "{}", name)?;
+        if let Some(drop_behavior) = drop_behavior {
             write!(f, " {}", drop_behavior)?;
         }
         Ok(())
