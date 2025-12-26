@@ -919,6 +919,10 @@ impl<'a> Parser<'a> {
                     self.prev_token();
                     self.parse_repeat(None)
                 }
+                Keyword::FOR => {
+                    self.prev_token();
+                    self.parse_for(None)
+                }
                 Keyword::LEAVE => {
                     self.prev_token();
                     self.parse_leave()
@@ -1044,9 +1048,12 @@ impl<'a> Parser<'a> {
                             BorrowedToken::Word(w2) if w2.keyword == Keyword::BEGIN => {
                                 return self.parse_begin_end_statement(Some(label));
                             }
+                            BorrowedToken::Word(w2) if w2.keyword == Keyword::FOR => {
+                                return self.parse_for(Some(label));
+                            }
                             _ => {
                                 return self.expected(
-                                    "LOOP, REPEAT, WHILE, or BEGIN after label",
+                                    "LOOP, REPEAT, WHILE, FOR, or BEGIN after label",
                                     next_keyword,
                                 );
                             }
@@ -1281,6 +1288,64 @@ impl<'a> Parser<'a> {
             label,
             body,
             until,
+            end_label,
+        }))
+    }
+
+    /// Parse a `FOR` statement.
+    ///
+    /// Syntax: [label:] FOR loop_name AS [cursor_name CURSOR FOR] select_statement DO statements; END FOR [label]
+    ///
+    /// See [Statement::For]
+    fn parse_for(&self, label: Option<Ident>) -> Result<Statement, ParserError> {
+        self.expect_keyword_is(Keyword::FOR)?;
+
+        // Parse loop_name (the variable that will hold the row data)
+        let loop_name = self.parse_identifier()?;
+
+        // Expect AS keyword
+        self.expect_keyword_is(Keyword::AS)?;
+
+        // Check for optional cursor_name CURSOR FOR pattern
+        // Try to parse identifier followed by CURSOR FOR, backtrack if not found
+        let cursor_name = self.maybe_parse(|parser| {
+            let name = parser.parse_identifier()?;
+            parser.expect_keywords(&[Keyword::CURSOR, Keyword::FOR])?;
+            Ok(name)
+        })?;
+
+        // Parse the SELECT statement (query)
+        let query = self.parse_query()?;
+
+        // Expect DO keyword
+        self.expect_keyword_is(Keyword::DO)?;
+
+        // Parse the body (statements until END)
+        let body = self.parse_conditional_statements(&[Keyword::END])?;
+
+        // Expect END FOR
+        self.expect_keywords(&[Keyword::END, Keyword::FOR])?;
+
+        // Parse optional end label (following same pattern as parse_loop, parse_repeat)
+        let end_label = if self.peek_token().token != BorrowedToken::SemiColon
+            && self.peek_token().token != BorrowedToken::EOF
+            && !self.peek_keyword(Keyword::END)
+            && !self.peek_keyword(Keyword::ELSE)
+            && !self.peek_keyword(Keyword::ELSEIF)
+            && !self.peek_keyword(Keyword::WHEN)
+            && !self.peek_keyword(Keyword::UNTIL)
+        {
+            Some(self.parse_identifier()?)
+        } else {
+            None
+        };
+
+        Ok(Statement::For(ForStatement {
+            label,
+            loop_name,
+            cursor_name,
+            query,
+            body,
             end_label,
         }))
     }
@@ -5424,8 +5489,10 @@ impl<'a> Parser<'a> {
 
     /// Report `found` was encountered instead of `expected`
     pub fn expected<T>(&self, expected: &str, found: TokenWithSpan) -> Result<T, ParserError> {
-        self.error_tracker
-            .record(self.index.get(), ExpectedItem::Category(expected.to_string()));
+        self.error_tracker.record(
+            self.index.get(),
+            ExpectedItem::Category(expected.to_string()),
+        );
         parser_err!(
             format!("Expected: {expected}, found: {found}"),
             found.span.start
@@ -5434,8 +5501,10 @@ impl<'a> Parser<'a> {
 
     /// report `found` was encountered instead of `expected`
     pub fn expected_ref<T>(&self, expected: &str, found: &TokenWithSpan) -> Result<T, ParserError> {
-        self.error_tracker
-            .record(self.index.get(), ExpectedItem::Category(expected.to_string()));
+        self.error_tracker.record(
+            self.index.get(),
+            ExpectedItem::Category(expected.to_string()),
+        );
         parser_err!(
             format!("Expected: {expected}, found: {found}"),
             found.span.start
@@ -7515,7 +7584,8 @@ impl<'a> Parser<'a> {
         // Parse VERTEX TABLES
         if self.parse_keywords(&[Keyword::VERTEX, Keyword::TABLES]) {
             self.expect_token(&Token::LParen)?;
-            vertex_tables = self.parse_comma_separated(|p| p.parse_graph_vertex_table_definition())?;
+            vertex_tables =
+                self.parse_comma_separated(|p| p.parse_graph_vertex_table_definition())?;
             self.expect_token(&Token::RParen)?;
         }
 
@@ -7535,7 +7605,9 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    fn parse_graph_vertex_table_definition(&self) -> Result<GraphVertexTableDefinition, ParserError> {
+    fn parse_graph_vertex_table_definition(
+        &self,
+    ) -> Result<GraphVertexTableDefinition, ParserError> {
         let table = self.parse_object_name(false)?;
         let key = if self.parse_keyword(Keyword::KEY) {
             Some(self.parse_graph_key_clause()?)
@@ -16488,7 +16560,10 @@ impl<'a> Parser<'a> {
             } else if self.parse_keyword(Keyword::STEP) {
                 Ok(Some(RowLimiting::OneRowPerStep))
             } else {
-                self.expected("MATCH, VERTEX, or STEP after ONE ROW PER", self.peek_token())
+                self.expected(
+                    "MATCH, VERTEX, or STEP after ONE ROW PER",
+                    self.peek_token(),
+                )
             }
         } else {
             Ok(None)
@@ -16571,7 +16646,8 @@ impl<'a> Parser<'a> {
             // If next token is '(' or '-' or '<', it's a grouped pattern, not a node
             if next == BorrowedToken::LParen
                 || next == BorrowedToken::Minus
-                || next == BorrowedToken::Lt {
+                || next == BorrowedToken::Lt
+            {
                 // Grouped or alternation pattern at the start: ((pattern)) or (-[]->)
                 return self.parse_graph_pattern_grouped();
             }
@@ -16599,9 +16675,7 @@ impl<'a> Parser<'a> {
             // Check for quantifier after the alternation group
             let quantifier = if matches!(
                 self.peek_token().token,
-                BorrowedToken::Mul
-                    | BorrowedToken::Plus
-                    | BorrowedToken::LBrace
+                BorrowedToken::Mul | BorrowedToken::Plus | BorrowedToken::LBrace
             ) || matches!(self.peek_token().token, BorrowedToken::Placeholder(s) if s == "?")
             {
                 Some(self.parse_edge_repetition_quantifier()?)
@@ -16624,9 +16698,7 @@ impl<'a> Parser<'a> {
             // Check for quantifier after the group
             let quantifier = if matches!(
                 self.peek_token().token,
-                BorrowedToken::Mul
-                    | BorrowedToken::Plus
-                    | BorrowedToken::LBrace
+                BorrowedToken::Mul | BorrowedToken::Plus | BorrowedToken::LBrace
             ) || matches!(self.peek_token().token, BorrowedToken::Placeholder(s) if s == "?")
             {
                 Some(self.parse_edge_repetition_quantifier()?)
@@ -16651,8 +16723,10 @@ impl<'a> Parser<'a> {
             self.next_token(); // consume (
             let next = self.peek_token().token.clone();
             self.index.set(checkpoint); // backtrack
-            // It's a node if next token is not '(', '-', or '<' (which indicate grouped patterns or edges)
-            next != BorrowedToken::LParen && next != BorrowedToken::Minus && next != BorrowedToken::Lt
+                                        // It's a node if next token is not '(', '-', or '<' (which indicate grouped patterns or edges)
+            next != BorrowedToken::LParen
+                && next != BorrowedToken::Minus
+                && next != BorrowedToken::Lt
         };
 
         // Optionally start with a node
@@ -16680,7 +16754,8 @@ impl<'a> Parser<'a> {
                 // Check if it's a grouped pattern (starting with '(', '-', or '<')
                 if next == BorrowedToken::LParen
                     || next == BorrowedToken::Minus
-                    || next == BorrowedToken::Lt {
+                    || next == BorrowedToken::Lt
+                {
                     // Subpattern: ((pattern)) or (-[]->)
                     let subpattern = self.parse_graph_pattern_grouped()?;
                     elements.push(GraphPatternElement::Subpattern(subpattern));
@@ -16706,7 +16781,8 @@ impl<'a> Parser<'a> {
                 // Check if it's a node (not a grouped pattern)
                 if next != BorrowedToken::LParen
                     && next != BorrowedToken::Minus
-                    && next != BorrowedToken::Lt {
+                    && next != BorrowedToken::Lt
+                {
                     // It's a node, not a subpattern
                     let node = self.parse_node_pattern()?;
                     elements.push(GraphPatternElement::Node(node));
@@ -17032,12 +17108,18 @@ impl<'a> Parser<'a> {
                                 return self.expected("number", num_token);
                             };
                             let m_str: &str = &m;
-                            (m_str.trim_start_matches('.').to_string(), num_token.span.start)
+                            (
+                                m_str.trim_start_matches('.').to_string(),
+                                num_token.span.start,
+                            )
                         }
                         BorrowedToken::Number(m, _) => {
                             // Tokenized as . .5
                             let m_str: &str = &m;
-                            (m_str.trim_start_matches('.').to_string(), next_token.span.start)
+                            (
+                                m_str.trim_start_matches('.').to_string(),
+                                next_token.span.start,
+                            )
                         }
                         _ => return self.expected("number after ..", next_token),
                     };
@@ -19149,9 +19231,19 @@ impl<'a> Parser<'a> {
     /// Checks longest keyword sequences first (4-keyword before 3-keyword before 2-keyword).
     fn parse_json_query_wrapper(&self) -> Option<JsonQueryWrapper> {
         // 4-keyword variants first (longest match)
-        if self.parse_keywords(&[Keyword::WITH, Keyword::UNCONDITIONAL, Keyword::ARRAY, Keyword::WRAPPER]) {
+        if self.parse_keywords(&[
+            Keyword::WITH,
+            Keyword::UNCONDITIONAL,
+            Keyword::ARRAY,
+            Keyword::WRAPPER,
+        ]) {
             Some(JsonQueryWrapper::WithUnconditionalArray)
-        } else if self.parse_keywords(&[Keyword::WITH, Keyword::CONDITIONAL, Keyword::ARRAY, Keyword::WRAPPER]) {
+        } else if self.parse_keywords(&[
+            Keyword::WITH,
+            Keyword::CONDITIONAL,
+            Keyword::ARRAY,
+            Keyword::WRAPPER,
+        ]) {
             Some(JsonQueryWrapper::WithConditionalArray)
         // 3-keyword variants
         } else if self.parse_keywords(&[Keyword::WITH, Keyword::UNCONDITIONAL, Keyword::WRAPPER]) {

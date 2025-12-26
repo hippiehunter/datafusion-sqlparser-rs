@@ -1242,6 +1242,8 @@ pub const RESERVED_FOR_TABLE_ALIAS: &[Keyword] = &[
     Keyword::WINDOW,
     Keyword::END,
     Keyword::FOR,
+    // for SQL:2016 PSM FOR statements
+    Keyword::DO,
     // for MYSQL PARTITION SELECTION
     Keyword::PARTITION,
     // for Clickhouse PREWHERE

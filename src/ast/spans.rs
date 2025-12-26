@@ -477,6 +477,7 @@ impl Spanned for Statement {
             Statement::Signal(..) => Span::empty(),
             Statement::Resignal(..) => Span::empty(),
             Statement::LabeledBlock(..) => Span::empty(),
+            Statement::For(..) => Span::empty(),
         }
     }
 }

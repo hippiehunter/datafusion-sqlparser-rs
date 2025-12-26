@@ -24,6 +24,7 @@
 //! - LOOP ... END LOOP statements
 //! - REPEAT ... UNTIL ... END REPEAT statements
 //! - WHILE ... DO ... END WHILE statements
+//! - FOR ... AS ... DO ... END FOR statements (cursor iteration)
 //! - IF ... THEN ... ELSEIF ... ELSE ... END IF statements
 //! - CASE statement (procedural)
 //! - LEAVE statement (exit loop/block)
@@ -694,6 +695,133 @@ mod cursor_operations {
             }
             _ => panic!("Expected Fetch statement, got {:?}", stmt),
         }
+    }
+}
+
+// =============================================================================
+// FOR Statements (Cursor Iteration)
+// =============================================================================
+
+mod for_statements {
+    use super::*;
+    use sqlparser::ast::ForStatement;
+
+    #[test]
+    fn for_basic() {
+        // SQL:2016 PSM: Basic FOR statement without explicit cursor
+        let stmt = verified_standard_stmt(
+            "FOR r AS SELECT id, name FROM employees DO INSERT INTO log VALUES (r.id); END FOR",
+        );
+        match stmt {
+            Statement::For(for_stmt) => {
+                assert_eq!(for_stmt.loop_name.value, "r");
+                assert!(for_stmt.cursor_name.is_none());
+                assert!(for_stmt.label.is_none());
+                assert!(for_stmt.end_label.is_none());
+            }
+            _ => panic!("Expected For statement, got {:?}", stmt),
+        }
+    }
+
+    #[test]
+    fn for_with_cursor() {
+        // SQL:2016 PSM: FOR with explicit cursor name
+        let stmt = verified_standard_stmt(
+            "FOR row AS cur CURSOR FOR SELECT * FROM t DO SELECT row.a; END FOR",
+        );
+        match stmt {
+            Statement::For(for_stmt) => {
+                assert_eq!(for_stmt.loop_name.value, "row");
+                assert_eq!(for_stmt.cursor_name.as_ref().unwrap().value, "cur");
+                assert!(for_stmt.label.is_none());
+                assert!(for_stmt.end_label.is_none());
+            }
+            _ => panic!("Expected For statement, got {:?}", stmt),
+        }
+    }
+
+    #[test]
+    fn for_with_label() {
+        // SQL:2016 PSM: Labeled FOR statement
+        let stmt =
+            verified_standard_stmt("my_for: FOR r AS SELECT id FROM t DO SELECT r.id; END FOR");
+        match stmt {
+            Statement::For(for_stmt) => {
+                assert_eq!(for_stmt.label.as_ref().unwrap().value, "my_for");
+                assert_eq!(for_stmt.loop_name.value, "r");
+                assert!(for_stmt.end_label.is_none());
+            }
+            _ => panic!("Expected For statement, got {:?}", stmt),
+        }
+
+        // With end label
+        let stmt = verified_standard_stmt(
+            "my_for: FOR r AS SELECT id FROM t DO SELECT r.id; END FOR my_for",
+        );
+        match stmt {
+            Statement::For(for_stmt) => {
+                assert_eq!(for_stmt.label.as_ref().unwrap().value, "my_for");
+                assert_eq!(for_stmt.end_label.as_ref().unwrap().value, "my_for");
+            }
+            _ => panic!("Expected For statement, got {:?}", stmt),
+        }
+    }
+
+    #[test]
+    fn for_with_label_and_cursor() {
+        // SQL:2016 PSM: Labeled FOR with explicit cursor
+        let stmt = verified_standard_stmt(
+            "my_for: FOR row AS cur CURSOR FOR SELECT * FROM t DO SELECT row.x; END FOR my_for",
+        );
+        match stmt {
+            Statement::For(for_stmt) => {
+                assert_eq!(for_stmt.label.as_ref().unwrap().value, "my_for");
+                assert_eq!(for_stmt.loop_name.value, "row");
+                assert_eq!(for_stmt.cursor_name.as_ref().unwrap().value, "cur");
+                assert_eq!(for_stmt.end_label.as_ref().unwrap().value, "my_for");
+            }
+            _ => panic!("Expected For statement, got {:?}", stmt),
+        }
+    }
+
+    #[test]
+    fn for_multiple_statements() {
+        // SQL:2016 PSM: FOR with multiple statements in body
+        verified_standard_stmt(
+            "FOR r AS SELECT id, name FROM t DO INSERT INTO log VALUES (r.id); UPDATE stats SET count = count + 1; END FOR",
+        );
+    }
+
+    #[test]
+    fn for_nested() {
+        // SQL:2016 PSM: Nested FOR statements
+        verified_standard_stmt(
+            "outer: FOR a AS SELECT x FROM t1 DO inner: FOR b AS SELECT y FROM t2 DO SELECT a.x, b.y; END FOR; END FOR",
+        );
+    }
+
+    #[test]
+    fn for_with_leave() {
+        // SQL:2016 PSM: FOR with LEAVE
+        verified_standard_stmt(
+            "my_for: FOR r AS SELECT id FROM t DO IF r.id > 100 THEN LEAVE my_for; END IF; END FOR",
+        );
+    }
+
+    #[test]
+    fn for_with_iterate() {
+        // SQL:2016 PSM: FOR with ITERATE
+        verified_standard_stmt(
+            "my_for: FOR r AS SELECT id FROM t DO IF r.id % 2 = 0 THEN ITERATE my_for; END IF; SELECT r.id; END FOR",
+        );
+    }
+
+    #[test]
+    fn for_complex_query() {
+        // SQL:2016 PSM: FOR with complex query
+        verified_standard_stmt(
+            "FOR r AS SELECT e.id, e.name, d.dept_name FROM employees AS e JOIN departments AS d ON e.dept_id = d.id WHERE e.active = true DO INSERT INTO report VALUES (r.id, r.name, r.dept_name); END FOR",
+        );
     }
 }
 

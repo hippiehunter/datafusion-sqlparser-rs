@@ -63,15 +63,16 @@ pub use self::ddl::{
     ClusteredBy, ColumnDef, ColumnOption, ColumnOptionDef, ColumnOptions, ColumnPolicy,
     ColumnPolicyProperty, ConstraintCharacteristics, CreateAssertion, CreateConnector,
     CreateDomain, CreateExtension, CreateFunction, CreateIndex, CreateOperator,
-    CreateOperatorClass, CreateOperatorFamily, CreatePropertyGraph, CreateTable, CreateTableSystemVersioning,
-    CreateTrigger, CreateView, Deduplicate, DeferrableInitial, DropBehavior, DropExtension,
-    DropFunction, DropPropertyGraph, DropTrigger, GeneratedAs, GeneratedExpressionMode, GraphEdgeEndpoint,
-    GraphEdgeTableDefinition, GraphKeyClause, GraphPropertiesClause, GraphVertexTableDefinition,
-    IdentityParameters, IdentityProperty, IdentityPropertyFormatKind, IdentityPropertyKind, IdentityPropertyOrder,
-    IndexColumn, IndexOption, IndexType, KeyOrIndexDisplay, Msck, NullsDistinctOption,
-    OperatorArgTypes, OperatorClassItem, OperatorPurpose, Owner, Partition, ProcedureParam,
-    ReferentialAction, RenameTableNameKind, ReplicaIdentity, TagsColumnOption, TriggerObjectKind,
-    Truncate, UserDefinedTypeCompositeAttributeDef, UserDefinedTypeInternalLength,
+    CreateOperatorClass, CreateOperatorFamily, CreatePropertyGraph, CreateTable,
+    CreateTableSystemVersioning, CreateTrigger, CreateView, Deduplicate, DeferrableInitial,
+    DropBehavior, DropExtension, DropFunction, DropPropertyGraph, DropTrigger, GeneratedAs,
+    GeneratedExpressionMode, GraphEdgeEndpoint, GraphEdgeTableDefinition, GraphKeyClause,
+    GraphPropertiesClause, GraphVertexTableDefinition, IdentityParameters, IdentityProperty,
+    IdentityPropertyFormatKind, IdentityPropertyKind, IdentityPropertyOrder, IndexColumn,
+    IndexOption, IndexType, KeyOrIndexDisplay, Msck, NullsDistinctOption, OperatorArgTypes,
+    OperatorClassItem, OperatorPurpose, Owner, Partition, ProcedureParam, ReferentialAction,
+    RenameTableNameKind, ReplicaIdentity, TagsColumnOption, TriggerObjectKind, Truncate,
+    UserDefinedTypeCompositeAttributeDef, UserDefinedTypeInternalLength,
     UserDefinedTypeRangeOption, UserDefinedTypeRepresentation, UserDefinedTypeSqlDefinitionOption,
     UserDefinedTypeStorage, ViewColumnDef,
 };
@@ -79,28 +80,28 @@ pub use self::dml::{Delete, ForPortionOf, Insert, Update};
 pub use self::operator::{BinaryOperator, UnaryOperator};
 pub use self::query::{
     AfterMatchSkip, ConnectBy, Cte, CteAsMaterialized, CycleClause, Distinct, EdgeDirection,
-    EmptyMatchesMode, ExceptSelectItem, ExcludeSelectItem, ExprWithAlias, ExprWithAliasAndOrderBy,
-    Fetch, ForClause, ForJson, ForXml, FormatClause, GraphColumn, GraphColumnsClause,
-    GraphMatchClause, GraphPattern, GraphPatternElement, GraphPatternExpr, GraphSubquery, GroupByExpr,
-    GroupByWithModifier, IdentWithAlias, IlikeSelectItem, InputFormatClause, Interpolate,
-    InterpolateExpr, Join, JoinConstraint, JoinOperator, JsonTableColumn,
-    JsonTableColumnErrorHandling, JsonTableNamedColumn, JsonTableNestedColumn, KeepClause,
-    LabelExpression, LateralView, LimitClause, LockClause, LockType, MatchRecognizePattern,
-    MatchRecognizeSymbol, Measure, NamedWindowDefinition, NamedWindowExpr, NodePattern, NonBlock,
-    Offset, OffsetRows, OpenJsonTableColumn, OrderBy, OrderByExpr, OrderByKind, OrderByOptions,
-    PathFinding, PathMode, PathVariant, PipeOperator, PivotValueSource, ProjectionSelect,
-    PropertyKeyValue, Query, RenameSelectItem, RepetitionQuantifier, ReplaceSelectElement,
-    ReplaceSelectItem, RowLimiting, RowsPerMatch, SearchClause, SearchOrder, Select, SelectFlavor, SelectInto,
-    SelectItem, SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, Setting,
-    SubsetDefinition, SymbolDefinition, Table, TableAlias, TableAliasColumnDef, EdgePattern,
-    TableFactor, TableFunctionArgs, TableIndexHintForClause, TableIndexHintType, TableIndexHints,
+    EdgePattern, EmptyMatchesMode, ExceptSelectItem, ExcludeSelectItem, ExprWithAlias,
+    ExprWithAliasAndOrderBy, Fetch, ForClause, ForJson, ForXml, FormatClause, GraphColumn,
+    GraphColumnsClause, GraphMatchClause, GraphPattern, GraphPatternElement, GraphPatternExpr,
+    GraphSubquery, GroupByExpr, GroupByWithModifier, IdentWithAlias, IlikeSelectItem,
+    InputFormatClause, Interpolate, InterpolateExpr, Join, JoinConstraint, JoinOperator,
+    JsonTableColumn, JsonTableColumnErrorHandling, JsonTableNamedColumn, JsonTableNestedColumn,
+    KeepClause, LabelExpression, LateralView, LimitClause, LockClause, LockType,
+    MatchRecognizePattern, MatchRecognizeSymbol, Measure, NamedWindowDefinition, NamedWindowExpr,
+    NodePattern, NonBlock, Offset, OffsetRows, OpenJsonTableColumn, OrderBy, OrderByExpr,
+    OrderByKind, OrderByOptions, PathFinding, PathMode, PathVariant, PipeOperator,
+    PivotValueSource, ProjectionSelect, PropertyKeyValue, Query, RenameSelectItem,
+    RepetitionQuantifier, ReplaceSelectElement, ReplaceSelectItem, RowLimiting, RowsPerMatch,
+    SearchClause, SearchOrder, Select, SelectFlavor, SelectInto, SelectItem,
+    SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, Setting,
+    SubsetDefinition, SymbolDefinition, Table, TableAlias, TableAliasColumnDef, TableFactor,
+    TableFunctionArgs, TableIndexHintForClause, TableIndexHintType, TableIndexHints,
     TableIndexType, TableSample, TableSampleBucket, TableSampleKind, TableSampleMethod,
     TableSampleModifier, TableSampleQuantity, TableSampleSeed, TableSampleSeedModifier,
     TableSampleUnit, TableVersion, TableWithJoins, Top, TopQuantity, UpdateTableFromKind,
-    ValueTableMode, Values,
-    WildcardAdditionalOptions, With, WithFill, XmlAttribute, XmlDocumentOrContent,
-    XmlForestElement, XmlNamespaceDefinition, XmlPassingArgument, XmlPassingClause,
-    XmlTableColumn, XmlTableColumnOption, XmlTableOnError, XmlWhitespace,
+    ValueTableMode, Values, WildcardAdditionalOptions, With, WithFill, XmlAttribute,
+    XmlDocumentOrContent, XmlForestElement, XmlNamespaceDefinition, XmlPassingArgument,
+    XmlPassingClause, XmlTableColumn, XmlTableColumnOption, XmlTableOnError, XmlWhitespace,
 };
 
 pub use self::trigger::{
@@ -3022,6 +3023,58 @@ impl fmt::Display for RepeatStatement {
     }
 }
 
+/// A `FOR` statement for cursor-based iteration over query results.
+///
+/// Example (with explicit cursor):
+/// ```sql
+/// my_for: FOR row AS cur CURSOR FOR SELECT * FROM t DO
+///     SELECT row.a;
+/// END FOR my_for
+/// ```
+///
+/// Example (without explicit cursor):
+/// ```sql
+/// FOR r AS SELECT id, name FROM employees DO
+///     INSERT INTO log VALUES (r.id);
+/// END FOR
+/// ```
+///
+/// [SQL:2016](https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#for-statement)
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct ForStatement {
+    /// Optional label before the FOR keyword
+    pub label: Option<Ident>,
+    /// The loop variable name (holds the row data in each iteration)
+    pub loop_name: Ident,
+    /// Optional explicit cursor name
+    pub cursor_name: Option<Ident>,
+    /// The SELECT statement to iterate over
+    pub query: Box<Query>,
+    /// The body of the loop (statements to execute for each row)
+    pub body: ConditionalStatements,
+    /// Optional label after END FOR (must match start label if present)
+    pub end_label: Option<Ident>,
+}
+
+impl fmt::Display for ForStatement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Some(label) = &self.label {
+            write!(f, "{label}: ")?;
+        }
+        write!(f, "FOR {} AS ", self.loop_name)?;
+        if let Some(cursor_name) = &self.cursor_name {
+            write!(f, "{cursor_name} CURSOR FOR ")?;
+        }
+        write!(f, "{} DO {} END FOR", self.query, self.body)?;
+        if let Some(end_label) = &self.end_label {
+            write!(f, " {end_label}")?;
+        }
+        Ok(())
+    }
+}
+
 /// A `LEAVE` statement (exit from a labeled block or loop).
 ///
 /// Example:
@@ -4174,6 +4227,8 @@ pub enum Statement {
     Loop(LoopStatement),
     /// A `REPEAT` statement.
     Repeat(RepeatStatement),
+    /// A `FOR` statement (cursor iteration).
+    For(ForStatement),
     /// A `LEAVE` statement (exit loop).
     Leave(LeaveStatement),
     /// An `ITERATE` statement (continue loop).
@@ -5494,6 +5549,9 @@ impl fmt::Display for Statement {
             Statement::Repeat(stmt) => {
                 write!(f, "{stmt}")
             }
+            Statement::For(stmt) => {
+                write!(f, "{stmt}")
+            }
             Statement::Leave(stmt) => {
                 write!(f, "{stmt}")
             }
@@ -5879,7 +5937,9 @@ impl fmt::Display for Statement {
             }
             Statement::CreateOperatorClass(create_operator_class) => create_operator_class.fmt(f),
             Statement::CreateAssertion(create_assertion) => write!(f, "{create_assertion}"),
-            Statement::CreatePropertyGraph(create_property_graph) => write!(f, "{create_property_graph}"),
+            Statement::CreatePropertyGraph(create_property_graph) => {
+                write!(f, "{create_property_graph}")
+            }
             Statement::AlterTable(alter_table) => write!(f, "{alter_table}"),
             Statement::AlterIndex { name, operation } => {
                 write!(f, "ALTER INDEX {name} {operation}")
@@ -11054,7 +11114,9 @@ impl Display for JsonQueryWrapper {
             JsonQueryWrapper::WithConditional => write!(f, "WITH CONDITIONAL WRAPPER"),
             JsonQueryWrapper::WithUnconditional => write!(f, "WITH UNCONDITIONAL WRAPPER"),
             JsonQueryWrapper::WithConditionalArray => write!(f, "WITH CONDITIONAL ARRAY WRAPPER"),
-            JsonQueryWrapper::WithUnconditionalArray => write!(f, "WITH UNCONDITIONAL ARRAY WRAPPER"),
+            JsonQueryWrapper::WithUnconditionalArray => {
+                write!(f, "WITH UNCONDITIONAL ARRAY WRAPPER")
+            }
         }
     }
 }
