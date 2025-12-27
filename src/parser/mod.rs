@@ -931,9 +931,29 @@ impl<'a> Parser<'a> {
                     self.prev_token();
                     self.parse_iterate()
                 }
+                Keyword::FOREACH => {
+                    self.prev_token();
+                    self.parse_foreach(None)
+                }
+                Keyword::EXIT => {
+                    self.prev_token();
+                    self.parse_exit()
+                }
+                Keyword::CONTINUE => {
+                    self.prev_token();
+                    self.parse_continue()
+                }
                 Keyword::RAISE => {
                     self.prev_token();
                     self.parse_raise_stmt()
+                }
+                Keyword::PERFORM => {
+                    self.prev_token();
+                    self.parse_perform()
+                }
+                Keyword::DO => {
+                    self.prev_token();
+                    self.parse_do()
                 }
                 Keyword::SIGNAL => {
                     self.prev_token();
@@ -955,6 +975,7 @@ impl<'a> Parser<'a> {
                 Keyword::DISCARD => self.parse_discard(),
                 Keyword::DECLARE => self.parse_declare(),
                 Keyword::FETCH => self.parse_fetch_statement(),
+                Keyword::MOVE => self.parse_move(),
                 Keyword::GET => {
                     self.prev_token();
                     self.parse_get_diagnostics()
@@ -1022,6 +1043,8 @@ impl<'a> Parser<'a> {
                     self.parse_vacuum()
                 }
                 Keyword::RESET => self.parse_reset(),
+                // PL/pgSQL NULL statement (no-op)
+                Keyword::NULL => Ok(Statement::Null),
                 _ => {
                     // Check for labeled statement: identifier COLON (LOOP | REPEAT | WHILE | BEGIN)
                     // Note: Even keywords can be used as labels (e.g., "outer: LOOP" where OUTER is a keyword)
@@ -1044,14 +1067,46 @@ impl<'a> Parser<'a> {
                             BorrowedToken::Word(w2) if w2.keyword == Keyword::FOR => {
                                 return self.parse_for(Some(label));
                             }
+                            BorrowedToken::Word(w2) if w2.keyword == Keyword::FOREACH => {
+                                return self.parse_foreach(Some(label));
+                            }
                             _ => {
                                 return self.expected(
-                                    "LOOP, REPEAT, WHILE, FOR, or BEGIN after label",
+                                    "LOOP, REPEAT, WHILE, FOR, FOREACH, or BEGIN after label",
                                     next_keyword,
                                 );
                             }
                         }
                     }
+
+                    // Try PL/pgSQL assignment: identifier := value or identifier.field := value
+                    // Keywords like NEW, OLD can start assignments in trigger functions
+                    // The expression parser handles := as BinaryOperator::Assignment,
+                    // so we parse as an expression and check if it's an assignment.
+                    self.prev_token();
+                    if let Ok(Some(assignment)) = self.maybe_parse(|parser| {
+                        let expr = parser.parse_expr()?;
+                        // Check if this is an assignment expression (target := value)
+                        if let Expr::BinaryOp {
+                            left,
+                            op: BinaryOperator::Assignment,
+                            right,
+                        } = expr
+                        {
+                            Ok(Statement::PlPgSqlAssignment(PlPgSqlAssignment {
+                                target: *left,
+                                value: *right,
+                            }))
+                        } else {
+                            parser_err!(
+                                "Not a PL/pgSQL assignment",
+                                parser.peek_token().span.start
+                            )
+                        }
+                    }) {
+                        return Ok(assignment);
+                    }
+                    self.next_token(); // Re-consume the token for error message
                     self.expected("an SQL statement", next_token)
                 }
             },
@@ -1194,8 +1249,12 @@ impl<'a> Parser<'a> {
 
             ConditionalStatements::BeginEnd(BeginEndStatements {
                 begin_token: AttachedToken(begin_token.to_static()),
+                label: None,
+                declarations: vec![],
                 statements,
+                exception_handlers: None,
                 end_token: AttachedToken(end_token.to_static()),
+                end_label: None,
             })
         } else {
             // Single statement
@@ -1287,40 +1346,91 @@ impl<'a> Parser<'a> {
 
     /// Parse a `FOR` statement.
     ///
-    /// Syntax: [label:] FOR loop_name AS [cursor_name CURSOR FOR] select_statement DO statements; END FOR [label]
+    /// Supports three variants:
+    /// 1. Query: FOR loop_name AS [cursor_name CURSOR FOR] query DO statements; END FOR
+    /// 2. Integer range: FOR loop_name IN [REVERSE] lower..upper [BY step] LOOP statements; END LOOP
+    /// 3. Dynamic query: FOR loop_name IN EXECUTE expr [USING ...] LOOP statements; END LOOP
     ///
     /// See [Statement::For]
     fn parse_for(&self, label: Option<Ident>) -> Result<Statement, ParserError> {
         let token = AttachedToken(self.get_current_token().clone().to_static());
         self.expect_keyword_is(Keyword::FOR)?;
 
-        // Parse loop_name (the variable that will hold the row data)
+        // Parse loop_name (the variable that will hold the row/value)
         let loop_name = self.parse_identifier()?;
 
-        // Expect AS keyword
-        self.expect_keyword_is(Keyword::AS)?;
+        // Determine which variant based on AS or IN keyword
+        let variant = if self.parse_keyword(Keyword::AS) {
+            // Query variant: FOR loop_name AS [cursor_name CURSOR FOR] query DO ... END FOR
+            let cursor_name = self.maybe_parse(|parser| {
+                let name = parser.parse_identifier()?;
+                parser.expect_keywords(&[Keyword::CURSOR, Keyword::FOR])?;
+                Ok(name)
+            })?;
 
-        // Check for optional cursor_name CURSOR FOR pattern
-        // Try to parse identifier followed by CURSOR FOR, backtrack if not found
-        let cursor_name = self.maybe_parse(|parser| {
-            let name = parser.parse_identifier()?;
-            parser.expect_keywords(&[Keyword::CURSOR, Keyword::FOR])?;
-            Ok(name)
-        })?;
+            ForLoopVariant::Query {
+                cursor_name,
+                query: self.parse_query()?,
+            }
+        } else if self.parse_keyword(Keyword::IN) {
+            // Could be integer range, dynamic query, or just a regular IN expression
+            if self.parse_keyword(Keyword::EXECUTE) {
+                // Dynamic query: FOR loop_name IN EXECUTE expr [USING ...]
+                let query_expr = Box::new(self.parse_expr()?);
+                let using = if self.parse_keyword(Keyword::USING) {
+                    Some(self.parse_comma_separated(|p| p.parse_expr())?)
+                } else {
+                    None
+                };
+                ForLoopVariant::DynamicQuery { query_expr, using }
+            } else {
+                // Try to parse integer range: [REVERSE] lower..upper [BY step]
+                let reverse = self.parse_keyword(Keyword::REVERSE);
+                let lower = Box::new(self.parse_expr()?);
 
-        // Parse the SELECT statement (query)
-        let query = self.parse_query()?;
+                // Expect .. (two periods) - tokenizer gives us two Period tokens
+                self.expect_token(&BorrowedToken::Period)?;
+                self.expect_token(&BorrowedToken::Period)?;
 
-        // Expect DO keyword
-        self.expect_keyword_is(Keyword::DO)?;
+                let upper = Box::new(self.parse_expr()?);
+                let step = if self.parse_keyword(Keyword::BY) {
+                    Some(Box::new(self.parse_expr()?))
+                } else {
+                    None
+                };
 
-        // Parse the body (statements until END)
-        let body = self.parse_conditional_statements(&[Keyword::END])?;
+                ForLoopVariant::IntegerRange {
+                    reverse,
+                    lower,
+                    upper,
+                    step,
+                }
+            }
+        } else {
+            return Err(ParserError::ParserError(
+                "Expected AS or IN after FOR loop_name".to_string(),
+            ));
+        };
 
-        // Expect END FOR
-        self.expect_keywords(&[Keyword::END, Keyword::FOR])?;
+        // Parse body based on variant
+        let (body, _end_keyword) = match &variant {
+            ForLoopVariant::Query { .. } => {
+                // Query variant uses DO ... END FOR
+                self.expect_keyword_is(Keyword::DO)?;
+                let body = self.parse_conditional_statements(&[Keyword::END])?;
+                self.expect_keywords(&[Keyword::END, Keyword::FOR])?;
+                (body, "FOR")
+            }
+            ForLoopVariant::IntegerRange { .. } | ForLoopVariant::DynamicQuery { .. } => {
+                // Integer range and dynamic query use LOOP ... END LOOP
+                self.expect_keyword_is(Keyword::LOOP)?;
+                let body = self.parse_conditional_statements(&[Keyword::END])?;
+                self.expect_keywords(&[Keyword::END, Keyword::LOOP])?;
+                (body, "LOOP")
+            }
+        };
 
-        // Parse optional end label (following same pattern as parse_loop, parse_repeat)
+        // Parse optional end label
         let end_label = if self.peek_token().token != BorrowedToken::SemiColon
             && self.peek_token().token != BorrowedToken::EOF
             && !self.peek_keyword(Keyword::END)
@@ -1338,8 +1448,7 @@ impl<'a> Parser<'a> {
             token,
             label,
             loop_name,
-            cursor_name,
-            query,
+            variant,
             body,
             end_label,
         }))
@@ -1389,6 +1498,141 @@ impl<'a> Parser<'a> {
             None
         };
         Ok(Statement::Iterate(IterateStatement { label }))
+    }
+
+    /// Parse a `FOREACH` statement.
+    ///
+    /// Syntax: [label:] FOREACH loop_name [SLICE n] IN ARRAY array_expr LOOP statements; END LOOP [label]
+    ///
+    /// See [Statement::Foreach]
+    fn parse_foreach(&self, label: Option<Ident>) -> Result<Statement, ParserError> {
+        let token = AttachedToken(self.get_current_token().clone().to_static());
+        self.expect_keyword_is(Keyword::FOREACH)?;
+
+        // Parse loop variable name
+        let loop_name = self.parse_identifier()?;
+
+        // Check for optional SLICE number
+        let slice =
+            if self.parse_keyword(Keyword::SLICE) {
+                let slice_expr = self.parse_number_value()?;
+                match slice_expr.value {
+                    Value::Number(n, _) => Some(n.parse::<u32>().map_err(|_| {
+                        ParserError::ParserError("Invalid SLICE number".to_string())
+                    })?),
+                    _ => {
+                        return Err(ParserError::ParserError(
+                            "SLICE requires an integer literal".to_string(),
+                        ))
+                    }
+                }
+            } else {
+                None
+            };
+
+        // Expect IN ARRAY
+        self.expect_keyword_is(Keyword::IN)?;
+        self.expect_keyword_is(Keyword::ARRAY)?;
+
+        // Parse the array expression
+        let array_expr = Box::new(self.parse_expr()?);
+
+        // Expect LOOP
+        self.expect_keyword_is(Keyword::LOOP)?;
+
+        // Parse the body (statements until END)
+        let body = self.parse_conditional_statements(&[Keyword::END])?;
+
+        // Expect END LOOP
+        self.expect_keywords(&[Keyword::END, Keyword::LOOP])?;
+
+        // Parse optional end label
+        let end_label = if self.peek_token().token != BorrowedToken::SemiColon
+            && self.peek_token().token != BorrowedToken::EOF
+            && !self.peek_keyword(Keyword::END)
+            && !self.peek_keyword(Keyword::ELSE)
+            && !self.peek_keyword(Keyword::ELSEIF)
+            && !self.peek_keyword(Keyword::WHEN)
+            && !self.peek_keyword(Keyword::UNTIL)
+        {
+            Some(self.parse_identifier()?)
+        } else {
+            None
+        };
+
+        Ok(Statement::Foreach(ForeachStatement {
+            token,
+            label,
+            loop_name,
+            slice,
+            array_expr,
+            body,
+            end_label,
+        }))
+    }
+
+    /// Parse an `EXIT` statement.
+    ///
+    /// Syntax: EXIT [label] [WHEN condition]
+    ///
+    /// See [Statement::Exit]
+    fn parse_exit(&self) -> Result<Statement, ParserError> {
+        self.expect_keyword_is(Keyword::EXIT)?;
+
+        // Parse optional label
+        let label = if !self.peek_keyword(Keyword::WHEN)
+            && self.peek_token().token != BorrowedToken::SemiColon
+            && self.peek_token().token != BorrowedToken::EOF
+            && !self.peek_keyword(Keyword::END)
+            && !self.peek_keyword(Keyword::ELSE)
+            && !self.peek_keyword(Keyword::ELSEIF)
+            && !self.peek_keyword(Keyword::UNTIL)
+        {
+            Some(self.parse_identifier()?)
+        } else {
+            None
+        };
+
+        // Parse optional WHEN condition
+        let condition = if self.parse_keyword(Keyword::WHEN) {
+            Some(self.parse_expr()?)
+        } else {
+            None
+        };
+
+        Ok(Statement::Exit(ExitStatement { label, condition }))
+    }
+
+    /// Parse a `CONTINUE` statement.
+    ///
+    /// Syntax: CONTINUE [label] [WHEN condition]
+    ///
+    /// See [Statement::Continue]
+    fn parse_continue(&self) -> Result<Statement, ParserError> {
+        self.expect_keyword_is(Keyword::CONTINUE)?;
+
+        // Parse optional label
+        let label = if !self.peek_keyword(Keyword::WHEN)
+            && self.peek_token().token != BorrowedToken::SemiColon
+            && self.peek_token().token != BorrowedToken::EOF
+            && !self.peek_keyword(Keyword::END)
+            && !self.peek_keyword(Keyword::ELSE)
+            && !self.peek_keyword(Keyword::ELSEIF)
+            && !self.peek_keyword(Keyword::UNTIL)
+        {
+            Some(self.parse_identifier()?)
+        } else {
+            None
+        };
+
+        // Parse optional WHEN condition
+        let condition = if self.parse_keyword(Keyword::WHEN) {
+            Some(self.parse_expr()?)
+        } else {
+            None
+        };
+
+        Ok(Statement::Continue(ContinueStatement { label, condition }))
     }
 
     fn parse_get_diagnostics(&self) -> Result<Statement, ParserError> {
@@ -1512,8 +1756,12 @@ impl<'a> Parser<'a> {
 
             ConditionalStatements::BeginEnd(BeginEndStatements {
                 begin_token: AttachedToken(begin_token.to_static()),
+                label: None,
+                declarations: vec![],
                 statements,
+                exception_handlers: None,
                 end_token: AttachedToken(end_token.to_static()),
+                end_label: None,
             })
         } else {
             ConditionalStatements::Sequence {
@@ -1525,18 +1773,190 @@ impl<'a> Parser<'a> {
 
     /// Parse a `RAISE` statement.
     ///
+    /// Supports PL/pgSQL RAISE syntax:
+    /// - `RAISE` - re-raise current exception
+    /// - `RAISE level` - raise with level (DEBUG, LOG, INFO, NOTICE, WARNING, EXCEPTION)
+    /// - `RAISE level 'format'` - format string
+    /// - `RAISE level 'format', expr, ...` - format string with arguments
+    /// - `RAISE level condition_name` - named condition
+    /// - `RAISE level SQLSTATE 'code'` - SQLSTATE code
+    /// - `RAISE ... USING option = expr, ...` - USING clause
+    ///
     /// See [Statement::Raise]
     pub fn parse_raise_stmt(&self) -> Result<Statement, ParserError> {
         self.expect_keyword_is(Keyword::RAISE)?;
 
-        let value = if self.parse_keywords(&[Keyword::USING, Keyword::MESSAGE]) {
-            self.expect_token(&BorrowedToken::Eq)?;
-            Some(RaiseStatementValue::UsingMessage(self.parse_expr()?))
+        // Parse optional level
+        let level = if self.parse_keyword(Keyword::DEBUG) {
+            Some(RaiseLevel::Debug)
+        } else if self.parse_keyword(Keyword::LOG) {
+            Some(RaiseLevel::Log)
+        } else if self.parse_keyword(Keyword::INFO) {
+            Some(RaiseLevel::Info)
+        } else if self.parse_keyword(Keyword::NOTICE) {
+            Some(RaiseLevel::Notice)
+        } else if self.parse_keyword(Keyword::WARNING) {
+            Some(RaiseLevel::Warning)
+        } else if self.parse_keyword(Keyword::EXCEPTION) {
+            Some(RaiseLevel::Exception)
         } else {
-            self.maybe_parse(|parser| parser.parse_expr().map(RaiseStatementValue::Expr))?
+            None
         };
 
-        Ok(Statement::Raise(RaiseStatement { value }))
+        // Parse optional message
+        let message = if self.parse_keyword(Keyword::SQLSTATE) {
+            let sqlstate = self.parse_literal_string()?;
+            Some(RaiseMessage::Sqlstate(sqlstate))
+        } else if matches!(
+            self.peek_token().token,
+            BorrowedToken::SingleQuotedString(_)
+        ) {
+            if let BorrowedToken::SingleQuotedString(s) = self.next_token().token {
+                Some(RaiseMessage::FormatString(s.to_string()))
+            } else {
+                unreachable!()
+            }
+        } else if matches!(self.peek_token().token, BorrowedToken::Word(_))
+            && !self.peek_keyword(Keyword::USING)
+        {
+            let ident = self.parse_identifier()?;
+            Some(RaiseMessage::ConditionName(ident))
+        } else {
+            None
+        };
+
+        // Parse optional format arguments (comma-separated expressions)
+        // Only format strings can have format arguments, not condition names or SQLSTATE
+        let mut format_args = Vec::new();
+        if matches!(message, Some(RaiseMessage::FormatString(_)))
+            && self.consume_token(&BorrowedToken::Comma)
+        {
+            format_args = self.parse_comma_separated(Parser::parse_expr)?;
+        }
+
+        // Parse optional USING clause
+        let mut using = Vec::new();
+        if self.parse_keyword(Keyword::USING) {
+            using = self.parse_comma_separated(|parser| {
+                let option = if parser.parse_keyword(Keyword::MESSAGE) {
+                    RaiseOption::Message
+                } else if parser.parse_keyword(Keyword::DETAIL) {
+                    RaiseOption::Detail
+                } else if parser.parse_keyword(Keyword::HINT) {
+                    RaiseOption::Hint
+                } else if parser.parse_keyword(Keyword::ERRCODE) {
+                    RaiseOption::Errcode
+                } else if parser.parse_keyword(Keyword::COLUMN) {
+                    RaiseOption::Column
+                } else if parser.parse_keyword(Keyword::CONSTRAINT) {
+                    RaiseOption::Constraint
+                } else if parser.parse_keyword(Keyword::DATATYPE) {
+                    RaiseOption::Datatype
+                } else if parser.parse_keyword(Keyword::TABLE) {
+                    RaiseOption::Table
+                } else if parser.parse_keyword(Keyword::SCHEMA) {
+                    RaiseOption::Schema
+                } else {
+                    return parser.expected("RAISE USING option", parser.peek_token());
+                };
+
+                parser.expect_token(&BorrowedToken::Eq)?;
+                let value = parser.parse_expr()?;
+
+                Ok(RaiseUsingItem { option, value })
+            })?;
+        }
+
+        Ok(Statement::Raise(RaiseStatement {
+            level,
+            message,
+            format_args,
+            using,
+        }))
+    }
+
+    /// Parse a `PERFORM` statement (PL/pgSQL).
+    ///
+    /// PERFORM executes a query and discards the result.
+    ///
+    /// See [Statement::Perform]
+    pub fn parse_perform(&self) -> Result<Statement, ParserError> {
+        self.expect_keyword_is(Keyword::PERFORM)?;
+
+        let query = self.parse_query()?;
+
+        Ok(Statement::Perform(PerformStatement {
+            query: Box::new(*query),
+        }))
+    }
+
+    /// Parse a PostgreSQL `DO` statement (anonymous code block).
+    ///
+    /// Supports syntax variants:
+    /// - `DO $$ ... $$` - anonymous plpgsql block (default language)
+    /// - `DO LANGUAGE plpgsql $$ ... $$` - explicit language before body
+    /// - `DO $$ ... $$ LANGUAGE plpgsql` - explicit language after body
+    /// - `DO LANGUAGE sql $$ ... $$` - other languages (stored as raw body)
+    ///
+    /// See [Statement::Do]
+    pub fn parse_do(&self) -> Result<Statement, ParserError> {
+        let token = AttachedToken(self.get_current_token().clone().to_static());
+        self.expect_keyword_is(Keyword::DO)?;
+
+        // Check for LANGUAGE before body
+        let language_before = if self.parse_keyword(Keyword::LANGUAGE) {
+            Some(self.parse_identifier()?)
+        } else {
+            None
+        };
+
+        // Parse the body (typically a dollar-quoted string)
+        let body_expr = self.parse_expr()?;
+
+        // Check for LANGUAGE after body
+        let language_after = if language_before.is_none() && self.parse_keyword(Keyword::LANGUAGE) {
+            Some(self.parse_identifier()?)
+        } else {
+            None
+        };
+
+        let language = language_before.or(language_after);
+
+        // Re-parse as PL/pgSQL block if language is plpgsql or not specified (defaults to plpgsql)
+        let body = if let Some(ref lang) = language {
+            if lang.value.eq_ignore_ascii_case("plpgsql") {
+                if let Expr::Value(ValueWithSpan {
+                    value: Value::DollarQuotedString(ref dqs),
+                    ..
+                }) = body_expr
+                {
+                    let parsed_block = self.reparse_as_plpgsql_block(&dqs.value)?;
+                    DoBody::Block(parsed_block)
+                } else {
+                    DoBody::RawBody(body_expr)
+                }
+            } else {
+                DoBody::RawBody(body_expr)
+            }
+        } else {
+            // Default to plpgsql if no language specified
+            if let Expr::Value(ValueWithSpan {
+                value: Value::DollarQuotedString(ref dqs),
+                ..
+            }) = body_expr
+            {
+                let parsed_block = self.reparse_as_plpgsql_block(&dqs.value)?;
+                DoBody::Block(parsed_block)
+            } else {
+                DoBody::RawBody(body_expr)
+            }
+        };
+
+        Ok(Statement::Do(DoStatement {
+            token,
+            language,
+            body,
+        }))
     }
 
     pub fn parse_signal(&self) -> Result<Statement, ParserError> {
@@ -6322,6 +6742,205 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parse a PL/pgSQL label: <<label_name>>
+    fn parse_plpgsql_label(&self) -> Result<Option<Ident>, ParserError> {
+        if self.consume_token(&BorrowedToken::ShiftLeft) {
+            let label = self.parse_identifier()?;
+            self.expect_token(&BorrowedToken::ShiftRight)?;
+            Ok(Some(label))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Parse a PL/pgSQL data type (supports %TYPE and %ROWTYPE)
+    fn parse_plpgsql_data_type(&self) -> Result<PlPgSqlDataType, ParserError> {
+        if self.parse_keyword(Keyword::RECORD) {
+            return Ok(PlPgSqlDataType::Record);
+        }
+
+        // Check for CURSOR declaration
+        if self.parse_keyword(Keyword::CURSOR) {
+            // Parse scroll option
+            let scroll = if self.parse_keyword(Keyword::SCROLL) {
+                CursorScrollOption::Scroll
+            } else if self.parse_keyword(Keyword::NO) {
+                self.expect_keyword(Keyword::SCROLL)?;
+                CursorScrollOption::NoScroll
+            } else {
+                CursorScrollOption::Unspecified
+            };
+
+            // Parse optional parameters
+            let parameters = if self.consume_token(&BorrowedToken::LParen) {
+                let params = self.parse_comma_separated(|parser| {
+                    let name = parser.parse_identifier()?;
+                    let data_type = parser.parse_data_type()?;
+                    Ok(CursorParameter { name, data_type })
+                })?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                Some(params)
+            } else {
+                None
+            };
+
+            // Parse FOR and query
+            self.expect_keyword(Keyword::FOR)?;
+            let query = self.parse_query()?;
+
+            return Ok(PlPgSqlDataType::Cursor(PlPgSqlCursorDeclaration {
+                scroll,
+                parameters,
+                query,
+            }));
+        }
+
+        // Try to parse as ObjectName for %TYPE or %ROWTYPE
+        if let Ok(Some(result)) = self.maybe_parse(|parser| {
+            let name = parser.parse_object_name(false)?;
+            if parser.consume_token(&BorrowedToken::Mod) {
+                if parser.parse_keyword(Keyword::TYPE) {
+                    Ok(PlPgSqlDataType::TypeOf(name))
+                } else if parser.parse_keyword(Keyword::ROWTYPE) {
+                    Ok(PlPgSqlDataType::RowTypeOf(name))
+                } else {
+                    parser.expected("TYPE or ROWTYPE after %", parser.peek_token())
+                }
+            } else {
+                parser.expected("% after object name", parser.peek_token())
+            }
+        }) {
+            return Ok(result);
+        }
+
+        // Parse as standard data type
+        let data_type = self.parse_data_type()?;
+        Ok(PlPgSqlDataType::DataType(data_type))
+    }
+
+    /// Parse a single PL/pgSQL variable declaration
+    fn parse_plpgsql_declaration(&self) -> Result<PlPgSqlDeclaration, ParserError> {
+        let name = self.parse_identifier()?;
+        let constant = self.parse_keyword(Keyword::CONSTANT);
+        let data_type = self.parse_plpgsql_data_type()?;
+
+        let collation = if self.parse_keyword(Keyword::COLLATE) {
+            Some(self.parse_identifier()?)
+        } else {
+            None
+        };
+
+        let not_null = self.parse_keywords(&[Keyword::NOT, Keyword::NULL]);
+
+        let default = if self.consume_token(&BorrowedToken::Assignment) {
+            Some(self.parse_expr()?)
+        } else if self.parse_keyword(Keyword::DEFAULT) {
+            Some(self.parse_expr()?)
+        } else {
+            None
+        };
+
+        Ok(PlPgSqlDeclaration {
+            name,
+            constant,
+            data_type,
+            collation,
+            not_null,
+            default,
+        })
+    }
+
+    /// Parse the DECLARE section of a PL/pgSQL block
+    fn parse_plpgsql_declarations(&self) -> Result<Vec<PlPgSqlDeclaration>, ParserError> {
+        let mut declarations = vec![];
+
+        if !self.parse_keyword(Keyword::DECLARE) {
+            return Ok(declarations);
+        }
+
+        loop {
+            // Check if we've reached BEGIN
+            if self.peek_keyword(Keyword::BEGIN) {
+                break;
+            }
+
+            declarations.push(self.parse_plpgsql_declaration()?);
+            self.expect_token(&BorrowedToken::SemiColon)?;
+        }
+
+        Ok(declarations)
+    }
+
+    /// Create a sub-parser to parse PL/pgSQL block content
+    fn reparse_as_plpgsql_block(&self, body: &str) -> Result<BeginEndStatements, ParserError> {
+        let dialect = self.dialect;
+        let mut tokenizer = Tokenizer::new(dialect, body);
+        let tokens = tokenizer.tokenize_with_location()?;
+
+        let parser = Parser::new(dialect).with_tokens_with_locations(tokens);
+        parser.parse_plpgsql_block()
+    }
+
+    /// Parse a full PL/pgSQL block structure
+    fn parse_plpgsql_block(&self) -> Result<BeginEndStatements, ParserError> {
+        // Parse optional label
+        let label = self.parse_plpgsql_label()?;
+
+        // Parse DECLARE section
+        let declarations = self.parse_plpgsql_declarations()?;
+
+        // Parse BEGIN
+        let begin_token = self.expect_keyword(Keyword::BEGIN)?;
+
+        // Parse statements until we hit EXCEPTION or END
+        let statements = self.parse_statement_list(&[Keyword::EXCEPTION, Keyword::END])?;
+
+        // Parse optional EXCEPTION section
+        let exception_handlers = if self.parse_keyword(Keyword::EXCEPTION) {
+            let mut handlers = vec![];
+            while self.parse_keyword(Keyword::WHEN) {
+                let mut idents = vec![self.parse_identifier()?];
+                while self.parse_keyword(Keyword::OR) {
+                    idents.push(self.parse_identifier()?);
+                }
+                self.expect_keyword(Keyword::THEN)?;
+
+                // Parse statements until next WHEN or END
+                let handler_statements =
+                    self.parse_statement_list(&[Keyword::WHEN, Keyword::END])?;
+                handlers.push(ExceptionWhen {
+                    idents,
+                    statements: handler_statements,
+                });
+            }
+            Some(handlers)
+        } else {
+            None
+        };
+
+        // Parse END
+        let end_token = self.expect_keyword(Keyword::END)?;
+
+        // Parse optional end label
+        let end_label = if self.peek_token() != BorrowedToken::SemiColon
+            && self.peek_token() != BorrowedToken::EOF
+        {
+            self.maybe_parse(|p| p.parse_identifier()).ok().flatten()
+        } else {
+            None
+        };
+
+        Ok(BeginEndStatements {
+            begin_token: AttachedToken(begin_token.to_static()),
+            label,
+            declarations,
+            statements,
+            exception_handlers,
+            end_token: AttachedToken(end_token.to_static()),
+            end_label,
+        })
+    }
+
     /// Parse `CREATE FUNCTION` for [PostgreSQL]
     ///
     /// [PostgreSQL]: https://www.postgresql.org/docs/15/sql-createfunction.html
@@ -6376,8 +6995,12 @@ impl<'a> Parser<'a> {
                     let end_token = self.expect_keyword(Keyword::END)?;
                     body.function_body = Some(CreateFunctionBody::AsBeginEnd(BeginEndStatements {
                         begin_token: AttachedToken(begin_token.to_static()),
+                        label: None,
+                        declarations: vec![],
                         statements,
+                        exception_handlers: None,
                         end_token: AttachedToken(end_token.to_static()),
+                        end_label: None,
                     }));
                 } else {
                     body.function_body = Some(CreateFunctionBody::AsBeforeOptions(
@@ -6461,11 +7084,29 @@ impl<'a> Parser<'a> {
                 let end_token = self.expect_keyword(Keyword::END)?;
                 body.function_body = Some(CreateFunctionBody::AsBeginEnd(BeginEndStatements {
                     begin_token: AttachedToken(begin_token.to_static()),
+                    label: None,
+                    declarations: vec![],
                     statements,
+                    exception_handlers: None,
                     end_token: AttachedToken(end_token.to_static()),
+                    end_label: None,
                 }));
             } else {
                 break;
+            }
+        }
+
+        // Re-parse dollar-quoted body if LANGUAGE plpgsql
+        if let Some(ref lang) = body.language {
+            if lang.value.eq_ignore_ascii_case("plpgsql") {
+                if let Some(CreateFunctionBody::AsBeforeOptions(Expr::Value(ValueWithSpan {
+                    value: Value::DollarQuotedString(ref dqs),
+                    ..
+                }))) = body.function_body
+                {
+                    let parsed_block = self.reparse_as_plpgsql_block(&dqs.value)?;
+                    body.function_body = Some(CreateFunctionBody::AsBeginEnd(parsed_block));
+                }
             }
         }
 
@@ -6543,8 +7184,12 @@ impl<'a> Parser<'a> {
 
             Some(CreateFunctionBody::AsBeginEnd(BeginEndStatements {
                 begin_token: AttachedToken(begin_token.to_static()),
+                label: None,
+                declarations: vec![],
                 statements,
+                exception_handlers: None,
                 end_token: AttachedToken(end_token.to_static()),
+                end_label: None,
             }))
         } else if self.parse_keyword(Keyword::RETURN) {
             if self.peek_token() == BorrowedToken::LParen {
@@ -8521,14 +9166,15 @@ impl<'a> Parser<'a> {
             }
         };
 
+        // Position is now optional - check if FROM or IN is present
         let position = if self.peek_keyword(Keyword::FROM) {
             self.expect_keyword(Keyword::FROM)?;
-            FetchPosition::From
+            Some(FetchPosition::From)
         } else if self.peek_keyword(Keyword::IN) {
             self.expect_keyword(Keyword::IN)?;
-            FetchPosition::In
+            Some(FetchPosition::In)
         } else {
-            return parser_err!("Expected FROM or IN", self.peek_token().span.start);
+            None
         };
 
         let name = self.parse_identifier()?;
@@ -8545,6 +9191,68 @@ impl<'a> Parser<'a> {
             direction,
             position,
             into,
+        })
+    }
+
+    /// Parse MOVE statement for cursor positioning
+    pub fn parse_move(&self) -> Result<Statement, ParserError> {
+        self.expect_keyword(Keyword::MOVE)?;
+
+        let direction = if self.parse_keyword(Keyword::NEXT) {
+            FetchDirection::Next
+        } else if self.parse_keyword(Keyword::PRIOR) {
+            FetchDirection::Prior
+        } else if self.parse_keyword(Keyword::FIRST) {
+            FetchDirection::First
+        } else if self.parse_keyword(Keyword::LAST) {
+            FetchDirection::Last
+        } else if self.parse_keyword(Keyword::ABSOLUTE) {
+            FetchDirection::Absolute {
+                limit: self.parse_number_value()?.value,
+            }
+        } else if self.parse_keyword(Keyword::RELATIVE) {
+            FetchDirection::Relative {
+                limit: self.parse_number_value()?.value,
+            }
+        } else if self.parse_keyword(Keyword::FORWARD) {
+            if self.parse_keyword(Keyword::ALL) {
+                FetchDirection::ForwardAll
+            } else {
+                FetchDirection::Forward {
+                    limit: Some(self.parse_number_value()?.value),
+                }
+            }
+        } else if self.parse_keyword(Keyword::BACKWARD) {
+            if self.parse_keyword(Keyword::ALL) {
+                FetchDirection::BackwardAll
+            } else {
+                FetchDirection::Backward {
+                    limit: Some(self.parse_number_value()?.value),
+                }
+            }
+        } else if self.parse_keyword(Keyword::ALL) {
+            FetchDirection::All
+        } else {
+            FetchDirection::Count {
+                limit: self.parse_number_value()?.value,
+            }
+        };
+
+        // Optional FROM/IN keyword before cursor name
+        let position = if self.parse_keyword(Keyword::FROM) {
+            Some(FetchPosition::From)
+        } else if self.parse_keyword(Keyword::IN) {
+            Some(FetchPosition::In)
+        } else {
+            None
+        };
+
+        let name = self.parse_identifier()?;
+
+        Ok(Statement::Move {
+            direction,
+            position,
+            name,
         })
     }
 
@@ -11069,8 +11777,37 @@ impl<'a> Parser<'a> {
     /// Parse [Statement::Open]
     fn parse_open(&self) -> Result<Statement, ParserError> {
         self.expect_keyword(Keyword::OPEN)?;
+        let cursor_name = self.parse_identifier()?;
+
+        // Check for open_for variants
+        let open_for = if self.consume_token(&BorrowedToken::LParen) {
+            // OPEN cursor_name(args) - bound cursor with arguments
+            let args = self.parse_comma_separated(Parser::parse_expr)?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            Some(OpenFor::BoundCursorArgs(args))
+        } else if self.parse_keyword(Keyword::FOR) {
+            // OPEN cursor_name FOR ...
+            if self.parse_keyword(Keyword::EXECUTE) {
+                // OPEN cursor_name FOR EXECUTE expr [USING ...]
+                let query_expr = Box::new(self.parse_expr()?);
+                let using = if self.parse_keyword(Keyword::USING) {
+                    Some(self.parse_comma_separated(Parser::parse_expr)?)
+                } else {
+                    None
+                };
+                Some(OpenFor::Execute { query_expr, using })
+            } else {
+                // OPEN cursor_name FOR query
+                let query = self.parse_query()?;
+                Some(OpenFor::Query(query))
+            }
+        } else {
+            None
+        };
+
         Ok(Statement::Open(OpenStatement {
-            cursor_name: self.parse_identifier()?,
+            cursor_name,
+            open_for,
         }))
     }
 
@@ -19068,9 +19805,55 @@ impl<'a> Parser<'a> {
 
     pub fn parse_execute(&self) -> Result<Statement, ParserError> {
         let execute_token = AttachedToken(self.get_current_token().clone().to_static());
-        let name = if self.dialect.supports_execute_immediate()
-            && self.parse_keyword(Keyword::IMMEDIATE)
-        {
+
+        // Check for EXECUTE IMMEDIATE
+        let is_immediate = self.dialect.supports_execute_immediate()
+            && self.parse_keyword(Keyword::IMMEDIATE);
+
+        // For PL/pgSQL dynamic SQL: EXECUTE query_expr INTO ...
+        // Try to parse as expression first (for dynamic SQL case)
+        // Only treat as dynamic SQL if expression is NOT a bare identifier
+        // (bare identifier + USING is prepared statement execution)
+        if !is_immediate {
+            if let Ok(Some(query_expr)) = self.maybe_parse(|parser| {
+                let expr = parser.parse_expr()?;
+                // Check if this looks like PL/pgSQL dynamic EXECUTE
+                // Must have INTO (with optional STRICT) or USING, AND
+                // expression must not be a simple identifier (those are prepared statements)
+                let is_simple_ident = matches!(&expr, Expr::Identifier(_));
+                if !is_simple_ident
+                    && (parser.peek_keyword(Keyword::INTO) || parser.peek_keyword(Keyword::USING))
+                {
+                    Ok(expr)
+                } else {
+                    parser_err!("Not a PL/pgSQL dynamic EXECUTE", parser.peek_token().span.start)
+                }
+            }) {
+                // This is PL/pgSQL dynamic SQL: EXECUTE expr [INTO [STRICT] ...] [USING ...]
+                let into = if self.parse_keyword(Keyword::INTO) {
+                    let strict = self.parse_keyword(Keyword::STRICT);
+                    let targets = self.parse_comma_separated(Self::parse_identifier)?;
+                    Some(ExecuteInto { strict, targets })
+                } else {
+                    None
+                };
+
+                let using = if self.parse_keyword(Keyword::USING) {
+                    Some(self.parse_comma_separated(Parser::parse_expr)?)
+                } else {
+                    None
+                };
+
+                return Ok(Statement::ExecuteDynamic {
+                    query_expr: Box::new(query_expr),
+                    into,
+                    using,
+                });
+            }
+        }
+
+        // Standard EXECUTE for prepared statements or EXECUTE IMMEDIATE
+        let name = if is_immediate {
             None
         } else {
             let name = self.parse_object_name(false)?;
@@ -20066,13 +20849,36 @@ impl<'a> Parser<'a> {
     /// Parse [Statement::Return]
     fn parse_return(&self) -> Result<Statement, ParserError> {
         let token = AttachedToken(self.get_current_token().clone().to_static());
-        match self.maybe_parse(|p| p.parse_expr())? {
-            Some(expr) => Ok(Statement::Return(ReturnStatement {
-                token,
-                value: Some(ReturnStatementValue::Expr(expr)),
-            })),
-            None => Ok(Statement::Return(ReturnStatement { token, value: None })),
-        }
+
+        // Check for RETURN NEXT, RETURN QUERY, or RETURN QUERY EXECUTE
+        let value = if self.parse_keyword(Keyword::NEXT) {
+            // RETURN NEXT expression
+            let expr = self.parse_expr()?;
+            Some(ReturnStatementValue::Next(expr))
+        } else if self.parse_keyword(Keyword::QUERY) {
+            // RETURN QUERY ... or RETURN QUERY EXECUTE ...
+            if self.parse_keyword(Keyword::EXECUTE) {
+                // RETURN QUERY EXECUTE expression [USING ...]
+                let query_expr = Box::new(self.parse_expr()?);
+                let using = if self.parse_keyword(Keyword::USING) {
+                    Some(self.parse_comma_separated(|p| p.parse_expr())?)
+                } else {
+                    None
+                };
+                Some(ReturnStatementValue::QueryExecute { query_expr, using })
+            } else {
+                // RETURN QUERY query
+                Some(ReturnStatementValue::Query(self.parse_query()?))
+            }
+        } else {
+            // RETURN [expression] or bare RETURN
+            match self.maybe_parse(|p| p.parse_expr())? {
+                Some(expr) => Some(ReturnStatementValue::Expr(expr)),
+                None => None,
+            }
+        };
+
+        Ok(Statement::Return(ReturnStatement { token, value }))
     }
 
     fn parse_vacuum(&self) -> Result<Statement, ParserError> {

@@ -186,8 +186,12 @@ impl MsSqlDialect {
                 then_token: None,
                 conditional_statements: ConditionalStatements::BeginEnd(BeginEndStatements {
                     begin_token: AttachedToken(begin_token.to_static()),
+                    label: None,
+                    declarations: vec![],
                     statements,
+                    exception_handlers: None,
                     end_token: AttachedToken(end_token.to_static()),
+                    end_label: None,
                 }),
             }
         } else {
@@ -222,8 +226,12 @@ impl MsSqlDialect {
                     then_token: None,
                     conditional_statements: ConditionalStatements::BeginEnd(BeginEndStatements {
                         begin_token: AttachedToken(begin_token.to_static()),
+                        label: None,
+                        declarations: vec![],
                         statements,
+                        exception_handlers: None,
                         end_token: AttachedToken(end_token.to_static()),
+                        end_label: None,
                     }),
                 });
             } else {

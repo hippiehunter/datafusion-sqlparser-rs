@@ -110,6 +110,8 @@ fn parse_create_procedure() {
             or_alter: true,
             body: ConditionalStatements::BeginEnd(BeginEndStatements {
                 begin_token: AttachedToken::empty(),
+                label: None,
+                declarations: vec![],
                 statements: vec![Statement::Query(Box::new(Query {
                     with: None,
                     limit_clause: None,
@@ -145,7 +147,9 @@ fn parse_create_procedure() {
                         flavor: SelectFlavor::Standard,
                     })))
                 }))],
+                exception_handlers: None,
                 end_token: AttachedToken::empty(),
+                end_label: None,
             }),
             params: Some(vec![
                 ProcedureParam {
@@ -239,13 +243,17 @@ fn parse_create_function() {
             return_type: Some(DataType::Int(None)),
             function_body: Some(CreateFunctionBody::AsBeginEnd(BeginEndStatements {
                 begin_token: AttachedToken::empty(),
+                label: None,
+                declarations: vec![],
                 statements: vec![Statement::Return(ReturnStatement {
                     token: AttachedToken::empty(),
                     value: Some(ReturnStatementValue::Expr(Expr::Value(
                         (number("1")).with_empty_span()
                     ))),
                 })],
+                exception_handlers: None,
                 end_token: AttachedToken::empty(),
+                end_label: None,
             })),
             behavior: None,
             called_on_null: None,
@@ -417,13 +425,17 @@ fn parse_create_function_parameter_default_values() {
             return_type: Some(DataType::Int(None)),
             function_body: Some(CreateFunctionBody::AsBeginEnd(BeginEndStatements {
                 begin_token: AttachedToken::empty(),
+                label: None,
+                declarations: vec![],
                 statements: vec![Statement::Return(ReturnStatement {
                     token: AttachedToken::empty(),
                     value: Some(ReturnStatementValue::Expr(Expr::Identifier(Ident::new(
                         "@param1"
                     )))),
                 })],
+                exception_handlers: None,
                 end_token: AttachedToken::empty(),
+                end_label: None,
             })),
             behavior: None,
             called_on_null: None,

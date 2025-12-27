@@ -14299,25 +14299,127 @@ fn test_conditional_statement_span() {
 
 #[test]
 fn parse_raise_statement() {
-    let sql = "RAISE USING MESSAGE = 42";
+    // Basic RAISE (re-raise)
+    let sql = "RAISE";
     let Statement::Raise(stmt) = verified_stmt(sql) else {
         unreachable!()
     };
+    assert_eq!(None, stmt.level);
+    assert_eq!(None, stmt.message);
+    assert!(stmt.format_args.is_empty());
+    assert!(stmt.using.is_empty());
+
+    // RAISE with level
+    let sql = "RAISE NOTICE";
+    let Statement::Raise(stmt) = verified_stmt(sql) else {
+        unreachable!()
+    };
+    assert_eq!(Some(RaiseLevel::Notice), stmt.level);
+    assert_eq!(None, stmt.message);
+
+    // RAISE with level and format string
+    let sql = "RAISE NOTICE 'Hello, world'";
+    let Statement::Raise(stmt) = verified_stmt(sql) else {
+        unreachable!()
+    };
+    assert_eq!(Some(RaiseLevel::Notice), stmt.level);
     assert_eq!(
-        Some(RaiseStatementValue::UsingMessage(Expr::value(number("42")))),
-        stmt.value
+        Some(RaiseMessage::FormatString("Hello, world".to_string())),
+        stmt.message
+    );
+    assert!(stmt.format_args.is_empty());
+
+    // RAISE with format string and arguments
+    let sql = "RAISE EXCEPTION 'Error: %, %', var1, var2";
+    let Statement::Raise(stmt) = verified_stmt(sql) else {
+        unreachable!()
+    };
+    assert_eq!(Some(RaiseLevel::Exception), stmt.level);
+    assert_eq!(
+        Some(RaiseMessage::FormatString("Error: %, %".to_string())),
+        stmt.message
+    );
+    assert_eq!(2, stmt.format_args.len());
+
+    // RAISE with USING clause
+    let sql = "RAISE USING MESSAGE = 'error message'";
+    let Statement::Raise(stmt) = verified_stmt(sql) else {
+        unreachable!()
+    };
+    assert_eq!(None, stmt.level);
+    assert_eq!(None, stmt.message);
+    assert_eq!(1, stmt.using.len());
+    assert_eq!(RaiseOption::Message, stmt.using[0].option);
+
+    // RAISE with level and USING clause
+    let sql = "RAISE EXCEPTION 'Error' USING DETAIL = 'Details', HINT = 'Try again'";
+    let Statement::Raise(stmt) = verified_stmt(sql) else {
+        unreachable!()
+    };
+    assert_eq!(Some(RaiseLevel::Exception), stmt.level);
+    assert_eq!(
+        Some(RaiseMessage::FormatString("Error".to_string())),
+        stmt.message
+    );
+    assert_eq!(2, stmt.using.len());
+    assert_eq!(RaiseOption::Detail, stmt.using[0].option);
+    assert_eq!(RaiseOption::Hint, stmt.using[1].option);
+
+    // RAISE with SQLSTATE
+    let sql = "RAISE SQLSTATE '22012'";
+    let Statement::Raise(stmt) = verified_stmt(sql) else {
+        unreachable!()
+    };
+    assert_eq!(None, stmt.level);
+    assert_eq!(
+        Some(RaiseMessage::Sqlstate("22012".to_string())),
+        stmt.message
     );
 
-    verified_stmt("RAISE USING MESSAGE = 'error'");
-    verified_stmt("RAISE myerror");
-    verified_stmt("RAISE 42");
-    verified_stmt("RAISE using");
-    verified_stmt("RAISE");
+    // RAISE with condition name
+    let sql = "RAISE division_by_zero";
+    let Statement::Raise(stmt) = verified_stmt(sql) else {
+        unreachable!()
+    };
+    assert_eq!(None, stmt.level);
+    assert!(matches!(stmt.message, Some(RaiseMessage::ConditionName(_))));
 
-    assert_eq!(
-        ParserError::ParserError("Expected: =, found: error".to_string()),
-        parse_sql_statements("RAISE USING MESSAGE error").unwrap_err()
-    );
+    // Test all levels
+    verified_stmt("RAISE DEBUG");
+    verified_stmt("RAISE LOG");
+    verified_stmt("RAISE INFO");
+    verified_stmt("RAISE NOTICE");
+    verified_stmt("RAISE WARNING");
+    verified_stmt("RAISE EXCEPTION");
+
+    // Test all USING options
+    verified_stmt("RAISE USING MESSAGE = 'msg'");
+    verified_stmt("RAISE USING DETAIL = 'detail'");
+    verified_stmt("RAISE USING HINT = 'hint'");
+    verified_stmt("RAISE USING ERRCODE = 'code'");
+    verified_stmt("RAISE USING COLUMN = 'col'");
+    verified_stmt("RAISE USING CONSTRAINT = 'const'");
+    verified_stmt("RAISE USING DATATYPE = 'type'");
+    verified_stmt("RAISE USING TABLE = 'tbl'");
+    verified_stmt("RAISE USING SCHEMA = 'sch'");
+}
+
+#[test]
+fn parse_perform_statement() {
+    // Basic PERFORM with SELECT
+    let sql = "PERFORM SELECT my_function()";
+    let Statement::Perform(stmt) = verified_stmt(sql) else {
+        unreachable!()
+    };
+    assert!(matches!(*stmt.query, Query { .. }));
+
+    // PERFORM with SELECT and table
+    let sql = "PERFORM SELECT * FROM my_table WHERE id = 1";
+    verified_stmt(sql);
+
+    // PERFORM with more complex query
+    let sql = "PERFORM SELECT COUNT(*) FROM users WHERE active = 1";
+    verified_stmt(sql);
 }
 
 #[test]
@@ -14893,6 +14995,7 @@ fn test_open() {
         stmt,
         Statement::Open(OpenStatement {
             cursor_name: Ident::new("Employee_Cursor"),
+            open_for: None,
         })
     );
 }

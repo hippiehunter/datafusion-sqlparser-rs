@@ -2947,7 +2947,31 @@ impl fmt::Display for RepeatStatement {
     }
 }
 
-/// A `FOR` statement for cursor-based iteration over query results.
+/// Variants of FOR loop iteration
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum ForLoopVariant {
+    /// Integer range: FOR i IN [REVERSE] lower..upper [BY step]
+    IntegerRange {
+        reverse: bool,
+        lower: Box<Expr>,
+        upper: Box<Expr>,
+        step: Option<Box<Expr>>,
+    },
+    /// Query iteration: FOR r IN query or FOR r AS [cursor] CURSOR FOR query
+    Query {
+        cursor_name: Option<Ident>,
+        query: Box<Query>,
+    },
+    /// Dynamic query: FOR r IN EXECUTE expr [USING ...]
+    DynamicQuery {
+        query_expr: Box<Expr>,
+        using: Option<Vec<Expr>>,
+    },
+}
+
+/// A `FOR` statement for cursor-based iteration over query results or integer ranges.
 ///
 /// Example (with explicit cursor):
 /// ```sql
@@ -2963,7 +2987,15 @@ impl fmt::Display for RepeatStatement {
 /// END FOR
 /// ```
 ///
+/// Example (integer range):
+/// ```sql
+/// FOR i IN 1..10 LOOP
+///     RAISE NOTICE 'i = %', i;
+/// END LOOP;
+/// ```
+///
 /// [SQL:2016](https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#for-statement)
+/// [PostgreSQL FOR](https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-INTEGER-FOR)
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -2972,15 +3004,13 @@ pub struct ForStatement {
     pub token: AttachedToken,
     /// Optional label before the FOR keyword
     pub label: Option<Ident>,
-    /// The loop variable name (holds the row data in each iteration)
+    /// The loop variable name
     pub loop_name: Ident,
-    /// Optional explicit cursor name
-    pub cursor_name: Option<Ident>,
-    /// The SELECT statement to iterate over
-    pub query: Box<Query>,
-    /// The body of the loop (statements to execute for each row)
+    /// The iteration variant
+    pub variant: ForLoopVariant,
+    /// The body of the loop (statements to execute for each iteration)
     pub body: ConditionalStatements,
-    /// Optional label after END FOR (must match start label if present)
+    /// Optional label after END FOR/LOOP (must match start label if present)
     pub end_label: Option<Ident>,
 }
 
@@ -2990,19 +3020,48 @@ impl fmt::Display for ForStatement {
             token: _,
             label,
             loop_name,
-            cursor_name,
-            query,
+            variant,
             body,
             end_label,
         } = self;
         if let Some(label) = label {
             write!(f, "{label}: ")?;
         }
-        write!(f, "FOR {} AS ", loop_name)?;
-        if let Some(cursor_name) = cursor_name {
-            write!(f, "{cursor_name} CURSOR FOR ")?;
+        write!(f, "FOR {loop_name} ")?;
+
+        match variant {
+            ForLoopVariant::IntegerRange {
+                reverse,
+                lower,
+                upper,
+                step,
+            } => {
+                write!(f, "IN ")?;
+                if *reverse {
+                    write!(f, "REVERSE ")?;
+                }
+                write!(f, "{lower}..{upper}")?;
+                if let Some(step) = step {
+                    write!(f, " BY {step}")?;
+                }
+                write!(f, " LOOP {body} END LOOP")?;
+            }
+            ForLoopVariant::Query { cursor_name, query } => {
+                write!(f, "AS ")?;
+                if let Some(cursor_name) = cursor_name {
+                    write!(f, "{cursor_name} CURSOR FOR ")?;
+                }
+                write!(f, "{query} DO {body} END FOR")?;
+            }
+            ForLoopVariant::DynamicQuery { query_expr, using } => {
+                write!(f, "IN EXECUTE {query_expr}")?;
+                if let Some(using_exprs) = using {
+                    write!(f, " USING {}", display_comma_separated(using_exprs))?;
+                }
+                write!(f, " LOOP {body} END LOOP")?;
+            }
         }
-        write!(f, "{} DO {} END FOR", query, body)?;
+
         if let Some(end_label) = end_label {
             write!(f, " {end_label}")?;
         }
@@ -3059,6 +3118,131 @@ impl fmt::Display for IterateStatement {
         write!(f, "ITERATE")?;
         if let Some(label) = &self.label {
             write!(f, " {}", label)?;
+        }
+        Ok(())
+    }
+}
+
+/// A `FOREACH` statement for iterating over arrays.
+///
+/// Example:
+/// ```sql
+/// FOREACH x IN ARRAY array_var LOOP
+///     RAISE NOTICE 'x = %', x;
+/// END LOOP;
+/// ```
+///
+/// Example with slice:
+/// ```sql
+/// FOREACH x SLICE 1 IN ARRAY array_var LOOP
+///     -- x is a sub-array
+/// END LOOP;
+/// ```
+///
+/// [PostgreSQL FOREACH](https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-FOREACH-ARRAY)
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct ForeachStatement {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
+    /// Optional label before the FOREACH keyword
+    pub label: Option<Ident>,
+    /// The loop variable name
+    pub loop_name: Ident,
+    /// Optional SLICE number for multidimensional arrays
+    pub slice: Option<u32>,
+    /// The array expression to iterate over
+    pub array_expr: Box<Expr>,
+    /// The body of the loop
+    pub body: ConditionalStatements,
+    /// Optional label after END LOOP
+    pub end_label: Option<Ident>,
+}
+
+impl fmt::Display for ForeachStatement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let ForeachStatement {
+            token: _,
+            label,
+            loop_name,
+            slice,
+            array_expr,
+            body,
+            end_label,
+        } = self;
+        if let Some(label) = label {
+            write!(f, "{label}: ")?;
+        }
+        write!(f, "FOREACH {loop_name}")?;
+        if let Some(slice_num) = slice {
+            write!(f, " SLICE {slice_num}")?;
+        }
+        write!(f, " IN ARRAY {array_expr} LOOP {body} END LOOP")?;
+        if let Some(end_label) = end_label {
+            write!(f, " {end_label}")?;
+        }
+        Ok(())
+    }
+}
+
+/// An `EXIT` statement (exit from a loop or block with optional condition).
+///
+/// Example:
+/// ```sql
+/// EXIT my_loop WHEN x > 10;
+/// ```
+///
+/// [PostgreSQL EXIT](https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-EXITING-LOOP)
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct ExitStatement {
+    /// Optional label of the loop/block to exit
+    pub label: Option<Ident>,
+    /// Optional condition (WHEN clause)
+    pub condition: Option<Expr>,
+}
+
+impl fmt::Display for ExitStatement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "EXIT")?;
+        if let Some(label) = &self.label {
+            write!(f, " {label}")?;
+        }
+        if let Some(cond) = &self.condition {
+            write!(f, " WHEN {cond}")?;
+        }
+        Ok(())
+    }
+}
+
+/// A `CONTINUE` statement (continue to next iteration with optional condition).
+///
+/// Example:
+/// ```sql
+/// CONTINUE my_loop WHEN x < 5;
+/// ```
+///
+/// [PostgreSQL CONTINUE](https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-EXITING-LOOP)
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct ContinueStatement {
+    /// Optional label of the loop to continue
+    pub label: Option<Ident>,
+    /// Optional condition (WHEN clause)
+    pub condition: Option<Expr>,
+}
+
+impl fmt::Display for ContinueStatement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "CONTINUE")?;
+        if let Some(label) = &self.label {
+            write!(f, " {label}")?;
+        }
+        if let Some(cond) = &self.condition {
+            write!(f, " WHEN {cond}")?;
         }
         Ok(())
     }
@@ -3277,6 +3461,127 @@ impl fmt::Display for ConditionalStatements {
     }
 }
 
+/// Cursor scrollability option
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum CursorScrollOption {
+    /// No scroll option specified (default behavior)
+    Unspecified,
+    /// SCROLL - allows backward movement
+    Scroll,
+    /// NO SCROLL - explicitly forward-only
+    NoScroll,
+}
+
+/// PL/pgSQL cursor parameter
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct CursorParameter {
+    pub name: Ident,
+    pub data_type: DataType,
+}
+
+/// Cursor declaration for PL/pgSQL
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct PlPgSqlCursorDeclaration {
+    pub scroll: CursorScrollOption,
+    pub parameters: Option<Vec<CursorParameter>>,
+    pub query: Box<Query>,
+}
+
+/// PL/pgSQL data type specification.
+/// Supports standard types plus %TYPE and %ROWTYPE references.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum PlPgSqlDataType {
+    /// Standard SQL data type
+    DataType(DataType),
+    /// Reference to another variable or column's type: `variable%TYPE`
+    TypeOf(ObjectName),
+    /// Row type of a table: `table_name%ROWTYPE`
+    RowTypeOf(ObjectName),
+    /// The generic RECORD type
+    Record,
+    /// Cursor declaration with optional parameters and query
+    Cursor(PlPgSqlCursorDeclaration),
+}
+
+/// A PL/pgSQL variable declaration in a DECLARE section.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct PlPgSqlDeclaration {
+    pub name: Ident,
+    pub constant: bool,
+    pub data_type: PlPgSqlDataType,
+    pub collation: Option<Ident>,
+    pub not_null: bool,
+    pub default: Option<Expr>,
+}
+
+impl fmt::Display for CursorScrollOption {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            CursorScrollOption::Unspecified => Ok(()),
+            CursorScrollOption::Scroll => write!(f, "SCROLL "),
+            CursorScrollOption::NoScroll => write!(f, "NO SCROLL "),
+        }
+    }
+}
+
+impl fmt::Display for CursorParameter {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} {}", self.name, self.data_type)
+    }
+}
+
+impl fmt::Display for PlPgSqlCursorDeclaration {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "CURSOR {}", self.scroll)?;
+        if let Some(params) = &self.parameters {
+            write!(f, "({})", display_comma_separated(params))?;
+        }
+        write!(f, " FOR {}", self.query)
+    }
+}
+
+impl fmt::Display for PlPgSqlDataType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            PlPgSqlDataType::DataType(dt) => write!(f, "{}", dt),
+            PlPgSqlDataType::TypeOf(name) => write!(f, "{}%TYPE", name),
+            PlPgSqlDataType::RowTypeOf(name) => write!(f, "{}%ROWTYPE", name),
+            PlPgSqlDataType::Record => write!(f, "RECORD"),
+            PlPgSqlDataType::Cursor(decl) => write!(f, "{}", decl),
+        }
+    }
+}
+
+impl fmt::Display for PlPgSqlDeclaration {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.name)?;
+        if self.constant {
+            write!(f, " CONSTANT")?;
+        }
+        write!(f, " {}", self.data_type)?;
+        if let Some(ref collation) = self.collation {
+            write!(f, " COLLATE {}", collation)?;
+        }
+        if self.not_null {
+            write!(f, " NOT NULL")?;
+        }
+        if let Some(ref default) = self.default {
+            write!(f, " := {}", default)?;
+        }
+        Ok(())
+    }
+}
+
 /// Represents a list of statements enclosed within `BEGIN` and `END` keywords.
 /// Example:
 /// ```sql
@@ -3289,29 +3594,154 @@ impl fmt::Display for ConditionalStatements {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct BeginEndStatements {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
     pub begin_token: AttachedToken,
+    pub label: Option<Ident>,
+    pub declarations: Vec<PlPgSqlDeclaration>,
     pub statements: Vec<Statement>,
+    pub exception_handlers: Option<Vec<ExceptionWhen>>,
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
     pub end_token: AttachedToken,
+    pub end_label: Option<Ident>,
 }
 
 impl fmt::Display for BeginEndStatements {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let BeginEndStatements {
             begin_token: AttachedToken(begin_token),
+            label,
+            declarations,
             statements,
+            exception_handlers,
             end_token: AttachedToken(end_token),
+            end_label,
         } = self;
 
+        if let Some(label) = label {
+            write!(f, "<<{}>> ", label)?;
+        }
+        if !declarations.is_empty() {
+            write!(f, "DECLARE")?;
+            for decl in declarations {
+                write!(f, " {};", decl)?;
+            }
+            write!(f, " ")?;
+        }
         if begin_token.token != Token::EOF {
-            write!(f, "{begin_token} ")?;
+            write!(f, "{begin_token}")?;
         }
         if !statements.is_empty() {
+            write!(f, " ")?;
             format_statement_list(f, statements)?;
+        }
+        if let Some(exception_handlers) = exception_handlers {
+            write!(f, " EXCEPTION")?;
+            for handler in exception_handlers {
+                write!(f, " {}", handler)?;
+                format_statement_list(f, &handler.statements)?;
+            }
         }
         if end_token.token != Token::EOF {
             write!(f, " {end_token}")?;
         }
+        if let Some(end_label) = end_label {
+            write!(f, " {}", end_label)?;
+        }
         Ok(())
+    }
+}
+
+/// RAISE statement level (PL/pgSQL)
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum RaiseLevel {
+    Debug,
+    Log,
+    Info,
+    Notice,
+    Warning,
+    Exception,
+}
+
+impl fmt::Display for RaiseLevel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RaiseLevel::Debug => write!(f, "DEBUG"),
+            RaiseLevel::Log => write!(f, "LOG"),
+            RaiseLevel::Info => write!(f, "INFO"),
+            RaiseLevel::Notice => write!(f, "NOTICE"),
+            RaiseLevel::Warning => write!(f, "WARNING"),
+            RaiseLevel::Exception => write!(f, "EXCEPTION"),
+        }
+    }
+}
+
+/// USING option for RAISE statement
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum RaiseOption {
+    Message,
+    Detail,
+    Hint,
+    Errcode,
+    Column,
+    Constraint,
+    Datatype,
+    Table,
+    Schema,
+}
+
+impl fmt::Display for RaiseOption {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RaiseOption::Message => write!(f, "MESSAGE"),
+            RaiseOption::Detail => write!(f, "DETAIL"),
+            RaiseOption::Hint => write!(f, "HINT"),
+            RaiseOption::Errcode => write!(f, "ERRCODE"),
+            RaiseOption::Column => write!(f, "COLUMN"),
+            RaiseOption::Constraint => write!(f, "CONSTRAINT"),
+            RaiseOption::Datatype => write!(f, "DATATYPE"),
+            RaiseOption::Table => write!(f, "TABLE"),
+            RaiseOption::Schema => write!(f, "SCHEMA"),
+        }
+    }
+}
+
+/// A USING clause item in RAISE
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct RaiseUsingItem {
+    pub option: RaiseOption,
+    pub value: Expr,
+}
+
+impl fmt::Display for RaiseUsingItem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let RaiseUsingItem { option, value } = self;
+        write!(f, "{} = {}", option, value)
+    }
+}
+
+/// The message part of a RAISE statement
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum RaiseMessage {
+    FormatString(String),
+    ConditionName(Ident),
+    Sqlstate(String),
+}
+
+impl fmt::Display for RaiseMessage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RaiseMessage::FormatString(s) => write!(f, "'{}'", s),
+            RaiseMessage::ConditionName(ident) => write!(f, "{}", ident),
+            RaiseMessage::Sqlstate(s) => write!(f, "SQLSTATE '{}'", s),
+        }
     }
 }
 
@@ -3319,50 +3749,53 @@ impl fmt::Display for BeginEndStatements {
 ///
 /// Examples:
 /// ```sql
-/// RAISE USING MESSAGE = 'error';
-///
-/// RAISE myerror;
+/// RAISE NOTICE 'Hello, %', name;
+/// RAISE EXCEPTION 'Error: %' USING DETAIL = 'Details here';
+/// RAISE SQLSTATE '22012';
+/// RAISE;
 /// ```
 ///
+/// [PostgreSQL](https://www.postgresql.org/docs/current/plpgsql-errors-and-messages.html)
 /// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/procedural-language#raise)
 /// [Snowflake](https://docs.snowflake.com/en/sql-reference/snowflake-scripting/raise)
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct RaiseStatement {
-    pub value: Option<RaiseStatementValue>,
+    pub level: Option<RaiseLevel>,
+    pub message: Option<RaiseMessage>,
+    pub format_args: Vec<Expr>,
+    pub using: Vec<RaiseUsingItem>,
 }
 
 impl fmt::Display for RaiseStatement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let RaiseStatement { value } = self;
+        let RaiseStatement {
+            level,
+            message,
+            format_args,
+            using,
+        } = self;
 
         write!(f, "RAISE")?;
-        if let Some(value) = value {
-            write!(f, " {value}")?;
+
+        if let Some(level) = level {
+            write!(f, " {}", level)?;
+        }
+
+        if let Some(message) = message {
+            write!(f, " {}", message)?;
+        }
+
+        if !format_args.is_empty() {
+            write!(f, ", {}", display_comma_separated(format_args))?;
+        }
+
+        if !using.is_empty() {
+            write!(f, " USING {}", display_comma_separated(using))?;
         }
 
         Ok(())
-    }
-}
-
-/// Represents the error value of a [RaiseStatement].
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum RaiseStatementValue {
-    /// `RAISE USING MESSAGE = 'error'`
-    UsingMessage(Expr),
-    /// `RAISE myerror`
-    Expr(Expr),
-}
-
-impl fmt::Display for RaiseStatementValue {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            RaiseStatementValue::Expr(expr) => write!(f, "{expr}"),
-            RaiseStatementValue::UsingMessage(expr) => write!(f, "USING MESSAGE = {expr}"),
-        }
     }
 }
 
@@ -3453,6 +3886,120 @@ pub struct SignalSetItem {
 impl fmt::Display for SignalSetItem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} = {}", self.name, self.value)
+    }
+}
+
+/// Represents a `PERFORM` statement (PL/pgSQL).
+///
+/// PERFORM executes a query and discards the result.
+///
+/// Examples:
+/// ```sql
+/// PERFORM my_function(param1, param2);
+/// PERFORM * FROM my_table WHERE id = 1;
+/// ```
+///
+/// [PostgreSQL](https://www.postgresql.org/docs/current/plpgsql-statements.html#PLPGSQL-STATEMENTS-PERFORM)
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct PerformStatement {
+    pub query: Box<Query>,
+}
+
+impl fmt::Display for PerformStatement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let PerformStatement { query } = self;
+        write!(f, "PERFORM {}", query)
+    }
+}
+
+/// Represents a PL/pgSQL assignment statement using `:=`.
+///
+/// Examples:
+/// ```sql
+/// my_var := 42;
+/// result := x + y;
+/// ```
+///
+/// [PostgreSQL](https://www.postgresql.org/docs/current/plpgsql-statements.html#PLPGSQL-STATEMENTS-ASSIGNMENT)
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct PlPgSqlAssignment {
+    pub target: Expr,
+    pub value: Expr,
+}
+
+impl fmt::Display for PlPgSqlAssignment {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let PlPgSqlAssignment { target, value } = self;
+        write!(f, "{} := {}", target, value)
+    }
+}
+
+/// A PostgreSQL DO statement for executing anonymous code blocks.
+///
+/// Examples:
+/// ```sql
+/// DO $$
+/// BEGIN
+///   RAISE NOTICE 'Hello, world!';
+/// END
+/// $$;
+///
+/// DO LANGUAGE plpgsql $$
+/// DECLARE
+///   x INTEGER := 42;
+/// BEGIN
+///   RAISE NOTICE 'x = %', x;
+/// END
+/// $$;
+/// ```
+///
+/// [PostgreSQL](https://www.postgresql.org/docs/current/sql-do.html)
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct DoStatement {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
+    pub language: Option<Ident>,
+    pub body: DoBody,
+}
+
+impl fmt::Display for DoStatement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let DoStatement {
+            token: AttachedToken(token),
+            language,
+            body,
+        } = self;
+        write!(f, "{token}")?;
+        if let Some(lang) = language {
+            write!(f, " LANGUAGE {}", lang)?;
+        }
+        write!(f, " {}", body)
+    }
+}
+
+/// The body of a DO statement, either a structured block or raw expression.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum DoBody {
+    /// A parsed PL/pgSQL block structure with DECLARE, BEGIN...END, etc.
+    Block(BeginEndStatements),
+    /// A raw body expression (typically a dollar-quoted string that wasn't parsed)
+    RawBody(Expr),
+}
+
+impl fmt::Display for DoBody {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DoBody::Block(block) => write!(f, "{}", block),
+            DoBody::RawBody(expr) => write!(f, "{}", expr),
+        }
     }
 }
 
@@ -4175,12 +4722,18 @@ pub enum Statement {
     Loop(LoopStatement),
     /// A `REPEAT` statement.
     Repeat(RepeatStatement),
-    /// A `FOR` statement (cursor iteration).
+    /// A `FOR` statement (cursor iteration or integer range).
     For(ForStatement),
+    /// A `FOREACH` statement (array iteration).
+    Foreach(ForeachStatement),
     /// A `LEAVE` statement (exit loop).
     Leave(LeaveStatement),
     /// An `ITERATE` statement (continue loop).
     Iterate(IterateStatement),
+    /// An `EXIT` statement (exit loop with optional condition).
+    Exit(ExitStatement),
+    /// A `CONTINUE` statement (continue loop with optional condition).
+    Continue(ContinueStatement),
     /// A labeled `BEGIN...END` block.
     LabeledBlock(LabeledBlock),
     /// A `GET DIAGNOSTICS` statement.
@@ -4191,6 +4744,23 @@ pub enum Statement {
     Signal(SignalStatement),
     /// A `RESIGNAL` statement.
     Resignal(ResignalStatement),
+    /// A `PERFORM` statement (PL/pgSQL).
+    Perform(PerformStatement),
+    /// A PL/pgSQL assignment statement using `:=`.
+    PlPgSqlAssignment(PlPgSqlAssignment),
+    /// A `DO` statement (PostgreSQL anonymous code block).
+    ///
+    /// ```sql
+    /// DO $$ BEGIN RAISE NOTICE 'Hello'; END $$;
+    /// ```
+    Do(DoStatement),
+    /// A `NULL` statement (PL/pgSQL no-op).
+    ///
+    /// Used as a placeholder in control structures when no action is needed.
+    /// ```sql
+    /// NULL;
+    /// ```
+    Null,
     /// ```sql
     /// CALL <function>
     /// ```
@@ -4506,9 +5076,33 @@ pub enum Statement {
         /// Cursor name
         name: Ident,
         direction: FetchDirection,
-        position: FetchPosition,
+        /// Optional position - when None, defaults to NEXT
+        position: Option<FetchPosition>,
         /// Optional, It's possible to fetch rows form cursor to the table
         into: Option<ObjectName>,
+    },
+    /// ```sql
+    /// MOVE
+    /// ```
+    /// Move cursor position without retrieving rows
+    ///
+    /// Note: this is a PostgreSQL-specific statement
+    Move {
+        direction: FetchDirection,
+        /// FROM or IN keyword before cursor name
+        position: Option<FetchPosition>,
+        name: Ident,
+    },
+    /// ```sql
+    /// EXECUTE
+    /// ```
+    /// Execute a dynamic SQL statement in PL/pgSQL
+    ///
+    /// Note: this is a PostgreSQL-specific statement
+    ExecuteDynamic {
+        query_expr: Box<Expr>,
+        into: Option<ExecuteInto>,
+        using: Option<Vec<Expr>>,
     },
     /// ```sql
     /// FLUSH [NO_WRITE_TO_BINLOG | LOCAL] flush_option [, flush_option] ... | tables_option
@@ -5436,12 +6030,41 @@ impl fmt::Display for Statement {
                 position,
                 into,
             } => {
-                write!(f, "FETCH {direction} {position} {name}")?;
+                write!(f, "FETCH {direction}")?;
+                if let Some(pos) = position {
+                    write!(f, " {pos}")?;
+                }
+                write!(f, " {name}")?;
 
                 if let Some(into) = into {
                     write!(f, " INTO {into}")?;
                 }
 
+                Ok(())
+            }
+            Statement::Move {
+                direction,
+                position,
+                name,
+            } => {
+                write!(f, "MOVE {direction}")?;
+                if let Some(pos) = position {
+                    write!(f, " {pos}")?;
+                }
+                write!(f, " {name}")
+            }
+            Statement::ExecuteDynamic {
+                query_expr,
+                into,
+                using,
+            } => {
+                write!(f, "EXECUTE {query_expr}")?;
+                if let Some(into_clause) = into {
+                    write!(f, "{}", into_clause)?;
+                }
+                if let Some(using_exprs) = using {
+                    write!(f, " USING {}", display_comma_separated(using_exprs))?;
+                }
                 Ok(())
             }
             Statement::Directory {
@@ -5482,10 +6105,19 @@ impl fmt::Display for Statement {
             Statement::For(stmt) => {
                 write!(f, "{stmt}")
             }
+            Statement::Foreach(stmt) => {
+                write!(f, "{stmt}")
+            }
             Statement::Leave(stmt) => {
                 write!(f, "{stmt}")
             }
             Statement::Iterate(stmt) => {
+                write!(f, "{stmt}")
+            }
+            Statement::Exit(stmt) => {
+                write!(f, "{stmt}")
+            }
+            Statement::Continue(stmt) => {
                 write!(f, "{stmt}")
             }
             Statement::LabeledBlock(stmt) => {
@@ -5496,6 +6128,18 @@ impl fmt::Display for Statement {
             }
             Statement::Raise(stmt) => {
                 write!(f, "{stmt}")
+            }
+            Statement::Perform(stmt) => {
+                write!(f, "{stmt}")
+            }
+            Statement::PlPgSqlAssignment(stmt) => {
+                write!(f, "{stmt}")
+            }
+            Statement::Do(stmt) => {
+                write!(f, "{stmt}")
+            }
+            Statement::Null => {
+                write!(f, "NULL")
             }
             Statement::Signal(stmt) => {
                 write!(f, "{stmt}")
@@ -10703,17 +11347,93 @@ impl fmt::Display for ReturnStatement {
         let ReturnStatement { token: _, value } = self;
         match value {
             Some(ReturnStatementValue::Expr(expr)) => write!(f, "RETURN {expr}"),
+            Some(ReturnStatementValue::Next(expr)) => write!(f, "RETURN NEXT {expr}"),
+            Some(ReturnStatementValue::Query(query)) => write!(f, "RETURN QUERY {query}"),
+            Some(ReturnStatementValue::QueryExecute { query_expr, using }) => {
+                write!(f, "RETURN QUERY EXECUTE {query_expr}")?;
+                if let Some(using_exprs) = using {
+                    write!(f, " USING {}", display_comma_separated(using_exprs))?;
+                }
+                Ok(())
+            }
             None => write!(f, "RETURN"),
         }
     }
 }
 
 /// Variants of a `RETURN` statement
+///
+/// [PostgreSQL RETURN](https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-RETURNING)
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub enum ReturnStatementValue {
+    /// RETURN expression
     Expr(Expr),
+    /// RETURN NEXT expression (for set-returning functions)
+    Next(Expr),
+    /// RETURN QUERY query (return all rows from a query)
+    Query(Box<Query>),
+    /// RETURN QUERY EXECUTE expression [USING ...]
+    QueryExecute {
+        query_expr: Box<Expr>,
+        using: Option<Vec<Expr>>,
+    },
+}
+
+/// Variants of OPEN FOR clause in PL/pgSQL
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OpenFor {
+    /// OPEN cursor_name(args) - bound cursor with arguments
+    BoundCursorArgs(Vec<Expr>),
+    /// OPEN cursor_name FOR query - unbound cursor with query
+    Query(Box<Query>),
+    /// OPEN cursor_name FOR EXECUTE query_expr [USING ...]
+    Execute {
+        query_expr: Box<Expr>,
+        using: Option<Vec<Expr>>,
+    },
+}
+
+/// INTO clause for EXECUTE statement with optional STRICT
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct ExecuteInto {
+    pub strict: bool,
+    pub targets: Vec<Ident>,
+}
+
+impl fmt::Display for OpenFor {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            OpenFor::BoundCursorArgs(args) => {
+                write!(f, "({})", display_comma_separated(args))
+            }
+            OpenFor::Query(query) => {
+                write!(f, " FOR {}", query)
+            }
+            OpenFor::Execute { query_expr, using } => {
+                write!(f, " FOR EXECUTE {}", query_expr)?;
+                if let Some(using_exprs) = using {
+                    write!(f, " USING {}", display_comma_separated(using_exprs))?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+impl fmt::Display for ExecuteInto {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.strict {
+            write!(f, " INTO STRICT {}", display_comma_separated(&self.targets))
+        } else {
+            write!(f, " INTO {}", display_comma_separated(&self.targets))
+        }
+    }
 }
 
 /// Represents an `OPEN` statement.
@@ -10723,11 +11443,17 @@ pub enum ReturnStatementValue {
 pub struct OpenStatement {
     /// Cursor name
     pub cursor_name: Ident,
+    /// Optional OPEN FOR clause
+    pub open_for: Option<OpenFor>,
 }
 
 impl fmt::Display for OpenStatement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "OPEN {}", self.cursor_name)
+        write!(f, "OPEN {}", self.cursor_name)?;
+        if let Some(open_for) = &self.open_for {
+            write!(f, "{}", open_for)?;
+        }
+        Ok(())
     }
 }
 

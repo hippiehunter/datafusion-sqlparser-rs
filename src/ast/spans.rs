@@ -38,10 +38,12 @@ use super::{
     LeaveStatement, LimitClause, LoopStatement, MatchRecognizePattern, Measure,
     NamedParenthesizedList, NamedWindowDefinition, ObjectName, ObjectNamePart, Offset, OnConflict,
     OnConflictAction, OnInsert, OpenStatement, OrderBy, OrderByExpr, OrderByKind, Partition,
-    PivotValueSource, ProjectionSelect, Query, RaiseStatement, RaiseStatementValue,
-    ReferentialAction, RenameSelectItem, RepeatStatement, ReplaceSelectElement, ReplaceSelectItem,
-    Select, SelectInto, SelectItem, SetExpr, SqlOption, Statement, Subscript, SubsetDefinition,
-    SymbolDefinition, TableAlias, TableAliasColumnDef, TableConstraint, TableFactor, TableObject,
+    DoBody, DoStatement, PerformStatement, PivotValueSource, PlPgSqlAssignment, PlPgSqlDataType,
+    PlPgSqlDeclaration,
+    ProjectionSelect, Query, RaiseMessage, RaiseStatement, RaiseUsingItem, ReferentialAction,
+    RenameSelectItem, RepeatStatement, ReplaceSelectElement, ReplaceSelectItem, Select, SelectInto,
+    SelectItem, SetExpr, SqlOption, Statement, Subscript, SubsetDefinition, SymbolDefinition,
+    TableAlias, TableAliasColumnDef, TableConstraint, TableFactor, TableObject,
     TableOptionsClustered, TableWithJoins, Update, UpdateTableFromKind, Use, Value, Values,
     ViewColumnDef, WhileStatement, WildcardAdditionalOptions, With, WithFill,
 };
@@ -295,6 +297,10 @@ impl Spanned for Statement {
             Statement::Iterate(stmt) => stmt.span(),
             Statement::GetDiagnostics(stmt) => stmt.token.0.span,
             Statement::Raise(stmt) => stmt.span(),
+            Statement::Perform(stmt) => stmt.span(),
+            Statement::PlPgSqlAssignment(stmt) => stmt.span(),
+            Statement::Do(stmt) => stmt.span(),
+            Statement::Null => Span::empty(),
             Statement::Call(function) => function.span(),
             Statement::Copy {
                 source,
@@ -364,6 +370,8 @@ impl Spanned for Statement {
             Statement::DropProcedure { token, .. } => token.0.span,
             Statement::Declare { declare_token, .. } => declare_token.0.span,
             Statement::Fetch { fetch_token, .. } => fetch_token.0.span,
+            Statement::Move { name, .. } => name.span,
+            Statement::ExecuteDynamic { query_expr, .. } => query_expr.span(),
             Statement::Flush { flush_token, .. } => flush_token.0.span,
             Statement::Discard { discard_token, .. } => discard_token.0.span,
             Statement::Set(set_stmt) => set_stmt.token.0.span,
@@ -542,6 +550,9 @@ impl Spanned for Statement {
             Statement::Resignal(stmt) => stmt.token.0.span,
             Statement::LabeledBlock(stmt) => stmt.token.0.span,
             Statement::For(stmt) => stmt.token.0.span,
+            Statement::Foreach(stmt) => stmt.token.0.span,
+            Statement::Exit(_) => Span::empty(),
+            Statement::Continue(_) => Span::empty(),
         }
     }
 }
@@ -796,17 +807,71 @@ impl Spanned for ConditionalStatementBlock {
 
 impl Spanned for RaiseStatement {
     fn span(&self) -> Span {
-        let RaiseStatement { value } = self;
+        let RaiseStatement {
+            level: _,
+            message,
+            format_args,
+            using,
+        } = self;
 
-        union_spans(value.iter().map(|value| value.span()))
+        union_spans(
+            message
+                .iter()
+                .map(|m| m.span())
+                .chain(format_args.iter().map(|e| e.span()))
+                .chain(using.iter().map(|u| u.span())),
+        )
     }
 }
 
-impl Spanned for RaiseStatementValue {
+impl Spanned for RaiseMessage {
+    fn span(&self) -> Span {
+        // These are all keywords/literals parsed without span tracking
+        Span::empty()
+    }
+}
+
+impl Spanned for RaiseUsingItem {
+    fn span(&self) -> Span {
+        let RaiseUsingItem { option: _, value } = self;
+        value.span()
+    }
+}
+
+impl Spanned for PerformStatement {
+    fn span(&self) -> Span {
+        let PerformStatement { query } = self;
+        query.span()
+    }
+}
+
+impl Spanned for PlPgSqlAssignment {
+    fn span(&self) -> Span {
+        let PlPgSqlAssignment { target, value } = self;
+        union_spans(iter::once(target.span()).chain(iter::once(value.span())))
+    }
+}
+
+impl Spanned for DoStatement {
+    fn span(&self) -> Span {
+        let DoStatement {
+            token,
+            language,
+            body,
+        } = self;
+        union_spans(
+            iter::once(token.0.span)
+                .chain(language.as_ref().map(|l| l.span()))
+                .chain(iter::once(body.span())),
+        )
+    }
+}
+
+impl Spanned for DoBody {
     fn span(&self) -> Span {
         match self {
-            RaiseStatementValue::UsingMessage(expr) => expr.span(),
-            RaiseStatementValue::Expr(expr) => expr.span(),
+            DoBody::Block(block) => block.span(),
+            DoBody::RawBody(expr) => expr.span(),
         }
     }
 }
@@ -2468,25 +2533,124 @@ impl Spanned for TableObject {
     }
 }
 
+impl Spanned for super::CursorParameter {
+    fn span(&self) -> Span {
+        let super::CursorParameter { name, data_type: _ } = self;
+        name.span()
+    }
+}
+
+impl Spanned for super::PlPgSqlCursorDeclaration {
+    fn span(&self) -> Span {
+        let super::PlPgSqlCursorDeclaration {
+            scroll: _,
+            parameters,
+            query,
+        } = self;
+        union_spans(
+            parameters
+                .iter()
+                .flatten()
+                .map(Spanned::span)
+                .chain(iter::once(query.span())),
+        )
+    }
+}
+
+impl Spanned for super::OpenFor {
+    fn span(&self) -> Span {
+        match self {
+            super::OpenFor::BoundCursorArgs(args) => union_spans(args.iter().map(Spanned::span)),
+            super::OpenFor::Query(query) => query.span(),
+            super::OpenFor::Execute { query_expr, using } => union_spans(
+                iter::once(query_expr.span()).chain(using.iter().flatten().map(Spanned::span)),
+            ),
+        }
+    }
+}
+
+impl Spanned for super::ExecuteInto {
+    fn span(&self) -> Span {
+        let super::ExecuteInto {
+            strict: _,
+            targets,
+        } = self;
+        union_spans(targets.iter().map(Spanned::span))
+    }
+}
+
+impl Spanned for PlPgSqlDataType {
+    fn span(&self) -> Span {
+        match self {
+            PlPgSqlDataType::DataType(_) => Span::empty(),
+            PlPgSqlDataType::TypeOf(name) => name.span(),
+            PlPgSqlDataType::RowTypeOf(name) => name.span(),
+            PlPgSqlDataType::Record => Span::empty(),
+            PlPgSqlDataType::Cursor(decl) => decl.span(),
+        }
+    }
+}
+
+impl Spanned for PlPgSqlDeclaration {
+    fn span(&self) -> Span {
+        let PlPgSqlDeclaration {
+            name,
+            constant: _,
+            data_type,
+            collation,
+            not_null: _,
+            default,
+        } = self;
+        union_spans(
+            core::iter::once(name.span())
+                .chain(core::iter::once(data_type.span()))
+                .chain(collation.iter().map(|i| i.span()))
+                .chain(default.iter().map(|i| i.span())),
+        )
+    }
+}
+
 impl Spanned for BeginEndStatements {
     fn span(&self) -> Span {
         let BeginEndStatements {
             begin_token,
+            label,
+            declarations,
             statements,
+            exception_handlers,
             end_token,
+            end_label,
         } = self;
         union_spans(
-            core::iter::once(begin_token.0.span)
+            label
+                .iter()
+                .map(|i| i.span())
+                .chain(core::iter::once(begin_token.0.span))
+                .chain(declarations.iter().map(|i| i.span()))
                 .chain(statements.iter().map(|i| i.span()))
-                .chain(core::iter::once(end_token.0.span)),
+                .chain(exception_handlers.iter().flat_map(|handlers| {
+                    handlers.iter().flat_map(|h| {
+                        h.idents
+                            .iter()
+                            .map(|i| i.span())
+                            .chain(h.statements.iter().map(|s| s.span()))
+                    })
+                }))
+                .chain(core::iter::once(end_token.0.span))
+                .chain(end_label.iter().map(|i| i.span())),
         )
     }
 }
 
 impl Spanned for OpenStatement {
     fn span(&self) -> Span {
-        let OpenStatement { cursor_name } = self;
-        cursor_name.span
+        let OpenStatement {
+            cursor_name,
+            open_for,
+        } = self;
+        union_spans(
+            iter::once(cursor_name.span).chain(open_for.iter().map(Spanned::span)),
+        )
     }
 }
 

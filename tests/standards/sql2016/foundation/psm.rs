@@ -37,7 +37,7 @@
 //! - CALL statement
 
 use crate::standards::common::verified_standard_stmt;
-use sqlparser::ast::{DeclareType, FetchDirection, FetchPosition, Statement};
+use sqlparser::ast::{DeclareType, FetchDirection, FetchPosition, ForLoopVariant, Statement};
 
 // =============================================================================
 // LOOP Statements
@@ -604,7 +604,7 @@ mod cursor_operations {
             } => {
                 assert_eq!(name.value, "cur");
                 assert_eq!(direction, FetchDirection::Next);
-                assert_eq!(position, FetchPosition::From);
+                assert_eq!(position, Some(FetchPosition::From));
                 assert!(into.is_some());
                 if let Some(obj_name) = into {
                     assert_eq!(obj_name.to_string(), "x");
@@ -635,7 +635,7 @@ mod cursor_operations {
             } => {
                 assert_eq!(name.value, "cur");
                 assert_eq!(direction, FetchDirection::Next);
-                assert_eq!(position, FetchPosition::From);
+                assert_eq!(position, Some(FetchPosition::From));
                 assert!(into.is_some());
             }
             _ => panic!("Expected Fetch statement, got {:?}", stmt),
@@ -656,7 +656,7 @@ mod cursor_operations {
             } => {
                 assert_eq!(name.value, "cur");
                 assert_eq!(direction, FetchDirection::Prior);
-                assert_eq!(position, FetchPosition::From);
+                assert_eq!(position, Some(FetchPosition::From));
                 assert!(into.is_some());
             }
             _ => panic!("Expected Fetch statement, got {:?}", stmt),
@@ -677,7 +677,7 @@ mod cursor_operations {
             } => {
                 assert_eq!(name.value, "cur");
                 assert_eq!(direction, FetchDirection::First);
-                assert_eq!(position, FetchPosition::From);
+                assert_eq!(position, Some(FetchPosition::From));
                 assert!(into.is_some());
             }
             _ => panic!("Expected Fetch statement, got {:?}", stmt),
@@ -695,7 +695,7 @@ mod cursor_operations {
             } => {
                 assert_eq!(name.value, "cur");
                 assert_eq!(direction, FetchDirection::Last);
-                assert_eq!(position, FetchPosition::From);
+                assert_eq!(position, Some(FetchPosition::From));
                 assert!(into.is_some());
             }
             _ => panic!("Expected Fetch statement, got {:?}", stmt),
@@ -720,7 +720,12 @@ mod for_statements {
         match stmt {
             Statement::For(for_stmt) => {
                 assert_eq!(for_stmt.loop_name.value, "r");
-                assert!(for_stmt.cursor_name.is_none());
+                match &for_stmt.variant {
+                    ForLoopVariant::Query { cursor_name, .. } => {
+                        assert!(cursor_name.is_none());
+                    }
+                    _ => panic!("Expected Query variant"),
+                }
                 assert!(for_stmt.label.is_none());
                 assert!(for_stmt.end_label.is_none());
             }
@@ -737,7 +742,12 @@ mod for_statements {
         match stmt {
             Statement::For(for_stmt) => {
                 assert_eq!(for_stmt.loop_name.value, "row");
-                assert_eq!(for_stmt.cursor_name.as_ref().unwrap().value, "cur");
+                match &for_stmt.variant {
+                    ForLoopVariant::Query { cursor_name, .. } => {
+                        assert_eq!(cursor_name.as_ref().unwrap().value, "cur");
+                    }
+                    _ => panic!("Expected Query variant"),
+                }
                 assert!(for_stmt.label.is_none());
                 assert!(for_stmt.end_label.is_none());
             }
@@ -782,7 +792,12 @@ mod for_statements {
             Statement::For(for_stmt) => {
                 assert_eq!(for_stmt.label.as_ref().unwrap().value, "my_for");
                 assert_eq!(for_stmt.loop_name.value, "row");
-                assert_eq!(for_stmt.cursor_name.as_ref().unwrap().value, "cur");
+                match &for_stmt.variant {
+                    ForLoopVariant::Query { cursor_name, .. } => {
+                        assert_eq!(cursor_name.as_ref().unwrap().value, "cur");
+                    }
+                    _ => panic!("Expected Query variant"),
+                }
                 assert_eq!(for_stmt.end_label.as_ref().unwrap().value, "my_for");
             }
             _ => panic!("Expected For statement, got {:?}", stmt),
