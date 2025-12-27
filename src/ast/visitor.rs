@@ -22,6 +22,7 @@ use alloc::borrow::Cow;
 #[cfg(feature = "std")]
 use std::borrow::Cow;
 
+use crate::ast::helpers::attached_token::AttachedToken;
 use crate::ast::{Expr, ObjectName, Query, Statement, TableFactor, Value};
 use core::ops::ControlFlow;
 
@@ -265,6 +266,16 @@ pub trait Visitor {
     fn post_visit_value(&mut self, _value: &Value) -> ControlFlow<Self::Break> {
         ControlFlow::Continue(())
     }
+
+    /// Invoked for any AttachedToken that appear in the AST before visiting children
+    fn pre_visit_token(&mut self, _token: &AttachedToken) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
+
+    /// Invoked for any AttachedToken that appear in the AST after visiting children
+    fn post_visit_token(&mut self, _token: &AttachedToken) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
 }
 
 /// A visitor that can be used to mutate an AST tree.
@@ -381,6 +392,16 @@ pub trait VisitorMut {
 
     /// Invoked for any statements that appear in the AST after visiting children
     fn post_visit_value(&mut self, _value: &mut Value) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
+
+    /// Invoked for any AttachedToken that appear in the AST before visiting children
+    fn pre_visit_token(&mut self, _token: &mut AttachedToken) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
+
+    /// Invoked for any AttachedToken that appear in the AST after visiting children
+    fn post_visit_token(&mut self, _token: &mut AttachedToken) -> ControlFlow<Self::Break> {
         ControlFlow::Continue(())
     }
 }
