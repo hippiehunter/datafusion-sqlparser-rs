@@ -52,29 +52,25 @@ pub use self::data_type::{
     ArrayElemTypeDef, BinaryLength, CharLengthUnits, CharacterLength, DataType, EnumMember,
     ExactNumberInfo, IntervalFields, StructBracketKind, TimezoneInfo,
 };
-pub use self::dcl::{
-    AlterRoleOperation, CreateRole, ResetConfig, RoleOption, SecondaryRoles, SetConfigValue, Use,
-};
+pub use self::dcl::{AlterRoleOperation, CreateRole, ResetConfig, RoleOption, SetConfigValue, Use};
 pub use self::ddl::{
-    Alignment, AlterColumnOperation, AlterConnectorOwner, AlterIndexOperation,
-    AlterPolicyOperation, AlterSchema, AlterSchemaOperation, AlterTable, AlterTableAlgorithm,
-    AlterTableLock, AlterTableOperation, AlterTableType, AlterType, AlterTypeAddValue,
-    AlterTypeAddValuePosition, AlterTypeOperation, AlterTypeRename, AlterTypeRenameValue,
-    ClusteredBy, ColumnDef, ColumnOption, ColumnOptionDef, ColumnOptions, ColumnPolicy,
-    ColumnPolicyProperty, ConstraintCharacteristics, CreateAssertion, CreateConnector,
-    CreateDomain, CreateExtension, CreateFunction, CreateIndex, CreateOperator,
-    CreateOperatorClass, CreateOperatorFamily, CreatePropertyGraph, CreateTable,
-    CreateTableSystemVersioning, CreateTrigger, CreateView, Deduplicate, DeferrableInitial,
-    DropBehavior, DropExtension, DropFunction, DropPropertyGraph, DropTrigger, GeneratedAs,
-    GeneratedExpressionMode, GraphEdgeEndpoint, GraphEdgeTableDefinition, GraphKeyClause,
-    GraphPropertiesClause, GraphVertexTableDefinition, IdentityParameters, IdentityProperty,
-    IdentityPropertyFormatKind, IdentityPropertyKind, IdentityPropertyOrder, IndexColumn,
-    IndexOption, IndexType, KeyOrIndexDisplay, Msck, NullsDistinctOption, OperatorArgTypes,
-    OperatorClassItem, OperatorPurpose, Owner, Partition, ProcedureParam, ReferentialAction,
-    RenameTableNameKind, ReplicaIdentity, TagsColumnOption, TriggerObjectKind, Truncate,
-    UserDefinedTypeCompositeAttributeDef, UserDefinedTypeInternalLength,
-    UserDefinedTypeRangeOption, UserDefinedTypeRepresentation, UserDefinedTypeSqlDefinitionOption,
-    UserDefinedTypeStorage, ViewColumnDef,
+    Alignment, AlterColumnOperation, AlterIndexOperation, AlterPolicyOperation, AlterSchema,
+    AlterSchemaOperation, AlterTable, AlterTableAlgorithm, AlterTableLock, AlterTableOperation,
+    AlterTableType, AlterType, AlterTypeAddValue, AlterTypeAddValuePosition, AlterTypeOperation,
+    AlterTypeRename, AlterTypeRenameValue, ColumnDef, ColumnOption, ColumnOptionDef, ColumnOptions,
+    ColumnPolicy, ColumnPolicyProperty, ConstraintCharacteristics, CreateAssertion, CreateDomain,
+    CreateExtension, CreateFunction, CreateIndex, CreateOperator, CreateOperatorClass,
+    CreateOperatorFamily, CreatePropertyGraph, CreateTable, CreateTableSystemVersioning,
+    CreateTrigger, CreateView, Deduplicate, DeferrableInitial, DropBehavior, DropExtension,
+    DropFunction, DropPropertyGraph, DropTrigger, GeneratedAs, GeneratedExpressionMode,
+    GraphEdgeEndpoint, GraphEdgeTableDefinition, GraphKeyClause, GraphPropertiesClause,
+    GraphVertexTableDefinition, IdentityParameters, IdentityProperty, IdentityPropertyFormatKind,
+    IdentityPropertyKind, IdentityPropertyOrder, IndexColumn, IndexOption, IndexType,
+    KeyOrIndexDisplay, NullsDistinctOption, OperatorArgTypes, OperatorClassItem, OperatorPurpose,
+    Owner, Partition, ProcedureParam, ReferentialAction, RenameTableNameKind, ReplicaIdentity,
+    TriggerObjectKind, Truncate, UserDefinedTypeCompositeAttributeDef,
+    UserDefinedTypeInternalLength, UserDefinedTypeRangeOption, UserDefinedTypeRepresentation,
+    UserDefinedTypeSqlDefinitionOption, UserDefinedTypeStorage, ViewColumnDef,
 };
 pub use self::dml::{Delete, ForPortionOf, Insert, Update};
 pub use self::operator::{BinaryOperator, UnaryOperator};
@@ -89,17 +85,16 @@ pub use self::query::{
     KeepClause, LabelExpression, LateralView, LimitClause, LockClause, LockType,
     MatchRecognizePattern, MatchRecognizeSymbol, Measure, NamedWindowDefinition, NamedWindowExpr,
     NodePattern, NonBlock, Offset, OffsetRows, OpenJsonTableColumn, OrderBy, OrderByExpr,
-    OrderByKind, OrderByOptions, PathFinding, PathMode, PathVariant, PipeOperator,
-    PivotValueSource, ProjectionSelect, PropertyKeyValue, Query, RenameSelectItem,
-    RepetitionQuantifier, ReplaceSelectElement, ReplaceSelectItem, RowLimiting, RowsPerMatch,
-    SearchClause, SearchOrder, Select, SelectFlavor, SelectInto, SelectItem,
-    SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, Setting,
-    SubsetDefinition, SymbolDefinition, Table, TableAlias, TableAliasColumnDef, TableFactor,
-    TableFunctionArgs, TableIndexHintForClause, TableIndexHintType, TableIndexHints,
-    TableIndexType, TableSample, TableSampleBucket, TableSampleKind, TableSampleMethod,
-    TableSampleModifier, TableSampleQuantity, TableSampleSeed, TableSampleSeedModifier,
-    TableSampleUnit, TableVersion, TableWithJoins, Top, TopQuantity, UpdateTableFromKind,
-    ValueTableMode, Values, WildcardAdditionalOptions, With, WithFill, XmlAttribute,
+    OrderByKind, OrderByOptions, PathFinding, PathMode, PathVariant, PivotValueSource,
+    ProjectionSelect, PropertyKeyValue, Query, RenameSelectItem, RepetitionQuantifier,
+    ReplaceSelectElement, ReplaceSelectItem, RowLimiting, RowsPerMatch, SearchClause, SearchOrder,
+    Select, SelectFlavor, SelectInto, SelectItem, SelectItemQualifiedWildcardKind, SetExpr,
+    SetOperator, SetQuantifier, Setting, SubsetDefinition, SymbolDefinition, Table, TableAlias,
+    TableAliasColumnDef, TableFactor, TableFunctionArgs, TableIndexHintForClause,
+    TableIndexHintType, TableIndexHints, TableIndexType, TableSample, TableSampleBucket,
+    TableSampleKind, TableSampleMethod, TableSampleModifier, TableSampleQuantity, TableSampleSeed,
+    TableSampleSeedModifier, TableSampleUnit, TableVersion, TableWithJoins, Top, TopQuantity,
+    UpdateTableFromKind, Values, WildcardAdditionalOptions, With, WithFill, XmlAttribute,
     XmlDocumentOrContent, XmlForestElement, XmlNamespaceDefinition, XmlPassingArgument,
     XmlPassingClause, XmlTableColumn, XmlTableColumnOption, XmlTableOnError, XmlWhitespace,
 };
@@ -518,71 +513,6 @@ impl fmt::Display for StructField {
     }
 }
 
-/// A field definition within a union
-///
-/// [DuckDB]: https://duckdb.org/docs/sql/data_types/union.html
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct UnionField {
-    pub field_name: Ident,
-    pub field_type: DataType,
-}
-
-impl fmt::Display for UnionField {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} {}", self.field_name, self.field_type)
-    }
-}
-
-/// A dictionary field within a dictionary.
-///
-/// [DuckDB]: https://duckdb.org/docs/sql/data_types/struct#creating-structs
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct DictionaryField {
-    pub key: Ident,
-    pub value: Box<Expr>,
-}
-
-impl fmt::Display for DictionaryField {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}: {}", self.key, self.value)
-    }
-}
-
-/// Represents a Map expression.
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct Map {
-    pub entries: Vec<MapEntry>,
-}
-
-impl Display for Map {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "MAP {{{}}}", display_comma_separated(&self.entries))
-    }
-}
-
-/// A map field within a map.
-///
-/// [DuckDB]: https://duckdb.org/docs/sql/data_types/map.html#creating-maps
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct MapEntry {
-    pub key: Box<Expr>,
-    pub value: Box<Expr>,
-}
-
-impl fmt::Display for MapEntry {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}: {}", self.key, self.value)
-    }
-}
-
 /// Options for `CAST` / `TRY_CAST`
 /// BigQuery: <https://cloud.google.com/bigquery/docs/reference/standard-sql/format-elements#formatting_syntax>
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
@@ -658,10 +588,6 @@ pub enum CastKind {
     /// See <https://docs.snowflake.com/en/sql-reference/functions/try_cast>.
     /// See <https://learn.microsoft.com/en-us/sql/t-sql/functions/try-cast-transact-sql>.
     TryCast,
-    /// A cast that returns `NULL` on failure, bigQuery-specific ,  e.g. `SAFE_CAST(<expr> as <datatype>)`.
-    ///
-    /// See <https://cloud.google.com/bigquery/docs/reference/standard-sql/functions-and-operators#safe_casting>.
-    SafeCast,
     /// `<expr> :: <datatype>`
     DoubleColon,
 }
@@ -1126,7 +1052,7 @@ pub enum Expr {
         left: Box<Expr>,
         compare_op: BinaryOperator,
         right: Box<Expr>,
-        // ANY and SOME are synonymous: https://docs.cloudera.com/cdw-runtime/cloud/using-hiveql/topics/hive_comparison_predicates.html
+        // ANY and SOME are synonymous in SQL standard
         is_some: bool,
     },
     /// `ALL` operation e.g. `foo > ALL(bar)`, comparison operator is one of `[=, >, <, =>, =<, !=]`
@@ -1377,33 +1303,6 @@ pub enum Expr {
         /// Struct field definitions.
         fields: Vec<StructField>,
     },
-    /// `BigQuery` specific: An named expression in a typeless struct [1]
-    ///
-    /// Syntax
-    /// ```sql
-    /// 1 AS A
-    /// ```
-    /// [1]: https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#struct_type
-    Named {
-        expr: Box<Expr>,
-        name: Ident,
-    },
-    /// `DuckDB` specific `Struct` literal expression [1]
-    ///
-    /// Syntax:
-    /// ```sql
-    /// syntax: {'field_name': expr1[, ... ]}
-    /// ```
-    /// [1]: https://duckdb.org/docs/sql/data_types/struct#creating-structs
-    Dictionary(Vec<DictionaryField>),
-    /// `DuckDB` specific `Map` literal expression [1]
-    ///
-    /// Syntax:
-    /// ```sql
-    /// syntax: Map {key1: value1[, ... ]}
-    /// ```
-    /// [1]: https://duckdb.org/docs/sql/data_types/map#creating-maps
-    Map(Map),
     /// An array expression e.g. `ARRAY[1, 2]`
     Array(Array),
     /// An interval expression e.g. `INTERVAL '1' YEAR`
@@ -2103,13 +2002,6 @@ impl fmt::Display for Expr {
                         write!(f, "TRY_CAST({expr} AS {data_type})")
                     }
                 }
-                CastKind::SafeCast => {
-                    if let Some(format) = format {
-                        write!(f, "SAFE_CAST({expr} AS {data_type} FORMAT {format})")
-                    } else {
-                        write!(f, "SAFE_CAST({expr} AS {data_type})")
-                    }
-                }
                 CastKind::DoubleColon => {
                     write!(f, "{expr}::{data_type}")
                 }
@@ -2366,15 +2258,6 @@ impl fmt::Display for Expr {
                 } else {
                     write!(f, "STRUCT({})", display_comma_separated(values))
                 }
-            }
-            Expr::Named { expr, name } => {
-                write!(f, "{expr} AS {name}")
-            }
-            Expr::Dictionary(fields) => {
-                write!(f, "{{{}}}", display_comma_separated(fields))
-            }
-            Expr::Map(map) => {
-                write!(f, "{map}")
             }
             Expr::Array(set) => {
                 write!(f, "{set}")
@@ -2986,7 +2869,13 @@ pub struct LabeledBlock {
 
 impl fmt::Display for LabeledBlock {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let LabeledBlock { token: _, label, statements, exception, end_label } = self;
+        let LabeledBlock {
+            token: _,
+            label,
+            statements,
+            exception,
+            end_label,
+        } = self;
         if let Some(label) = label {
             write!(f, "{label}: ")?;
         }
@@ -3097,7 +2986,15 @@ pub struct ForStatement {
 
 impl fmt::Display for ForStatement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let ForStatement { token: _, label, loop_name, cursor_name, query, body, end_label } = self;
+        let ForStatement {
+            token: _,
+            label,
+            loop_name,
+            cursor_name,
+            query,
+            body,
+            end_label,
+        } = self;
         if let Some(label) = label {
             write!(f, "{label}: ")?;
         }
@@ -3182,7 +3079,11 @@ pub struct GetDiagnosticsStatement {
 
 impl fmt::Display for GetDiagnosticsStatement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let GetDiagnosticsStatement { token: _, stacked, kind } = self;
+        let GetDiagnosticsStatement {
+            token: _,
+            stacked,
+            kind,
+        } = self;
         write!(f, "GET ")?;
         if *stacked {
             write!(f, "STACKED ")?;
@@ -3484,7 +3385,11 @@ pub struct SignalStatement {
 
 impl fmt::Display for SignalStatement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let SignalStatement { token: _, sqlstate, set_items } = self;
+        let SignalStatement {
+            token: _,
+            sqlstate,
+            set_items,
+        } = self;
         write!(f, "SIGNAL SQLSTATE '{}'", sqlstate)?;
         if !set_items.is_empty() {
             write!(f, " SET ")?;
@@ -3513,7 +3418,11 @@ pub struct ResignalStatement {
 
 impl fmt::Display for ResignalStatement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let ResignalStatement { token: _, sqlstate, set_items } = self;
+        let ResignalStatement {
+            token: _,
+            sqlstate,
+            set_items,
+        } = self;
         write!(f, "RESIGNAL")?;
         if let Some(sqlstate) = sqlstate {
             write!(f, " SQLSTATE '{}'", sqlstate)?;
@@ -3958,7 +3867,6 @@ pub enum Set {
     /// SET a = 1;
     SingleAssignment {
         scope: Option<ContextModifier>,
-        hivevar: bool,
         variable: ObjectName,
         values: Vec<Expr>,
     },
@@ -4111,15 +4019,13 @@ impl Display for Set {
             }
             Set::SingleAssignment {
                 scope,
-                hivevar,
                 variable,
                 values,
             } => {
                 write!(
                     f,
-                    "SET {}{}{} = {}",
+                    "SET {}{} = {}",
                     scope.map(|s| format!("{s}")).unwrap_or_default(),
-                    if *hivevar { "HIVEVAR:" } else { "" },
                     variable,
                     display_comma_separated(values)
                 )
@@ -4171,7 +4077,7 @@ impl Display for ExceptionWhen {
     }
 }
 
-/// ANALYZE TABLE statement (Hive-specific)
+/// ANALYZE TABLE statement
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -4237,19 +4143,12 @@ pub enum Statement {
     /// ```sql
     /// ANALYZE
     /// ```
-    /// Analyze (Hive)
     Analyze(Analyze),
     Set(SetStatement),
     /// ```sql
     /// TRUNCATE
     /// ```
-    /// Truncate (Hive)
     Truncate(Truncate),
-    /// ```sql
-    /// MSCK
-    /// ```
-    /// Msck (Hive)
-    Msck(Msck),
     /// ```sql
     /// SELECT
     /// ```
@@ -4258,20 +4157,6 @@ pub enum Statement {
     /// INSERT
     /// ```
     Insert(Insert),
-    /// ```sql
-    /// INSTALL
-    /// ```
-    Install {
-        /// Only for DuckDB
-        extension_name: Ident,
-    },
-    /// ```sql
-    /// LOAD
-    /// ```
-    Load {
-        /// Only for DuckDB
-        extension_name: Ident,
-    },
     // TODO: Support ROW FORMAT
     Directory {
         overwrite: bool,
@@ -4376,21 +4261,6 @@ pub enum Statement {
     /// ```
     /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-createrole.html)
     CreateRole(CreateRole),
-    /// ```sql
-    /// CREATE SECRET
-    /// ```
-    /// See [DuckDB](https://duckdb.org/docs/sql/statements/create_secret.html)
-    CreateSecret {
-        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
-        token: AttachedToken,
-        or_replace: bool,
-        temporary: Option<bool>,
-        if_not_exists: bool,
-        name: Option<Ident>,
-        storage_specifier: Option<Ident>,
-        secret_type: Ident,
-        options: Vec<SecretOption>,
-    },
     /// A `CREATE SERVER` statement.
     CreateServer(CreateServerStatement),
     /// ```sql
@@ -4409,11 +4279,6 @@ pub enum Statement {
         using: Option<Expr>,
         with_check: Option<Expr>,
     },
-    /// ```sql
-    /// CREATE CONNECTOR
-    /// ```
-    /// See [Hive](https://cwiki.apache.org/confluence/pages/viewpage.action?pageId=27362034#LanguageManualDDL-CreateDataConnectorCreateConnector)
-    CreateConnector(CreateConnector),
     /// ```sql
     /// CREATE OPERATOR
     /// ```
@@ -4493,20 +4358,6 @@ pub enum Statement {
         operation: AlterPolicyOperation,
     },
     /// ```sql
-    /// ALTER CONNECTOR connector_name SET DCPROPERTIES(property_name=property_value, ...);
-    /// or
-    /// ALTER CONNECTOR connector_name SET URL new_url;
-    /// or
-    /// ALTER CONNECTOR connector_name SET OWNER [USER|ROLE] user_or_role;
-    /// ```
-    /// (Hive-specific)
-    AlterConnector {
-        name: Ident,
-        properties: Option<Vec<SqlOption>>,
-        url: Option<String>,
-        owner: Option<ddl::AlterConnectorOwner>,
-    },
-    /// ```sql
     /// ALTER SESSION SET sessionParam
     /// ALTER SESSION UNSET <param_name> [ , <param_name> , ... ]
     /// ```
@@ -4562,7 +4413,7 @@ pub enum Statement {
         /// Whether `RESTRICT` was specified. This will be `false` when
         /// `CASCADE` or no drop behavior at all was specified.
         restrict: bool,
-        /// Hive allows you specify whether the table's stored data will be
+        /// PURGE option to specify whether the table's stored data will be
         /// deleted along with the dropped table
         purge: bool,
         /// MySQL-specific "TEMPORARY" keyword
@@ -4605,17 +4456,6 @@ pub enum Statement {
         /// `CASCADE` or `RESTRICT`
         drop_behavior: Option<DropBehavior>,
     },
-    /// ```sql
-    /// DROP SECRET
-    /// ```
-    DropSecret {
-        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
-        token: AttachedToken,
-        if_exists: bool,
-        temporary: Option<bool>,
-        name: Ident,
-        storage_specifier: Option<Ident>,
-    },
     ///```sql
     /// DROP POLICY
     /// ```
@@ -4627,14 +4467,6 @@ pub enum Statement {
         name: Ident,
         table_name: ObjectName,
         drop_behavior: Option<DropBehavior>,
-    },
-    /// ```sql
-    /// DROP CONNECTOR
-    /// ```
-    /// See [Hive](https://cwiki.apache.org/confluence/pages/viewpage.action?pageId=27362034#LanguageManualDDL-DropConnector)
-    DropConnector {
-        if_exists: bool,
-        name: Ident,
     },
     /// ```sql
     /// DECLARE
@@ -4786,12 +4618,6 @@ pub enum Statement {
     // [MySQL]:
     // <https://dev.mysql.com/doc/refman/8.4/en/show.html#:~:text=SHOW%20%7BCHARACTER%20SET%20%7C%20CHARSET%7D%20%5Blike_or_where%5D>
     ShowCharset(ShowCharset),
-    /// ```sql
-    /// SHOW OBJECTS LIKE 'line%' IN mydb.public
-    /// ```
-    /// Snowflake-specific statement
-    /// <https://docs.snowflake.com/en/sql-reference/sql/show-objects>
-    ShowObjects(ShowObjects),
     /// ```sql
     /// SHOW TABLES
     /// ```
@@ -4964,29 +4790,16 @@ pub enum Statement {
         or_replace: bool,
         transient: bool,
         clone: Option<ObjectName>,
-        data_retention_time_in_days: Option<u64>,
-        max_data_extension_time_in_days: Option<u64>,
-        external_volume: Option<String>,
-        catalog: Option<String>,
-        replace_invalid_characters: Option<bool>,
-        default_ddl_collation: Option<String>,
-        storage_serialization_policy: Option<StorageSerializationPolicy>,
         comment: Option<String>,
         catalog_sync: Option<String>,
-        catalog_sync_namespace_mode: Option<CatalogSyncNamespaceMode>,
-        catalog_sync_namespace_flatten_delimiter: Option<String>,
-        with_tags: Option<Vec<Tag>>,
-        with_contacts: Option<Vec<ContactEntry>>,
     },
     /// ```sql
     /// CREATE FUNCTION
     /// ```
     ///
     /// Supported variants:
-    /// 1. [Hive](https://cwiki.apache.org/confluence/display/hive/languagemanual+ddl#LanguageManualDDL-Create/Drop/ReloadFunction)
-    /// 2. [PostgreSQL](https://www.postgresql.org/docs/15/sql-createfunction.html)
-    /// 3. [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#create_function_statement)
-    /// 4. [MsSql](https://learn.microsoft.com/en-us/sql/t-sql/statements/create-function-transact-sql)
+    /// 1. [PostgreSQL](https://www.postgresql.org/docs/15/sql-createfunction.html)
+    /// 2. [MsSql](https://learn.microsoft.com/en-us/sql/t-sql/statements/create-function-transact-sql)
     CreateFunction(CreateFunction),
     /// CREATE TRIGGER statement. See struct [CreateTrigger] for details.
     CreateTrigger(CreateTrigger),
@@ -5007,21 +4820,6 @@ pub enum Statement {
         body: ConditionalStatements,
     },
     /// ```sql
-    /// CREATE MACRO
-    /// ```
-    ///
-    /// Supported variants:
-    /// 1. [DuckDB](https://duckdb.org/docs/sql/statements/create_macro)
-    CreateMacro {
-        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
-        create_token: AttachedToken,
-        or_replace: bool,
-        temporary: bool,
-        name: ObjectName,
-        args: Option<Vec<MacroArg>>,
-        definition: MacroDefinition,
-    },
-    /// ```sql
     /// ASSERT <condition> [AS <message>]
     /// ```
     Assert {
@@ -5040,7 +4838,6 @@ pub enum Statement {
         with_grant_option: bool,
         as_grantor: Option<Ident>,
         granted_by: Option<Ident>,
-        current_grants: Option<CurrentGrantsKind>,
     },
     /// ```sql
     /// DENY privileges ON object TO grantees
@@ -5162,8 +4959,6 @@ pub enum Statement {
         explain_token: AttachedToken,
         /// `EXPLAIN | DESC | DESCRIBE`
         describe_alias: DescribeAlias,
-        /// Hive style `FORMATTED | EXTENDED`
-        hive_format: Option<HiveDescribeFormat>,
         /// Snowflake and ClickHouse support `DESC|DESCRIBE TABLE <table_name>` syntax
         ///
         /// [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/desc-table.html)
@@ -5396,8 +5191,6 @@ pub enum Statement {
     /// [INPUTFORMAT 'inputformat' SERDE 'serde']
     /// ```
     /// Loading files into tables
-    ///
-    /// See Hive <https://cwiki.apache.org/confluence/pages/viewpage.action?pageId=27362036#LanguageManualDML-Loadingfilesintotables>
     LoadData {
         #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
         load_token: AttachedToken,
@@ -5406,7 +5199,6 @@ pub enum Statement {
         overwrite: bool,
         table_name: ObjectName,
         partitioned: Option<Vec<Expr>>,
-        table_format: Option<HiveLoadDataFormat>,
     },
     /// ```sql
     /// Rename TABLE tbl_name TO new_tbl_name[, tbl_name2 TO new_tbl_name2] ...
@@ -5442,15 +5234,6 @@ pub enum Statement {
     ///
     /// See [ReturnStatement]
     Return(ReturnStatement),
-    /// Export data statement
-    ///
-    /// Example:
-    /// ```sql
-    /// EXPORT DATA OPTIONS(uri='gs://bucket/folder/*', format='PARQUET', overwrite=true) AS
-    /// SELECT field1, field2 FROM mydataset.table1 ORDER BY field1 LIMIT 10
-    /// ```
-    /// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/export-statements)
-    ExportData(ExportData),
     /// ```sql
     /// CREATE [OR REPLACE] USER <user> [IF NOT EXISTS]
     /// ```
@@ -5490,34 +5273,11 @@ impl From<ddl::Truncate> for Statement {
     }
 }
 
-impl From<ddl::Msck> for Statement {
-    fn from(msck: ddl::Msck) -> Self {
-        Statement::Msck(msck)
-    }
-}
-
 /// ```sql
 /// {COPY | REVOKE} CURRENT GRANTS
 /// ```
 ///
 /// - [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/grant-ownership#optional-parameters)
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum CurrentGrantsKind {
-    CopyCurrentGrants,
-    RevokeCurrentGrants,
-}
-
-impl fmt::Display for CurrentGrantsKind {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            CurrentGrantsKind::CopyCurrentGrants => write!(f, "COPY CURRENT GRANTS"),
-            CurrentGrantsKind::RevokeCurrentGrants => write!(f, "REVOKE CURRENT GRANTS"),
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -5613,15 +5373,11 @@ impl fmt::Display for Statement {
             Statement::ExplainTable {
                 explain_token: _,
                 describe_alias,
-                hive_format,
                 has_table_keyword,
                 table_name,
             } => {
                 write!(f, "{describe_alias} ")?;
 
-                if let Some(format) = hive_format {
-                    write!(f, "{format} ")?;
-                }
                 if *has_table_keyword {
                     write!(f, "TABLE ")?;
                 }
@@ -5666,7 +5422,10 @@ impl fmt::Display for Statement {
                 write!(f, "{statement}")
             }
             Statement::Query(s) => s.fmt(f),
-            Statement::Declare { declare_token: _, stmts } => {
+            Statement::Declare {
+                declare_token: _,
+                stmts,
+            } => {
                 write!(f, "DECLARE ")?;
                 write!(f, "{}", display_separated(stmts, ", "))
             }
@@ -5704,7 +5463,6 @@ impl fmt::Display for Statement {
                 }
                 write!(f, " {source}")
             }
-            Statement::Msck(msck) => msck.fmt(f),
             Statement::Truncate(truncate) => truncate.fmt(f),
             Statement::Case(stmt) => {
                 write!(f, "{stmt}")
@@ -5756,13 +5514,6 @@ impl fmt::Display for Statement {
             }
             Statement::Analyze(analyze) => analyze.fmt(f),
             Statement::Insert(insert) => insert.fmt(f),
-            Statement::Install {
-                extension_name: name,
-            } => write!(f, "INSTALL {name}"),
-
-            Statement::Load {
-                extension_name: name,
-            } => write!(f, "LOAD {name}"),
 
             Statement::Call(function) => write!(f, "CALL {function}"),
 
@@ -5827,19 +5578,8 @@ impl fmt::Display for Statement {
                 or_replace,
                 transient,
                 clone,
-                data_retention_time_in_days,
-                max_data_extension_time_in_days,
-                external_volume,
-                catalog,
-                replace_invalid_characters,
-                default_ddl_collation,
-                storage_serialization_policy,
                 comment,
                 catalog_sync,
-                catalog_sync_namespace_mode,
-                catalog_sync_namespace_flatten_delimiter,
-                with_tags,
-                with_contacts,
             } => {
                 write!(
                     f,
@@ -5860,58 +5600,12 @@ impl fmt::Display for Statement {
                     write!(f, " CLONE {clone}")?;
                 }
 
-                if let Some(value) = data_retention_time_in_days {
-                    write!(f, " DATA_RETENTION_TIME_IN_DAYS = {value}")?;
-                }
-
-                if let Some(value) = max_data_extension_time_in_days {
-                    write!(f, " MAX_DATA_EXTENSION_TIME_IN_DAYS = {value}")?;
-                }
-
-                if let Some(vol) = external_volume {
-                    write!(f, " EXTERNAL_VOLUME = '{vol}'")?;
-                }
-
-                if let Some(cat) = catalog {
-                    write!(f, " CATALOG = '{cat}'")?;
-                }
-
-                if let Some(true) = replace_invalid_characters {
-                    write!(f, " REPLACE_INVALID_CHARACTERS = TRUE")?;
-                } else if let Some(false) = replace_invalid_characters {
-                    write!(f, " REPLACE_INVALID_CHARACTERS = FALSE")?;
-                }
-
-                if let Some(collation) = default_ddl_collation {
-                    write!(f, " DEFAULT_DDL_COLLATION = '{collation}'")?;
-                }
-
-                if let Some(policy) = storage_serialization_policy {
-                    write!(f, " STORAGE_SERIALIZATION_POLICY = {policy}")?;
-                }
-
                 if let Some(comment) = comment {
                     write!(f, " COMMENT = '{comment}'")?;
                 }
 
                 if let Some(sync) = catalog_sync {
                     write!(f, " CATALOG_SYNC = '{sync}'")?;
-                }
-
-                if let Some(mode) = catalog_sync_namespace_mode {
-                    write!(f, " CATALOG_SYNC_NAMESPACE_MODE = {mode}")?;
-                }
-
-                if let Some(delim) = catalog_sync_namespace_flatten_delimiter {
-                    write!(f, " CATALOG_SYNC_NAMESPACE_FLATTEN_DELIMITER = '{delim}'")?;
-                }
-
-                if let Some(tags) = with_tags {
-                    write!(f, " WITH TAG ({})", display_comma_separated(tags))?;
-                }
-
-                if let Some(contacts) = with_contacts {
-                    write!(f, " WITH CONTACT ({})", display_comma_separated(contacts))?;
                 }
                 Ok(())
             }
@@ -5949,29 +5643,6 @@ impl fmt::Display for Statement {
                     write!(f, " {body}")
                 }
             }
-            Statement::CreateMacro {
-                create_token: _,
-                or_replace,
-                temporary,
-                name,
-                args,
-                definition,
-            } => {
-                write!(
-                    f,
-                    "CREATE {or_replace}{temp}MACRO {name}",
-                    temp = if *temporary { "TEMPORARY " } else { "" },
-                    or_replace = if *or_replace { "OR REPLACE " } else { "" },
-                )?;
-                if let Some(args) = args {
-                    write!(f, "({})", display_comma_separated(args))?;
-                }
-                match definition {
-                    MacroDefinition::Expr(expr) => write!(f, " AS {expr}")?,
-                    MacroDefinition::Table(query) => write!(f, " AS TABLE {query}")?,
-                }
-                Ok(())
-            }
             Statement::CreateView(create_view) => create_view.fmt(f),
             Statement::CreateTable(create_table) => create_table.fmt(f),
             Statement::LoadData {
@@ -5981,7 +5652,6 @@ impl fmt::Display for Statement {
                 overwrite,
                 table_name,
                 partitioned,
-                table_format,
             } => {
                 write!(
                     f,
@@ -5995,13 +5665,6 @@ impl fmt::Display for Statement {
                     if !parts.is_empty() {
                         write!(f, " PARTITION ({})", display_comma_separated(parts))?;
                     }
-                }
-                if let Some(HiveLoadDataFormat {
-                    serde,
-                    input_format,
-                }) = &table_format
-                {
-                    write!(f, " INPUTFORMAT {input_format} SERDE {serde}")?;
                 }
                 Ok(())
             }
@@ -6027,42 +5690,6 @@ impl fmt::Display for Statement {
             Statement::CreateExtension(create_extension) => write!(f, "{create_extension}"),
             Statement::DropExtension(drop_extension) => write!(f, "{drop_extension}"),
             Statement::CreateRole(create_role) => write!(f, "{create_role}"),
-            Statement::CreateSecret {
-                or_replace,
-                temporary,
-                if_not_exists,
-                name,
-                storage_specifier,
-                secret_type,
-                options,
-                ..
-            } => {
-                write!(
-                    f,
-                    "CREATE {or_replace}",
-                    or_replace = if *or_replace { "OR REPLACE " } else { "" },
-                )?;
-                if let Some(t) = temporary {
-                    write!(f, "{}", if *t { "TEMPORARY " } else { "PERSISTENT " })?;
-                }
-                write!(
-                    f,
-                    "SECRET {if_not_exists}",
-                    if_not_exists = if *if_not_exists { "IF NOT EXISTS " } else { "" },
-                )?;
-                if let Some(n) = name {
-                    write!(f, "{n} ")?;
-                };
-                if let Some(s) = storage_specifier {
-                    write!(f, "IN {s} ")?;
-                }
-                write!(f, "( TYPE {secret_type}",)?;
-                if !options.is_empty() {
-                    write!(f, ", {o}", o = display_comma_separated(options))?;
-                }
-                write!(f, " )")?;
-                Ok(())
-            }
             Statement::CreateServer(stmt) => {
                 write!(f, "{stmt}")
             }
@@ -6109,7 +5736,6 @@ impl fmt::Display for Statement {
 
                 Ok(())
             }
-            Statement::CreateConnector(create_connector) => create_connector.fmt(f),
             Statement::CreateOperator(create_operator) => create_operator.fmt(f),
             Statement::CreateOperatorFamily(create_operator_family) => {
                 create_operator_family.fmt(f)
@@ -6138,10 +5764,14 @@ impl fmt::Display for Statement {
                 }
                 write!(f, " AS {query}")
             }
-            Statement::AlterType(AlterType { name, operation, .. }) => {
+            Statement::AlterType(AlterType {
+                name, operation, ..
+            }) => {
                 write!(f, "ALTER TYPE {name} {operation}")
             }
-            Statement::AlterRole { name, operation, .. } => {
+            Statement::AlterRole {
+                name, operation, ..
+            } => {
                 write!(f, "ALTER ROLE {name} {operation}")
             }
             Statement::AlterPolicy {
@@ -6151,28 +5781,6 @@ impl fmt::Display for Statement {
                 ..
             } => {
                 write!(f, "ALTER POLICY {name} ON {table_name}{operation}")
-            }
-            Statement::AlterConnector {
-                name,
-                properties,
-                url,
-                owner,
-            } => {
-                write!(f, "ALTER CONNECTOR {name}")?;
-                if let Some(properties) = properties {
-                    write!(
-                        f,
-                        " SET DCPROPERTIES({})",
-                        display_comma_separated(properties)
-                    )?;
-                }
-                if let Some(url) = url {
-                    write!(f, " SET URL '{url}'")?;
-                }
-                if let Some(owner) = owner {
-                    write!(f, " SET OWNER {owner}")?;
-                }
-                Ok(())
             }
             Statement::AlterSession {
                 set,
@@ -6281,27 +5889,6 @@ impl fmt::Display for Statement {
                 }
                 Ok(())
             }
-            Statement::DropSecret {
-                if_exists,
-                temporary,
-                name,
-                storage_specifier,
-                ..
-            } => {
-                write!(f, "DROP ")?;
-                if let Some(t) = temporary {
-                    write!(f, "{}", if *t { "TEMPORARY " } else { "PERSISTENT " })?;
-                }
-                write!(
-                    f,
-                    "SECRET {if_exists}{name}",
-                    if_exists = if *if_exists { "IF EXISTS " } else { "" },
-                )?;
-                if let Some(s) = storage_specifier {
-                    write!(f, " FROM {s}")?;
-                }
-                Ok(())
-            }
             Statement::DropPolicy {
                 if_exists,
                 name,
@@ -6319,14 +5906,6 @@ impl fmt::Display for Statement {
                 }
                 Ok(())
             }
-            Statement::DropConnector { if_exists, name } => {
-                write!(
-                    f,
-                    "DROP CONNECTOR {if_exists}{name}",
-                    if_exists = if *if_exists { "IF EXISTS " } else { "" }
-                )?;
-                Ok(())
-            }
             Statement::Discard {
                 discard_token: _,
                 object_type,
@@ -6335,7 +5914,10 @@ impl fmt::Display for Statement {
                 Ok(())
             }
             Self::Set(set) => write!(f, "{set}"),
-            Statement::ShowVariable { show_token: _, variable } => {
+            Statement::ShowVariable {
+                show_token: _,
+                variable,
+            } => {
                 write!(f, "SHOW")?;
                 if !variable.is_empty() {
                     write!(f, " {}", display_separated(variable, " "))?;
@@ -6380,7 +5962,11 @@ impl fmt::Display for Statement {
                 }
                 Ok(())
             }
-            Statement::ShowCreate { show_token: _, obj_type, obj_name } => {
+            Statement::ShowCreate {
+                show_token: _,
+                obj_type,
+                obj_name,
+            } => {
                 write!(f, "SHOW CREATE {obj_type} {obj_name}",)?;
                 Ok(())
             }
@@ -6426,17 +6012,6 @@ impl fmt::Display for Statement {
                 )?;
                 Ok(())
             }
-            Statement::ShowObjects(ShowObjects {
-                terse,
-                show_options,
-            }) => {
-                write!(
-                    f,
-                    "SHOW {terse}OBJECTS{show_options}",
-                    terse = if *terse { "TERSE " } else { "" },
-                )?;
-                Ok(())
-            }
             Statement::ShowTables {
                 show_token: _,
                 terse,
@@ -6470,7 +6045,10 @@ impl fmt::Display for Statement {
                 )?;
                 Ok(())
             }
-            Statement::ShowFunctions { show_token: _, filter } => {
+            Statement::ShowFunctions {
+                show_token: _,
+                filter,
+            } => {
                 write!(f, "SHOW FUNCTIONS")?;
                 if let Some(filter) = filter {
                     write!(f, " {filter}")?;
@@ -6478,7 +6056,10 @@ impl fmt::Display for Statement {
                 Ok(())
             }
             Statement::Use(use_expr) => use_expr.fmt(f),
-            Statement::ShowCollation { show_token: _, filter } => {
+            Statement::ShowCollation {
+                show_token: _,
+                filter,
+            } => {
                 write!(f, "SHOW COLLATION")?;
                 if let Some(filter) = filter {
                     write!(f, " {filter}")?;
@@ -6595,7 +6176,11 @@ impl fmt::Display for Statement {
                 }
                 Ok(())
             }
-            Statement::Assert { assert_token: _, condition, message } => {
+            Statement::Assert {
+                assert_token: _,
+                condition,
+                message,
+            } => {
                 write!(f, "ASSERT {condition}")?;
                 if let Some(m) = message {
                     write!(f, " AS {m}")?;
@@ -6610,7 +6195,6 @@ impl fmt::Display for Statement {
                 with_grant_option,
                 as_grantor,
                 granted_by,
-                current_grants,
             } => {
                 write!(f, "GRANT {privileges} ")?;
                 if let Some(objects) = objects {
@@ -6619,9 +6203,6 @@ impl fmt::Display for Statement {
                 write!(f, "TO {}", display_comma_separated(grantees))?;
                 if *with_grant_option {
                     write!(f, " WITH GRANT OPTION")?;
-                }
-                if let Some(current_grants) = current_grants {
-                    write!(f, " {current_grants}")?;
                 }
                 if let Some(grantor) = as_grantor {
                     write!(f, " AS {grantor}")?;
@@ -6705,7 +6286,11 @@ impl fmt::Display for Statement {
                 }
                 Ok(())
             }
-            Statement::Deallocate { deallocate_token: _, name, prepare } => write!(
+            Statement::Deallocate {
+                deallocate_token: _,
+                name,
+                prepare,
+            } => write!(
                 f,
                 "DEALLOCATE {prepare}{name}",
                 prepare = if *prepare { "PREPARE " } else { "" },
@@ -6892,7 +6477,12 @@ impl fmt::Display for Statement {
                 }
                 Ok(())
             }
-            Statement::Pragma { pragma_token: _, name, value, is_eq } => {
+            Statement::Pragma {
+                pragma_token: _,
+                name,
+                value,
+                is_eq,
+            } => {
                 write!(f, "PRAGMA {name}")?;
                 if value.is_some() {
                     let val = value.as_ref().unwrap();
@@ -7010,7 +6600,6 @@ impl fmt::Display for Statement {
             }
             Statement::Print(s) => write!(f, "{s}"),
             Statement::Return(r) => write!(f, "{r}"),
-            Statement::ExportData(e) => write!(f, "{e}"),
             Statement::CreateUser(s) => write!(f, "{s}"),
             Statement::AlterSchema(s) => write!(f, "{s}"),
             Statement::Vacuum(s) => write!(f, "{s}"),
@@ -7433,70 +7022,43 @@ impl fmt::Display for FetchPosition {
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub enum Action {
     AddSearchOptimization,
-    Apply {
-        apply_type: ActionApplyType,
-    },
     ApplyBudget,
     AttachListing,
     AttachPolicy,
     Audit,
     BindServiceEndpoint,
     Connect,
-    Create {
-        obj_type: Option<ActionCreateObjectType>,
-    },
-    DatabaseRole {
-        role: ObjectName,
-    },
+    Create,
+    DatabaseRole { role: ObjectName },
     Delete,
     Drop,
     EvolveSchema,
-    Exec {
-        obj_type: Option<ActionExecuteObjectType>,
-    },
-    Execute {
-        obj_type: Option<ActionExecuteObjectType>,
-    },
+    Exec,
+    Execute,
     Failover,
     ImportedPrivileges,
     ImportShare,
-    Insert {
-        columns: Option<Vec<Ident>>,
-    },
-    Manage {
-        manage_type: ActionManageType,
-    },
+    Insert { columns: Option<Vec<Ident>> },
+    Manage,
     ManageReleases,
     ManageVersions,
-    Modify {
-        modify_type: Option<ActionModifyType>,
-    },
-    Monitor {
-        monitor_type: Option<ActionMonitorType>,
-    },
+    Modify,
+    Monitor,
     Operate,
     OverrideShareRestrictions,
     Ownership,
     PurchaseDataExchangeListing,
     Read,
     ReadSession,
-    References {
-        columns: Option<Vec<Ident>>,
-    },
+    References { columns: Option<Vec<Ident>> },
     Replicate,
     ResolveAll,
-    Role {
-        role: ObjectName,
-    },
-    Select {
-        columns: Option<Vec<Ident>>,
-    },
+    Role { role: ObjectName },
+    Select { columns: Option<Vec<Ident>> },
     Temporary,
     Trigger,
     Truncate,
-    Update {
-        columns: Option<Vec<Ident>>,
-    },
+    Update { columns: Option<Vec<Ident>> },
     Usage,
 }
 
@@ -7504,54 +7066,28 @@ impl fmt::Display for Action {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Action::AddSearchOptimization => f.write_str("ADD SEARCH OPTIMIZATION")?,
-            Action::Apply { apply_type } => write!(f, "APPLY {apply_type}")?,
             Action::ApplyBudget => f.write_str("APPLYBUDGET")?,
             Action::AttachListing => f.write_str("ATTACH LISTING")?,
             Action::AttachPolicy => f.write_str("ATTACH POLICY")?,
             Action::Audit => f.write_str("AUDIT")?,
             Action::BindServiceEndpoint => f.write_str("BIND SERVICE ENDPOINT")?,
             Action::Connect => f.write_str("CONNECT")?,
-            Action::Create { obj_type } => {
-                f.write_str("CREATE")?;
-                if let Some(obj_type) = obj_type {
-                    write!(f, " {obj_type}")?
-                }
-            }
+            Action::Create => f.write_str("CREATE")?,
             Action::DatabaseRole { role } => write!(f, "DATABASE ROLE {role}")?,
             Action::Delete => f.write_str("DELETE")?,
             Action::Drop => f.write_str("DROP")?,
             Action::EvolveSchema => f.write_str("EVOLVE SCHEMA")?,
-            Action::Exec { obj_type } => {
-                f.write_str("EXEC")?;
-                if let Some(obj_type) = obj_type {
-                    write!(f, " {obj_type}")?
-                }
-            }
-            Action::Execute { obj_type } => {
-                f.write_str("EXECUTE")?;
-                if let Some(obj_type) = obj_type {
-                    write!(f, " {obj_type}")?
-                }
-            }
+            Action::Exec => f.write_str("EXEC")?,
+            Action::Execute => f.write_str("EXECUTE")?,
             Action::Failover => f.write_str("FAILOVER")?,
             Action::ImportedPrivileges => f.write_str("IMPORTED PRIVILEGES")?,
             Action::ImportShare => f.write_str("IMPORT SHARE")?,
             Action::Insert { .. } => f.write_str("INSERT")?,
-            Action::Manage { manage_type } => write!(f, "MANAGE {manage_type}")?,
+            Action::Manage => f.write_str("MANAGE")?,
             Action::ManageReleases => f.write_str("MANAGE RELEASES")?,
             Action::ManageVersions => f.write_str("MANAGE VERSIONS")?,
-            Action::Modify { modify_type } => {
-                write!(f, "MODIFY")?;
-                if let Some(modify_type) = modify_type {
-                    write!(f, " {modify_type}")?;
-                }
-            }
-            Action::Monitor { monitor_type } => {
-                write!(f, "MONITOR")?;
-                if let Some(monitor_type) = monitor_type {
-                    write!(f, " {monitor_type}")?
-                }
-            }
+            Action::Modify => f.write_str("MODIFY")?,
+            Action::Monitor => f.write_str("MONITOR")?,
             Action::Operate => f.write_str("OPERATE")?,
             Action::OverrideShareRestrictions => f.write_str("OVERRIDE SHARE RESTRICTIONS")?,
             Action::Ownership => f.write_str("OWNERSHIP")?,
@@ -7581,188 +7117,6 @@ impl fmt::Display for Action {
             _ => (),
         };
         Ok(())
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-/// See <https://docs.snowflake.com/en/sql-reference/sql/grant-privilege>
-/// under `globalPrivileges` in the `CREATE` privilege.
-pub enum ActionCreateObjectType {
-    Account,
-    Application,
-    ApplicationPackage,
-    ComputePool,
-    DataExchangeListing,
-    Database,
-    ExternalVolume,
-    FailoverGroup,
-    Integration,
-    NetworkPolicy,
-    OrganiationListing,
-    ReplicationGroup,
-    Role,
-    Schema,
-    Share,
-    User,
-    Warehouse,
-}
-
-impl fmt::Display for ActionCreateObjectType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            ActionCreateObjectType::Account => write!(f, "ACCOUNT"),
-            ActionCreateObjectType::Application => write!(f, "APPLICATION"),
-            ActionCreateObjectType::ApplicationPackage => write!(f, "APPLICATION PACKAGE"),
-            ActionCreateObjectType::ComputePool => write!(f, "COMPUTE POOL"),
-            ActionCreateObjectType::DataExchangeListing => write!(f, "DATA EXCHANGE LISTING"),
-            ActionCreateObjectType::Database => write!(f, "DATABASE"),
-            ActionCreateObjectType::ExternalVolume => write!(f, "EXTERNAL VOLUME"),
-            ActionCreateObjectType::FailoverGroup => write!(f, "FAILOVER GROUP"),
-            ActionCreateObjectType::Integration => write!(f, "INTEGRATION"),
-            ActionCreateObjectType::NetworkPolicy => write!(f, "NETWORK POLICY"),
-            ActionCreateObjectType::OrganiationListing => write!(f, "ORGANIZATION LISTING"),
-            ActionCreateObjectType::ReplicationGroup => write!(f, "REPLICATION GROUP"),
-            ActionCreateObjectType::Role => write!(f, "ROLE"),
-            ActionCreateObjectType::Schema => write!(f, "SCHEMA"),
-            ActionCreateObjectType::Share => write!(f, "SHARE"),
-            ActionCreateObjectType::User => write!(f, "USER"),
-            ActionCreateObjectType::Warehouse => write!(f, "WAREHOUSE"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-/// See <https://docs.snowflake.com/en/sql-reference/sql/grant-privilege>
-/// under `globalPrivileges` in the `APPLY` privilege.
-pub enum ActionApplyType {
-    AggregationPolicy,
-    AuthenticationPolicy,
-    JoinPolicy,
-    MaskingPolicy,
-    PackagesPolicy,
-    PasswordPolicy,
-    ProjectionPolicy,
-    RowAccessPolicy,
-    SessionPolicy,
-    Tag,
-}
-
-impl fmt::Display for ActionApplyType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            ActionApplyType::AggregationPolicy => write!(f, "AGGREGATION POLICY"),
-            ActionApplyType::AuthenticationPolicy => write!(f, "AUTHENTICATION POLICY"),
-            ActionApplyType::JoinPolicy => write!(f, "JOIN POLICY"),
-            ActionApplyType::MaskingPolicy => write!(f, "MASKING POLICY"),
-            ActionApplyType::PackagesPolicy => write!(f, "PACKAGES POLICY"),
-            ActionApplyType::PasswordPolicy => write!(f, "PASSWORD POLICY"),
-            ActionApplyType::ProjectionPolicy => write!(f, "PROJECTION POLICY"),
-            ActionApplyType::RowAccessPolicy => write!(f, "ROW ACCESS POLICY"),
-            ActionApplyType::SessionPolicy => write!(f, "SESSION POLICY"),
-            ActionApplyType::Tag => write!(f, "TAG"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-/// See <https://docs.snowflake.com/en/sql-reference/sql/grant-privilege>
-/// under `globalPrivileges` in the `EXECUTE` privilege.
-pub enum ActionExecuteObjectType {
-    Alert,
-    DataMetricFunction,
-    ManagedAlert,
-    ManagedTask,
-    Task,
-}
-
-impl fmt::Display for ActionExecuteObjectType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            ActionExecuteObjectType::Alert => write!(f, "ALERT"),
-            ActionExecuteObjectType::DataMetricFunction => write!(f, "DATA METRIC FUNCTION"),
-            ActionExecuteObjectType::ManagedAlert => write!(f, "MANAGED ALERT"),
-            ActionExecuteObjectType::ManagedTask => write!(f, "MANAGED TASK"),
-            ActionExecuteObjectType::Task => write!(f, "TASK"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-/// See <https://docs.snowflake.com/en/sql-reference/sql/grant-privilege>
-/// under `globalPrivileges` in the `MANAGE` privilege.
-pub enum ActionManageType {
-    AccountSupportCases,
-    EventSharing,
-    Grants,
-    ListingAutoFulfillment,
-    OrganizationSupportCases,
-    UserSupportCases,
-    Warehouses,
-}
-
-impl fmt::Display for ActionManageType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            ActionManageType::AccountSupportCases => write!(f, "ACCOUNT SUPPORT CASES"),
-            ActionManageType::EventSharing => write!(f, "EVENT SHARING"),
-            ActionManageType::Grants => write!(f, "GRANTS"),
-            ActionManageType::ListingAutoFulfillment => write!(f, "LISTING AUTO FULFILLMENT"),
-            ActionManageType::OrganizationSupportCases => write!(f, "ORGANIZATION SUPPORT CASES"),
-            ActionManageType::UserSupportCases => write!(f, "USER SUPPORT CASES"),
-            ActionManageType::Warehouses => write!(f, "WAREHOUSES"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-/// See <https://docs.snowflake.com/en/sql-reference/sql/grant-privilege>
-/// under `globalPrivileges` in the `MODIFY` privilege.
-pub enum ActionModifyType {
-    LogLevel,
-    TraceLevel,
-    SessionLogLevel,
-    SessionTraceLevel,
-}
-
-impl fmt::Display for ActionModifyType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            ActionModifyType::LogLevel => write!(f, "LOG LEVEL"),
-            ActionModifyType::TraceLevel => write!(f, "TRACE LEVEL"),
-            ActionModifyType::SessionLogLevel => write!(f, "SESSION LOG LEVEL"),
-            ActionModifyType::SessionTraceLevel => write!(f, "SESSION TRACE LEVEL"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-/// See <https://docs.snowflake.com/en/sql-reference/sql/grant-privilege>
-/// under `globalPrivileges` in the `MONITOR` privilege.
-pub enum ActionMonitorType {
-    Execution,
-    Security,
-    Usage,
-}
-
-impl fmt::Display for ActionMonitorType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            ActionMonitorType::Execution => write!(f, "EXECUTION"),
-            ActionMonitorType::Security => write!(f, "SECURITY"),
-            ActionMonitorType::Usage => write!(f, "USAGE"),
-        }
     }
 }
 
@@ -8118,7 +7472,14 @@ pub struct DenyStatement {
 
 impl fmt::Display for DenyStatement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let DenyStatement { token: _, privileges, objects, grantees, granted_by, cascade } = self;
+        let DenyStatement {
+            token: _,
+            privileges,
+            objects,
+            grantees,
+            granted_by,
+            cascade,
+        } = self;
         write!(f, "DENY {}", privileges)?;
         write!(f, " ON {}", objects)?;
         if !grantees.is_empty() {
@@ -8435,7 +7796,11 @@ pub struct DropAssertion {
 
 impl fmt::Display for DropAssertion {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let DropAssertion { token: _, if_exists, name } = self;
+        let DropAssertion {
+            token: _,
+            if_exists,
+            name,
+        } = self;
         write!(
             f,
             "DROP ASSERTION {if_exists}{name}",
@@ -8921,7 +8286,6 @@ pub enum ObjectType {
     Database,
     Role,
     Sequence,
-    Stage,
     Type,
     User,
     Stream,
@@ -8938,7 +8302,6 @@ impl fmt::Display for ObjectType {
             ObjectType::Database => "DATABASE",
             ObjectType::Role => "ROLE",
             ObjectType::Sequence => "SEQUENCE",
-            ObjectType::Stage => "STAGE",
             ObjectType::Type => "TYPE",
             ObjectType::User => "USER",
             ObjectType::Stream => "STREAM",
@@ -8967,96 +8330,6 @@ impl fmt::Display for KillType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum HiveDistributionStyle {
-    PARTITIONED {
-        columns: Vec<ColumnDef>,
-    },
-    SKEWED {
-        columns: Vec<ColumnDef>,
-        on: Vec<ColumnDef>,
-        stored_as_directories: bool,
-    },
-    NONE,
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum HiveRowFormat {
-    SERDE { class: String },
-    DELIMITED { delimiters: Vec<HiveRowDelimiter> },
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct HiveLoadDataFormat {
-    pub serde: Expr,
-    pub input_format: Expr,
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct HiveRowDelimiter {
-    pub delimiter: HiveDelimiter,
-    pub char: Ident,
-}
-
-impl fmt::Display for HiveRowDelimiter {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} ", self.delimiter)?;
-        write!(f, "{}", self.char)
-    }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum HiveDelimiter {
-    FieldsTerminatedBy,
-    FieldsEscapedBy,
-    CollectionItemsTerminatedBy,
-    MapKeysTerminatedBy,
-    LinesTerminatedBy,
-    NullDefinedAs,
-}
-
-impl fmt::Display for HiveDelimiter {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use HiveDelimiter::*;
-        f.write_str(match self {
-            FieldsTerminatedBy => "FIELDS TERMINATED BY",
-            FieldsEscapedBy => "ESCAPED BY",
-            CollectionItemsTerminatedBy => "COLLECTION ITEMS TERMINATED BY",
-            MapKeysTerminatedBy => "MAP KEYS TERMINATED BY",
-            LinesTerminatedBy => "LINES TERMINATED BY",
-            NullDefinedAs => "NULL DEFINED AS",
-        })
-    }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum HiveDescribeFormat {
-    Extended,
-    Formatted,
-}
-
-impl fmt::Display for HiveDescribeFormat {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use HiveDescribeFormat::*;
-        f.write_str(match self {
-            Extended => "EXTENDED",
-            Formatted => "FORMATTED",
-        })
-    }
-}
-
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -9075,30 +8348,6 @@ impl fmt::Display for DescribeAlias {
             Desc => "DESC",
         })
     }
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-#[allow(clippy::large_enum_variant)]
-pub enum HiveIOFormat {
-    IOF {
-        input_format: Expr,
-        output_format: Expr,
-    },
-    FileFormat {
-        format: FileFormat,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct HiveFormat {
-    pub row_format: Option<HiveRowFormat>,
-    pub serde_properties: Option<Vec<SqlOption>>,
-    pub storage: Option<HiveIOFormat>,
-    pub location: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
@@ -9274,20 +8523,6 @@ pub enum StorageType {
 pub struct TablespaceOption {
     pub name: String,
     pub storage: Option<StorageType>,
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct SecretOption {
-    pub key: Ident,
-    pub value: Ident,
-}
-
-impl fmt::Display for SecretOption {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} {}", self.key, self.value)
-    }
 }
 
 /// A `CREATE SERVER` statement.
@@ -10651,56 +9886,6 @@ impl fmt::Display for CreateFunctionUsing {
     }
 }
 
-/// `NAME = <EXPR>` arguments for DuckDB macros
-///
-/// See [Create Macro - DuckDB](https://duckdb.org/docs/sql/statements/create_macro)
-/// for more details
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct MacroArg {
-    pub name: Ident,
-    pub default_expr: Option<Expr>,
-}
-
-impl MacroArg {
-    /// Returns an argument with name.
-    pub fn new(name: &str) -> Self {
-        Self {
-            name: name.into(),
-            default_expr: None,
-        }
-    }
-}
-
-impl fmt::Display for MacroArg {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.name)?;
-        if let Some(default_expr) = &self.default_expr {
-            write!(f, " := {default_expr}")?;
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum MacroDefinition {
-    Expr(Expr),
-    Table(Box<Query>),
-}
-
-impl fmt::Display for MacroDefinition {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            MacroDefinition::Expr(expr) => write!(f, "{expr}")?,
-            MacroDefinition::Table(query) => write!(f, "{query}")?,
-        }
-        Ok(())
-    }
-}
-
 /// Schema possible naming variants ([1]).
 ///
 /// [1]: https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#schema-definition
@@ -10825,23 +10010,6 @@ impl fmt::Display for LockTableType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct HiveSetLocation {
-    pub has_set: bool,
-    pub location: Ident,
-}
-
-impl fmt::Display for HiveSetLocation {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.has_set {
-            write!(f, "SET ")?;
-        }
-        write!(f, "LOCATION {}", self.location)
-    }
-}
-
 /// MySQL `ALTER TABLE` only  [FIRST | AFTER column_name]
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
@@ -10947,75 +10115,6 @@ pub struct NamedParenthesizedList {
     pub key: Ident,
     pub name: Option<Ident>,
     pub values: Vec<Ident>,
-}
-
-/// Snowflake `WITH ROW ACCESS POLICY policy_name ON (identifier, ...)`
-///
-/// <https://docs.snowflake.com/en/sql-reference/sql/create-table>
-/// <https://docs.snowflake.com/en/user-guide/security-row-intro>
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct RowAccessPolicy {
-    pub policy: ObjectName,
-    pub on: Vec<Ident>,
-}
-
-impl RowAccessPolicy {
-    pub fn new(policy: ObjectName, on: Vec<Ident>) -> Self {
-        Self { policy, on }
-    }
-}
-
-impl Display for RowAccessPolicy {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "WITH ROW ACCESS POLICY {} ON ({})",
-            self.policy,
-            display_comma_separated(self.on.as_slice())
-        )
-    }
-}
-
-/// Snowflake `WITH TAG ( tag_name = '<tag_value>', ...)`
-///
-/// <https://docs.snowflake.com/en/sql-reference/sql/create-table>
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct Tag {
-    pub key: ObjectName,
-    pub value: String,
-}
-
-impl Tag {
-    pub fn new(key: ObjectName, value: String) -> Self {
-        Self { key, value }
-    }
-}
-
-impl Display for Tag {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}='{}'", self.key, self.value)
-    }
-}
-
-/// Snowflake `WITH CONTACT ( purpose = contact [ , purpose = contact ...] )`
-///
-/// <https://docs.snowflake.com/en/sql-reference/sql/create-database>
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct ContactEntry {
-    pub purpose: String,
-    pub contact: String,
-}
-
-impl Display for ContactEntry {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} = {}", self.purpose, self.contact)
-    }
 }
 
 /// Helper to indicate if a comment includes the `=` in the display form
@@ -11249,14 +10348,6 @@ impl fmt::Display for ShowCharset {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct ShowObjects {
-    pub terse: bool,
-    pub show_options: ShowStatementOptions,
-}
-
 /// MSSQL's json null clause
 ///
 /// ```plaintext
@@ -11382,7 +10473,11 @@ pub struct RenameTable {
 
 impl fmt::Display for RenameTable {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let RenameTable { token: _, old_name, new_name } = self;
+        let RenameTable {
+            token: _,
+            old_name,
+            new_name,
+        } = self;
         write!(f, "{} TO {}", old_name, new_name)?;
         Ok(())
     }
@@ -11574,52 +10669,6 @@ impl fmt::Display for SessionParamValue {
     }
 }
 
-/// Snowflake StorageSerializationPolicy for Iceberg Tables
-/// ```sql
-/// [ STORAGE_SERIALIZATION_POLICY = { COMPATIBLE | OPTIMIZED } ]
-/// ```
-///
-/// <https://docs.snowflake.com/en/sql-reference/sql/create-iceberg-table>
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum StorageSerializationPolicy {
-    Compatible,
-    Optimized,
-}
-
-impl Display for StorageSerializationPolicy {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            StorageSerializationPolicy::Compatible => write!(f, "COMPATIBLE"),
-            StorageSerializationPolicy::Optimized => write!(f, "OPTIMIZED"),
-        }
-    }
-}
-
-/// Snowflake CatalogSyncNamespaceMode
-/// ```sql
-/// [ CATALOG_SYNC_NAMESPACE_MODE = { NEST | FLATTEN } ]
-/// ```
-///
-/// <https://docs.snowflake.com/en/sql-reference/sql/create-database>
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum CatalogSyncNamespaceMode {
-    Nest,
-    Flatten,
-}
-
-impl Display for CatalogSyncNamespaceMode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            CatalogSyncNamespaceMode::Nest => write!(f, "NEST"),
-            CatalogSyncNamespaceMode::Flatten => write!(f, "FLATTEN"),
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -11723,34 +10772,6 @@ impl fmt::Display for MemberOf {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct ExportData {
-    pub options: Vec<SqlOption>,
-    pub query: Box<Query>,
-    pub connection: Option<ObjectName>,
-}
-
-impl fmt::Display for ExportData {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if let Some(connection) = &self.connection {
-            write!(
-                f,
-                "EXPORT DATA WITH CONNECTION {connection} OPTIONS({}) AS {}",
-                display_comma_separated(&self.options),
-                self.query
-            )
-        } else {
-            write!(
-                f,
-                "EXPORT DATA OPTIONS({}) AS {}",
-                display_comma_separated(&self.options),
-                self.query
-            )
-        }
-    }
-}
 /// Creates a user
 ///
 /// Syntax:
@@ -11775,7 +10796,15 @@ pub struct CreateUser {
 
 impl fmt::Display for CreateUser {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let CreateUser { token: _, or_replace, if_not_exists, name, options, with_tags, tags } = self;
+        let CreateUser {
+            token: _,
+            or_replace,
+            if_not_exists,
+            name,
+            options,
+            with_tags,
+            tags,
+        } = self;
         write!(f, "CREATE")?;
         if *or_replace {
             write!(f, " OR REPLACE")?;
@@ -11814,117 +10843,9 @@ pub struct AlterUser {
     pub token: AttachedToken,
     pub if_exists: bool,
     pub name: Ident,
-    /// The following fields are Snowflake-specific: <https://docs.snowflake.com/en/sql-reference/sql/alter-user#syntax>
     pub rename_to: Option<Ident>,
-    pub reset_password: bool,
-    pub abort_all_queries: bool,
-    pub add_role_delegation: Option<AlterUserAddRoleDelegation>,
-    pub remove_role_delegation: Option<AlterUserRemoveRoleDelegation>,
-    pub enroll_mfa: bool,
-    pub set_default_mfa_method: Option<MfaMethodKind>,
-    pub remove_mfa_method: Option<MfaMethodKind>,
-    pub modify_mfa_method: Option<AlterUserModifyMfaMethod>,
-    pub add_mfa_method_otp: Option<AlterUserAddMfaMethodOtp>,
-    pub set_policy: Option<AlterUserSetPolicy>,
-    pub unset_policy: Option<UserPolicyKind>,
-    pub set_tag: KeyValueOptions,
-    pub unset_tag: Vec<String>,
     pub set_props: KeyValueOptions,
     pub unset_props: Vec<String>,
-}
-
-/// ```sql
-/// ALTER USER [ IF EXISTS ] [ <name> ] ADD DELEGATED AUTHORIZATION OF ROLE <role_name> TO SECURITY INTEGRATION <integration_name>
-/// ```
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct AlterUserAddRoleDelegation {
-    pub role: Ident,
-    pub integration: Ident,
-}
-
-/// ```sql
-/// ALTER USER [ IF EXISTS ] [ <name> ] REMOVE DELEGATED { AUTHORIZATION OF ROLE <role_name> | AUTHORIZATIONS } FROM SECURITY INTEGRATION <integration_name>
-/// ```
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct AlterUserRemoveRoleDelegation {
-    pub role: Option<Ident>,
-    pub integration: Ident,
-}
-
-/// ```sql
-/// ADD MFA METHOD OTP [ COUNT = number ]
-/// ```
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct AlterUserAddMfaMethodOtp {
-    pub count: Option<Value>,
-}
-
-/// ```sql
-/// ALTER USER [ IF EXISTS ] [ <name> ] MODIFY MFA METHOD <mfa_method> SET COMMENT = '<string>'
-/// ```
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct AlterUserModifyMfaMethod {
-    pub method: MfaMethodKind,
-    pub comment: String,
-}
-
-/// Types of MFA methods
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum MfaMethodKind {
-    PassKey,
-    Totp,
-    Duo,
-}
-
-impl fmt::Display for MfaMethodKind {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            MfaMethodKind::PassKey => write!(f, "PASSKEY"),
-            MfaMethodKind::Totp => write!(f, "TOTP"),
-            MfaMethodKind::Duo => write!(f, "DUO"),
-        }
-    }
-}
-
-/// ```sql
-/// ALTER USER [ IF EXISTS ] [ <name> ] SET { AUTHENTICATION | PASSWORD | SESSION } POLICY <policy_name>
-/// ```
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct AlterUserSetPolicy {
-    pub policy_kind: UserPolicyKind,
-    pub policy: Ident,
-}
-
-/// Types of user-based policies
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum UserPolicyKind {
-    Authentication,
-    Password,
-    Session,
-}
-
-impl fmt::Display for UserPolicyKind {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            UserPolicyKind::Authentication => write!(f, "AUTHENTICATION"),
-            UserPolicyKind::Password => write!(f, "PASSWORD"),
-            UserPolicyKind::Session => write!(f, "SESSION"),
-        }
-    }
 }
 
 impl fmt::Display for AlterUser {
@@ -11937,67 +10858,6 @@ impl fmt::Display for AlterUser {
         write!(f, " {}", self.name)?;
         if let Some(new_name) = &self.rename_to {
             write!(f, " RENAME TO {new_name}")?;
-        }
-        if self.reset_password {
-            write!(f, " RESET PASSWORD")?;
-        }
-        if self.abort_all_queries {
-            write!(f, " ABORT ALL QUERIES")?;
-        }
-        if let Some(role_delegation) = &self.add_role_delegation {
-            let role = &role_delegation.role;
-            let integration = &role_delegation.integration;
-            write!(
-                f,
-                " ADD DELEGATED AUTHORIZATION OF ROLE {role} TO SECURITY INTEGRATION {integration}"
-            )?;
-        }
-        if let Some(role_delegation) = &self.remove_role_delegation {
-            write!(f, " REMOVE DELEGATED")?;
-            match &role_delegation.role {
-                Some(role) => write!(f, " AUTHORIZATION OF ROLE {role}")?,
-                None => write!(f, " AUTHORIZATIONS")?,
-            }
-            let integration = &role_delegation.integration;
-            write!(f, " FROM SECURITY INTEGRATION {integration}")?;
-        }
-        if self.enroll_mfa {
-            write!(f, " ENROLL MFA")?;
-        }
-        if let Some(method) = &self.set_default_mfa_method {
-            write!(f, " SET DEFAULT_MFA_METHOD {method}")?
-        }
-        if let Some(method) = &self.remove_mfa_method {
-            write!(f, " REMOVE MFA METHOD {method}")?;
-        }
-        if let Some(modify) = &self.modify_mfa_method {
-            let method = &modify.method;
-            let comment = &modify.comment;
-            write!(
-                f,
-                " MODIFY MFA METHOD {method} SET COMMENT '{}'",
-                value::escape_single_quote_string(comment)
-            )?;
-        }
-        if let Some(add_mfa_method_otp) = &self.add_mfa_method_otp {
-            write!(f, " ADD MFA METHOD OTP")?;
-            if let Some(count) = &add_mfa_method_otp.count {
-                write!(f, " COUNT = {count}")?;
-            }
-        }
-        if let Some(policy) = &self.set_policy {
-            let policy_kind = &policy.policy_kind;
-            let name = &policy.policy;
-            write!(f, " SET {policy_kind} POLICY {name}")?;
-        }
-        if let Some(policy_kind) = &self.unset_policy {
-            write!(f, " UNSET {policy_kind} POLICY")?;
-        }
-        if !self.set_tag.options.is_empty() {
-            write!(f, " SET TAG {}", self.set_tag)?;
-        }
-        if !self.unset_tag.is_empty() {
-            write!(f, " UNSET TAG {}", display_comma_separated(&self.unset_tag))?;
         }
         let has_props = !self.set_props.options.is_empty();
         if has_props {
@@ -12067,48 +10927,6 @@ impl fmt::Display for CreateTableLike {
     }
 }
 
-/// Specifies the refresh mode for the dynamic table.
-///
-/// [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/create-dynamic-table)
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum RefreshModeKind {
-    Auto,
-    Full,
-    Incremental,
-}
-
-impl fmt::Display for RefreshModeKind {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            RefreshModeKind::Auto => write!(f, "AUTO"),
-            RefreshModeKind::Full => write!(f, "FULL"),
-            RefreshModeKind::Incremental => write!(f, "INCREMENTAL"),
-        }
-    }
-}
-
-/// Specifies the behavior of the initial refresh of the dynamic table.
-///
-/// [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/create-dynamic-table)
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum InitializeKind {
-    OnCreate,
-    OnSchedule,
-}
-
-impl fmt::Display for InitializeKind {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            InitializeKind::OnCreate => write!(f, "ON_CREATE"),
-            InitializeKind::OnSchedule => write!(f, "ON_SCHEDULE"),
-        }
-    }
-}
-
 /// Re-sorts rows and reclaims space in either a specified table or all tables in the current database
 ///
 /// '''sql
@@ -12133,7 +10951,17 @@ pub struct VacuumStatement {
 
 impl fmt::Display for VacuumStatement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let VacuumStatement { token: _, full, sort_only, delete_only, reindex, recluster, table_name, threshold, boost } = self;
+        let VacuumStatement {
+            token: _,
+            full,
+            sort_only,
+            delete_only,
+            reindex,
+            recluster,
+            table_name,
+            threshold,
+            boost,
+        } = self;
         write!(
             f,
             "VACUUM{}{}{}{}{}",
@@ -12311,12 +11139,6 @@ impl From<CreateServerStatement> for Statement {
     }
 }
 
-impl From<CreateConnector> for Statement {
-    fn from(c: CreateConnector) -> Self {
-        Self::CreateConnector(c)
-    }
-}
-
 impl From<CreatePropertyGraph> for Statement {
     fn from(c: CreatePropertyGraph) -> Self {
         Self::CreatePropertyGraph(c)
@@ -12350,12 +11172,6 @@ impl From<DropDomain> for Statement {
 impl From<ShowCharset> for Statement {
     fn from(s: ShowCharset) -> Self {
         Self::ShowCharset(s)
-    }
-}
-
-impl From<ShowObjects> for Statement {
-    fn from(s: ShowObjects) -> Self {
-        Self::ShowObjects(s)
     }
 }
 
@@ -12416,12 +11232,6 @@ impl From<PrintStatement> for Statement {
 impl From<ReturnStatement> for Statement {
     fn from(r: ReturnStatement) -> Self {
         Self::Return(r)
-    }
-}
-
-impl From<ExportData> for Statement {
-    fn from(e: ExportData) -> Self {
-        Self::ExportData(e)
     }
 }
 

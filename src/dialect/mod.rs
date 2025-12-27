@@ -387,18 +387,6 @@ pub trait Dialect: Debug + Any {
         false
     }
 
-    /// Returns true if the dialect supports defining structs or objects using a
-    /// syntax like `{'x': 1, 'y': 2, 'z': 3}`.
-    fn supports_dictionary_syntax(&self) -> bool {
-        false
-    }
-
-    /// Returns true if the dialect supports defining object using the
-    /// syntax like `Map {1: 10, 2: 20}`.
-    fn support_map_literal_syntax(&self) -> bool {
-        false
-    }
-
     /// Returns true if the dialect supports lambda functions, for example:
     ///
     /// ```sql
@@ -442,12 +430,6 @@ pub trait Dialect: Debug + Any {
     /// Returns true if the dialect has a CONVERT function which accepts a type first
     /// and an expression second, e.g. `CONVERT(varchar, 1)`
     fn convert_type_before_value(&self) -> bool {
-        false
-    }
-
-    /// Returns true if the dialect supports triple quoted string
-    /// e.g. `"""abc"""`
-    fn supports_triple_quoted_string(&self) -> bool {
         false
     }
 
@@ -540,20 +522,6 @@ pub trait Dialect: Debug + Any {
     /// SELECT *
     /// ```
     fn supports_from_first_select(&self) -> bool {
-        false
-    }
-
-    /// Return true if the dialect supports pipe operator.
-    ///
-    /// Example:
-    /// ```sql
-    /// SELECT *
-    /// FROM table
-    /// |> limit 1
-    /// ```
-    ///
-    /// See <https://cloud.google.com/bigquery/docs/pipe-syntax-guide#basic_syntax>
-    fn supports_pipe_operator(&self) -> bool {
         false
     }
 
@@ -752,7 +720,6 @@ pub trait Dialect: Debug + Any {
             BorrowedToken::Plus | BorrowedToken::Minus => Ok(p!(PlusMinus)),
             BorrowedToken::Mul
             | BorrowedToken::Div
-            | BorrowedToken::DuckIntDiv
             | BorrowedToken::Mod
             | BorrowedToken::StringConcat => Ok(p!(MulDivModOp)),
             BorrowedToken::DoubleColon
@@ -928,11 +895,6 @@ pub trait Dialect: Debug + Any {
 
     /// Returns true if the dialect supports the `LOAD DATA` statement
     fn supports_load_data(&self) -> bool {
-        false
-    }
-
-    /// Returns true if the dialect supports the `LOAD extension` statement
-    fn supports_load_extension(&self) -> bool {
         false
     }
 
@@ -1193,20 +1155,6 @@ pub trait Dialect: Debug + Any {
     /// '''
     /// [Redshift](https://docs.aws.amazon.com/redshift/latest/dg/r_CREATE_TABLE_NEW.html)
     fn supports_create_table_like_parenthesized(&self) -> bool {
-        false
-    }
-
-    /// Returns true if the dialect supports `SEMANTIC_VIEW()` table functions.
-    ///
-    /// ```sql
-    /// SELECT * FROM SEMANTIC_VIEW(
-    ///     model_name
-    ///     DIMENSIONS customer.name, customer.region
-    ///     METRICS orders.revenue, orders.count
-    ///     WHERE customer.active = true
-    /// )
-    /// ```
-    fn supports_semantic_view_table_factor(&self) -> bool {
         false
     }
 }

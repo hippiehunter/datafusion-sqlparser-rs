@@ -119,7 +119,6 @@ fn parse_create_procedure() {
                     order_by: None,
                     settings: None,
                     format_clause: None,
-                    pipe_operators: vec![],
                     body: Box::new(SetExpr::Select(Box::new(Select {
                         select_token: AttachedToken::empty(),
                         distinct: None,
@@ -142,7 +141,6 @@ fn parse_create_procedure() {
                         named_window: vec![],
                         window_before_qualify: false,
                         qualify: None,
-                        value_table_mode: None,
                         connect_by: None,
                         flavor: SelectFlavor::Standard,
                     })))
@@ -1420,7 +1418,6 @@ fn parse_substring_in_select() {
                         named_window: vec![],
                         qualify: None,
                         window_before_qualify: false,
-                        value_table_mode: None,
                         connect_by: None,
                         flavor: SelectFlavor::Standard,
                     }))),
@@ -1431,7 +1428,6 @@ fn parse_substring_in_select() {
                     for_clause: None,
                     settings: None,
                     format_clause: None,
-                    pipe_operators: vec![],
                 }),
                 query
             );
@@ -1509,7 +1505,7 @@ fn parse_mssql_declare() {
     assert_eq!(
         vec![
             Statement::Declare {
-            declare_token: AttachedToken::empty(),
+                declare_token: AttachedToken::empty(),
                 stmts: vec![Declare {
                     names: vec![Ident::new("@bar"),],
                     data_type: Some(Int(None)),
@@ -1527,7 +1523,6 @@ fn parse_mssql_declare() {
                 token: AttachedToken::empty(),
                 inner: Set::SingleAssignment {
                     scope: None,
-                    hivevar: false,
                     variable: ObjectName::from(vec![Ident::new("@bar")]),
                     values: vec![Expr::Value(
                         (Value::Number("2".parse().unwrap(), false)).with_empty_span()
@@ -1543,7 +1538,6 @@ fn parse_mssql_declare() {
                 order_by: None,
                 settings: None,
                 format_clause: None,
-                pipe_operators: vec![],
 
                 body: Box::new(SetExpr::Select(Box::new(Select {
                     select_token: AttachedToken::empty(),
@@ -1571,7 +1565,6 @@ fn parse_mssql_declare() {
                     named_window: vec![],
                     window_before_qualify: false,
                     qualify: None,
-                    value_table_mode: None,
                     connect_by: None,
                     flavor: SelectFlavor::Standard,
                 })))
@@ -1934,13 +1927,6 @@ fn parse_create_table_with_valid_options() {
                     },
                 ],
                 constraints: vec![],
-                hive_distribution: HiveDistributionStyle::NONE,
-                hive_formats: Some(HiveFormat {
-                    row_format: None,
-                    serde_properties: None,
-                    storage: None,
-                    location: None,
-                },),
                 file_format: None,
                 location: None,
                 query: None,
@@ -1954,31 +1940,11 @@ fn parse_create_table_with_valid_options() {
                 order_by: None,
                 partition_by: None,
                 cluster_by: None,
-                clustered_by: None,
                 inherits: None,
                 strict: false,
                 iceberg: false,
-                copy_grants: false,
-                enable_schema_evolution: None,
-                change_tracking: None,
-                data_retention_time_in_days: None,
-                max_data_extension_time_in_days: None,
-                default_ddl_collation: None,
-                with_aggregation_policy: None,
-                with_row_access_policy: None,
-                with_tags: None,
-                base_location: None,
-                external_volume: None,
-                catalog: None,
-                catalog_sync: None,
-                storage_serialization_policy: None,
                 table_options: CreateTableOptions::With(with_options),
-                target_lag: None,
-                warehouse: None,
                 version: None,
-                refresh_mode: None,
-                initialize: None,
-                require_user: false,
                 system_versioning: None,
             })
         );
@@ -2107,13 +2073,6 @@ fn parse_create_table_with_identity_column() {
                     options: column_options,
                 },],
                 constraints: vec![],
-                hive_distribution: HiveDistributionStyle::NONE,
-                hive_formats: Some(HiveFormat {
-                    row_format: None,
-                    serde_properties: None,
-                    storage: None,
-                    location: None,
-                },),
                 file_format: None,
                 location: None,
                 query: None,
@@ -2127,30 +2086,10 @@ fn parse_create_table_with_identity_column() {
                 order_by: None,
                 partition_by: None,
                 cluster_by: None,
-                clustered_by: None,
                 inherits: None,
                 strict: false,
-                copy_grants: false,
-                enable_schema_evolution: None,
-                change_tracking: None,
-                data_retention_time_in_days: None,
-                max_data_extension_time_in_days: None,
-                default_ddl_collation: None,
-                with_aggregation_policy: None,
-                with_row_access_policy: None,
-                with_tags: None,
-                base_location: None,
-                external_volume: None,
-                catalog: None,
-                catalog_sync: None,
-                storage_serialization_policy: None,
                 table_options: CreateTableOptions::None,
-                target_lag: None,
-                warehouse: None,
                 version: None,
-                refresh_mode: None,
-                initialize: None,
-                require_user: false,
                 system_versioning: None,
             }),
         );

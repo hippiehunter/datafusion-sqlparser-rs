@@ -36,7 +36,7 @@ pub enum UnaryOperator {
     /// `@-@` Length or circumference (PostgreSQL/Redshift geometric operator)
     /// see <https://www.postgresql.org/docs/9.5/functions-geometry.html>
     AtDashAt,
-    /// Unary logical not operator: e.g. `! false` (Hive-specific)
+    /// Unary logical not operator: e.g. `! false`
     BangNot,
     /// Bitwise Not, e.g. `~9`
     BitwiseNot,
@@ -135,8 +135,6 @@ pub enum BinaryOperator {
     BitwiseAnd,
     /// Bitwise XOR, e.g. `a ^ b`
     BitwiseXor,
-    /// Integer division operator `//` in DuckDB
-    DuckIntegerDivide,
     /// MySQL [`DIV`](https://dev.mysql.com/doc/refman/8.0/en/arithmetic-functions.html) integer division
     MyIntegerDivide,
     /// MATCH operator, e.g. `a MATCH b` (SQLite-specific)
@@ -366,7 +364,6 @@ impl fmt::Display for BinaryOperator {
             BinaryOperator::BitwiseOr => f.write_str("|"),
             BinaryOperator::BitwiseAnd => f.write_str("&"),
             BinaryOperator::BitwiseXor => f.write_str("^"),
-            BinaryOperator::DuckIntegerDivide => f.write_str("//"),
             BinaryOperator::MyIntegerDivide => f.write_str("DIV"),
             BinaryOperator::Match => f.write_str("MATCH"),
             BinaryOperator::Regexp => f.write_str("REGEXP"),

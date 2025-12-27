@@ -576,7 +576,7 @@ fn parse_show_create() {
         assert_eq!(
             mysql_and_generic().verified_stmt(format!("SHOW CREATE {obj_type} myident").as_str()),
             Statement::ShowCreate {
-            show_token: AttachedToken::empty(),
+                show_token: AttachedToken::empty(),
                 obj_type: *obj_type,
                 obj_name: obj_name.clone(),
             }
@@ -588,7 +588,10 @@ fn parse_show_create() {
 fn parse_show_collation() {
     assert_eq!(
         mysql_and_generic().verified_stmt("SHOW COLLATION"),
-        Statement::ShowCollation { show_token: AttachedToken::empty(), filter: None }
+        Statement::ShowCollation {
+            show_token: AttachedToken::empty(),
+            filter: None
+        }
     );
     assert_eq!(
         mysql_and_generic().verified_stmt("SHOW COLLATION LIKE 'pattern'"),
@@ -649,7 +652,6 @@ fn parse_set_variables() {
             token: AttachedToken::empty(),
             inner: Set::SingleAssignment {
                 scope: Some(ContextModifier::Local),
-                hivevar: false,
                 variable: ObjectName::from(vec!["autocommit".into()]),
                 values: vec![Expr::value(number("1"))],
             }
@@ -1474,7 +1476,6 @@ fn parse_escaped_quote_identifiers_with_escape() {
                 named_window: vec![],
                 qualify: None,
                 window_before_qualify: false,
-                value_table_mode: None,
                 connect_by: None,
                 flavor: SelectFlavor::Standard,
             }))),
@@ -1485,7 +1486,6 @@ fn parse_escaped_quote_identifiers_with_escape() {
             for_clause: None,
             settings: None,
             format_clause: None,
-            pipe_operators: vec![],
         }))
     );
 }
@@ -1529,7 +1529,6 @@ fn parse_escaped_quote_identifiers_with_no_escape() {
                 named_window: vec![],
                 qualify: None,
                 window_before_qualify: false,
-                value_table_mode: None,
                 connect_by: None,
                 flavor: SelectFlavor::Standard,
             }))),
@@ -1540,7 +1539,6 @@ fn parse_escaped_quote_identifiers_with_no_escape() {
             for_clause: None,
             settings: None,
             format_clause: None,
-            pipe_operators: vec![],
         }))
     );
 }
@@ -1577,7 +1575,6 @@ fn parse_escaped_backticks_with_escape() {
                 named_window: vec![],
                 qualify: None,
                 window_before_qualify: false,
-                value_table_mode: None,
                 connect_by: None,
                 flavor: SelectFlavor::Standard,
             }))),
@@ -1588,7 +1585,6 @@ fn parse_escaped_backticks_with_escape() {
             for_clause: None,
             settings: None,
             format_clause: None,
-            pipe_operators: vec![],
         }))
     );
 }
@@ -1629,7 +1625,6 @@ fn parse_escaped_backticks_with_no_escape() {
                 named_window: vec![],
                 qualify: None,
                 window_before_qualify: false,
-                value_table_mode: None,
                 connect_by: None,
                 flavor: SelectFlavor::Standard,
             }))),
@@ -1640,7 +1635,6 @@ fn parse_escaped_backticks_with_no_escape() {
             for_clause: None,
             settings: None,
             format_clause: None,
-            pipe_operators: vec![],
         }))
     );
 }
@@ -1954,7 +1948,6 @@ fn parse_simple_insert() {
                     for_clause: None,
                     settings: None,
                     format_clause: None,
-                    pipe_operators: vec![],
                 })),
                 source
             );
@@ -2004,7 +1997,6 @@ fn parse_ignore_insert() {
                     for_clause: None,
                     settings: None,
                     format_clause: None,
-                    pipe_operators: vec![],
                 })),
                 source
             );
@@ -2054,7 +2046,6 @@ fn parse_priority_insert() {
                     for_clause: None,
                     settings: None,
                     format_clause: None,
-                    pipe_operators: vec![],
                 })),
                 source
             );
@@ -2101,7 +2092,6 @@ fn parse_priority_insert() {
                     for_clause: None,
                     settings: None,
                     format_clause: None,
-                    pipe_operators: vec![],
                 })),
                 source
             );
@@ -2150,7 +2140,6 @@ fn parse_insert_as() {
                     for_clause: None,
                     settings: None,
                     format_clause: None,
-                    pipe_operators: vec![],
                 })),
                 source
             );
@@ -2214,7 +2203,6 @@ fn parse_insert_as() {
                     for_clause: None,
                     settings: None,
                     format_clause: None,
-                    pipe_operators: vec![],
                 })),
                 source
             );
@@ -2265,7 +2253,6 @@ fn parse_replace_insert() {
                     for_clause: None,
                     settings: None,
                     format_clause: None,
-                    pipe_operators: vec![],
                 })),
                 source
             );
@@ -2307,7 +2294,6 @@ fn parse_empty_row_insert() {
                     for_clause: None,
                     settings: None,
                     format_clause: None,
-                    pipe_operators: vec![],
                 })),
                 source
             );
@@ -2373,7 +2359,6 @@ fn parse_insert_with_on_duplicate_update() {
                     for_clause: None,
                     settings: None,
                     format_clause: None,
-                    pipe_operators: vec![],
                 })),
                 source
             );
@@ -2452,7 +2437,6 @@ fn parse_select_with_numeric_prefix_column_name() {
                     named_window: vec![],
                     qualify: None,
                     window_before_qualify: false,
-                    value_table_mode: None,
                     connect_by: None,
                     flavor: SelectFlavor::Standard,
                 })))
@@ -2627,7 +2611,6 @@ fn parse_select_with_concatenation_of_exp_number_and_numeric_prefix_column() {
                     named_window: vec![],
                     qualify: None,
                     window_before_qualify: false,
-                    value_table_mode: None,
                     connect_by: None,
                     flavor: SelectFlavor::Standard,
                 })))
@@ -2796,7 +2779,6 @@ fn parse_alter_table_add_column() {
             only,
             operations,
             table_type,
-            location: _,
             on_cluster: _,
             end_token: _,
         }) => {
@@ -3281,7 +3263,6 @@ fn parse_substring_in_select() {
                         named_window: vec![],
                         window_before_qualify: false,
                         qualify: None,
-                        value_table_mode: None,
                         connect_by: None,
                         flavor: SelectFlavor::Standard,
                     }))),
@@ -3292,7 +3273,6 @@ fn parse_substring_in_select() {
                     for_clause: None,
                     settings: None,
                     format_clause: None,
-                    pipe_operators: vec![],
                 }),
                 query
             );
@@ -3606,7 +3586,6 @@ fn parse_hex_string_introducer() {
                 named_window: vec![],
                 window_before_qualify: false,
                 qualify: None,
-                value_table_mode: None,
                 into: None,
                 connect_by: None,
                 flavor: SelectFlavor::Standard,
@@ -3618,7 +3597,6 @@ fn parse_hex_string_introducer() {
             for_clause: None,
             settings: None,
             format_clause: None,
-            pipe_operators: vec![],
         }))
     )
 }
@@ -3854,7 +3832,6 @@ fn parse_grant() {
         with_grant_option,
         as_grantor: _,
         granted_by,
-        current_grants: _,
         ..
     } = stmt
     {

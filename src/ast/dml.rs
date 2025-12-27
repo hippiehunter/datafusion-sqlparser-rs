@@ -79,18 +79,18 @@ pub struct Insert {
     pub table_alias: Option<Ident>,
     /// COLUMNS
     pub columns: Vec<Ident>,
-    /// Overwrite (Hive)
+    /// OVERWRITE - INSERT OVERWRITE INTO syntax
     pub overwrite: bool,
     /// A SQL query that specifies what to insert
     pub source: Option<Box<Query>>,
     /// MySQL `INSERT INTO ... SET`
     /// See: <https://dev.mysql.com/doc/refman/8.4/en/insert.html>
     pub assignments: Vec<Assignment>,
-    /// partitioned insert (Hive)
+    /// PARTITION clause for partitioned insert
     pub partitioned: Option<Vec<Expr>>,
     /// Columns defined after PARTITION
     pub after_columns: Vec<Ident>,
-    /// whether the insert has the table keyword (Hive)
+    /// whether the insert has the TABLE keyword
     pub has_table_keyword: bool,
     pub on: Option<OnInsert>,
     /// RETURNING

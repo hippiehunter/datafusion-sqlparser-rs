@@ -64,19 +64,11 @@ impl Dialect for GenericDialect {
         true
     }
 
-    fn supports_pipe_operator(&self) -> bool {
-        true
-    }
-
     fn supports_start_transaction_modifier(&self) -> bool {
         true
     }
 
     fn supports_window_function_null_treatment_arg(&self) -> bool {
-        true
-    }
-
-    fn supports_dictionary_syntax(&self) -> bool {
         true
     }
 
@@ -89,10 +81,6 @@ impl Dialect for GenericDialect {
     }
 
     fn supports_select_wildcard_except(&self) -> bool {
-        true
-    }
-
-    fn support_map_literal_syntax(&self) -> bool {
         true
     }
 
@@ -133,10 +121,6 @@ impl Dialect for GenericDialect {
     }
 
     fn supports_comment_on(&self) -> bool {
-        true
-    }
-
-    fn supports_load_extension(&self) -> bool {
         true
     }
 

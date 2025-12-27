@@ -228,7 +228,10 @@ fn parse_lock_tables_type(parser: &Parser) -> Result<LockTableType, ParserError>
 
 /// UNLOCK TABLES
 /// <https://dev.mysql.com/doc/refman/8.0/en/lock-tables.html>
-fn parse_unlock_tables(_parser: &Parser, unlock_token: TokenWithSpan) -> Result<Statement, ParserError> {
+fn parse_unlock_tables(
+    _parser: &Parser,
+    unlock_token: TokenWithSpan,
+) -> Result<Statement, ParserError> {
     Ok(Statement::UnlockTables {
         unlock_token: AttachedToken(unlock_token.to_static()),
     })

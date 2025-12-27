@@ -25,11 +25,9 @@ use serde::{Deserialize, Serialize};
 use sqlparser_derive::{Visit, VisitMut};
 
 use crate::ast::{
-    ClusteredBy, ColumnDef, CommentDef, CreateTable, CreateTableLikeKind, CreateTableOptions,
-    CreateTableSystemVersioning, Expr, FileFormat, HiveDistributionStyle, HiveFormat, Ident,
-    InitializeKind, ObjectName, OnCommit, OneOrManyWithParens, Query, RefreshModeKind,
-    RowAccessPolicy, Statement, StorageSerializationPolicy, TableConstraint, TableVersion, Tag,
-    WrappedCollection,
+    ColumnDef, CommentDef, CreateTable, CreateTableLikeKind, CreateTableOptions,
+    CreateTableSystemVersioning, Expr, FileFormat, Ident, ObjectName, OnCommit,
+    OneOrManyWithParens, Query, Statement, TableConstraint, TableVersion, WrappedCollection,
 };
 
 use crate::parser::ParserError;
@@ -77,8 +75,6 @@ pub struct CreateTableBuilder {
     pub name: ObjectName,
     pub columns: Vec<ColumnDef>,
     pub constraints: Vec<TableConstraint>,
-    pub hive_distribution: HiveDistributionStyle,
-    pub hive_formats: Option<HiveFormat>,
     pub file_format: Option<FileFormat>,
     pub location: Option<String>,
     pub query: Option<Box<Query>>,
@@ -93,29 +89,9 @@ pub struct CreateTableBuilder {
     pub order_by: Option<OneOrManyWithParens<Expr>>,
     pub partition_by: Option<Box<Expr>>,
     pub cluster_by: Option<WrappedCollection<Vec<Expr>>>,
-    pub clustered_by: Option<ClusteredBy>,
     pub inherits: Option<Vec<ObjectName>>,
     pub strict: bool,
-    pub copy_grants: bool,
-    pub enable_schema_evolution: Option<bool>,
-    pub change_tracking: Option<bool>,
-    pub data_retention_time_in_days: Option<u64>,
-    pub max_data_extension_time_in_days: Option<u64>,
-    pub default_ddl_collation: Option<String>,
-    pub with_aggregation_policy: Option<ObjectName>,
-    pub with_row_access_policy: Option<RowAccessPolicy>,
-    pub with_tags: Option<Vec<Tag>>,
-    pub base_location: Option<String>,
-    pub external_volume: Option<String>,
-    pub catalog: Option<String>,
-    pub catalog_sync: Option<String>,
-    pub storage_serialization_policy: Option<StorageSerializationPolicy>,
     pub table_options: CreateTableOptions,
-    pub target_lag: Option<String>,
-    pub warehouse: Option<Ident>,
-    pub refresh_mode: Option<RefreshModeKind>,
-    pub initialize: Option<InitializeKind>,
-    pub require_user: bool,
     pub system_versioning: Option<CreateTableSystemVersioning>,
 }
 
@@ -134,8 +110,6 @@ impl CreateTableBuilder {
             name,
             columns: vec![],
             constraints: vec![],
-            hive_distribution: HiveDistributionStyle::NONE,
-            hive_formats: None,
             file_format: None,
             location: None,
             query: None,
@@ -150,29 +124,9 @@ impl CreateTableBuilder {
             order_by: None,
             partition_by: None,
             cluster_by: None,
-            clustered_by: None,
             inherits: None,
             strict: false,
-            copy_grants: false,
-            enable_schema_evolution: None,
-            change_tracking: None,
-            data_retention_time_in_days: None,
-            max_data_extension_time_in_days: None,
-            default_ddl_collation: None,
-            with_aggregation_policy: None,
-            with_row_access_policy: None,
-            with_tags: None,
-            base_location: None,
-            external_volume: None,
-            catalog: None,
-            catalog_sync: None,
-            storage_serialization_policy: None,
             table_options: CreateTableOptions::None,
-            target_lag: None,
-            warehouse: None,
-            refresh_mode: None,
-            initialize: None,
-            require_user: false,
             system_versioning: None,
         }
     }
@@ -228,16 +182,6 @@ impl CreateTableBuilder {
 
     pub fn constraints(mut self, constraints: Vec<TableConstraint>) -> Self {
         self.constraints = constraints;
-        self
-    }
-
-    pub fn hive_distribution(mut self, hive_distribution: HiveDistributionStyle) -> Self {
-        self.hive_distribution = hive_distribution;
-        self
-    }
-
-    pub fn hive_formats(mut self, hive_formats: Option<HiveFormat>) -> Self {
-        self.hive_formats = hive_formats;
         self
     }
 
@@ -310,11 +254,6 @@ impl CreateTableBuilder {
         self
     }
 
-    pub fn clustered_by(mut self, clustered_by: Option<ClusteredBy>) -> Self {
-        self.clustered_by = clustered_by;
-        self
-    }
-
     pub fn inherits(mut self, inherits: Option<Vec<ObjectName>>) -> Self {
         self.inherits = inherits;
         self
@@ -325,112 +264,8 @@ impl CreateTableBuilder {
         self
     }
 
-    pub fn copy_grants(mut self, copy_grants: bool) -> Self {
-        self.copy_grants = copy_grants;
-        self
-    }
-
-    pub fn enable_schema_evolution(mut self, enable_schema_evolution: Option<bool>) -> Self {
-        self.enable_schema_evolution = enable_schema_evolution;
-        self
-    }
-
-    pub fn change_tracking(mut self, change_tracking: Option<bool>) -> Self {
-        self.change_tracking = change_tracking;
-        self
-    }
-
-    pub fn data_retention_time_in_days(mut self, data_retention_time_in_days: Option<u64>) -> Self {
-        self.data_retention_time_in_days = data_retention_time_in_days;
-        self
-    }
-
-    pub fn max_data_extension_time_in_days(
-        mut self,
-        max_data_extension_time_in_days: Option<u64>,
-    ) -> Self {
-        self.max_data_extension_time_in_days = max_data_extension_time_in_days;
-        self
-    }
-
-    pub fn default_ddl_collation(mut self, default_ddl_collation: Option<String>) -> Self {
-        self.default_ddl_collation = default_ddl_collation;
-        self
-    }
-
-    pub fn with_aggregation_policy(mut self, with_aggregation_policy: Option<ObjectName>) -> Self {
-        self.with_aggregation_policy = with_aggregation_policy;
-        self
-    }
-
-    pub fn with_row_access_policy(
-        mut self,
-        with_row_access_policy: Option<RowAccessPolicy>,
-    ) -> Self {
-        self.with_row_access_policy = with_row_access_policy;
-        self
-    }
-
-    pub fn with_tags(mut self, with_tags: Option<Vec<Tag>>) -> Self {
-        self.with_tags = with_tags;
-        self
-    }
-
-    pub fn base_location(mut self, base_location: Option<String>) -> Self {
-        self.base_location = base_location;
-        self
-    }
-
-    pub fn external_volume(mut self, external_volume: Option<String>) -> Self {
-        self.external_volume = external_volume;
-        self
-    }
-
-    pub fn catalog(mut self, catalog: Option<String>) -> Self {
-        self.catalog = catalog;
-        self
-    }
-
-    pub fn catalog_sync(mut self, catalog_sync: Option<String>) -> Self {
-        self.catalog_sync = catalog_sync;
-        self
-    }
-
-    pub fn storage_serialization_policy(
-        mut self,
-        storage_serialization_policy: Option<StorageSerializationPolicy>,
-    ) -> Self {
-        self.storage_serialization_policy = storage_serialization_policy;
-        self
-    }
-
     pub fn table_options(mut self, table_options: CreateTableOptions) -> Self {
         self.table_options = table_options;
-        self
-    }
-
-    pub fn target_lag(mut self, target_lag: Option<String>) -> Self {
-        self.target_lag = target_lag;
-        self
-    }
-
-    pub fn warehouse(mut self, warehouse: Option<Ident>) -> Self {
-        self.warehouse = warehouse;
-        self
-    }
-
-    pub fn refresh_mode(mut self, refresh_mode: Option<RefreshModeKind>) -> Self {
-        self.refresh_mode = refresh_mode;
-        self
-    }
-
-    pub fn initialize(mut self, initialize: Option<InitializeKind>) -> Self {
-        self.initialize = initialize;
-        self
-    }
-
-    pub fn require_user(mut self, require_user: bool) -> Self {
-        self.require_user = require_user;
         self
     }
 
@@ -456,8 +291,6 @@ impl CreateTableBuilder {
             name: self.name,
             columns: self.columns,
             constraints: self.constraints,
-            hive_distribution: self.hive_distribution,
-            hive_formats: self.hive_formats,
             file_format: self.file_format,
             location: self.location,
             query: self.query,
@@ -472,29 +305,9 @@ impl CreateTableBuilder {
             order_by: self.order_by,
             partition_by: self.partition_by,
             cluster_by: self.cluster_by,
-            clustered_by: self.clustered_by,
             inherits: self.inherits,
             strict: self.strict,
-            copy_grants: self.copy_grants,
-            enable_schema_evolution: self.enable_schema_evolution,
-            change_tracking: self.change_tracking,
-            data_retention_time_in_days: self.data_retention_time_in_days,
-            max_data_extension_time_in_days: self.max_data_extension_time_in_days,
-            default_ddl_collation: self.default_ddl_collation,
-            with_aggregation_policy: self.with_aggregation_policy,
-            with_row_access_policy: self.with_row_access_policy,
-            with_tags: self.with_tags,
-            base_location: self.base_location,
-            external_volume: self.external_volume,
-            catalog: self.catalog,
-            catalog_sync: self.catalog_sync,
-            storage_serialization_policy: self.storage_serialization_policy,
             table_options: self.table_options,
-            target_lag: self.target_lag,
-            warehouse: self.warehouse,
-            refresh_mode: self.refresh_mode,
-            initialize: self.initialize,
-            require_user: self.require_user,
             system_versioning: self.system_versioning,
         }
         .into()
@@ -521,8 +334,6 @@ impl TryFrom<Statement> for CreateTableBuilder {
                 name,
                 columns,
                 constraints,
-                hive_distribution,
-                hive_formats,
                 file_format,
                 location,
                 query,
@@ -537,29 +348,9 @@ impl TryFrom<Statement> for CreateTableBuilder {
                 order_by,
                 partition_by,
                 cluster_by,
-                clustered_by,
                 inherits,
                 strict,
-                copy_grants,
-                enable_schema_evolution,
-                change_tracking,
-                data_retention_time_in_days,
-                max_data_extension_time_in_days,
-                default_ddl_collation,
-                with_aggregation_policy,
-                with_row_access_policy,
-                with_tags,
-                base_location,
-                external_volume,
-                catalog,
-                catalog_sync,
-                storage_serialization_policy,
                 table_options,
-                target_lag,
-                warehouse,
-                refresh_mode,
-                initialize,
-                require_user,
                 system_versioning,
             }) => Ok(Self {
                 or_replace,
@@ -572,8 +363,6 @@ impl TryFrom<Statement> for CreateTableBuilder {
                 name,
                 columns,
                 constraints,
-                hive_distribution,
-                hive_formats,
                 file_format,
                 location,
                 query,
@@ -588,31 +377,11 @@ impl TryFrom<Statement> for CreateTableBuilder {
                 order_by,
                 partition_by,
                 cluster_by,
-                clustered_by,
                 inherits,
                 strict,
                 iceberg,
-                copy_grants,
-                enable_schema_evolution,
-                change_tracking,
-                data_retention_time_in_days,
-                max_data_extension_time_in_days,
-                default_ddl_collation,
-                with_aggregation_policy,
-                with_row_access_policy,
-                with_tags,
                 volatile,
-                base_location,
-                external_volume,
-                catalog,
-                catalog_sync,
-                storage_serialization_policy,
                 table_options,
-                target_lag,
-                warehouse,
-                refresh_mode,
-                initialize,
-                require_user,
                 system_versioning,
             }),
             _ => Err(ParserError::ParserError(format!(

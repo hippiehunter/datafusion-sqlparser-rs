@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "visitor")]
 use sqlparser_derive::{Visit, VisitMut};
 
-use crate::ast::{display_comma_separated, Expr, ObjectName, StructField, UnionField};
+use crate::ast::{display_comma_separated, Expr, ObjectName, StructField};
 
 use super::{value::escape_single_quote_string, ColumnDef};
 
@@ -119,10 +119,6 @@ pub enum DataType {
     ///
     /// [MySQL]: https://dev.mysql.com/doc/refman/9.1/en/blob.html
     LongBlob,
-    /// Variable-length binary data with optional length.
-    ///
-    /// [BigQuery]: https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#bytes_type
-    Bytes(Option<u64>),
     /// Numeric type with optional precision and scale, e.g. NUMERIC(10,2), [SQL Standard][1].
     ///
     /// [1]: https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#exact-numeric-type
@@ -136,14 +132,6 @@ pub enum DataType {
     ///
     /// [MySQL]: https://dev.mysql.com/doc/refman/8.4/en/numeric-type-syntax.html
     DecimalUnsigned(ExactNumberInfo),
-    /// [BigNumeric] type used in BigQuery.
-    ///
-    /// [BigNumeric]: https://cloud.google.com/bigquery/docs/reference/standard-sql/lexical#bignumeric_literals
-    BigNumeric(ExactNumberInfo),
-    /// This is alias for `BigNumeric` type used in BigQuery.
-    ///
-    /// [BigDecimal]: https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#decimal_types
-    BigDecimal(ExactNumberInfo),
     /// Dec type with optional precision and scale, e.g. DEC(10,2), [SQL Standard][1].
     ///
     /// [1]: https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#exact-numeric-type
@@ -453,15 +441,8 @@ pub enum DataType {
     Enum(Vec<EnumMember>, Option<u8>),
     /// Set type.
     Set(Vec<String>),
-    /// Struct type, see [Hive], [BigQuery].
-    ///
-    /// [Hive]: https://docs.cloudera.com/cdw-runtime/cloud/impala-sql-reference/topics/impala-struct.html
-    /// [BigQuery]: https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#struct_type
+    /// Struct type
     Struct(Vec<StructField>, StructBracketKind),
-    /// Union type, see [DuckDB].
-    ///
-    /// [DuckDB]: https://duckdb.org/docs/sql/data_types/union.html
-    Union(Vec<UnionField>),
     /// Nullable - special marker NULL represents in ClickHouse as a data type.
     ///
     /// [ClickHouse]: https://clickhouse.com/docs/en/sql-reference/data-types/nullable
@@ -478,10 +459,6 @@ pub enum DataType {
     ///
     /// [PostgreSQL]: https://www.postgresql.org/docs/current/plpgsql-trigger.html
     Trigger,
-    /// Any data type, used in BigQuery UDF definitions for templated parameters, see [BigQuery].
-    ///
-    /// [BigQuery]: https://cloud.google.com/bigquery/docs/user-defined-functions#templated-sql-udf-parameters
-    AnyType,
     /// Geometric type, see [PostgreSQL].
     ///
     /// [PostgreSQL]: https://www.postgresql.org/docs/9.5/functions-geometry.html
@@ -521,7 +498,6 @@ impl fmt::Display for DataType {
             DataType::TinyBlob => write!(f, "TINYBLOB"),
             DataType::MediumBlob => write!(f, "MEDIUMBLOB"),
             DataType::LongBlob => write!(f, "LONGBLOB"),
-            DataType::Bytes(size) => format_type_with_optional_length(f, "BYTES", size, false),
             DataType::Numeric(info) => {
                 write!(f, "NUMERIC{info}")
             }
@@ -537,8 +513,6 @@ impl fmt::Display for DataType {
             DataType::DecUnsigned(info) => {
                 write!(f, "DEC{info} UNSIGNED")
             }
-            DataType::BigNumeric(info) => write!(f, "BIGNUMERIC{info}"),
-            DataType::BigDecimal(info) => write!(f, "BIGDECIMAL{info}"),
             DataType::Float(info) => write!(f, "FLOAT{info}"),
             DataType::FloatUnsigned(info) => write!(f, "FLOAT{info} UNSIGNED"),
             DataType::TinyInt(zerofill) => {
@@ -770,9 +744,6 @@ impl fmt::Display for DataType {
                     write!(f, "STRUCT")
                 }
             }
-            DataType::Union(fields) => {
-                write!(f, "UNION({})", display_comma_separated(fields))
-            }
             // ClickHouse
             DataType::Nullable(data_type) => {
                 write!(f, "Nullable({data_type})")
@@ -794,7 +765,6 @@ impl fmt::Display for DataType {
             }
             DataType::Unspecified => Ok(()),
             DataType::Trigger => write!(f, "TRIGGER"),
-            DataType::AnyType => write!(f, "ANY TYPE"),
             DataType::Table(fields) => match fields {
                 Some(fields) => {
                     write!(f, "TABLE({})", display_comma_separated(fields))
@@ -1113,7 +1083,7 @@ impl fmt::Display for BinaryLength {
 /// Represents the data type of the elements in an array (if any) as well as
 /// the syntax used to declare the array.
 ///
-/// For example: Bigquery/Hive use `ARRAY<INT>` whereas snowflake uses ARRAY.
+/// For example: Some dialects use `ARRAY<INT>` whereas others use ARRAY.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]

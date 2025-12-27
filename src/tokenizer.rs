@@ -33,7 +33,6 @@ use alloc::{
 use std::borrow::Cow;
 
 use core::iter::Peekable;
-use core::num::NonZeroU8;
 use core::str::Chars;
 use core::{cmp, fmt};
 
@@ -65,37 +64,11 @@ pub enum BorrowedToken<'a> {
     SingleQuotedString(Cow<'a, str>),
     /// Double quoted string: i.e: "string"
     DoubleQuotedString(String),
-    /// Triple single quoted strings: Example '''abc'''
-    /// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/lexical#quoted_literals)
-    TripleSingleQuotedString(String),
-    /// Triple double quoted strings: Example """abc"""
-    /// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/lexical#quoted_literals)
-    TripleDoubleQuotedString(String),
     /// Dollar quoted string: i.e: $$string$$ or $tag_name$string$tag_name$
     DollarQuotedString(DollarQuotedString),
     /// Byte string literal: i.e: b'string' or B'string' (note that some backends, such as
     /// PostgreSQL, may treat this syntax as a bit string literal instead, i.e: b'10010101')
     SingleQuotedByteStringLiteral(String),
-    /// Byte string literal: i.e: b"string" or B"string"
-    DoubleQuotedByteStringLiteral(String),
-    /// Triple single quoted literal with byte string prefix. Example `B'''abc'''`
-    /// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/lexical#quoted_literals)
-    TripleSingleQuotedByteStringLiteral(String),
-    /// Triple double quoted literal with byte string prefix. Example `B"""abc"""`
-    /// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/lexical#quoted_literals)
-    TripleDoubleQuotedByteStringLiteral(String),
-    /// Single quoted literal with raw string prefix. Example `R'abc'`
-    /// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/lexical#quoted_literals)
-    SingleQuotedRawStringLiteral(String),
-    /// Double quoted literal with raw string prefix. Example `R"abc"`
-    /// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/lexical#quoted_literals)
-    DoubleQuotedRawStringLiteral(String),
-    /// Triple single quoted literal with raw string prefix. Example `R'''abc'''`
-    /// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/lexical#quoted_literals)
-    TripleSingleQuotedRawStringLiteral(String),
-    /// Triple double quoted literal with raw string prefix. Example `R"""abc"""`
-    /// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/lexical#quoted_literals)
-    TripleDoubleQuotedRawStringLiteral(String),
     /// "National" string literal: i.e: N'string'
     NationalStringLiteral(String),
     /// "escaped" string literal, which are an extension to the SQL standard: i.e: e'first \n second' or E 'first \n second'
@@ -132,8 +105,6 @@ pub enum BorrowedToken<'a> {
     Mul,
     /// Division operator `/`
     Div,
-    /// Integer division operator `//` in DuckDB
-    DuckIntDiv,
     /// Modulo Operator `%`
     Mod,
     /// String concatenation `||`
@@ -292,26 +263,13 @@ impl<'a> fmt::Display for BorrowedToken<'a> {
             }
             BorrowedToken::Char(ref c) => write!(f, "{c}"),
             BorrowedToken::SingleQuotedString(ref s) => write!(f, "'{s}'"),
-            BorrowedToken::TripleSingleQuotedString(ref s) => write!(f, "'''{s}'''"),
             BorrowedToken::DoubleQuotedString(ref s) => write!(f, "\"{s}\""),
-            BorrowedToken::TripleDoubleQuotedString(ref s) => write!(f, "\"\"\"{s}\"\"\""),
             BorrowedToken::DollarQuotedString(ref s) => write!(f, "{s}"),
             BorrowedToken::NationalStringLiteral(ref s) => write!(f, "N'{s}'"),
             BorrowedToken::EscapedStringLiteral(ref s) => write!(f, "E'{s}'"),
             BorrowedToken::UnicodeStringLiteral(ref s) => write!(f, "U&'{s}'"),
             BorrowedToken::HexStringLiteral(ref s) => write!(f, "X'{s}'"),
             BorrowedToken::SingleQuotedByteStringLiteral(ref s) => write!(f, "B'{s}'"),
-            BorrowedToken::TripleSingleQuotedByteStringLiteral(ref s) => write!(f, "B'''{s}'''"),
-            BorrowedToken::DoubleQuotedByteStringLiteral(ref s) => write!(f, "B\"{s}\""),
-            BorrowedToken::TripleDoubleQuotedByteStringLiteral(ref s) => {
-                write!(f, "B\"\"\"{s}\"\"\"")
-            }
-            BorrowedToken::SingleQuotedRawStringLiteral(ref s) => write!(f, "R'{s}'"),
-            BorrowedToken::DoubleQuotedRawStringLiteral(ref s) => write!(f, "R\"{s}\""),
-            BorrowedToken::TripleSingleQuotedRawStringLiteral(ref s) => write!(f, "R'''{s}'''"),
-            BorrowedToken::TripleDoubleQuotedRawStringLiteral(ref s) => {
-                write!(f, "R\"\"\"{s}\"\"\"")
-            }
             BorrowedToken::Comma => f.write_str(","),
             BorrowedToken::Whitespace(ws) => write!(f, "{ws}"),
             BorrowedToken::DoubleEq => f.write_str("=="),
@@ -326,7 +284,6 @@ impl<'a> fmt::Display for BorrowedToken<'a> {
             BorrowedToken::Minus => f.write_str("-"),
             BorrowedToken::Mul => f.write_str("*"),
             BorrowedToken::Div => f.write_str("/"),
-            BorrowedToken::DuckIntDiv => f.write_str("//"),
             BorrowedToken::StringConcat => f.write_str("||"),
             BorrowedToken::Mod => f.write_str("%"),
             BorrowedToken::LParen => f.write_str("("),
@@ -414,36 +371,9 @@ impl<'a> BorrowedToken<'a> {
                 BorrowedToken::SingleQuotedString(Cow::Owned(s.into_owned()))
             }
             BorrowedToken::DoubleQuotedString(s) => BorrowedToken::DoubleQuotedString(s),
-            BorrowedToken::TripleSingleQuotedString(s) => {
-                BorrowedToken::TripleSingleQuotedString(s)
-            }
-            BorrowedToken::TripleDoubleQuotedString(s) => {
-                BorrowedToken::TripleDoubleQuotedString(s)
-            }
             BorrowedToken::DollarQuotedString(s) => BorrowedToken::DollarQuotedString(s),
             BorrowedToken::SingleQuotedByteStringLiteral(s) => {
                 BorrowedToken::SingleQuotedByteStringLiteral(s)
-            }
-            BorrowedToken::DoubleQuotedByteStringLiteral(s) => {
-                BorrowedToken::DoubleQuotedByteStringLiteral(s)
-            }
-            BorrowedToken::TripleSingleQuotedByteStringLiteral(s) => {
-                BorrowedToken::TripleSingleQuotedByteStringLiteral(s)
-            }
-            BorrowedToken::TripleDoubleQuotedByteStringLiteral(s) => {
-                BorrowedToken::TripleDoubleQuotedByteStringLiteral(s)
-            }
-            BorrowedToken::SingleQuotedRawStringLiteral(s) => {
-                BorrowedToken::SingleQuotedRawStringLiteral(s)
-            }
-            BorrowedToken::DoubleQuotedRawStringLiteral(s) => {
-                BorrowedToken::DoubleQuotedRawStringLiteral(s)
-            }
-            BorrowedToken::TripleSingleQuotedRawStringLiteral(s) => {
-                BorrowedToken::TripleSingleQuotedRawStringLiteral(s)
-            }
-            BorrowedToken::TripleDoubleQuotedRawStringLiteral(s) => {
-                BorrowedToken::TripleDoubleQuotedRawStringLiteral(s)
             }
             BorrowedToken::NationalStringLiteral(s) => BorrowedToken::NationalStringLiteral(s),
             BorrowedToken::EscapedStringLiteral(s) => BorrowedToken::EscapedStringLiteral(s),
@@ -476,7 +406,6 @@ impl<'a> BorrowedToken<'a> {
             BorrowedToken::Minus => BorrowedToken::Minus,
             BorrowedToken::Mul => BorrowedToken::Mul,
             BorrowedToken::Div => BorrowedToken::Div,
-            BorrowedToken::DuckIntDiv => BorrowedToken::DuckIntDiv,
             BorrowedToken::Mod => BorrowedToken::Mod,
             BorrowedToken::StringConcat => BorrowedToken::StringConcat,
             BorrowedToken::LParen => BorrowedToken::LParen,
@@ -994,26 +923,12 @@ impl State<'_> {
     }
 }
 
-/// Represents how many quote characters enclose a string literal.
-#[derive(Copy, Clone)]
-enum NumStringQuoteChars {
-    /// e.g. `"abc"`, `'abc'`, `r'abc'`
-    One,
-    /// e.g. `"""abc"""`, `'''abc'''`, `r'''abc'''`
-    Many(NonZeroU8),
-}
-
 /// Settings for tokenizing a quoted string literal.
 struct TokenizeQuotedStringSettings {
     /// The character used to quote the string.
     quote_style: char,
-    /// Represents how many quotes characters enclose the string literal.
-    num_quote_chars: NumStringQuoteChars,
     /// The number of opening quotes left to consume, before parsing
     /// the remaining string literal.
-    /// For example: given initial string `"""abc"""`. If the caller has
-    /// already parsed the first quote for some reason, then this value
-    /// is set to 1, flagging to look to consume only 2 leading quotes.
     num_opening_quotes_to_consume: u8,
     /// True if the string uses backslash escaping of special characters
     /// e.g `'abc\ndef\'ghi'
@@ -1189,69 +1104,17 @@ impl<'a> Tokenizer<'a> {
                     }
                     Ok(Some(Token::Whitespace(Whitespace::Newline)))
                 }
-                // BigQuery and MySQL use b or B for byte string literal, Postgres for bit strings
+                // MySQL and Postgres use b or B for bit string literals (e.g., B'10101')
                 b @ 'B' | b @ 'b' if dialect_of!(self is PostgreSqlDialect | MySqlDialect | GenericDialect) =>
                 {
                     chars.next(); // consume
                     match chars.peek() {
                         Some('\'') => {
-                            if self.dialect.supports_triple_quoted_string() {
-                                return self
-                                    .tokenize_single_or_triple_quoted_string::<fn(String) -> BorrowedToken<'a>>(
-                                        chars,
-                                        '\'',
-                                        false,
-                                        BorrowedToken::SingleQuotedByteStringLiteral,
-                                        BorrowedToken::TripleSingleQuotedByteStringLiteral,
-                                    );
-                            }
                             let s = self.tokenize_single_quoted_string(chars, '\'', false)?;
                             Ok(Some(Token::SingleQuotedByteStringLiteral(s)))
                         }
-                        Some('\"') => {
-                            if self.dialect.supports_triple_quoted_string() {
-                                return self
-                                    .tokenize_single_or_triple_quoted_string::<fn(String) -> BorrowedToken<'a>>(
-                                        chars,
-                                        '"',
-                                        false,
-                                        BorrowedToken::DoubleQuotedByteStringLiteral,
-                                        BorrowedToken::TripleDoubleQuotedByteStringLiteral,
-                                    );
-                            }
-                            let s = self.tokenize_single_quoted_string(chars, '\"', false)?;
-                            Ok(Some(Token::DoubleQuotedByteStringLiteral(s)))
-                        }
                         _ => {
                             // regular identifier starting with an "b" or "B"
-                            let first_char_byte_pos = chars.byte_pos.saturating_sub(b.len_utf8());
-                            let s = self.tokenize_word_borrowed(first_char_byte_pos, chars)?;
-                            Ok(Some(BorrowedToken::make_word_borrowed(s, None)))
-                        }
-                    }
-                }
-                // BigQuery uses r or R for raw string literal
-                b @ 'R' | b @ 'r' if dialect_of!(self is GenericDialect) => {
-                    chars.next(); // consume
-                    match chars.peek() {
-                        Some('\'') => self
-                            .tokenize_single_or_triple_quoted_string::<fn(String) -> BorrowedToken<'a>>(
-                                chars,
-                                '\'',
-                                false,
-                                BorrowedToken::SingleQuotedRawStringLiteral,
-                                BorrowedToken::TripleSingleQuotedRawStringLiteral,
-                            ),
-                        Some('\"') => self
-                            .tokenize_single_or_triple_quoted_string::<fn(String) -> BorrowedToken<'a>>(
-                                chars,
-                                '"',
-                                false,
-                                BorrowedToken::DoubleQuotedRawStringLiteral,
-                                BorrowedToken::TripleDoubleQuotedRawStringLiteral,
-                            ),
-                        _ => {
-                            // regular identifier starting with an "r" or "R"
                             let first_char_byte_pos = chars.byte_pos.saturating_sub(b.len_utf8());
                             let s = self.tokenize_word_borrowed(first_char_byte_pos, chars)?;
                             Ok(Some(BorrowedToken::make_word_borrowed(s, None)))
@@ -1334,16 +1197,6 @@ impl<'a> Tokenizer<'a> {
                 }
                 // single quoted string
                 '\'' => {
-                    if self.dialect.supports_triple_quoted_string() {
-                        return self
-                            .tokenize_single_or_triple_quoted_string::<fn(String) -> BorrowedToken<'a>>(
-                                chars,
-                                '\'',
-                                self.dialect.supports_string_literal_backslash_escape(),
-                                |s| BorrowedToken::SingleQuotedString(Cow::Owned(s)),
-                                 BorrowedToken::TripleSingleQuotedString,
-                            );
-                    }
                     let s = self.tokenize_single_quoted_string_borrowed(
                         chars,
                         '\'',
@@ -1356,16 +1209,6 @@ impl<'a> Tokenizer<'a> {
                 '\"' if !self.dialect.is_delimited_identifier_start(ch)
                     && !self.dialect.is_identifier_start(ch) =>
                 {
-                    if self.dialect.supports_triple_quoted_string() {
-                        return self
-                            .tokenize_single_or_triple_quoted_string::<fn(String) -> BorrowedToken<'a>>(
-                                chars,
-                                '"',
-                                self.dialect.supports_string_literal_backslash_escape(),
-                                 BorrowedToken::DoubleQuotedString,
-                                 BorrowedToken::TripleDoubleQuotedString,
-                            );
-                    }
                     let s = self.tokenize_single_quoted_string(
                         chars,
                         '"',
@@ -1615,9 +1458,6 @@ impl<'a> Tokenizer<'a> {
                                 },
                             )))
                         }
-                        Some('/') if dialect_of!(self is GenericDialect) => {
-                            self.consume_and_return(chars, Token::DuckIntDiv)
-                        }
                         // a regular '/' operator
                         _ => Ok(Some(Token::Div)),
                     }
@@ -1669,9 +1509,6 @@ impl<'a> Tokenizer<'a> {
                                 ),
                                 _ => self.start_binop_opt(chars, "|>", None),
                             }
-                        }
-                        Some('>') if self.dialect.supports_pipe_operator() => {
-                            self.consume_for_binop(chars, "|>", Token::VerticalBarRightAngleBracket)
                         }
                         // Bitshift '|' operator
                         _ => self.start_binop(chars, "|", Token::Pipe),
@@ -2251,63 +2088,6 @@ impl<'a> Tokenizer<'a> {
         self.tokenizer_error(starting_loc, "Unterminated encoded string literal")
     }
 
-    /// Reads a string literal quoted by a single or triple quote characters.
-    /// Examples: `'abc'`, `'''abc'''`, `"""abc"""`.
-    fn tokenize_single_or_triple_quoted_string<F>(
-        &self,
-        chars: &mut State<'a>,
-        quote_style: char,
-        backslash_escape: bool,
-        single_quote_token: F,
-        triple_quote_token: F,
-    ) -> Result<Option<BorrowedToken<'a>>, TokenizerError>
-    where
-        F: Fn(String) -> BorrowedToken<'a>,
-    {
-        let error_loc = chars.location();
-
-        let mut num_opening_quotes = 0u8;
-        for _ in 0..3 {
-            if Some(&quote_style) == chars.peek() {
-                chars.next(); // Consume quote.
-                num_opening_quotes += 1;
-            } else {
-                break;
-            }
-        }
-
-        let (token_fn, num_quote_chars) = match num_opening_quotes {
-            1 => (single_quote_token, NumStringQuoteChars::One),
-            2 => {
-                // If we matched double quotes, then this is an empty string.
-                return Ok(Some(single_quote_token("".into())));
-            }
-            3 => {
-                let Some(num_quote_chars) = NonZeroU8::new(3) else {
-                    return self.tokenizer_error(error_loc, "invalid number of opening quotes");
-                };
-                (
-                    triple_quote_token,
-                    NumStringQuoteChars::Many(num_quote_chars),
-                )
-            }
-            _ => {
-                return self.tokenizer_error(error_loc, "invalid string literal opening");
-            }
-        };
-
-        let settings = TokenizeQuotedStringSettings {
-            quote_style,
-            num_quote_chars,
-            num_opening_quotes_to_consume: 0,
-            backslash_escape,
-        };
-
-        self.tokenize_quoted_string(chars, settings)
-            .map(token_fn)
-            .map(Some)
-    }
-
     /// Reads a string literal quoted by a single quote character.
     fn tokenize_single_quoted_string(
         &self,
@@ -2319,7 +2099,6 @@ impl<'a> Tokenizer<'a> {
             chars,
             TokenizeQuotedStringSettings {
                 quote_style,
-                num_quote_chars: NumStringQuoteChars::One,
                 num_opening_quotes_to_consume: 1,
                 backslash_escape,
             },
@@ -2415,33 +2194,12 @@ impl<'a> Tokenizer<'a> {
             }
         }
 
-        let mut num_consecutive_quotes = 0;
         while let Some(&ch) = chars.peek() {
-            let pending_final_quote = match settings.num_quote_chars {
-                NumStringQuoteChars::One => Some(NumStringQuoteChars::One),
-                n @ NumStringQuoteChars::Many(count)
-                    if num_consecutive_quotes + 1 == count.get() =>
-                {
-                    Some(n)
-                }
-                NumStringQuoteChars::Many(_) => None,
-            };
-
             match ch {
-                char if char == settings.quote_style && pending_final_quote.is_some() => {
+                char if char == settings.quote_style => {
                     chars.next(); // consume
 
-                    if let Some(NumStringQuoteChars::Many(count)) = pending_final_quote {
-                        // For an initial string like `"""abc"""`, at this point we have
-                        // `abc""` in the buffer and have now matched the final `"`.
-                        // However, the string to return is simply `abc`, so we strip off
-                        // the trailing quotes before returning.
-                        let mut buf = s.chars();
-                        for _ in 1..count.get() {
-                            buf.next_back();
-                        }
-                        return Ok(buf.as_str().to_string());
-                    } else if chars
+                    if chars
                         .peek()
                         .map(|c| *c == settings.quote_style)
                         .unwrap_or(false)
@@ -2459,8 +2217,6 @@ impl<'a> Tokenizer<'a> {
                 '\\' if settings.backslash_escape => {
                     // consume backslash
                     chars.next();
-
-                    num_consecutive_quotes = 0;
 
                     if let Some(next) = chars.peek() {
                         if !self.unescape
@@ -2492,13 +2248,6 @@ impl<'a> Tokenizer<'a> {
                 }
                 ch => {
                     chars.next(); // consume ch
-
-                    if ch == settings.quote_style {
-                        num_consecutive_quotes += 1;
-                    } else {
-                        num_consecutive_quotes = 0;
-                    }
-
                     s.push(ch);
                 }
             }

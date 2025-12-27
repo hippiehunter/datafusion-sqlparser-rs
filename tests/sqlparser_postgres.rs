@@ -1323,7 +1323,6 @@ fn parse_copy_to() {
                     distribute_by: vec![],
                     sort_by: vec![],
                     qualify: None,
-                    value_table_mode: None,
                     connect_by: None,
                     flavor: SelectFlavor::Standard,
                 }))),
@@ -1334,7 +1333,6 @@ fn parse_copy_to() {
                 for_clause: None,
                 settings: None,
                 format_clause: None,
-                pipe_operators: vec![],
             })),
             to: true,
             target: CopyTarget::File {
@@ -1444,7 +1442,6 @@ fn parse_set() {
             token: AttachedToken::empty(),
             inner: Set::SingleAssignment {
                 scope: None,
-                hivevar: false,
                 variable: ObjectName::from(vec![Ident::new("a")]),
                 values: vec![Expr::Identifier(Ident {
                     value: "b".into(),
@@ -1462,7 +1459,6 @@ fn parse_set() {
             token: AttachedToken::empty(),
             inner: Set::SingleAssignment {
                 scope: None,
-                hivevar: false,
                 variable: ObjectName::from(vec![Ident::new("a")]),
                 values: vec![Expr::Value(
                     (Value::SingleQuotedString("b".into())).with_empty_span()
@@ -1478,7 +1474,6 @@ fn parse_set() {
             token: AttachedToken::empty(),
             inner: Set::SingleAssignment {
                 scope: None,
-                hivevar: false,
                 variable: ObjectName::from(vec![Ident::new("a")]),
                 values: vec![Expr::value(number("0"))],
             }
@@ -1492,7 +1487,6 @@ fn parse_set() {
             token: AttachedToken::empty(),
             inner: Set::SingleAssignment {
                 scope: None,
-                hivevar: false,
                 variable: ObjectName::from(vec![Ident::new("a")]),
                 values: vec![Expr::Identifier(Ident::new("DEFAULT"))],
             }
@@ -1506,7 +1500,6 @@ fn parse_set() {
             token: AttachedToken::empty(),
             inner: Set::SingleAssignment {
                 scope: Some(ContextModifier::Local),
-                hivevar: false,
                 variable: ObjectName::from(vec![Ident::new("a")]),
                 values: vec![Expr::Identifier("b".into())],
             }
@@ -1520,7 +1513,6 @@ fn parse_set() {
             token: AttachedToken::empty(),
             inner: Set::SingleAssignment {
                 scope: None,
-                hivevar: false,
                 variable: ObjectName::from(vec![Ident::new("a"), Ident::new("b"), Ident::new("c")]),
                 values: vec![Expr::Identifier(Ident {
                     value: "b".into(),
@@ -1541,7 +1533,6 @@ fn parse_set() {
             token: AttachedToken::empty(),
             inner: Set::SingleAssignment {
                 scope: None,
-                hivevar: false,
                 variable: ObjectName::from(vec![
                     Ident::new("hive"),
                     Ident::new("tez"),
@@ -3087,7 +3078,6 @@ fn parse_array_subquery_expr() {
                         named_window: vec![],
                         qualify: None,
                         window_before_qualify: false,
-                        value_table_mode: None,
                         connect_by: None,
                         flavor: SelectFlavor::Standard,
                     }))),
@@ -3113,7 +3103,6 @@ fn parse_array_subquery_expr() {
                         named_window: vec![],
                         qualify: None,
                         window_before_qualify: false,
-                        value_table_mode: None,
                         connect_by: None,
                         flavor: SelectFlavor::Standard,
                     }))),
@@ -3125,7 +3114,6 @@ fn parse_array_subquery_expr() {
                 for_clause: None,
                 settings: None,
                 format_clause: None,
-                pipe_operators: vec![],
             })),
             filter: None,
             null_treatment: None,
@@ -5285,7 +5273,6 @@ fn test_simple_postgres_insert_with_alias() {
                 for_clause: None,
                 settings: None,
                 format_clause: None,
-                pipe_operators: vec![],
             })),
             assignments: vec![],
             partitioned: None,
@@ -5359,7 +5346,6 @@ fn test_simple_postgres_insert_with_alias() {
                 for_clause: None,
                 settings: None,
                 format_clause: None,
-                pipe_operators: vec![],
             })),
             assignments: vec![],
             partitioned: None,
@@ -5431,7 +5417,6 @@ fn test_simple_insert_with_quoted_alias() {
                 for_clause: None,
                 settings: None,
                 format_clause: None,
-                pipe_operators: vec![],
             })),
             assignments: vec![],
             partitioned: None,
@@ -6121,13 +6106,6 @@ fn parse_trigger_related_functions() {
                 },
             ],
             constraints: vec![],
-            hive_distribution: HiveDistributionStyle::NONE,
-            hive_formats: Some(HiveFormat {
-                row_format: None,
-                serde_properties: None,
-                storage: None,
-                location: None
-            }),
             file_format: None,
             location: None,
             query: None,
@@ -6141,30 +6119,10 @@ fn parse_trigger_related_functions() {
             order_by: None,
             partition_by: None,
             cluster_by: None,
-            clustered_by: None,
             inherits: None,
             strict: false,
-            copy_grants: false,
-            enable_schema_evolution: None,
-            change_tracking: None,
-            data_retention_time_in_days: None,
-            max_data_extension_time_in_days: None,
-            default_ddl_collation: None,
-            with_aggregation_policy: None,
-            with_row_access_policy: None,
-            with_tags: None,
-            base_location: None,
-            external_volume: None,
-            catalog: None,
-            catalog_sync: None,
-            storage_serialization_policy: None,
             table_options: CreateTableOptions::None,
-            target_lag: None,
-            warehouse: None,
             version: None,
-            refresh_mode: None,
-            initialize: None,
-            require_user: false,
             system_versioning: None,
         }
     );
@@ -6442,7 +6400,10 @@ fn parse_alter_type() {
     .enumerate()
     .for_each(|(index, tc)| {
         let statement = pg_and_generic().verified_stmt(tc.sql);
-        if let Statement::AlterType(AlterType { name, operation, .. }) = statement {
+        if let Statement::AlterType(AlterType {
+            name, operation, ..
+        }) = statement
+        {
             assert_eq!(tc.name, name.to_string(), "TestCase[{index}].name");
             assert_eq!(tc.operation, operation, "TestCase[{index}].operation");
         } else {

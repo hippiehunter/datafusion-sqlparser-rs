@@ -24,9 +24,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "visitor")]
 use sqlparser_derive::{Visit, VisitMut};
 
-use crate::ast::{
-    AttachedToken, CatalogSyncNamespaceMode, ContactEntry, ObjectName, Statement, StorageSerializationPolicy, Tag,
-};
+use crate::ast::{AttachedToken, ObjectName, Statement};
 use crate::parser::ParserError;
 use crate::tokenizer::{Token, TokenWithSpan};
 
@@ -63,19 +61,8 @@ pub struct CreateDatabaseBuilder {
     pub or_replace: bool,
     pub transient: bool,
     pub clone: Option<ObjectName>,
-    pub data_retention_time_in_days: Option<u64>,
-    pub max_data_extension_time_in_days: Option<u64>,
-    pub external_volume: Option<String>,
-    pub catalog: Option<String>,
-    pub replace_invalid_characters: Option<bool>,
-    pub default_ddl_collation: Option<String>,
-    pub storage_serialization_policy: Option<StorageSerializationPolicy>,
     pub comment: Option<String>,
     pub catalog_sync: Option<String>,
-    pub catalog_sync_namespace_mode: Option<CatalogSyncNamespaceMode>,
-    pub catalog_sync_namespace_flatten_delimiter: Option<String>,
-    pub with_tags: Option<Vec<Tag>>,
-    pub with_contacts: Option<Vec<ContactEntry>>,
 }
 
 impl CreateDatabaseBuilder {
@@ -88,19 +75,8 @@ impl CreateDatabaseBuilder {
             or_replace: false,
             transient: false,
             clone: None,
-            data_retention_time_in_days: None,
-            max_data_extension_time_in_days: None,
-            external_volume: None,
-            catalog: None,
-            replace_invalid_characters: None,
-            default_ddl_collation: None,
-            storage_serialization_policy: None,
             comment: None,
             catalog_sync: None,
-            catalog_sync_namespace_mode: None,
-            catalog_sync_namespace_flatten_delimiter: None,
-            with_tags: None,
-            with_contacts: None,
         }
     }
 
@@ -134,47 +110,6 @@ impl CreateDatabaseBuilder {
         self
     }
 
-    pub fn data_retention_time_in_days(mut self, data_retention_time_in_days: Option<u64>) -> Self {
-        self.data_retention_time_in_days = data_retention_time_in_days;
-        self
-    }
-
-    pub fn max_data_extension_time_in_days(
-        mut self,
-        max_data_extension_time_in_days: Option<u64>,
-    ) -> Self {
-        self.max_data_extension_time_in_days = max_data_extension_time_in_days;
-        self
-    }
-
-    pub fn external_volume(mut self, external_volume: Option<String>) -> Self {
-        self.external_volume = external_volume;
-        self
-    }
-
-    pub fn catalog(mut self, catalog: Option<String>) -> Self {
-        self.catalog = catalog;
-        self
-    }
-
-    pub fn replace_invalid_characters(mut self, replace_invalid_characters: Option<bool>) -> Self {
-        self.replace_invalid_characters = replace_invalid_characters;
-        self
-    }
-
-    pub fn default_ddl_collation(mut self, default_ddl_collation: Option<String>) -> Self {
-        self.default_ddl_collation = default_ddl_collation;
-        self
-    }
-
-    pub fn storage_serialization_policy(
-        mut self,
-        storage_serialization_policy: Option<StorageSerializationPolicy>,
-    ) -> Self {
-        self.storage_serialization_policy = storage_serialization_policy;
-        self
-    }
-
     pub fn comment(mut self, comment: Option<String>) -> Self {
         self.comment = comment;
         self
@@ -182,32 +117,6 @@ impl CreateDatabaseBuilder {
 
     pub fn catalog_sync(mut self, catalog_sync: Option<String>) -> Self {
         self.catalog_sync = catalog_sync;
-        self
-    }
-
-    pub fn catalog_sync_namespace_mode(
-        mut self,
-        catalog_sync_namespace_mode: Option<CatalogSyncNamespaceMode>,
-    ) -> Self {
-        self.catalog_sync_namespace_mode = catalog_sync_namespace_mode;
-        self
-    }
-
-    pub fn catalog_sync_namespace_flatten_delimiter(
-        mut self,
-        catalog_sync_namespace_flatten_delimiter: Option<String>,
-    ) -> Self {
-        self.catalog_sync_namespace_flatten_delimiter = catalog_sync_namespace_flatten_delimiter;
-        self
-    }
-
-    pub fn with_tags(mut self, with_tags: Option<Vec<Tag>>) -> Self {
-        self.with_tags = with_tags;
-        self
-    }
-
-    pub fn with_contacts(mut self, with_contacts: Option<Vec<ContactEntry>>) -> Self {
-        self.with_contacts = with_contacts;
         self
     }
 
@@ -221,19 +130,8 @@ impl CreateDatabaseBuilder {
             or_replace: self.or_replace,
             transient: self.transient,
             clone: self.clone,
-            data_retention_time_in_days: self.data_retention_time_in_days,
-            max_data_extension_time_in_days: self.max_data_extension_time_in_days,
-            external_volume: self.external_volume,
-            catalog: self.catalog,
-            replace_invalid_characters: self.replace_invalid_characters,
-            default_ddl_collation: self.default_ddl_collation,
-            storage_serialization_policy: self.storage_serialization_policy,
             comment: self.comment,
             catalog_sync: self.catalog_sync,
-            catalog_sync_namespace_mode: self.catalog_sync_namespace_mode,
-            catalog_sync_namespace_flatten_delimiter: self.catalog_sync_namespace_flatten_delimiter,
-            with_tags: self.with_tags,
-            with_contacts: self.with_contacts,
         }
     }
 }
@@ -252,19 +150,8 @@ impl TryFrom<Statement> for CreateDatabaseBuilder {
                 or_replace,
                 transient,
                 clone,
-                data_retention_time_in_days,
-                max_data_extension_time_in_days,
-                external_volume,
-                catalog,
-                replace_invalid_characters,
-                default_ddl_collation,
-                storage_serialization_policy,
                 comment,
                 catalog_sync,
-                catalog_sync_namespace_mode,
-                catalog_sync_namespace_flatten_delimiter,
-                with_tags,
-                with_contacts,
             } => Ok(Self {
                 db_name,
                 if_not_exists,
@@ -273,19 +160,8 @@ impl TryFrom<Statement> for CreateDatabaseBuilder {
                 or_replace,
                 transient,
                 clone,
-                data_retention_time_in_days,
-                max_data_extension_time_in_days,
-                external_volume,
-                catalog,
-                replace_invalid_characters,
-                default_ddl_collation,
-                storage_serialization_policy,
                 comment,
                 catalog_sync,
-                catalog_sync_namespace_mode,
-                catalog_sync_namespace_flatten_delimiter,
-                with_tags,
-                with_contacts,
             }),
             _ => Err(ParserError::ParserError(format!(
                 "Expected create database statement, but received: {stmt}"

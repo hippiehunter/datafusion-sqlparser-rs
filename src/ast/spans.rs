@@ -17,25 +17,25 @@
 
 use crate::ast::{
     ddl::AlterSchema, query::SelectItemQualifiedWildcardKind, AlterSchemaOperation, AlterTable,
-    ColumnOptions, CreateOperator, CreateOperatorClass, CreateOperatorFamily, CreateView,
-    ExportData, Owner, TypedString,
+    ColumnOptions, CreateOperator, CreateOperatorClass, CreateOperatorFamily, CreateView, Owner,
+    TypedString,
 };
 use core::iter;
 
 use crate::tokenizer::Span;
 
 use super::{
-    dcl::SecondaryRoles, value::ValueWithSpan, AccessExpr, AlterColumnOperation,
-    AlterIndexOperation, AlterTableOperation, Analyze, Array, Assignment, AssignmentTarget,
-    AttachedToken, BeginEndStatements, CaseStatement, CloseCursor, ClusteredIndex, ColumnDef,
-    ColumnOption, ColumnOptionDef, ConditionalStatementBlock, ConditionalStatements,
-    ConflictTarget, ConnectBy, ConstraintCharacteristics, CopySource, CreateIndex, CreateTable,
-    CreateTableOptions, Cte, Delete, DoUpdate, ExceptSelectItem, ExcludeSelectItem, Expr,
-    ExprWithAlias, Fetch, ForPortionOf, FromTable, Function, FunctionArg, FunctionArgExpr,
-    FunctionArgumentClause, FunctionArgumentList, FunctionArguments, GroupByExpr, HavingBound,
-    IfStatement, IlikeSelectItem, IndexColumn, Insert, Interpolate, InterpolateExpr,
-    IterateStatement, Join, JoinConstraint, JoinOperator, JsonOnBehavior, JsonPath, JsonPathElem,
-    LateralView, LeaveStatement, LimitClause, LoopStatement, MatchRecognizePattern, Measure,
+    value::ValueWithSpan, AccessExpr, AlterColumnOperation, AlterIndexOperation,
+    AlterTableOperation, Analyze, Array, Assignment, AssignmentTarget, AttachedToken,
+    BeginEndStatements, CaseStatement, CloseCursor, ClusteredIndex, ColumnDef, ColumnOption,
+    ColumnOptionDef, ConditionalStatementBlock, ConditionalStatements, ConflictTarget, ConnectBy,
+    ConstraintCharacteristics, CopySource, CreateIndex, CreateTable, CreateTableOptions, Cte,
+    Delete, DoUpdate, ExceptSelectItem, ExcludeSelectItem, Expr, ExprWithAlias, Fetch,
+    ForPortionOf, FromTable, Function, FunctionArg, FunctionArgExpr, FunctionArgumentClause,
+    FunctionArgumentList, FunctionArguments, GroupByExpr, HavingBound, IfStatement,
+    IlikeSelectItem, IndexColumn, Insert, Interpolate, InterpolateExpr, IterateStatement, Join,
+    JoinConstraint, JoinOperator, JsonOnBehavior, JsonPath, JsonPathElem, LateralView,
+    LeaveStatement, LimitClause, LoopStatement, MatchRecognizePattern, Measure,
     NamedParenthesizedList, NamedWindowDefinition, ObjectName, ObjectNamePart, Offset, OnConflict,
     OnConflictAction, OnInsert, OpenStatement, OrderBy, OrderByExpr, OrderByKind, Partition,
     PivotValueSource, ProjectionSelect, Query, RaiseStatement, RaiseStatementValue,
@@ -104,11 +104,10 @@ impl Spanned for Query {
             order_by,
             limit_clause,
             fetch,
-            locks: _,          // todo
-            for_clause: _,     // todo, mssql specific
-            settings: _,       // todo, clickhouse specific
-            format_clause: _,  // todo, clickhouse specific
-            pipe_operators: _, // todo bigquery specific
+            locks: _,         // todo
+            for_clause: _,    // todo, mssql specific
+            settings: _,      // todo, clickhouse specific
+            format_clause: _, // todo, clickhouse specific
         } = self;
 
         union_spans(
@@ -241,14 +240,12 @@ impl Spanned for Values {
 /// # partial span
 ///
 /// Missing spans:
-/// - [Statement::CreateSecret]
 /// - [Statement::CreateRole]
 /// - [Statement::AlterType]
 /// - [Statement::AlterRole]
 /// - [Statement::AttachDatabase]
 /// - [Statement::DropFunction]
 /// - [Statement::DropProcedure]
-/// - [Statement::DropSecret]
 /// - [Statement::Declare]
 /// - [Statement::CreateExtension]
 /// - [Statement::Fetch]
@@ -268,7 +265,6 @@ impl Spanned for Values {
 /// - [Statement::CreateFunction]
 /// - [Statement::CreateTrigger]
 /// - [Statement::DropTrigger]
-/// - [Statement::CreateMacro]
 /// - [Statement::Kill]
 /// - [Statement::Cache]
 /// - [Statement::UNCache]
@@ -281,11 +277,8 @@ impl Spanned for Statement {
         match self {
             Statement::Analyze(analyze) => analyze.span(),
             Statement::Truncate(truncate) => truncate.span(),
-            Statement::Msck(msck) => msck.span(),
             Statement::Query(query) => query.span(),
             Statement::Insert(insert) => insert.span(),
-            Statement::Install { extension_name } => extension_name.span,
-            Statement::Load { extension_name } => extension_name.span,
             Statement::Directory {
                 overwrite: _,
                 local: _,
@@ -334,16 +327,16 @@ impl Spanned for Statement {
             Statement::CreateRole(create_role) => create_role.span(),
             Statement::CreateExtension(create_extension) => create_extension.span(),
             Statement::DropExtension(drop_extension) => drop_extension.span(),
-            Statement::CreateSecret { token, .. } => token.0.span,
             Statement::CreateServer(create_server) => create_server.token.0.span,
-            Statement::CreateConnector(create_connector) => create_connector.token.0.span,
             Statement::CreateOperator(create_operator) => create_operator.span(),
             Statement::CreateOperatorFamily(create_operator_family) => {
                 create_operator_family.span()
             }
             Statement::CreateOperatorClass(create_operator_class) => create_operator_class.span(),
             Statement::CreateAssertion(create_assertion) => create_assertion.token.0.span,
-            Statement::CreatePropertyGraph(create_property_graph) => create_property_graph.token.0.span,
+            Statement::CreatePropertyGraph(create_property_graph) => {
+                create_property_graph.token.0.span
+            }
             Statement::AlterTable(alter_table) => alter_table.span(),
             Statement::AlterIndex { name, operation } => name.span().union(&operation.span()),
             Statement::AlterView {
@@ -369,7 +362,6 @@ impl Spanned for Statement {
             Statement::DropAssertion(drop_assertion) => drop_assertion.token.0.span,
             Statement::DropPropertyGraph(drop_property_graph) => drop_property_graph.token.0.span,
             Statement::DropProcedure { token, .. } => token.0.span,
-            Statement::DropSecret { token, .. } => token.0.span,
             Statement::Declare { declare_token, .. } => declare_token.0.span,
             Statement::Fetch { fetch_token, .. } => fetch_token.0.span,
             Statement::Flush { flush_token, .. } => flush_token.0.span,
@@ -442,20 +434,24 @@ impl Spanned for Statement {
                 name,
                 body,
                 ..
-            } => create_token
-                .0
-                .span
-                .union(&name.span())
-                .union(&body.span()),
-            Statement::CreateMacro { create_token, .. } => create_token.0.span,
+            } => create_token.0.span.union(&name.span()).union(&body.span()),
             Statement::Assert { assert_token, .. } => assert_token.0.span,
             Statement::Grant { grant_token, .. } => grant_token.0.span,
             Statement::Deny(deny_stmt) => deny_stmt.token.0.span,
             Statement::Revoke { revoke_token, .. } => revoke_token.0.span,
             Statement::GrantRole { grant_token, .. } => grant_token.0.span,
             Statement::RevokeRole { revoke_token, .. } => revoke_token.0.span,
-            Statement::Deallocate { deallocate_token, name, .. } => deallocate_token.0.span.union(&name.span),
-            Statement::Execute { execute_token, name, using, .. } => {
+            Statement::Deallocate {
+                deallocate_token,
+                name,
+                ..
+            } => deallocate_token.0.span.union(&name.span),
+            Statement::Execute {
+                execute_token,
+                name,
+                using,
+                ..
+            } => {
                 let mut span = execute_token.0.span;
                 if let Some(n) = name {
                     span = span.union(&n.span());
@@ -464,10 +460,17 @@ impl Spanned for Statement {
                     span = span.union(&u.span());
                 }
                 span
-            },
-            Statement::Prepare { prepare_token, name, statement, .. } => {
-                prepare_token.0.span.union(&name.span).union(&statement.span())
-            },
+            }
+            Statement::Prepare {
+                prepare_token,
+                name,
+                statement,
+                ..
+            } => prepare_token
+                .0
+                .span
+                .union(&name.span)
+                .union(&statement.span()),
             Statement::Kill { kill_token, .. } => kill_token.0.span,
             Statement::ExplainTable { explain_token, .. } => explain_token.0.span,
             Statement::Explain { explain_token, .. } => explain_token.0.span,
@@ -493,9 +496,7 @@ impl Spanned for Statement {
                 .union(&name.span())
                 .union_opt(&owned_by.as_ref().map(|o| o.span())),
             Statement::CreateType {
-                create_token,
-                name,
-                ..
+                create_token, name, ..
             } => create_token.0.span.union(&name.span()),
             Statement::Pragma { pragma_token, .. } => pragma_token.0.span,
             Statement::LockTables { lock_token, .. } => lock_token.0.span,
@@ -504,12 +505,9 @@ impl Spanned for Statement {
             Statement::OptimizeTable { token, .. } => token.0.span,
             Statement::CreatePolicy { token, .. } => token.0.span,
             Statement::AlterPolicy { token, .. } => token.0.span,
-            Statement::AlterConnector { .. } => Span::empty(),
             Statement::DropPolicy { token, .. } => token.0.span,
-            Statement::DropConnector { .. } => Span::empty(),
             Statement::ShowDatabases { show_token, .. } => show_token.0.span,
             Statement::ShowSchemas { show_token, .. } => show_token.0.span,
-            Statement::ShowObjects { .. } => Span::empty(),
             Statement::ShowViews { .. } => Span::empty(),
             Statement::LISTEN {
                 listen_token,
@@ -535,17 +533,6 @@ impl Spanned for Statement {
             Statement::RaisError { token, .. } => token.0.span,
             Statement::Print(stmt) => stmt.token.0.span,
             Statement::Return(stmt) => stmt.token.0.span,
-            Statement::ExportData(ExportData {
-                options,
-                query,
-                connection,
-            }) => union_spans(
-                options
-                    .iter()
-                    .map(|i| i.span())
-                    .chain(core::iter::once(query.span()))
-                    .chain(connection.iter().map(|i| i.span())),
-            ),
             Statement::CreateUser(stmt) => stmt.token.0.span,
             Statement::AlterSchema(s) => s.span(),
             Statement::Vacuum(stmt) => stmt.token.0.span,
@@ -567,12 +554,6 @@ impl Spanned for Use {
             Use::Database(object_name) => object_name.span(),
             Use::Warehouse(object_name) => object_name.span(),
             Use::Role(object_name) => object_name.span(),
-            Use::SecondaryRoles(secondary_roles) => {
-                if let SecondaryRoles::List(roles) = secondary_roles {
-                    return union_spans(roles.iter().map(|i| i.span));
-                }
-                Span::empty()
-            }
             Use::Object(object_name) => object_name.span(),
             Use::Default => Span::empty(),
         }
@@ -594,45 +575,23 @@ impl Spanned for CreateTable {
             name,
             columns,
             constraints,
-            hive_distribution: _, // hive specific
-            hive_formats: _,      // hive specific
-            file_format: _,       // enum
-            location: _,          // string, no span
+            file_format: _, // enum
+            location: _,    // string, no span
             query,
             without_rowid: _, // bool
             like: _,
             clone,
             comment: _, // todo, no span
             on_commit: _,
-            on_cluster: _,                      // todo, clickhouse specific
-            primary_key: _,                     // todo, clickhouse specific
-            order_by: _,                        // todo, clickhouse specific
-            partition_by: _,                    // todo, BigQuery specific
-            cluster_by: _,                      // todo, BigQuery specific
-            clustered_by: _,                    // todo, Hive specific
-            inherits: _,                        // todo, PostgreSQL specific
-            strict: _,                          // bool
-            copy_grants: _,                     // bool
-            enable_schema_evolution: _,         // bool
-            change_tracking: _,                 // bool
-            data_retention_time_in_days: _,     // u64, no span
-            max_data_extension_time_in_days: _, // u64, no span
-            default_ddl_collation: _,           // string, no span
-            with_aggregation_policy: _,         // todo, Snowflake specific
-            with_row_access_policy: _,          // todo, Snowflake specific
-            with_tags: _,                       // todo, Snowflake specific
-            external_volume: _,                 // todo, Snowflake specific
-            base_location: _,                   // todo, Snowflake specific
-            catalog: _,                         // todo, Snowflake specific
-            catalog_sync: _,                    // todo, Snowflake specific
-            storage_serialization_policy: _,
+            on_cluster: _,   // todo, clickhouse specific
+            primary_key: _,  // todo, clickhouse specific
+            order_by: _,     // todo, clickhouse specific
+            partition_by: _, // todo, BigQuery specific
+            cluster_by: _,   // todo, BigQuery specific
+            inherits: _,     // todo, PostgreSQL specific
+            strict: _,       // bool
             table_options,
-            target_lag: _,
-            warehouse: _,
             version: _,
-            refresh_mode: _,
-            initialize: _,
-            require_user: _,
             system_versioning: _,
         } = self;
 
@@ -885,7 +844,6 @@ impl Spanned for ColumnOption {
             ColumnOption::Identity(..) => Span::empty(),
             ColumnOption::OnConflict(..) => Span::empty(),
             ColumnOption::Policy(..) => Span::empty(),
-            ColumnOption::Tags(..) => Span::empty(),
             ColumnOption::Srid(..) => Span::empty(),
             ColumnOption::Invisible => Span::empty(),
         }
@@ -1252,18 +1210,10 @@ impl Spanned for AlterTableOperation {
             AlterTableOperation::AlterColumn { column_name, op } => {
                 column_name.span.union(&op.span())
             }
-            AlterTableOperation::SwapWith { table_name } => table_name.span(),
             AlterTableOperation::SetTblProperties { table_properties } => {
                 union_spans(table_properties.iter().map(|i| i.span()))
             }
             AlterTableOperation::OwnerTo { .. } => Span::empty(),
-            AlterTableOperation::ClusterBy { exprs } => union_spans(exprs.iter().map(|e| e.span())),
-            AlterTableOperation::DropClusteringKey => Span::empty(),
-            AlterTableOperation::SuspendRecluster => Span::empty(),
-            AlterTableOperation::ResumeRecluster => Span::empty(),
-            AlterTableOperation::Refresh => Span::empty(),
-            AlterTableOperation::Suspend => Span::empty(),
-            AlterTableOperation::Resume => Span::empty(),
             AlterTableOperation::Algorithm { .. } => Span::empty(),
             AlterTableOperation::AutoIncrement { value, .. } => value.span(),
             AlterTableOperation::Lock { .. } => Span::empty(),
@@ -1492,9 +1442,6 @@ impl Spanned for AssignmentTarget {
 /// - [Expr::MatchAgainst] # MySQL specific
 /// - [Expr::RLike] # MySQL specific
 /// - [Expr::Struct] # BigQuery specific
-/// - [Expr::Named] # BigQuery specific
-/// - [Expr::Dictionary] # DuckDB specific
-/// - [Expr::Map] # DuckDB specific
 /// - [Expr::Lambda]
 impl Spanned for Expr {
     fn span(&self) -> Span {
@@ -1732,9 +1679,6 @@ impl Spanned for Expr {
             Expr::Exists { subquery, .. } => subquery.span(),
             Expr::Subquery(query) => query.span(),
             Expr::Struct { .. } => Span::empty(),
-            Expr::Named { .. } => Span::empty(),
-            Expr::Dictionary(_) => Span::empty(),
-            Expr::Map(_) => Span::empty(),
             Expr::Interval(interval) => interval.value.span(),
             Expr::Wildcard(token) => token.0.span,
             Expr::QualifiedWildcard(object_name, token) => union_spans(
@@ -2172,23 +2116,6 @@ impl Spanned for TableFactor {
                     .chain(symbols.iter().map(|i| i.span()))
                     .chain(alias.as_ref().map(|i| i.span())),
             ),
-            TableFactor::SemanticView {
-                name,
-                dimensions,
-                metrics,
-                facts,
-                where_clause,
-                alias,
-            } => union_spans(
-                name.0
-                    .iter()
-                    .map(|i| i.span())
-                    .chain(dimensions.iter().map(|d| d.span()))
-                    .chain(metrics.iter().map(|m| m.span()))
-                    .chain(facts.iter().map(|f| f.span()))
-                    .chain(where_clause.as_ref().map(|e| e.span()))
-                    .chain(alias.as_ref().map(|a| a.span())),
-            ),
             TableFactor::OpenJsonTable { .. } => Span::empty(),
             TableFactor::GraphTable {
                 graph_name,
@@ -2441,7 +2368,6 @@ impl Spanned for Select {
             named_window,
             qualify,
             window_before_qualify: _, // bool
-            value_table_mode: _,      // todo, BigQuery specific
             connect_by,
             top_before_distinct: _,
             flavor: _,

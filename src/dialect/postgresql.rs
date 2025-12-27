@@ -204,11 +204,6 @@ impl Dialect for PostgreSqlDialect {
         true
     }
 
-    /// See <https://www.postgresql.org/docs/current/sql-load.html>
-    fn supports_load_extension(&self) -> bool {
-        true
-    }
-
     /// See <https://www.postgresql.org/docs/current/functions-json.html>
     ///
     /// Required to support the colon in:

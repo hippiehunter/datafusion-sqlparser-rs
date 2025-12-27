@@ -44,12 +44,10 @@ use crate::ast::{
     ArgMode, AttachedToken, CommentDef, ConditionalStatements, CreateFunctionBody,
     CreateFunctionUsing, CreateTableLikeKind, CreateTableOptions, CreateViewParams, DataType, Expr,
     FileFormat, FunctionBehavior, FunctionCalledOnNull, FunctionDesc, FunctionDeterminismSpecifier,
-    FunctionParallel, HiveDistributionStyle, HiveFormat, HiveIOFormat, HiveRowFormat,
-    HiveSetLocation, Ident, InitializeKind, MySQLColumnPosition, ObjectName, OnCommit,
-    OneOrManyWithParens, OperateFunctionArg, OrderByExpr, ProjectionSelect, Query, RefreshModeKind,
-    RowAccessPolicy, SequenceOptions, Spanned, SqlDataAccess, SqlOption,
-    StorageSerializationPolicy, TableVersion, Tag, TriggerEvent, TriggerExecBody, TriggerObject,
-    TriggerPeriod, TriggerReferencing, Value, ValueWithSpan, WrappedCollection,
+    FunctionParallel, Ident, MySQLColumnPosition, ObjectName, OnCommit, OneOrManyWithParens,
+    OperateFunctionArg, OrderByExpr, ProjectionSelect, Query, SequenceOptions, Spanned,
+    SqlDataAccess, SqlOption, TableVersion, TriggerEvent, TriggerExecBody, TriggerObject,
+    TriggerPeriod, TriggerReferencing, ValueWithSpan, WrappedCollection,
 };
 use crate::display_utils::{DisplayCommaSeparated, Indent, NewLine, SpaceOrNewline};
 use crate::keywords::Keyword;
@@ -147,10 +145,7 @@ pub enum AlterTableOperation {
     ///
     /// Note: this is a ClickHouse-specific operation.
     /// Please refer to [ClickHouse](https://clickhouse.com/docs/en/sql-reference/statements/alter/projection#drop-projection)
-    DropProjection {
-        if_exists: bool,
-        name: Ident,
-    },
+    DropProjection { if_exists: bool, name: Ident },
     /// `MATERIALIZE PROJECTION [IF EXISTS] name [IN PARTITION partition_name]`
     ///
     ///  Note: this is a ClickHouse-specific operation.
@@ -176,15 +171,11 @@ pub enum AlterTableOperation {
     /// `DISABLE RULE rewrite_rule_name`
     ///
     /// Note: this is a PostgreSQL-specific operation.
-    DisableRule {
-        name: Ident,
-    },
+    DisableRule { name: Ident },
     /// `DISABLE TRIGGER [ trigger_name | ALL | USER ]`
     ///
     /// Note: this is a PostgreSQL-specific operation.
-    DisableTrigger {
-        name: Ident,
-    },
+    DisableTrigger { name: Ident },
     /// `DROP CONSTRAINT [ IF EXISTS ] <name>`
     DropConstraint {
         if_exists: bool,
@@ -231,9 +222,7 @@ pub enum AlterTableOperation {
     ///
     /// [MySQL](https://dev.mysql.com/doc/refman/8.4/en/alter-table.html)
     /// [Snowflake](https://docs.snowflake.com/en/sql-reference/constraints-drop)
-    DropPrimaryKey {
-        drop_behavior: Option<DropBehavior>,
-    },
+    DropPrimaryKey { drop_behavior: Option<DropBehavior> },
     /// `DROP FOREIGN KEY <fk_symbol>`
     ///
     /// [MySQL](https://dev.mysql.com/doc/refman/8.4/en/alter-table.html)
@@ -245,33 +234,23 @@ pub enum AlterTableOperation {
     /// `DROP INDEX <index_name>`
     ///
     /// [MySQL]: https://dev.mysql.com/doc/refman/8.4/en/alter-table.html
-    DropIndex {
-        name: Ident,
-    },
+    DropIndex { name: Ident },
     /// `ENABLE ALWAYS RULE rewrite_rule_name`
     ///
     /// Note: this is a PostgreSQL-specific operation.
-    EnableAlwaysRule {
-        name: Ident,
-    },
+    EnableAlwaysRule { name: Ident },
     /// `ENABLE ALWAYS TRIGGER trigger_name`
     ///
     /// Note: this is a PostgreSQL-specific operation.
-    EnableAlwaysTrigger {
-        name: Ident,
-    },
+    EnableAlwaysTrigger { name: Ident },
     /// `ENABLE REPLICA RULE rewrite_rule_name`
     ///
     /// Note: this is a PostgreSQL-specific operation.
-    EnableReplicaRule {
-        name: Ident,
-    },
+    EnableReplicaRule { name: Ident },
     /// `ENABLE REPLICA TRIGGER trigger_name`
     ///
     /// Note: this is a PostgreSQL-specific operation.
-    EnableReplicaTrigger {
-        name: Ident,
-    },
+    EnableReplicaTrigger { name: Ident },
     /// `ENABLE ROW LEVEL SECURITY`
     ///
     /// Note: this is a PostgreSQL-specific operation.
@@ -279,15 +258,11 @@ pub enum AlterTableOperation {
     /// `ENABLE RULE rewrite_rule_name`
     ///
     /// Note: this is a PostgreSQL-specific operation.
-    EnableRule {
-        name: Ident,
-    },
+    EnableRule { name: Ident },
     /// `ENABLE TRIGGER [ trigger_name | ALL | USER ]`
     ///
     /// Note: this is a PostgreSQL-specific operation.
-    EnableTrigger {
-        name: Ident,
-    },
+    EnableTrigger { name: Ident },
     /// `RENAME TO PARTITION (partition=val)`
     RenamePartitions {
         old_partitions: Vec<Expr>,
@@ -297,9 +272,7 @@ pub enum AlterTableOperation {
     ///
     /// Note: this is a PostgreSQL-specific operation.
     /// Please refer to [PostgreSQL documentation](https://www.postgresql.org/docs/current/sql-altertable.html)
-    ReplicaIdentity {
-        identity: ReplicaIdentity,
-    },
+    ReplicaIdentity { identity: ReplicaIdentity },
     /// Add Partitions
     AddPartitions {
         if_not_exists: bool,
@@ -315,9 +288,7 @@ pub enum AlterTableOperation {
         new_column_name: Ident,
     },
     /// `RENAME TO <table_name>`
-    RenameTable {
-        table_name: RenameTableNameKind,
-    },
+    RenameTable { table_name: RenameTableNameKind },
     // CHANGE [ COLUMN ] <old_name> <new_name> <data_type> [ <options> ]
     ChangeColumn {
         old_name: Ident,
@@ -338,51 +309,18 @@ pub enum AlterTableOperation {
     /// `RENAME CONSTRAINT <old_constraint_name> TO <new_constraint_name>`
     ///
     /// Note: this is a PostgreSQL-specific operation.
-    RenameConstraint {
-        old_name: Ident,
-        new_name: Ident,
-    },
+    RenameConstraint { old_name: Ident, new_name: Ident },
     /// `ALTER [ COLUMN ]`
     AlterColumn {
         column_name: Ident,
         op: AlterColumnOperation,
     },
-    /// 'SWAP WITH <table_name>'
-    ///
-    /// Note: this is Snowflake specific <https://docs.snowflake.com/en/sql-reference/sql/alter-table>
-    SwapWith {
-        table_name: ObjectName,
-    },
     /// 'SET TBLPROPERTIES ( { property_key [ = ] property_val } [, ...] )'
-    SetTblProperties {
-        table_properties: Vec<SqlOption>,
-    },
+    SetTblProperties { table_properties: Vec<SqlOption> },
     /// `OWNER TO { <new_owner> | CURRENT_ROLE | CURRENT_USER | SESSION_USER }`
     ///
     /// Note: this is PostgreSQL-specific <https://www.postgresql.org/docs/current/sql-altertable.html>
-    OwnerTo {
-        new_owner: Owner,
-    },
-    /// Snowflake table clustering options
-    /// <https://docs.snowflake.com/en/sql-reference/sql/alter-table#clustering-actions-clusteringaction>
-    ClusterBy {
-        exprs: Vec<Expr>,
-    },
-    DropClusteringKey,
-    SuspendRecluster,
-    ResumeRecluster,
-    /// `REFRESH`
-    ///
-    /// Note: this is Snowflake specific for dynamic tables <https://docs.snowflake.com/en/sql-reference/sql/alter-table>
-    Refresh,
-    /// `SUSPEND`
-    ///
-    /// Note: this is Snowflake specific for dynamic tables <https://docs.snowflake.com/en/sql-reference/sql/alter-table>
-    Suspend,
-    /// `RESUME`
-    ///
-    /// Note: this is Snowflake specific for dynamic tables <https://docs.snowflake.com/en/sql-reference/sql/alter-table>
-    Resume,
+    OwnerTo { new_owner: Owner },
     /// `ALGORITHM [=] { DEFAULT | INSTANT | INPLACE | COPY }`
     ///
     /// [MySQL]-specific table alter algorithm.
@@ -398,23 +336,15 @@ pub enum AlterTableOperation {
     /// [MySQL]-specific table alter lock.
     ///
     /// [MySQL]: https://dev.mysql.com/doc/refman/8.4/en/alter-table.html
-    Lock {
-        equals: bool,
-        lock: AlterTableLock,
-    },
+    Lock { equals: bool, lock: AlterTableLock },
     /// `AUTO_INCREMENT [=] <value>`
     ///
     /// [MySQL]-specific table option for raising current auto increment value.
     ///
     /// [MySQL]: https://dev.mysql.com/doc/refman/8.4/en/alter-table.html
-    AutoIncrement {
-        equals: bool,
-        value: ValueWithSpan,
-    },
+    AutoIncrement { equals: bool, value: ValueWithSpan },
     /// `VALIDATE CONSTRAINT <name>`
-    ValidateConstraint {
-        name: Ident,
-    },
+    ValidateConstraint { name: Ident },
     /// Arbitrary parenthesized `SET` options.
     ///
     /// Example:
@@ -422,9 +352,7 @@ pub enum AlterTableOperation {
     /// SET (scale_factor = 0.01, threshold = 500)`
     /// ```
     /// [PostgreSQL](https://www.postgresql.org/docs/current/sql-altertable.html)
-    SetOptionsParens {
-        options: Vec<SqlOption>,
-    },
+    SetOptionsParens { options: Vec<SqlOption> },
 }
 
 /// An `ALTER Policy` (`Statement::AlterPolicy`) operation
@@ -535,23 +463,6 @@ impl fmt::Display for Owner {
             Owner::CurrentRole => write!(f, "CURRENT_ROLE"),
             Owner::CurrentUser => write!(f, "CURRENT_USER"),
             Owner::SessionUser => write!(f, "SESSION_USER"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum AlterConnectorOwner {
-    User(Ident),
-    Role(Ident),
-}
-
-impl fmt::Display for AlterConnectorOwner {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            AlterConnectorOwner::User(ident) => write!(f, "USER {ident}"),
-            AlterConnectorOwner::Role(ident) => write!(f, "ROLE {ident}"),
         }
     }
 }
@@ -814,9 +725,6 @@ impl fmt::Display for AlterTableOperation {
             AlterTableOperation::RenameConstraint { old_name, new_name } => {
                 write!(f, "RENAME CONSTRAINT {old_name} TO {new_name}")
             }
-            AlterTableOperation::SwapWith { table_name } => {
-                write!(f, "SWAP WITH {table_name}")
-            }
             AlterTableOperation::OwnerTo { new_owner } => {
                 write!(f, "OWNER TO {new_owner}")
             }
@@ -846,31 +754,6 @@ impl fmt::Display for AlterTableOperation {
                     write!(f, " WITH NAME {name}")?;
                 }
                 Ok(())
-            }
-            AlterTableOperation::ClusterBy { exprs } => {
-                write!(f, "CLUSTER BY ({})", display_comma_separated(exprs))?;
-                Ok(())
-            }
-            AlterTableOperation::DropClusteringKey => {
-                write!(f, "DROP CLUSTERING KEY")?;
-                Ok(())
-            }
-            AlterTableOperation::SuspendRecluster => {
-                write!(f, "SUSPEND RECLUSTER")?;
-                Ok(())
-            }
-            AlterTableOperation::ResumeRecluster => {
-                write!(f, "RESUME RECLUSTER")?;
-                Ok(())
-            }
-            AlterTableOperation::Refresh => {
-                write!(f, "REFRESH")
-            }
-            AlterTableOperation::Suspend => {
-                write!(f, "SUSPEND")
-            }
-            AlterTableOperation::Resume => {
-                write!(f, "RESUME")
             }
             AlterTableOperation::AutoIncrement { equals, value } => {
                 write!(
@@ -1546,36 +1429,6 @@ pub struct ColumnPolicyProperty {
     pub using_columns: Option<Vec<Ident>>,
 }
 
-/// Tags option of column
-/// Syntax
-/// ```sql
-/// [ WITH ] TAG ( <tag_name> = '<tag_value>' [ , <tag_name> = '<tag_value>' , ... ] )
-/// ```
-/// [Snowflake]: https://docs.snowflake.com/en/sql-reference/sql/create-table
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct TagsColumnOption {
-    /// This flag indicates that the tags option is declared using the `WITH` prefix.
-    /// Example:
-    /// ```sql
-    /// WITH TAG (A = 'Tag A')
-    /// ```
-    /// [Snowflake]: https://docs.snowflake.com/en/sql-reference/sql/create-table
-    pub with: bool,
-    pub tags: Vec<Tag>,
-}
-
-impl fmt::Display for TagsColumnOption {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.with {
-            write!(f, "WITH ")?;
-        }
-        write!(f, "TAG ({})", display_comma_separated(&self.tags))?;
-        Ok(())
-    }
-}
-
 /// `ColumnOption`s are modifiers that follow a column definition in a `CREATE
 /// TABLE` statement.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
@@ -1662,13 +1515,6 @@ pub enum ColumnOption {
     /// ```
     /// [Snowflake]: https://docs.snowflake.com/en/sql-reference/sql/create-table
     Policy(ColumnPolicy),
-    /// Snowflake specific: Specifies the tag name and the tag string value.
-    /// Syntax:
-    /// ```sql
-    /// [ WITH ] TAG ( <tag_name> = '<tag_value>' [ , <tag_name> = '<tag_value>' , ... ] )
-    /// ```
-    /// [Snowflake]: https://docs.snowflake.com/en/sql-reference/sql/create-table
-    Tags(TagsColumnOption),
     /// MySQL specific: Spatial reference identifier
     /// Syntax:
     /// ```sql
@@ -1832,9 +1678,6 @@ impl fmt::Display for ColumnOption {
             }
             Policy(parameters) => {
                 write!(f, "{parameters}")
-            }
-            Tags(tags) => {
-                write!(f, "{tags}")
             }
             Srid(srid) => {
                 write!(f, "SRID {srid}")
@@ -2390,9 +2233,8 @@ impl fmt::Display for UserDefinedTypeSqlDefinitionOption {
     }
 }
 
-/// PARTITION statement used in ALTER TABLE et al. such as in Hive and ClickHouse SQL.
-/// For example, ClickHouse's OPTIMIZE TABLE supports syntax like PARTITION ID 'partition_id' and PARTITION expr.
-/// [ClickHouse](https://clickhouse.com/docs/en/sql-reference/statements/optimize)
+/// PARTITION statement used in ALTER TABLE and other statements.
+/// For example, supports syntax like PARTITION ID 'partition_id' and PARTITION expr.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -2434,33 +2276,6 @@ impl fmt::Display for Deduplicate {
             Deduplicate::All => write!(f, "DEDUPLICATE"),
             Deduplicate::ByExpression(expr) => write!(f, "DEDUPLICATE BY {expr}"),
         }
-    }
-}
-
-/// Hive supports `CLUSTERED BY` statement in `CREATE TABLE`.
-/// Syntax: `CLUSTERED BY (col_name, ...) [SORTED BY (col_name [ASC|DESC], ...)] INTO num_buckets BUCKETS`
-///
-/// [Hive](https://cwiki.apache.org/confluence/display/Hive/LanguageManual+DDL#LanguageManualDDL-CreateTable)
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct ClusteredBy {
-    pub columns: Vec<Ident>,
-    pub sorted_by: Option<Vec<OrderByExpr>>,
-    pub num_buckets: Value,
-}
-
-impl fmt::Display for ClusteredBy {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "CLUSTERED BY ({})",
-            display_comma_separated(&self.columns)
-        )?;
-        if let Some(ref sorted_by) = self.sorted_by {
-            write!(f, " SORTED BY ({})", display_comma_separated(sorted_by))?;
-        }
-        write!(f, " INTO {} BUCKETS", self.num_buckets)
     }
 }
 
@@ -2585,8 +2400,6 @@ pub struct CreateTable {
     /// Optional schema
     pub columns: Vec<ColumnDef>,
     pub constraints: Vec<TableConstraint>,
-    pub hive_distribution: HiveDistributionStyle,
-    pub hive_formats: Option<HiveFormat>,
     pub table_options: CreateTableOptions,
     pub file_format: Option<FileFormat>,
     pub location: Option<String>,
@@ -2595,9 +2408,8 @@ pub struct CreateTable {
     pub like: Option<CreateTableLikeKind>,
     pub clone: Option<ObjectName>,
     pub version: Option<TableVersion>,
-    // For Hive dialect, the table comment is after the column definitions without `=`,
-    // so the `comment` field is optional and different than the comment field in the general options list.
-    // [Hive](https://cwiki.apache.org/confluence/display/Hive/LanguageManual+DDL#LanguageManualDDL-CreateTable)
+    // Table comment that appears after column definitions.
+    // This field is optional and different than the comment field in the general options list.
     pub comment: Option<CommentDef>,
     pub on_commit: Option<OnCommit>,
     /// ClickHouse "ON CLUSTER" clause:
@@ -2618,9 +2430,6 @@ pub struct CreateTable {
     /// Snowflake: Table clustering list which contains base column, expressions on base columns.
     /// <https://docs.snowflake.com/en/user-guide/tables-clustering-keys#defining-a-clustering-key-for-a-table>
     pub cluster_by: Option<WrappedCollection<Vec<Expr>>>,
-    /// Hive: Table clustering column list.
-    /// <https://cwiki.apache.org/confluence/display/Hive/LanguageManual+DDL#LanguageManualDDL-CreateTable>
-    pub clustered_by: Option<ClusteredBy>,
     /// Postgres `INHERITs` clause, which contains the list of tables from which
     /// the new table inherits.
     /// <https://www.postgresql.org/docs/current/ddl-inherit.html>
@@ -2630,63 +2439,6 @@ pub struct CreateTable {
     /// if the "STRICT" table-option keyword is added to the end, after the closing ")",
     /// then strict typing rules apply to that table.
     pub strict: bool,
-    /// Snowflake "COPY GRANTS" clause
-    /// <https://docs.snowflake.com/en/sql-reference/sql/create-table>
-    pub copy_grants: bool,
-    /// Snowflake "ENABLE_SCHEMA_EVOLUTION" clause
-    /// <https://docs.snowflake.com/en/sql-reference/sql/create-table>
-    pub enable_schema_evolution: Option<bool>,
-    /// Snowflake "CHANGE_TRACKING" clause
-    /// <https://docs.snowflake.com/en/sql-reference/sql/create-table>
-    pub change_tracking: Option<bool>,
-    /// Snowflake "DATA_RETENTION_TIME_IN_DAYS" clause
-    /// <https://docs.snowflake.com/en/sql-reference/sql/create-table>
-    pub data_retention_time_in_days: Option<u64>,
-    /// Snowflake "MAX_DATA_EXTENSION_TIME_IN_DAYS" clause
-    /// <https://docs.snowflake.com/en/sql-reference/sql/create-table>
-    pub max_data_extension_time_in_days: Option<u64>,
-    /// Snowflake "DEFAULT_DDL_COLLATION" clause
-    /// <https://docs.snowflake.com/en/sql-reference/sql/create-table>
-    pub default_ddl_collation: Option<String>,
-    /// Snowflake "WITH AGGREGATION POLICY" clause
-    /// <https://docs.snowflake.com/en/sql-reference/sql/create-table>
-    pub with_aggregation_policy: Option<ObjectName>,
-    /// Snowflake "WITH ROW ACCESS POLICY" clause
-    /// <https://docs.snowflake.com/en/sql-reference/sql/create-table>
-    pub with_row_access_policy: Option<RowAccessPolicy>,
-    /// Snowflake "WITH TAG" clause
-    /// <https://docs.snowflake.com/en/sql-reference/sql/create-table>
-    pub with_tags: Option<Vec<Tag>>,
-    /// Snowflake "EXTERNAL_VOLUME" clause for Iceberg tables
-    /// <https://docs.snowflake.com/en/sql-reference/sql/create-iceberg-table>
-    pub external_volume: Option<String>,
-    /// Snowflake "BASE_LOCATION" clause for Iceberg tables
-    /// <https://docs.snowflake.com/en/sql-reference/sql/create-iceberg-table>
-    pub base_location: Option<String>,
-    /// Snowflake "CATALOG" clause for Iceberg tables
-    /// <https://docs.snowflake.com/en/sql-reference/sql/create-iceberg-table>
-    pub catalog: Option<String>,
-    /// Snowflake "CATALOG_SYNC" clause for Iceberg tables
-    /// <https://docs.snowflake.com/en/sql-reference/sql/create-iceberg-table>
-    pub catalog_sync: Option<String>,
-    /// Snowflake "STORAGE_SERIALIZATION_POLICY" clause for Iceberg tables
-    /// <https://docs.snowflake.com/en/sql-reference/sql/create-iceberg-table>
-    pub storage_serialization_policy: Option<StorageSerializationPolicy>,
-    /// Snowflake "TARGET_LAG" clause for dybamic tables
-    /// <https://docs.snowflake.com/en/sql-reference/sql/create-dynamic-table>
-    pub target_lag: Option<String>,
-    /// Snowflake "WAREHOUSE" clause for dybamic tables
-    /// <https://docs.snowflake.com/en/sql-reference/sql/create-dynamic-table>
-    pub warehouse: Option<Ident>,
-    /// Snowflake "REFRESH_MODE" clause for dybamic tables
-    /// <https://docs.snowflake.com/en/sql-reference/sql/create-dynamic-table>
-    pub refresh_mode: Option<RefreshModeKind>,
-    /// Snowflake "INITIALIZE" clause for dybamic tables
-    /// <https://docs.snowflake.com/en/sql-reference/sql/create-dynamic-table>
-    pub initialize: Option<InitializeKind>,
-    /// Snowflake "REQUIRE USER" clause for dybamic tables
-    /// <https://docs.snowflake.com/en/sql-reference/sql/create-dynamic-table>
-    pub require_user: bool,
     /// SQL:2016 temporal table system versioning
     /// `WITH SYSTEM VERSIONING [WITH HISTORY TABLE history_table_name]`
     pub system_versioning: Option<CreateTableSystemVersioning>,
@@ -2745,8 +2497,7 @@ impl fmt::Display for CreateTable {
             write!(f, " ({like_in_columns_list})")?;
         }
 
-        // Hive table comment should be after column definitions, please refer to:
-        // [Hive](https://cwiki.apache.org/confluence/display/Hive/LanguageManual+DDL#LanguageManualDDL-CreateTable)
+        // Table comment after column definitions
         if let Some(comment) = &self.comment {
             write!(f, " COMMENT '{comment}'")?;
         }
@@ -2768,75 +2519,6 @@ impl fmt::Display for CreateTable {
             write!(f, " {version}")?;
         }
 
-        match &self.hive_distribution {
-            HiveDistributionStyle::PARTITIONED { columns } => {
-                write!(f, " PARTITIONED BY ({})", display_comma_separated(columns))?;
-            }
-            HiveDistributionStyle::SKEWED {
-                columns,
-                on,
-                stored_as_directories,
-            } => {
-                write!(
-                    f,
-                    " SKEWED BY ({})) ON ({})",
-                    display_comma_separated(columns),
-                    display_comma_separated(on)
-                )?;
-                if *stored_as_directories {
-                    write!(f, " STORED AS DIRECTORIES")?;
-                }
-            }
-            _ => (),
-        }
-
-        if let Some(clustered_by) = &self.clustered_by {
-            write!(f, " {clustered_by}")?;
-        }
-
-        if let Some(HiveFormat {
-            row_format,
-            serde_properties,
-            storage,
-            location,
-        }) = &self.hive_formats
-        {
-            match row_format {
-                Some(HiveRowFormat::SERDE { class }) => write!(f, " ROW FORMAT SERDE '{class}'")?,
-                Some(HiveRowFormat::DELIMITED { delimiters }) => {
-                    write!(f, " ROW FORMAT DELIMITED")?;
-                    if !delimiters.is_empty() {
-                        write!(f, " {}", display_separated(delimiters, " "))?;
-                    }
-                }
-                None => (),
-            }
-            match storage {
-                Some(HiveIOFormat::IOF {
-                    input_format,
-                    output_format,
-                }) => write!(
-                    f,
-                    " STORED AS INPUTFORMAT {input_format} OUTPUTFORMAT {output_format}"
-                )?,
-                Some(HiveIOFormat::FileFormat { format }) if !self.external => {
-                    write!(f, " STORED AS {format}")?
-                }
-                _ => (),
-            }
-            if let Some(serde_properties) = serde_properties.as_ref() {
-                write!(
-                    f,
-                    " WITH SERDEPROPERTIES ({})",
-                    display_comma_separated(serde_properties)
-                )?;
-            }
-            if !self.external {
-                if let Some(loc) = location {
-                    write!(f, " LOCATION '{loc}'")?;
-                }
-            }
-        }
         if self.external {
             if let Some(file_format) = self.file_format {
                 write!(f, " STORED AS {file_format}")?;
@@ -2869,101 +2551,6 @@ impl fmt::Display for CreateTable {
         if let options @ CreateTableOptions::Options(_) = &self.table_options {
             write!(f, " {options}")?;
         }
-        if let Some(external_volume) = self.external_volume.as_ref() {
-            write!(f, " EXTERNAL_VOLUME='{external_volume}'")?;
-        }
-
-        if let Some(catalog) = self.catalog.as_ref() {
-            write!(f, " CATALOG='{catalog}'")?;
-        }
-
-        if self.iceberg {
-            if let Some(base_location) = self.base_location.as_ref() {
-                write!(f, " BASE_LOCATION='{base_location}'")?;
-            }
-        }
-
-        if let Some(catalog_sync) = self.catalog_sync.as_ref() {
-            write!(f, " CATALOG_SYNC='{catalog_sync}'")?;
-        }
-
-        if let Some(storage_serialization_policy) = self.storage_serialization_policy.as_ref() {
-            write!(
-                f,
-                " STORAGE_SERIALIZATION_POLICY={storage_serialization_policy}"
-            )?;
-        }
-
-        if self.copy_grants {
-            write!(f, " COPY GRANTS")?;
-        }
-
-        if let Some(is_enabled) = self.enable_schema_evolution {
-            write!(
-                f,
-                " ENABLE_SCHEMA_EVOLUTION={}",
-                if is_enabled { "TRUE" } else { "FALSE" }
-            )?;
-        }
-
-        if let Some(is_enabled) = self.change_tracking {
-            write!(
-                f,
-                " CHANGE_TRACKING={}",
-                if is_enabled { "TRUE" } else { "FALSE" }
-            )?;
-        }
-
-        if let Some(data_retention_time_in_days) = self.data_retention_time_in_days {
-            write!(
-                f,
-                " DATA_RETENTION_TIME_IN_DAYS={data_retention_time_in_days}",
-            )?;
-        }
-
-        if let Some(max_data_extension_time_in_days) = self.max_data_extension_time_in_days {
-            write!(
-                f,
-                " MAX_DATA_EXTENSION_TIME_IN_DAYS={max_data_extension_time_in_days}",
-            )?;
-        }
-
-        if let Some(default_ddl_collation) = &self.default_ddl_collation {
-            write!(f, " DEFAULT_DDL_COLLATION='{default_ddl_collation}'",)?;
-        }
-
-        if let Some(with_aggregation_policy) = &self.with_aggregation_policy {
-            write!(f, " WITH AGGREGATION POLICY {with_aggregation_policy}",)?;
-        }
-
-        if let Some(row_access_policy) = &self.with_row_access_policy {
-            write!(f, " {row_access_policy}",)?;
-        }
-
-        if let Some(tag) = &self.with_tags {
-            write!(f, " WITH TAG ({})", display_comma_separated(tag.as_slice()))?;
-        }
-
-        if let Some(target_lag) = &self.target_lag {
-            write!(f, " TARGET_LAG='{target_lag}'")?;
-        }
-
-        if let Some(warehouse) = &self.warehouse {
-            write!(f, " WAREHOUSE={warehouse}")?;
-        }
-
-        if let Some(refresh_mode) = &self.refresh_mode {
-            write!(f, " REFRESH_MODE={refresh_mode}")?;
-        }
-
-        if let Some(initialize) = &self.initialize {
-            write!(f, " INITIALIZE={initialize}")?;
-        }
-
-        if self.require_user {
-            write!(f, " REQUIRE USER")?;
-        }
-
         if self.on_commit.is_some() {
             let on_commit = match self.on_commit {
                 Some(OnCommit::DeleteRows) => "ON COMMIT DELETE ROWS",
@@ -2999,7 +2586,11 @@ pub struct CreateAssertion {
 
 impl fmt::Display for CreateAssertion {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let CreateAssertion { token: _, name, expr } = self;
+        let CreateAssertion {
+            token: _,
+            name,
+            expr,
+        } = self;
         write!(f, "CREATE ASSERTION {} CHECK ({})", name, expr)
     }
 }
@@ -3096,7 +2687,7 @@ pub struct CreateFunction {
     ///
     /// [PostgreSQL](https://www.postgresql.org/docs/current/sql-createfunction.html)
     pub parallel: Option<FunctionParallel>,
-    /// USING ... (Hive only)
+    /// USING clause for CREATE FUNCTION
     pub using: Option<CreateFunctionUsing>,
     /// Language used in a UDF definition.
     ///
@@ -3205,66 +2796,6 @@ impl fmt::Display for CreateFunction {
         if let Some(CreateFunctionBody::AsBeginEnd(bes)) = &self.function_body {
             write!(f, " AS {bes}")?;
         }
-        Ok(())
-    }
-}
-
-/// ```sql
-/// CREATE CONNECTOR [IF NOT EXISTS] connector_name
-/// [TYPE datasource_type]
-/// [URL datasource_url]
-/// [COMMENT connector_comment]
-/// [WITH DCPROPERTIES(property_name=property_value, ...)]
-/// ```
-///
-/// [Hive](https://cwiki.apache.org/confluence/pages/viewpage.action?pageId=27362034#LanguageManualDDL-CreateDataConnectorCreateConnector)
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct CreateConnector {
-    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
-    pub token: AttachedToken,
-    pub name: Ident,
-    pub if_not_exists: bool,
-    pub connector_type: Option<String>,
-    pub url: Option<String>,
-    pub comment: Option<CommentDef>,
-    pub with_dcproperties: Option<Vec<SqlOption>>,
-}
-
-impl fmt::Display for CreateConnector {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "CREATE CONNECTOR {if_not_exists}{name}",
-            if_not_exists = if self.if_not_exists {
-                "IF NOT EXISTS "
-            } else {
-                ""
-            },
-            name = self.name,
-        )?;
-
-        if let Some(connector_type) = &self.connector_type {
-            write!(f, " TYPE '{connector_type}'")?;
-        }
-
-        if let Some(url) = &self.url {
-            write!(f, " URL '{url}'")?;
-        }
-
-        if let Some(comment) = &self.comment {
-            write!(f, " COMMENT = '{comment}'")?;
-        }
-
-        if let Some(with_dcproperties) = &self.with_dcproperties {
-            write!(
-                f,
-                " WITH DCPROPERTIES({})",
-                display_comma_separated(with_dcproperties)
-            )?;
-        }
-
         Ok(())
     }
 }
@@ -3712,46 +3243,6 @@ impl Spanned for Truncate {
     }
 }
 
-/// An `MSCK` statement.
-///
-/// ```sql
-/// MSCK [REPAIR] TABLE table_name [ADD|DROP|SYNC PARTITIONS]
-/// ```
-/// MSCK (Hive) - MetaStore Check command
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct Msck {
-    /// Table name to check
-    #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
-    pub table_name: ObjectName,
-    /// Whether to repair the table
-    pub repair: bool,
-    /// Partition action (ADD, DROP, or SYNC)
-    pub partition_action: Option<super::AddDropSync>,
-}
-
-impl fmt::Display for Msck {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "MSCK {repair}TABLE {table}",
-            repair = if self.repair { "REPAIR " } else { "" },
-            table = self.table_name
-        )?;
-        if let Some(pa) = &self.partition_action {
-            write!(f, " {pa}")?;
-        }
-        Ok(())
-    }
-}
-
-impl Spanned for Msck {
-    fn span(&self) -> Span {
-        self.table_name.span()
-    }
-}
-
 /// CREATE VIEW statement.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -3975,7 +3466,6 @@ pub struct AlterTable {
     pub if_exists: bool,
     pub only: bool,
     pub operations: Vec<AlterTableOperation>,
-    pub location: Option<HiveSetLocation>,
     /// ClickHouse dialect supports `ON CLUSTER` clause for ALTER TABLE
     /// For example: `ALTER TABLE table_name ON CLUSTER cluster_name ADD COLUMN c UInt32`
     /// [ClickHouse](https://clickhouse.com/docs/en/sql-reference/statements/alter/update)
@@ -4005,9 +3495,6 @@ impl fmt::Display for AlterTable {
             write!(f, "ON CLUSTER {cluster} ")?;
         }
         write!(f, "{}", display_comma_separated(&self.operations))?;
-        if let Some(loc) = &self.location {
-            write!(f, " {loc}")?
-        }
         Ok(())
     }
 }
@@ -4399,7 +3886,14 @@ pub struct CreatePropertyGraph {
 
 impl fmt::Display for CreatePropertyGraph {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let CreatePropertyGraph { token: _, or_replace, if_not_exists, name, vertex_tables, edge_tables } = self;
+        let CreatePropertyGraph {
+            token: _,
+            or_replace,
+            if_not_exists,
+            name,
+            vertex_tables,
+            edge_tables,
+        } = self;
         write!(f, "CREATE ")?;
         if *or_replace {
             write!(f, "OR REPLACE ")?;
@@ -4422,11 +3916,7 @@ impl fmt::Display for CreatePropertyGraph {
         }
 
         if !edge_tables.is_empty() {
-            write!(
-                f,
-                "EDGE TABLES ({})",
-                display_comma_separated(edge_tables)
-            )?;
+            write!(f, "EDGE TABLES ({})", display_comma_separated(edge_tables))?;
         }
 
         Ok(())
@@ -4448,7 +3938,12 @@ pub struct DropPropertyGraph {
 
 impl fmt::Display for DropPropertyGraph {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let DropPropertyGraph { token: _, if_exists, name, drop_behavior } = self;
+        let DropPropertyGraph {
+            token: _,
+            if_exists,
+            name,
+            drop_behavior,
+        } = self;
         write!(f, "DROP PROPERTY GRAPH ")?;
         if *if_exists {
             write!(f, "IF EXISTS ")?;
