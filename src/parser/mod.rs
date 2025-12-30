@@ -1098,10 +1098,7 @@ impl<'a> Parser<'a> {
                                 value: *right,
                             }))
                         } else {
-                            parser_err!(
-                                "Not a PL/pgSQL assignment",
-                                parser.peek_token().span.start
-                            )
+                            parser_err!("Not a PL/pgSQL assignment", parser.peek_token().span.start)
                         }
                     }) {
                         return Ok(assignment);
@@ -2639,6 +2636,10 @@ impl<'a> Parser<'a> {
                     over: None,
                     within_group: vec![],
                 })))
+            }
+            // SQL/MDA MDARRAY constructor: MDARRAY[x(0:2), y(1:3)] [1, 2, 3, 4]
+            Keyword::MDARRAY if *self.peek_token_ref() == BorrowedToken::LBracket => {
+                Ok(Some(self.parse_mdarray_expr()?))
             }
             Keyword::NOT => Ok(Some(self.parse_not()?)),
             Keyword::MATCH if self.dialect.supports_match_against() => {
@@ -4279,6 +4280,73 @@ impl<'a> Parser<'a> {
         let exprs = self.parse_comma_separated0(Parser::parse_expr, BorrowedToken::RBracket)?;
         self.expect_token(&BorrowedToken::RBracket)?;
         Ok(Expr::Array(Array { elem: exprs, named }))
+    }
+
+    /// Parses an SQL/MDA MDARRAY expression (ISO/IEC 9075-15)
+    ///
+    /// Syntax: `MDARRAY[dim_spec, ...] [value, ...]`
+    ///
+    /// Where dim_spec is:
+    /// - `name` - dimension name only
+    /// - `name(lower:upper)` - dimension with bounds
+    /// - `name(lower:*)` - dimension with open upper bound
+    ///
+    /// Examples:
+    /// - `MDARRAY[x(0:2)] [0, 1, 2]`
+    /// - `MDARRAY[x(1:2), y(1:2)] [1, 2, 5, 6]`
+    pub fn parse_mdarray_expr(&self) -> Result<Expr, ParserError> {
+        // Parse the dimension specifications: MDARRAY[dim1, dim2, ...]
+        self.expect_token(&BorrowedToken::LBracket)?;
+        let dimensions = self.parse_comma_separated(Parser::parse_mdarray_dimension)?;
+        self.expect_token(&BorrowedToken::RBracket)?;
+
+        // Parse the values: [val1, val2, ...]
+        self.expect_token(&BorrowedToken::LBracket)?;
+        let values = self.parse_comma_separated0(Parser::parse_expr, BorrowedToken::RBracket)?;
+        self.expect_token(&BorrowedToken::RBracket)?;
+
+        Ok(Expr::MdArray(MdArray { dimensions, values }))
+    }
+
+    /// Parses an MDARRAY dimension specification
+    ///
+    /// Syntax:
+    /// - `name` - dimension name only
+    /// - `name(lower:upper)` - dimension with explicit bounds
+    /// - `name(lower:*)` - dimension with open upper bound
+    /// - `name(*:upper)` - dimension with open lower bound
+    fn parse_mdarray_dimension(&self) -> Result<MdArrayDimension, ParserError> {
+        let name = self.parse_identifier()?;
+
+        // Check for optional bounds: (lower:upper)
+        let (lower_bound, upper_bound) = if self.consume_token(&BorrowedToken::LParen) {
+            // Parse lower bound (could be * for wildcard)
+            let lower = if self.consume_token(&BorrowedToken::Mul) {
+                None
+            } else {
+                Some(self.parse_expr()?)
+            };
+
+            self.expect_token(&BorrowedToken::Colon)?;
+
+            // Parse upper bound (could be * for wildcard)
+            let upper = if self.consume_token(&BorrowedToken::Mul) {
+                None
+            } else {
+                Some(self.parse_expr()?)
+            };
+
+            self.expect_token(&BorrowedToken::RParen)?;
+            (lower, upper)
+        } else {
+            (None, None)
+        };
+
+        Ok(MdArrayDimension {
+            name,
+            lower_bound,
+            upper_bound,
+        })
     }
 
     pub fn parse_listagg_on_overflow(&self) -> Result<Option<ListAggOnOverflow>, ParserError> {
@@ -12882,6 +12950,17 @@ impl<'a> Parser<'a> {
             data = DataType::Array(ArrayElemTypeDef::SquareBracket(Box::new(data), size))
         }
 
+        // Parse optional MDARRAY keyword suffix (SQL/MDA: "INTEGER MDARRAY[x, y]")
+        if self.parse_keyword(Keyword::MDARRAY) {
+            self.expect_token(&BorrowedToken::LBracket)?;
+            let dimensions = self.parse_comma_separated(Parser::parse_identifier)?;
+            self.expect_token(&BorrowedToken::RBracket)?;
+            data = DataType::MdArray(MdArrayTypeDef {
+                element_type: Box::new(data),
+                dimensions,
+            });
+        }
+
         Ok((data, trailing_bracket))
     }
 
@@ -19807,8 +19886,8 @@ impl<'a> Parser<'a> {
         let execute_token = AttachedToken(self.get_current_token().clone().to_static());
 
         // Check for EXECUTE IMMEDIATE
-        let is_immediate = self.dialect.supports_execute_immediate()
-            && self.parse_keyword(Keyword::IMMEDIATE);
+        let is_immediate =
+            self.dialect.supports_execute_immediate() && self.parse_keyword(Keyword::IMMEDIATE);
 
         // For PL/pgSQL dynamic SQL: EXECUTE query_expr INTO ...
         // Try to parse as expression first (for dynamic SQL case)
@@ -19826,7 +19905,10 @@ impl<'a> Parser<'a> {
                 {
                     Ok(expr)
                 } else {
-                    parser_err!("Not a PL/pgSQL dynamic EXECUTE", parser.peek_token().span.start)
+                    parser_err!(
+                        "Not a PL/pgSQL dynamic EXECUTE",
+                        parser.peek_token().span.start
+                    )
                 }
             }) {
                 // This is PL/pgSQL dynamic SQL: EXECUTE expr [INTO [STRICT] ...] [USING ...]

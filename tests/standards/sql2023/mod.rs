@@ -20,6 +20,7 @@
 //! SQL:2023 (ISO/IEC 9075:2023) introduces significant new features:
 //!
 //! - Property Graph Queries (SQL/PGQ) - Part 16
+//! - Multi-Dimensional Arrays (SQL/MDA) - Part 15
 //! - JSON improvements (native type, dot notation, item methods)
 //! - New functions (GREATEST, LEAST, ANY_VALUE, etc.)
 //! - Numeric literal enhancements (hex, binary, underscores)
@@ -27,6 +28,7 @@
 //! Note: SQL/PGQ tests are in a separate `pgq` module due to their scope.
 
 pub mod json_improvements;
+pub mod mda;
 pub mod new_functions;
 // Temporarily commented out due to compilation errors in other test files
 // These will be re-enabled once those files are fixed

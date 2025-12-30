@@ -30,22 +30,21 @@ use super::{
     BeginEndStatements, CaseStatement, CloseCursor, ClusteredIndex, ColumnDef, ColumnOption,
     ColumnOptionDef, ConditionalStatementBlock, ConditionalStatements, ConflictTarget, ConnectBy,
     ConstraintCharacteristics, CopySource, CreateIndex, CreateTable, CreateTableOptions, Cte,
-    Delete, DoUpdate, ExceptSelectItem, ExcludeSelectItem, Expr, ExprWithAlias, Fetch,
-    ForPortionOf, FromTable, Function, FunctionArg, FunctionArgExpr, FunctionArgumentClause,
-    FunctionArgumentList, FunctionArguments, GroupByExpr, HavingBound, IfStatement,
-    IlikeSelectItem, IndexColumn, Insert, Interpolate, InterpolateExpr, IterateStatement, Join,
-    JoinConstraint, JoinOperator, JsonOnBehavior, JsonPath, JsonPathElem, LateralView,
-    LeaveStatement, LimitClause, LoopStatement, MatchRecognizePattern, Measure,
-    NamedParenthesizedList, NamedWindowDefinition, ObjectName, ObjectNamePart, Offset, OnConflict,
-    OnConflictAction, OnInsert, OpenStatement, OrderBy, OrderByExpr, OrderByKind, Partition,
-    DoBody, DoStatement, PerformStatement, PivotValueSource, PlPgSqlAssignment, PlPgSqlDataType,
-    PlPgSqlDeclaration,
-    ProjectionSelect, Query, RaiseMessage, RaiseStatement, RaiseUsingItem, ReferentialAction,
-    RenameSelectItem, RepeatStatement, ReplaceSelectElement, ReplaceSelectItem, Select, SelectInto,
-    SelectItem, SetExpr, SqlOption, Statement, Subscript, SubsetDefinition, SymbolDefinition,
-    TableAlias, TableAliasColumnDef, TableConstraint, TableFactor, TableObject,
-    TableOptionsClustered, TableWithJoins, Update, UpdateTableFromKind, Use, Value, Values,
-    ViewColumnDef, WhileStatement, WildcardAdditionalOptions, With, WithFill,
+    Delete, DoBody, DoStatement, DoUpdate, ExceptSelectItem, ExcludeSelectItem, Expr,
+    ExprWithAlias, Fetch, ForPortionOf, FromTable, Function, FunctionArg, FunctionArgExpr,
+    FunctionArgumentClause, FunctionArgumentList, FunctionArguments, GroupByExpr, HavingBound,
+    IfStatement, IlikeSelectItem, IndexColumn, Insert, Interpolate, InterpolateExpr,
+    IterateStatement, Join, JoinConstraint, JoinOperator, JsonOnBehavior, JsonPath, JsonPathElem,
+    LateralView, LeaveStatement, LimitClause, LoopStatement, MatchRecognizePattern, MdArray,
+    MdArrayDimension, Measure, NamedParenthesizedList, NamedWindowDefinition, ObjectName,
+    ObjectNamePart, Offset, OnConflict, OnConflictAction, OnInsert, OpenStatement, OrderBy,
+    OrderByExpr, OrderByKind, Partition, PerformStatement, PivotValueSource, PlPgSqlAssignment,
+    PlPgSqlDataType, PlPgSqlDeclaration, ProjectionSelect, Query, RaiseMessage, RaiseStatement,
+    RaiseUsingItem, ReferentialAction, RenameSelectItem, RepeatStatement, ReplaceSelectElement,
+    ReplaceSelectItem, Select, SelectInto, SelectItem, SetExpr, SqlOption, Statement, Subscript,
+    SubsetDefinition, SymbolDefinition, TableAlias, TableAliasColumnDef, TableConstraint,
+    TableFactor, TableObject, TableOptionsClustered, TableWithJoins, Update, UpdateTableFromKind,
+    Use, Value, Values, ViewColumnDef, WhileStatement, WildcardAdditionalOptions, With, WithFill,
 };
 
 /// Given an iterator of spans, return the [Span::union] of all spans.
@@ -1654,6 +1653,7 @@ impl Spanned for Expr {
             Expr::Rollup(vec) => union_spans(vec.iter().flat_map(|i| i.iter().map(|k| k.span()))),
             Expr::Tuple(vec) => union_spans(vec.iter().map(|i| i.span())),
             Expr::Array(array) => array.span(),
+            Expr::MdArray(mdarray) => mdarray.span(),
             Expr::MatchAgainst { .. } => Span::empty(),
             Expr::JsonAccess { value, path } => value.span().union(&path.span()),
             Expr::AnyOp {
@@ -1845,6 +1845,38 @@ impl Spanned for Array {
         } = self;
 
         union_spans(elem.iter().map(|i| i.span()))
+    }
+}
+
+impl Spanned for MdArray {
+    fn span(&self) -> Span {
+        let MdArray { dimensions, values } = self;
+
+        union_spans(
+            dimensions
+                .iter()
+                .map(|d| d.span())
+                .chain(values.iter().map(|v| v.span())),
+        )
+    }
+}
+
+impl Spanned for MdArrayDimension {
+    fn span(&self) -> Span {
+        let MdArrayDimension {
+            name,
+            lower_bound,
+            upper_bound,
+        } = self;
+
+        let mut span = name.span;
+        if let Some(lower) = lower_bound {
+            span = span.union(&lower.span());
+        }
+        if let Some(upper) = upper_bound {
+            span = span.union(&upper.span());
+        }
+        span
     }
 }
 
@@ -2571,10 +2603,7 @@ impl Spanned for super::OpenFor {
 
 impl Spanned for super::ExecuteInto {
     fn span(&self) -> Span {
-        let super::ExecuteInto {
-            strict: _,
-            targets,
-        } = self;
+        let super::ExecuteInto { strict: _, targets } = self;
         union_spans(targets.iter().map(Spanned::span))
     }
 }
@@ -2648,9 +2677,7 @@ impl Spanned for OpenStatement {
             cursor_name,
             open_for,
         } = self;
-        union_spans(
-            iter::once(cursor_name.span).chain(open_for.iter().map(Spanned::span)),
-        )
+        union_spans(iter::once(cursor_name.span).chain(open_for.iter().map(Spanned::span)))
     }
 }
 
