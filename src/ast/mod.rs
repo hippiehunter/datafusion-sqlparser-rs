@@ -50,7 +50,7 @@ use crate::{
 
 pub use self::data_type::{
     ArrayElemTypeDef, BinaryLength, CharLengthUnits, CharacterLength, DataType, EnumMember,
-    ExactNumberInfo, IntervalFields, StructBracketKind, TimezoneInfo,
+    ExactNumberInfo, IntervalFields, MdArrayTypeDef, StructBracketKind, TimezoneInfo,
 };
 pub use self::dcl::{AlterRoleOperation, CreateRole, ResetConfig, RoleOption, SetConfigValue, Use};
 pub use self::ddl::{
@@ -416,6 +416,72 @@ impl fmt::Display for Array {
             "{}[{}]",
             if self.named { "ARRAY" } else { "" },
             display_comma_separated(&self.elem)
+        )
+    }
+}
+
+/// Represents a dimension in an SQL/MDA MDARRAY expression.
+///
+/// SQL/MDA (ISO/IEC 9075-15) defines multi-dimensional arrays with named dimensions
+/// and optional bounds. Examples:
+/// - `x` - named dimension without bounds
+/// - `x(0:99)` - named dimension with lower and upper bounds
+/// - `x(0:*)` - named dimension with lower bound and open upper bound
+///
+/// Reference: [SQL/MDA Standard](https://www.iso.org/standard/84807.html)
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct MdArrayDimension {
+    /// The name of the dimension (e.g., `x`, `y`, `time`)
+    pub name: Ident,
+    /// Optional lower bound of the dimension (e.g., `0` in `x(0:99)`)
+    pub lower_bound: Option<Expr>,
+    /// Optional upper bound of the dimension (e.g., `99` in `x(0:99)`)
+    /// None with lower_bound Some means open upper bound (e.g., `x(0:*)`)
+    pub upper_bound: Option<Expr>,
+}
+
+impl fmt::Display for MdArrayDimension {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.name)?;
+        match (&self.lower_bound, &self.upper_bound) {
+            (Some(lower), Some(upper)) => write!(f, "({}:{})", lower, upper),
+            (Some(lower), None) => write!(f, "({}:*)", lower),
+            (None, Some(upper)) => write!(f, "(*:{})", upper),
+            (None, None) => Ok(()),
+        }
+    }
+}
+
+/// Represents an SQL/MDA MDARRAY expression (ISO/IEC 9075-15).
+///
+/// SQL/MDA provides multi-dimensional array support in SQL. The MDARRAY constructor
+/// allows creating arrays with named dimensions and explicit bounds.
+///
+/// Examples:
+/// - `MDARRAY[x(0:2)] [0, 1, 2]` - 1D array with 3 elements
+/// - `MDARRAY[x(1:2), y(1:2)] [1, 2, 5, 6]` - 2D array
+/// - `MDARRAY[x, y] VALUES` - MDARRAY with named dimensions
+///
+/// Reference: [SQL/MDA Standard](https://www.iso.org/standard/84807.html)
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct MdArray {
+    /// The dimensions of the array (e.g., `[x(0:2), y(1:3)]`)
+    pub dimensions: Vec<MdArrayDimension>,
+    /// The array element values
+    pub values: Vec<Expr>,
+}
+
+impl fmt::Display for MdArray {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "MDARRAY[{}] [{}]",
+            display_comma_separated(&self.dimensions),
+            display_comma_separated(&self.values)
         )
     }
 }
@@ -1305,6 +1371,10 @@ pub enum Expr {
     },
     /// An array expression e.g. `ARRAY[1, 2]`
     Array(Array),
+    /// An SQL/MDA MDARRAY expression e.g. `MDARRAY[x(0:2)] [0, 1, 2]`
+    ///
+    /// SQL/MDA (ISO/IEC 9075-15) provides multi-dimensional array support.
+    MdArray(MdArray),
     /// An interval expression e.g. `INTERVAL '1' YEAR`
     Interval(Interval),
     /// `MySQL` specific text search function [(1)].
@@ -2261,6 +2331,9 @@ impl fmt::Display for Expr {
             }
             Expr::Array(set) => {
                 write!(f, "{set}")
+            }
+            Expr::MdArray(mdarray) => {
+                write!(f, "{mdarray}")
             }
             Expr::JsonAccess { value, path } => {
                 write!(f, "{value}{path}")

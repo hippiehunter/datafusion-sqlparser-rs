@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "visitor")]
 use sqlparser_derive::{Visit, VisitMut};
 
-use crate::ast::{display_comma_separated, Expr, ObjectName, StructField};
+use crate::ast::{display_comma_separated, Expr, Ident, ObjectName, StructField};
 
 use super::{value::escape_single_quote_string, ColumnDef};
 
@@ -425,6 +425,15 @@ pub enum DataType {
     Custom(ObjectName, Vec<String>),
     /// Arrays.
     Array(ArrayElemTypeDef),
+    /// SQL/MDA Multi-dimensional Arrays (ISO/IEC 9075-15).
+    ///
+    /// Examples:
+    /// - `INTEGER MDARRAY[x]` - 1D array with named dimension
+    /// - `FLOAT MDARRAY[x, y]` - 2D array with named dimensions
+    /// - `INTEGER MDARRAY[x, y, z]` - 3D array with named dimensions
+    ///
+    /// Reference: [SQL/MDA Standard](https://www.iso.org/standard/84807.html)
+    MdArray(MdArrayTypeDef),
     /// Map, see [ClickHouse].
     ///
     /// [ClickHouse]: https://clickhouse.com/docs/en/sql-reference/data-types/map
@@ -692,6 +701,7 @@ impl fmt::Display for DataType {
                 ArrayElemTypeDef::AngleBracket(t) => write!(f, "ARRAY<{t}>"),
                 ArrayElemTypeDef::Parenthesis(t) => write!(f, "Array({t})"),
             },
+            DataType::MdArray(def) => write!(f, "{def}"),
             DataType::Custom(ty, modifiers) => {
                 if modifiers.is_empty() {
                     write!(f, "{ty}")
@@ -1096,6 +1106,37 @@ pub enum ArrayElemTypeDef {
     SquareBracket(Box<DataType>, Option<u64>),
     /// `Array(Int64)`
     Parenthesis(Box<DataType>),
+}
+
+/// Represents the type definition for an SQL/MDA MDARRAY type (ISO/IEC 9075-15).
+///
+/// SQL/MDA arrays have named dimensions, each with an optional extent bound.
+///
+/// Examples:
+/// - `INTEGER MDARRAY[x]` - 1D array, dimension named 'x'
+/// - `FLOAT MDARRAY[x, y]` - 2D array, dimensions named 'x' and 'y'
+/// - `INTEGER MDARRAY[time, lat, lon]` - 3D array for spatiotemporal data
+///
+/// Reference: [SQL/MDA Standard](https://www.iso.org/standard/84807.html)
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct MdArrayTypeDef {
+    /// The element type of the array
+    pub element_type: Box<DataType>,
+    /// The named dimensions of the array (e.g., `[x, y, z]` or `[time, lat, lon]`)
+    pub dimensions: Vec<Ident>,
+}
+
+impl fmt::Display for MdArrayTypeDef {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{} MDARRAY[{}]",
+            self.element_type,
+            display_comma_separated(&self.dimensions)
+        )
+    }
 }
 
 /// Represents different types of geometric shapes which are commonly used in

@@ -619,6 +619,7 @@ define_keywords!(
     MAX_DATA_EXTENSION_TIME_IN_DAYS,
     MAX_ROWS,
     MB,
+    MDARRAY,
     MEASURES,
     MEDIUMBLOB,
     MEDIUMINT,
