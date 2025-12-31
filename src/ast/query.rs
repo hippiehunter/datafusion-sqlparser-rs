@@ -2468,11 +2468,6 @@ impl fmt::Display for GraphMatchClause {
             write!(f, "{path_mode} ")?;
         }
 
-        // Row limiting
-        if let Some(row_limiting) = &self.row_limiting {
-            write!(f, "{row_limiting} ")?;
-        }
-
         // Patterns
         for (i, pattern) in self.patterns.iter().enumerate() {
             if i > 0 {
@@ -2489,6 +2484,11 @@ impl fmt::Display for GraphMatchClause {
         // WHERE clause
         if let Some(where_clause) = &self.where_clause {
             write!(f, " WHERE {where_clause}")?;
+        }
+
+        // Row limiting (output after patterns/WHERE, before KEEP/COLUMNS)
+        if let Some(row_limiting) = &self.row_limiting {
+            write!(f, " {row_limiting}")?;
         }
 
         // KEEP clause

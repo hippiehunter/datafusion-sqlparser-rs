@@ -61,21 +61,51 @@ fn aggregation_having() {
 
 #[test]
 fn row_limiting_one_row_per_match() {
+    // Test with row limiting after patterns (canonical form)
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH ONE ROW PER MATCH (a)-[*]->(b) COLUMNS (a.id, b.id))",
+        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[*]->(b) ONE ROW PER MATCH COLUMNS (a.id, b.id))",
     );
 }
 
 #[test]
 fn row_limiting_one_row_per_vertex() {
+    // Test with row limiting after patterns (canonical form)
     verified_standard_stmt(
-        "SELECT * FROM GRAPH_TABLE (g MATCH ONE ROW PER VERTEX (a)-[*]->(b) COLUMNS (a.id, b.id))",
+        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[*]->(b) ONE ROW PER VERTEX COLUMNS (a.id, b.id))",
     );
 }
 
 #[test]
 fn row_limiting_one_row_per_step() {
+    // Test with row limiting after patterns (canonical form)
     verified_standard_stmt(
+        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[*]->(b) ONE ROW PER STEP COLUMNS (a.id, b.id))",
+    );
+}
+
+#[test]
+fn row_limiting_before_patterns_parses() {
+    use crate::standards::common::one_statement_parses_to_std;
+    // Test that row limiting BEFORE patterns also parses correctly
+    // (normalizes to canonical form with row limiting after patterns)
+    one_statement_parses_to_std(
+        "SELECT * FROM GRAPH_TABLE (g MATCH ONE ROW PER MATCH (a)-[*]->(b) COLUMNS (a.id, b.id))",
+        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[*]->(b) ONE ROW PER MATCH COLUMNS (a.id, b.id))",
+    );
+    one_statement_parses_to_std(
+        "SELECT * FROM GRAPH_TABLE (g MATCH ONE ROW PER VERTEX (a)-[*]->(b) COLUMNS (a.id, b.id))",
+        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[*]->(b) ONE ROW PER VERTEX COLUMNS (a.id, b.id))",
+    );
+    one_statement_parses_to_std(
         "SELECT * FROM GRAPH_TABLE (g MATCH ONE ROW PER STEP (a)-[*]->(b) COLUMNS (a.id, b.id))",
+        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[*]->(b) ONE ROW PER STEP COLUMNS (a.id, b.id))",
+    );
+}
+
+#[test]
+fn row_limiting_with_where_clause() {
+    // Test row limiting with WHERE clause (row limiting comes after WHERE)
+    verified_standard_stmt(
+        "SELECT * FROM GRAPH_TABLE (g MATCH (a:Person)-[e:KNOWS*]->(b:Person) WHERE a.age > 21 ONE ROW PER MATCH COLUMNS (a.name, b.name))",
     );
 }

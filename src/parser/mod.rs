@@ -16305,7 +16305,10 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// Parse MATCH [path_finding] [path_mode] [row_limiting] (pattern) [COST expr] [WHERE expr] [KEEP ...] COLUMNS (...)
+    /// Parse MATCH [path_finding] [path_mode] [row_limiting] (pattern) [COST expr] [WHERE expr] [row_limiting] [KEEP ...] COLUMNS (...)
+    ///
+    /// Note: row_limiting (ONE ROW PER MATCH/VERTEX/STEP) can appear either before patterns
+    /// or after patterns/WHERE (but before COLUMNS). Both positions are supported for compatibility.
     fn parse_graph_match_clause(&self) -> Result<GraphMatchClause, ParserError> {
         // Parse optional path finding algorithm
         let path_finding = self.parse_path_finding()?;
@@ -16313,8 +16316,8 @@ impl<'a> Parser<'a> {
         // Parse optional path mode
         let path_mode = self.parse_path_mode()?;
 
-        // Parse optional row limiting
-        let row_limiting = self.parse_row_limiting()?;
+        // Parse optional row limiting (can appear before patterns)
+        let row_limiting_before = self.parse_row_limiting()?;
 
         // Parse graph patterns
         let patterns = self.parse_graph_patterns()?;
@@ -16332,6 +16335,12 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
+
+        // Parse optional row limiting (can also appear after patterns/WHERE, before KEEP/COLUMNS)
+        let row_limiting_after = self.parse_row_limiting()?;
+
+        // Combine row_limiting from either position (prefer after if both present)
+        let row_limiting = row_limiting_after.or(row_limiting_before);
 
         // Parse optional KEEP clause
         let keep_clause = if self.parse_keyword(Keyword::KEEP) {
