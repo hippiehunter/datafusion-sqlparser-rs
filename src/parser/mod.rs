@@ -1030,6 +1030,14 @@ impl<'a> Parser<'a> {
                 }
                 Keyword::RENAME => self.parse_rename(),
                 Keyword::LOAD => self.parse_load(),
+                // IMPORT FOREIGN SCHEMA is SQL/MED standard
+                Keyword::IMPORT => {
+                    if self.parse_keywords(&[Keyword::FOREIGN, Keyword::SCHEMA]) {
+                        self.parse_import_foreign_schema()
+                    } else {
+                        self.expected("FOREIGN SCHEMA after IMPORT", self.peek_token())
+                    }
+                }
                 // `OPTIMIZE` is clickhouse specific https://clickhouse.tech/docs/en/sql-reference/statements/optimize/
                 Keyword::OPTIMIZE if dialect_of!(self is GenericDialect) => {
                     self.parse_optimize_table()
@@ -6474,7 +6482,12 @@ impl<'a> Parser<'a> {
         } else if self.parse_keywords(&[Keyword::CONSTRAINT, Keyword::TRIGGER]) {
             self.parse_create_trigger(create_token, temporary, or_alter, or_replace, true)
         } else if self.parse_keyword(Keyword::USER) {
-            self.parse_create_user(or_replace)
+            // Check if this is CREATE USER MAPPING
+            if self.parse_keyword(Keyword::MAPPING) {
+                self.parse_create_user_mapping(create_token)
+            } else {
+                self.parse_create_user(or_replace)
+            }
         } else if or_replace {
             self.expected(
                 "[EXTERNAL] TABLE or [MATERIALIZED] VIEW or FUNCTION after CREATE OR REPLACE",
@@ -6511,6 +6524,18 @@ impl<'a> Parser<'a> {
             }
         } else if self.parse_keyword(Keyword::SERVER) {
             self.parse_pg_create_server(create_token)
+        } else if self.parse_keyword(Keyword::FOREIGN) {
+            // CREATE FOREIGN TABLE or CREATE FOREIGN DATA WRAPPER
+            if self.parse_keyword(Keyword::TABLE) {
+                self.parse_create_foreign_table(create_token)
+            } else if self.parse_keywords(&[Keyword::DATA, Keyword::WRAPPER]) {
+                self.parse_create_foreign_data_wrapper(create_token)
+            } else {
+                self.expected(
+                    "TABLE or DATA WRAPPER after CREATE FOREIGN",
+                    self.peek_token(),
+                )
+            }
         } else {
             self.expected("an object type after CREATE", self.peek_token())
         }
@@ -8621,9 +8646,27 @@ impl<'a> Parser<'a> {
         } else if self.parse_keyword(Keyword::TYPE) {
             ObjectType::Type
         } else if self.parse_keyword(Keyword::USER) {
+            // Check if this is DROP USER MAPPING
+            if self.parse_keyword(Keyword::MAPPING) {
+                return self.parse_drop_user_mapping(drop_token);
+            }
             ObjectType::User
         } else if self.parse_keyword(Keyword::STREAM) {
             ObjectType::Stream
+        } else if self.parse_keyword(Keyword::SERVER) {
+            return self.parse_drop_server(drop_token);
+        } else if self.parse_keyword(Keyword::FOREIGN) {
+            // DROP FOREIGN TABLE or DROP FOREIGN DATA WRAPPER
+            if self.parse_keyword(Keyword::TABLE) {
+                return self.parse_drop_foreign_table(drop_token);
+            } else if self.parse_keywords(&[Keyword::DATA, Keyword::WRAPPER]) {
+                return self.parse_drop_foreign_data_wrapper(drop_token);
+            } else {
+                return self.expected(
+                    "TABLE or DATA WRAPPER after DROP FOREIGN",
+                    self.peek_token(),
+                );
+            }
         } else if self.parse_keyword(Keyword::FUNCTION) {
             return self.parse_drop_function();
         } else if self.parse_keyword(Keyword::POLICY) {
@@ -11491,6 +11534,8 @@ impl<'a> Parser<'a> {
             Keyword::SCHEMA,
             Keyword::USER,
             Keyword::SEQUENCE,
+            Keyword::SERVER,
+            Keyword::FOREIGN,
         ])?;
         match object_type {
             Keyword::SCHEMA => {
@@ -11525,8 +11570,29 @@ impl<'a> Parser<'a> {
             }
             Keyword::ROLE => self.parse_alter_role(),
             Keyword::POLICY => self.parse_alter_policy(),
-            Keyword::USER => self.parse_alter_user(),
+            Keyword::USER => {
+                // Check if this is ALTER USER MAPPING
+                if self.parse_keyword(Keyword::MAPPING) {
+                    self.parse_alter_user_mapping()
+                } else {
+                    self.parse_alter_user()
+                }
+            }
             Keyword::SEQUENCE => self.parse_alter_sequence(),
+            Keyword::SERVER => self.parse_alter_server(),
+            Keyword::FOREIGN => {
+                // ALTER FOREIGN TABLE or ALTER FOREIGN DATA WRAPPER
+                if self.parse_keyword(Keyword::TABLE) {
+                    self.parse_alter_foreign_table()
+                } else if self.parse_keywords(&[Keyword::DATA, Keyword::WRAPPER]) {
+                    self.parse_alter_foreign_data_wrapper()
+                } else {
+                    self.expected(
+                        "TABLE or DATA WRAPPER after ALTER FOREIGN",
+                        self.peek_token(),
+                    )
+                }
+            }
             // unreachable because expect_one_of_keywords used above
             _ => unreachable!(),
         }
@@ -20447,6 +20513,539 @@ impl<'a> Parser<'a> {
             foreign_data_wrapper,
             options,
         }))
+    }
+
+    // =========================================================================
+    // SQL/MED (Management of External Data) Parsing Functions
+    // =========================================================================
+
+    /// Parse a `CREATE FOREIGN DATA WRAPPER` statement.
+    pub fn parse_create_foreign_data_wrapper(
+        &self,
+        token: AttachedToken,
+    ) -> Result<Statement, ParserError> {
+        let if_not_exists = self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
+        let name = self.parse_object_name(false)?;
+
+        let (handler, no_handler) = if self.parse_keywords(&[Keyword::NO, Keyword::HANDLER]) {
+            (None, true)
+        } else if self.parse_keyword(Keyword::HANDLER) {
+            (Some(self.parse_object_name(false)?), false)
+        } else {
+            (None, false)
+        };
+
+        let (validator, no_validator) = if self.parse_keywords(&[Keyword::NO, Keyword::VALIDATOR]) {
+            (None, true)
+        } else if self.parse_keyword(Keyword::VALIDATOR) {
+            (Some(self.parse_object_name(false)?), false)
+        } else {
+            (None, false)
+        };
+
+        let options = self.parse_sql_med_options()?;
+
+        Ok(Statement::CreateForeignDataWrapper(
+            CreateForeignDataWrapperStatement {
+                token,
+                name,
+                if_not_exists,
+                handler,
+                no_handler,
+                validator,
+                no_validator,
+                options,
+            },
+        ))
+    }
+
+    /// Parse a `ALTER FOREIGN DATA WRAPPER` statement.
+    pub fn parse_alter_foreign_data_wrapper(&self) -> Result<Statement, ParserError> {
+        let token = self.get_alter_token();
+        let name = self.parse_object_name(false)?;
+        let mut operations = Vec::new();
+
+        loop {
+            if self.parse_keywords(&[Keyword::NO, Keyword::HANDLER]) {
+                operations.push(AlterForeignDataWrapperOperation::NoHandler);
+            } else if self.parse_keyword(Keyword::HANDLER) {
+                operations.push(AlterForeignDataWrapperOperation::SetHandler(
+                    self.parse_object_name(false)?,
+                ));
+            } else if self.parse_keywords(&[Keyword::NO, Keyword::VALIDATOR]) {
+                operations.push(AlterForeignDataWrapperOperation::NoValidator);
+            } else if self.parse_keyword(Keyword::VALIDATOR) {
+                operations.push(AlterForeignDataWrapperOperation::SetValidator(
+                    self.parse_object_name(false)?,
+                ));
+            } else if self.parse_keyword(Keyword::OPTIONS) {
+                let opts = self.parse_sql_med_option_actions()?;
+                operations.push(AlterForeignDataWrapperOperation::Options(opts));
+            } else if self.parse_keywords(&[Keyword::OWNER, Keyword::TO]) {
+                operations.push(AlterForeignDataWrapperOperation::OwnerTo(
+                    self.parse_identifier()?,
+                ));
+            } else if self.parse_keywords(&[Keyword::RENAME, Keyword::TO]) {
+                operations.push(AlterForeignDataWrapperOperation::RenameTo(
+                    self.parse_identifier()?,
+                ));
+            } else {
+                break;
+            }
+        }
+
+        Ok(Statement::AlterForeignDataWrapper(
+            AlterForeignDataWrapperStatement {
+                token,
+                name,
+                operations,
+            },
+        ))
+    }
+
+    /// Parse a `DROP FOREIGN DATA WRAPPER` statement.
+    pub fn parse_drop_foreign_data_wrapper(
+        &self,
+        token: AttachedToken,
+    ) -> Result<Statement, ParserError> {
+        let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
+        let name = self.parse_object_name(false)?;
+        let drop_behavior = self.parse_optional_drop_behavior();
+
+        Ok(Statement::DropForeignDataWrapper(
+            DropForeignDataWrapperStatement {
+                token,
+                name,
+                if_exists,
+                drop_behavior,
+            },
+        ))
+    }
+
+    /// Parse a `ALTER SERVER` statement.
+    pub fn parse_alter_server(&self) -> Result<Statement, ParserError> {
+        let token = self.get_alter_token();
+        let name = self.parse_object_name(false)?;
+        let mut operations = Vec::new();
+
+        loop {
+            if self.parse_keyword(Keyword::VERSION) {
+                operations.push(AlterServerOperation::SetVersion(self.parse_identifier()?));
+            } else if self.parse_keyword(Keyword::OPTIONS) {
+                let opts = self.parse_sql_med_option_actions()?;
+                operations.push(AlterServerOperation::Options(opts));
+            } else if self.parse_keywords(&[Keyword::OWNER, Keyword::TO]) {
+                operations.push(AlterServerOperation::OwnerTo(self.parse_identifier()?));
+            } else if self.parse_keywords(&[Keyword::RENAME, Keyword::TO]) {
+                operations.push(AlterServerOperation::RenameTo(self.parse_identifier()?));
+            } else {
+                break;
+            }
+        }
+
+        Ok(Statement::AlterServer(AlterServerStatement {
+            token,
+            name,
+            operations,
+        }))
+    }
+
+    /// Parse a `DROP SERVER` statement.
+    pub fn parse_drop_server(&self, token: AttachedToken) -> Result<Statement, ParserError> {
+        let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
+        let name = self.parse_object_name(false)?;
+        let drop_behavior = self.parse_optional_drop_behavior();
+
+        Ok(Statement::DropServer(DropServerStatement {
+            token,
+            name,
+            if_exists,
+            drop_behavior,
+        }))
+    }
+
+    /// Parse a `CREATE FOREIGN TABLE` statement.
+    pub fn parse_create_foreign_table(
+        &self,
+        token: AttachedToken,
+    ) -> Result<Statement, ParserError> {
+        let if_not_exists = self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
+        let name = self.parse_object_name(false)?;
+
+        // Check if this is a partition definition
+        let (partition_of, partition_bound, columns, constraints) =
+            if self.parse_keywords(&[Keyword::PARTITION, Keyword::OF]) {
+                let parent = self.parse_object_name(false)?;
+                let bound = self.parse_partition_bound_spec()?;
+                (Some(parent), Some(bound), Vec::new(), Vec::new())
+            } else {
+                // Regular foreign table with columns
+                // parse_columns handles the parens itself
+                let (columns, constraints) = self.parse_columns()?;
+                (None, None, columns, constraints)
+            };
+
+        self.expect_keyword(Keyword::SERVER)?;
+        let server = self.parse_object_name(false)?;
+
+        let options = self.parse_sql_med_options()?;
+
+        Ok(Statement::CreateForeignTable(CreateForeignTableStatement {
+            token,
+            name,
+            if_not_exists,
+            columns,
+            constraints,
+            server,
+            options,
+            partition_of,
+            partition_bound,
+        }))
+    }
+
+    /// Parse partition bound specification for foreign tables.
+    fn parse_partition_bound_spec(&self) -> Result<PartitionBoundSpec, ParserError> {
+        if self.parse_keyword(Keyword::DEFAULT) {
+            return Ok(PartitionBoundSpec::Default);
+        }
+
+        self.expect_keywords(&[Keyword::FOR, Keyword::VALUES])?;
+
+        if self.parse_keyword(Keyword::FROM) {
+            // Range partition: FOR VALUES FROM (...) TO (...)
+            self.expect_token(&BorrowedToken::LParen)?;
+            let from = self.parse_comma_separated(Parser::parse_expr)?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            self.expect_keyword(Keyword::TO)?;
+            self.expect_token(&BorrowedToken::LParen)?;
+            let to = self.parse_comma_separated(Parser::parse_expr)?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            Ok(PartitionBoundSpec::Range { from, to })
+        } else if self.parse_keyword(Keyword::IN) {
+            // List partition: FOR VALUES IN (...)
+            self.expect_token(&BorrowedToken::LParen)?;
+            let values = self.parse_comma_separated(Parser::parse_expr)?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            Ok(PartitionBoundSpec::List { values })
+        } else if self.parse_keyword(Keyword::WITH) {
+            // Hash partition: FOR VALUES WITH (MODULUS n, REMAINDER r)
+            self.expect_token(&BorrowedToken::LParen)?;
+            self.expect_keyword(Keyword::MODULUS)?;
+            let modulus = self.parse_literal_uint()?;
+            self.expect_token(&BorrowedToken::Comma)?;
+            self.expect_keyword(Keyword::REMAINDER)?;
+            let remainder = self.parse_literal_uint()?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            Ok(PartitionBoundSpec::Hash { modulus, remainder })
+        } else {
+            self.expected("FROM, IN, or WITH after FOR VALUES", self.peek_token())
+        }
+    }
+
+    /// Parse a `ALTER FOREIGN TABLE` statement.
+    pub fn parse_alter_foreign_table(&self) -> Result<Statement, ParserError> {
+        let token = self.get_alter_token();
+        let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
+        let name = self.parse_object_name(false)?;
+        let mut operations = Vec::new();
+
+        loop {
+            if self.parse_keyword(Keyword::ADD) {
+                let column_keyword = self.parse_keyword(Keyword::COLUMN);
+                let if_not_exists =
+                    self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
+                let column_def = self.parse_column_def()?;
+                operations.push(AlterForeignTableOperation::AddColumn {
+                    column_keyword,
+                    if_not_exists,
+                    column_def,
+                });
+            } else if self.parse_keyword(Keyword::DROP) {
+                let column_keyword = self.parse_keyword(Keyword::COLUMN);
+                let if_exists_col = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
+                let column_name = self.parse_identifier()?;
+                let drop_behavior = self.parse_optional_drop_behavior();
+                operations.push(AlterForeignTableOperation::DropColumn {
+                    column_keyword,
+                    if_exists: if_exists_col,
+                    column_name,
+                    drop_behavior,
+                });
+            } else if self.parse_keywords(&[Keyword::ALTER, Keyword::COLUMN]) {
+                let column_name = self.parse_identifier()?;
+                let action = self.parse_alter_column_action()?;
+                operations.push(AlterForeignTableOperation::AlterColumn {
+                    column_name,
+                    action,
+                });
+            } else if self.parse_keyword(Keyword::OPTIONS) {
+                let opts = self.parse_sql_med_option_actions()?;
+                operations.push(AlterForeignTableOperation::Options(opts));
+            } else if self.parse_keywords(&[Keyword::OWNER, Keyword::TO]) {
+                operations.push(AlterForeignTableOperation::OwnerTo(
+                    self.parse_identifier()?,
+                ));
+            } else if self.parse_keywords(&[Keyword::RENAME, Keyword::COLUMN]) {
+                let old_name = self.parse_identifier()?;
+                self.expect_keyword(Keyword::TO)?;
+                let new_name = self.parse_identifier()?;
+                operations.push(AlterForeignTableOperation::RenameColumn { old_name, new_name });
+            } else if self.parse_keywords(&[Keyword::RENAME, Keyword::TO]) {
+                operations.push(AlterForeignTableOperation::RenameTo(
+                    self.parse_identifier()?,
+                ));
+            } else if self.parse_keywords(&[Keyword::SET, Keyword::SCHEMA]) {
+                operations.push(AlterForeignTableOperation::SetSchema(
+                    self.parse_identifier()?,
+                ));
+            } else {
+                break;
+            }
+
+            // Check for comma between multiple operations
+            if !self.consume_token(&BorrowedToken::Comma) {
+                break;
+            }
+        }
+
+        Ok(Statement::AlterForeignTable(AlterForeignTableStatement {
+            token,
+            name,
+            if_exists,
+            operations,
+        }))
+    }
+
+    /// Parse ALTER COLUMN action for foreign tables.
+    fn parse_alter_column_action(&self) -> Result<AlterColumnAction, ParserError> {
+        if self.parse_keywords(&[Keyword::SET, Keyword::DATA, Keyword::TYPE]) {
+            Ok(AlterColumnAction::SetDataType(self.parse_data_type()?))
+        } else if self.parse_keywords(&[Keyword::SET, Keyword::NOT, Keyword::NULL]) {
+            Ok(AlterColumnAction::SetNotNull)
+        } else if self.parse_keywords(&[Keyword::DROP, Keyword::NOT, Keyword::NULL]) {
+            Ok(AlterColumnAction::DropNotNull)
+        } else if self.parse_keywords(&[Keyword::SET, Keyword::DEFAULT]) {
+            Ok(AlterColumnAction::SetDefault(self.parse_expr()?))
+        } else if self.parse_keywords(&[Keyword::DROP, Keyword::DEFAULT]) {
+            Ok(AlterColumnAction::DropDefault)
+        } else if self.parse_keyword(Keyword::OPTIONS) {
+            let opts = self.parse_sql_med_option_actions()?;
+            Ok(AlterColumnAction::Options(opts))
+        } else {
+            self.expected(
+                "SET DATA TYPE, SET NOT NULL, DROP NOT NULL, SET DEFAULT, DROP DEFAULT, or OPTIONS",
+                self.peek_token(),
+            )
+        }
+    }
+
+    /// Parse a `DROP FOREIGN TABLE` statement.
+    pub fn parse_drop_foreign_table(&self, token: AttachedToken) -> Result<Statement, ParserError> {
+        let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
+        let names = self.parse_comma_separated(|p| p.parse_object_name(false))?;
+        let drop_behavior = self.parse_optional_drop_behavior();
+
+        Ok(Statement::DropForeignTable(DropForeignTableStatement {
+            token,
+            names,
+            if_exists,
+            drop_behavior,
+        }))
+    }
+
+    /// Parse a `CREATE USER MAPPING` statement.
+    pub fn parse_create_user_mapping(
+        &self,
+        token: AttachedToken,
+    ) -> Result<Statement, ParserError> {
+        let if_not_exists = self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
+        self.expect_keyword(Keyword::FOR)?;
+        let user = self.parse_user_mapping_user()?;
+        self.expect_keyword(Keyword::SERVER)?;
+        let server = self.parse_object_name(false)?;
+
+        let options = self.parse_sql_med_options()?;
+
+        Ok(Statement::CreateUserMapping(CreateUserMappingStatement {
+            token,
+            if_not_exists,
+            user,
+            server,
+            options,
+        }))
+    }
+
+    /// Parse the user specification for USER MAPPING statements.
+    fn parse_user_mapping_user(&self) -> Result<UserMappingUser, ParserError> {
+        if self.parse_keyword(Keyword::CURRENT_USER) {
+            Ok(UserMappingUser::CurrentUser)
+        } else if self.parse_keyword(Keyword::CURRENT_ROLE) {
+            Ok(UserMappingUser::CurrentRole)
+        } else if self.parse_keyword(Keyword::USER) {
+            Ok(UserMappingUser::UserKeyword)
+        } else if self.parse_keyword(Keyword::PUBLIC) {
+            Ok(UserMappingUser::Public)
+        } else {
+            Ok(UserMappingUser::User(self.parse_identifier()?))
+        }
+    }
+
+    /// Parse a `ALTER USER MAPPING` statement.
+    pub fn parse_alter_user_mapping(&self) -> Result<Statement, ParserError> {
+        let token = self.get_alter_token();
+        self.expect_keyword(Keyword::FOR)?;
+        let user = self.parse_user_mapping_user()?;
+        self.expect_keyword(Keyword::SERVER)?;
+        let server = self.parse_object_name(false)?;
+        self.expect_keyword(Keyword::OPTIONS)?;
+        let options = self.parse_sql_med_option_actions()?;
+
+        Ok(Statement::AlterUserMapping(AlterUserMappingStatement {
+            token,
+            user,
+            server,
+            options,
+        }))
+    }
+
+    /// Parse a `DROP USER MAPPING` statement.
+    pub fn parse_drop_user_mapping(&self, token: AttachedToken) -> Result<Statement, ParserError> {
+        let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
+        self.expect_keyword(Keyword::FOR)?;
+        let user = self.parse_user_mapping_user()?;
+        self.expect_keyword(Keyword::SERVER)?;
+        let server = self.parse_object_name(false)?;
+
+        Ok(Statement::DropUserMapping(DropUserMappingStatement {
+            token,
+            if_exists,
+            user,
+            server,
+        }))
+    }
+
+    /// Parse an `IMPORT FOREIGN SCHEMA` statement.
+    pub fn parse_import_foreign_schema(&self) -> Result<Statement, ParserError> {
+        let token = self.get_import_token();
+        let remote_schema = self.parse_identifier()?;
+
+        let (limit_type, tables) = if self.parse_keywords(&[Keyword::LIMIT, Keyword::TO]) {
+            self.expect_token(&BorrowedToken::LParen)?;
+            let tables = self.parse_comma_separated(Parser::parse_identifier)?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            (Some(ImportForeignSchemaLimitType::LimitTo), tables)
+        } else if self.parse_keyword(Keyword::EXCEPT) {
+            self.expect_token(&BorrowedToken::LParen)?;
+            let tables = self.parse_comma_separated(Parser::parse_identifier)?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            (Some(ImportForeignSchemaLimitType::Except), tables)
+        } else {
+            (None, Vec::new())
+        };
+
+        self.expect_keywords(&[Keyword::FROM, Keyword::SERVER])?;
+        let server = self.parse_object_name(false)?;
+        self.expect_keyword(Keyword::INTO)?;
+        let local_schema = self.parse_identifier()?;
+
+        let options = self.parse_sql_med_options()?;
+
+        Ok(Statement::ImportForeignSchema(
+            ImportForeignSchemaStatement {
+                token,
+                remote_schema,
+                limit_type,
+                tables,
+                server,
+                local_schema,
+                options,
+            },
+        ))
+    }
+
+    /// Parse OPTIONS clause for SQL/MED statements: OPTIONS (key 'value', ...)
+    fn parse_sql_med_options(&self) -> Result<Option<Vec<CreateServerOption>>, ParserError> {
+        if self.parse_keyword(Keyword::OPTIONS) {
+            self.expect_token(&BorrowedToken::LParen)?;
+            let options = self.parse_comma_separated(|p| {
+                let key = p.parse_identifier()?;
+                let value = p.parse_identifier()?;
+                Ok(CreateServerOption { key, value })
+            })?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            Ok(Some(options))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Parse OPTIONS clause with actions for ALTER statements: OPTIONS (SET key 'value', ADD key 'value', DROP key)
+    fn parse_sql_med_option_actions(&self) -> Result<Vec<SqlMedOptionAction>, ParserError> {
+        self.expect_token(&BorrowedToken::LParen)?;
+        let options = self.parse_comma_separated(|p| {
+            if p.parse_keyword(Keyword::SET) {
+                let key = p.parse_identifier()?;
+                let value = p.parse_identifier()?;
+                Ok(SqlMedOptionAction::Set { key, value })
+            } else if p.parse_keyword(Keyword::ADD) {
+                let key = p.parse_identifier()?;
+                let value = p.parse_identifier()?;
+                Ok(SqlMedOptionAction::Add { key, value })
+            } else if p.parse_keyword(Keyword::DROP) {
+                let key = p.parse_identifier()?;
+                Ok(SqlMedOptionAction::Drop { key })
+            } else {
+                p.expected("SET, ADD, or DROP", p.peek_token())
+            }
+        })?;
+        self.expect_token(&BorrowedToken::RParen)?;
+        Ok(options)
+    }
+
+    /// Helper to get the ALTER token (goes back to retrieve it)
+    fn get_alter_token(&self) -> AttachedToken {
+        let current_pos = self.index();
+        // Go back to find ALTER
+        let mut pos = current_pos;
+        while pos > 0 {
+            self.prev_token();
+            pos -= 1;
+            if matches!(
+                self.peek_token().token,
+                BorrowedToken::Word(w) if w.keyword == Keyword::ALTER
+            ) {
+                break;
+            }
+        }
+        let token = AttachedToken(self.get_current_token().clone().to_static());
+        // Restore position
+        while self.index() < current_pos {
+            self.next_token();
+        }
+        token
+    }
+
+    /// Helper to get the IMPORT token (goes back to retrieve it)
+    fn get_import_token(&self) -> AttachedToken {
+        let current_pos = self.index();
+        // Go back to find IMPORT
+        let mut pos = current_pos;
+        while pos > 0 {
+            self.prev_token();
+            pos -= 1;
+            if matches!(
+                self.peek_token().token,
+                BorrowedToken::Word(w) if w.keyword == Keyword::IMPORT
+            ) {
+                break;
+            }
+        }
+        let token = AttachedToken(self.get_current_token().clone().to_static());
+        // Restore position
+        while self.index() < current_pos {
+            self.next_token();
+        }
+        token
     }
 
     /// The index of the first unprocessed token.

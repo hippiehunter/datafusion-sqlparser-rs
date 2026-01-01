@@ -333,6 +333,18 @@ impl Spanned for Statement {
             Statement::CreateExtension(create_extension) => create_extension.span(),
             Statement::DropExtension(drop_extension) => drop_extension.span(),
             Statement::CreateServer(create_server) => create_server.token.0.span,
+            Statement::AlterServer(alter_server) => alter_server.token.0.span,
+            Statement::DropServer(drop_server) => drop_server.token.0.span,
+            Statement::CreateForeignDataWrapper(stmt) => stmt.token.0.span,
+            Statement::AlterForeignDataWrapper(stmt) => stmt.token.0.span,
+            Statement::DropForeignDataWrapper(stmt) => stmt.token.0.span,
+            Statement::CreateForeignTable(stmt) => stmt.token.0.span,
+            Statement::AlterForeignTable(stmt) => stmt.token.0.span,
+            Statement::DropForeignTable(stmt) => stmt.token.0.span,
+            Statement::CreateUserMapping(stmt) => stmt.token.0.span,
+            Statement::AlterUserMapping(stmt) => stmt.token.0.span,
+            Statement::DropUserMapping(stmt) => stmt.token.0.span,
+            Statement::ImportForeignSchema(stmt) => stmt.token.0.span,
             Statement::CreateOperator(create_operator) => create_operator.span(),
             Statement::CreateOperatorFamily(create_operator_family) => {
                 create_operator_family.span()

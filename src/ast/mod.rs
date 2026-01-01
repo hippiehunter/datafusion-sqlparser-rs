@@ -4906,6 +4906,42 @@ pub enum Statement {
     CreateRole(CreateRole),
     /// A `CREATE SERVER` statement.
     CreateServer(CreateServerStatement),
+    /// A `ALTER SERVER` statement (SQL/MED).
+    /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-alterserver.html)
+    AlterServer(AlterServerStatement),
+    /// A `DROP SERVER` statement (SQL/MED).
+    /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-dropserver.html)
+    DropServer(DropServerStatement),
+    /// A `CREATE FOREIGN DATA WRAPPER` statement (SQL/MED).
+    /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-createforeigndatawrapper.html)
+    CreateForeignDataWrapper(CreateForeignDataWrapperStatement),
+    /// A `ALTER FOREIGN DATA WRAPPER` statement (SQL/MED).
+    /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-alterforeigndatawrapper.html)
+    AlterForeignDataWrapper(AlterForeignDataWrapperStatement),
+    /// A `DROP FOREIGN DATA WRAPPER` statement (SQL/MED).
+    /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-dropforeigndatawrapper.html)
+    DropForeignDataWrapper(DropForeignDataWrapperStatement),
+    /// A `CREATE FOREIGN TABLE` statement (SQL/MED).
+    /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-createforeigntable.html)
+    CreateForeignTable(CreateForeignTableStatement),
+    /// A `ALTER FOREIGN TABLE` statement (SQL/MED).
+    /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-alterforeigntable.html)
+    AlterForeignTable(AlterForeignTableStatement),
+    /// A `DROP FOREIGN TABLE` statement (SQL/MED).
+    /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-dropforeigntable.html)
+    DropForeignTable(DropForeignTableStatement),
+    /// A `CREATE USER MAPPING` statement (SQL/MED).
+    /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-createusermapping.html)
+    CreateUserMapping(CreateUserMappingStatement),
+    /// A `ALTER USER MAPPING` statement (SQL/MED).
+    /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-alterusermapping.html)
+    AlterUserMapping(AlterUserMappingStatement),
+    /// A `DROP USER MAPPING` statement (SQL/MED).
+    /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-dropusermapping.html)
+    DropUserMapping(DropUserMappingStatement),
+    /// A `IMPORT FOREIGN SCHEMA` statement (SQL/MED).
+    /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-importforeignschema.html)
+    ImportForeignSchema(ImportForeignSchemaStatement),
     /// ```sql
     /// CREATE POLICY
     /// ```
@@ -6407,9 +6443,19 @@ impl fmt::Display for Statement {
             Statement::CreateExtension(create_extension) => write!(f, "{create_extension}"),
             Statement::DropExtension(drop_extension) => write!(f, "{drop_extension}"),
             Statement::CreateRole(create_role) => write!(f, "{create_role}"),
-            Statement::CreateServer(stmt) => {
-                write!(f, "{stmt}")
-            }
+            Statement::CreateServer(stmt) => write!(f, "{stmt}"),
+            Statement::AlterServer(stmt) => write!(f, "{stmt}"),
+            Statement::DropServer(stmt) => write!(f, "{stmt}"),
+            Statement::CreateForeignDataWrapper(stmt) => write!(f, "{stmt}"),
+            Statement::AlterForeignDataWrapper(stmt) => write!(f, "{stmt}"),
+            Statement::DropForeignDataWrapper(stmt) => write!(f, "{stmt}"),
+            Statement::CreateForeignTable(stmt) => write!(f, "{stmt}"),
+            Statement::AlterForeignTable(stmt) => write!(f, "{stmt}"),
+            Statement::DropForeignTable(stmt) => write!(f, "{stmt}"),
+            Statement::CreateUserMapping(stmt) => write!(f, "{stmt}"),
+            Statement::AlterUserMapping(stmt) => write!(f, "{stmt}"),
+            Statement::DropUserMapping(stmt) => write!(f, "{stmt}"),
+            Statement::ImportForeignSchema(stmt) => write!(f, "{stmt}"),
             Statement::CreatePolicy {
                 name,
                 table_name,
@@ -9306,6 +9352,656 @@ pub struct CreateServerOption {
 impl fmt::Display for CreateServerOption {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{} {}", self.key, self.value)
+    }
+}
+
+// ============================================================================
+// SQL/MED (Management of External Data) - ISO/IEC 9075-9
+// ============================================================================
+
+/// An option modification for ALTER statements (SET, ADD, DROP)
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum SqlMedOptionAction {
+    /// SET key value
+    Set { key: Ident, value: Ident },
+    /// ADD key value
+    Add { key: Ident, value: Ident },
+    /// DROP key
+    Drop { key: Ident },
+}
+
+impl fmt::Display for SqlMedOptionAction {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            SqlMedOptionAction::Set { key, value } => write!(f, "SET {key} {value}"),
+            SqlMedOptionAction::Add { key, value } => write!(f, "ADD {key} {value}"),
+            SqlMedOptionAction::Drop { key } => write!(f, "DROP {key}"),
+        }
+    }
+}
+
+/// ALTER SERVER statement
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct AlterServerStatement {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
+    pub name: ObjectName,
+    pub operations: Vec<AlterServerOperation>,
+}
+
+impl fmt::Display for AlterServerStatement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "ALTER SERVER {}", self.name)?;
+        for op in &self.operations {
+            write!(f, " {op}")?;
+        }
+        Ok(())
+    }
+}
+
+/// Operations for ALTER SERVER
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum AlterServerOperation {
+    SetVersion(Ident),
+    Options(Vec<SqlMedOptionAction>),
+    OwnerTo(Ident),
+    RenameTo(Ident),
+}
+
+impl fmt::Display for AlterServerOperation {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            AlterServerOperation::SetVersion(v) => write!(f, "VERSION {v}"),
+            AlterServerOperation::Options(opts) => {
+                write!(f, "OPTIONS ({})", display_comma_separated(opts))
+            }
+            AlterServerOperation::OwnerTo(owner) => write!(f, "OWNER TO {owner}"),
+            AlterServerOperation::RenameTo(name) => write!(f, "RENAME TO {name}"),
+        }
+    }
+}
+
+/// DROP SERVER statement
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct DropServerStatement {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
+    pub name: ObjectName,
+    pub if_exists: bool,
+    pub drop_behavior: Option<DropBehavior>,
+}
+
+impl fmt::Display for DropServerStatement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "DROP SERVER ")?;
+        if self.if_exists {
+            write!(f, "IF EXISTS ")?;
+        }
+        write!(f, "{}", self.name)?;
+        if let Some(behavior) = &self.drop_behavior {
+            write!(f, " {behavior}")?;
+        }
+        Ok(())
+    }
+}
+
+/// CREATE FOREIGN DATA WRAPPER statement
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct CreateForeignDataWrapperStatement {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
+    pub name: ObjectName,
+    pub if_not_exists: bool,
+    /// HANDLER function_name or NO HANDLER (None with no_handler=true)
+    pub handler: Option<ObjectName>,
+    pub no_handler: bool,
+    /// VALIDATOR function_name or NO VALIDATOR (None with no_validator=true)
+    pub validator: Option<ObjectName>,
+    pub no_validator: bool,
+    pub options: Option<Vec<CreateServerOption>>,
+}
+
+impl fmt::Display for CreateForeignDataWrapperStatement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "CREATE FOREIGN DATA WRAPPER ")?;
+        if self.if_not_exists {
+            write!(f, "IF NOT EXISTS ")?;
+        }
+        write!(f, "{}", self.name)?;
+
+        if self.no_handler {
+            write!(f, " NO HANDLER")?;
+        } else if let Some(h) = &self.handler {
+            write!(f, " HANDLER {h}")?;
+        }
+
+        if self.no_validator {
+            write!(f, " NO VALIDATOR")?;
+        } else if let Some(v) = &self.validator {
+            write!(f, " VALIDATOR {v}")?;
+        }
+
+        if let Some(opts) = &self.options {
+            write!(f, " OPTIONS ({})", display_comma_separated(opts))?;
+        }
+
+        Ok(())
+    }
+}
+
+/// ALTER FOREIGN DATA WRAPPER statement
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct AlterForeignDataWrapperStatement {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
+    pub name: ObjectName,
+    pub operations: Vec<AlterForeignDataWrapperOperation>,
+}
+
+impl fmt::Display for AlterForeignDataWrapperStatement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "ALTER FOREIGN DATA WRAPPER {}", self.name)?;
+        for op in &self.operations {
+            write!(f, " {op}")?;
+        }
+        Ok(())
+    }
+}
+
+/// Operations for ALTER FOREIGN DATA WRAPPER
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum AlterForeignDataWrapperOperation {
+    SetHandler(ObjectName),
+    NoHandler,
+    SetValidator(ObjectName),
+    NoValidator,
+    Options(Vec<SqlMedOptionAction>),
+    OwnerTo(Ident),
+    RenameTo(Ident),
+}
+
+impl fmt::Display for AlterForeignDataWrapperOperation {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            AlterForeignDataWrapperOperation::SetHandler(h) => write!(f, "HANDLER {h}"),
+            AlterForeignDataWrapperOperation::NoHandler => write!(f, "NO HANDLER"),
+            AlterForeignDataWrapperOperation::SetValidator(v) => write!(f, "VALIDATOR {v}"),
+            AlterForeignDataWrapperOperation::NoValidator => write!(f, "NO VALIDATOR"),
+            AlterForeignDataWrapperOperation::Options(opts) => {
+                write!(f, "OPTIONS ({})", display_comma_separated(opts))
+            }
+            AlterForeignDataWrapperOperation::OwnerTo(owner) => write!(f, "OWNER TO {owner}"),
+            AlterForeignDataWrapperOperation::RenameTo(name) => write!(f, "RENAME TO {name}"),
+        }
+    }
+}
+
+/// DROP FOREIGN DATA WRAPPER statement
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct DropForeignDataWrapperStatement {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
+    pub name: ObjectName,
+    pub if_exists: bool,
+    pub drop_behavior: Option<DropBehavior>,
+}
+
+impl fmt::Display for DropForeignDataWrapperStatement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "DROP FOREIGN DATA WRAPPER ")?;
+        if self.if_exists {
+            write!(f, "IF EXISTS ")?;
+        }
+        write!(f, "{}", self.name)?;
+        if let Some(behavior) = &self.drop_behavior {
+            write!(f, " {behavior}")?;
+        }
+        Ok(())
+    }
+}
+
+/// CREATE FOREIGN TABLE statement
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct CreateForeignTableStatement {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
+    #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
+    pub name: ObjectName,
+    pub if_not_exists: bool,
+    pub columns: Vec<ColumnDef>,
+    pub constraints: Vec<TableConstraint>,
+    pub server: ObjectName,
+    pub options: Option<Vec<CreateServerOption>>,
+    /// For partition definitions: PARTITION OF parent_table
+    pub partition_of: Option<ObjectName>,
+    /// Partition bound specification
+    pub partition_bound: Option<PartitionBoundSpec>,
+}
+
+impl fmt::Display for CreateForeignTableStatement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "CREATE FOREIGN TABLE ")?;
+        if self.if_not_exists {
+            write!(f, "IF NOT EXISTS ")?;
+        }
+        write!(f, "{}", self.name)?;
+
+        if let Some(parent) = &self.partition_of {
+            write!(f, " PARTITION OF {parent}")?;
+            if let Some(bound) = &self.partition_bound {
+                write!(f, " {bound}")?;
+            }
+        } else if !self.columns.is_empty() || !self.constraints.is_empty() {
+            write!(f, " (")?;
+            let mut first = true;
+            for col in &self.columns {
+                if !first {
+                    write!(f, ", ")?;
+                }
+                first = false;
+                write!(f, "{col}")?;
+            }
+            for constraint in &self.constraints {
+                if !first {
+                    write!(f, ", ")?;
+                }
+                first = false;
+                write!(f, "{constraint}")?;
+            }
+            write!(f, ")")?;
+        }
+
+        write!(f, " SERVER {}", self.server)?;
+
+        if let Some(opts) = &self.options {
+            write!(f, " OPTIONS ({})", display_comma_separated(opts))?;
+        }
+
+        Ok(())
+    }
+}
+
+/// Partition bound specification for foreign tables
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum PartitionBoundSpec {
+    /// FOR VALUES FROM (...) TO (...)
+    Range { from: Vec<Expr>, to: Vec<Expr> },
+    /// FOR VALUES IN (...)
+    List { values: Vec<Expr> },
+    /// FOR VALUES WITH (MODULUS n, REMAINDER r)
+    Hash { modulus: u64, remainder: u64 },
+    /// DEFAULT
+    Default,
+}
+
+impl fmt::Display for PartitionBoundSpec {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            PartitionBoundSpec::Range { from, to } => {
+                write!(
+                    f,
+                    "FOR VALUES FROM ({}) TO ({})",
+                    display_comma_separated(from),
+                    display_comma_separated(to)
+                )
+            }
+            PartitionBoundSpec::List { values } => {
+                write!(f, "FOR VALUES IN ({})", display_comma_separated(values))
+            }
+            PartitionBoundSpec::Hash { modulus, remainder } => {
+                write!(
+                    f,
+                    "FOR VALUES WITH (MODULUS {modulus}, REMAINDER {remainder})"
+                )
+            }
+            PartitionBoundSpec::Default => write!(f, "DEFAULT"),
+        }
+    }
+}
+
+/// ALTER FOREIGN TABLE statement
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct AlterForeignTableStatement {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
+    #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
+    pub name: ObjectName,
+    pub if_exists: bool,
+    pub operations: Vec<AlterForeignTableOperation>,
+}
+
+impl fmt::Display for AlterForeignTableStatement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "ALTER FOREIGN TABLE ")?;
+        if self.if_exists {
+            write!(f, "IF EXISTS ")?;
+        }
+        write!(f, "{}", self.name)?;
+        for (i, op) in self.operations.iter().enumerate() {
+            if i > 0 {
+                write!(f, ",")?;
+            }
+            write!(f, " {op}")?;
+        }
+        Ok(())
+    }
+}
+
+/// Operations for ALTER FOREIGN TABLE
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum AlterForeignTableOperation {
+    AddColumn {
+        column_keyword: bool,
+        if_not_exists: bool,
+        column_def: ColumnDef,
+    },
+    DropColumn {
+        column_keyword: bool,
+        if_exists: bool,
+        column_name: Ident,
+        drop_behavior: Option<DropBehavior>,
+    },
+    AlterColumn {
+        column_name: Ident,
+        action: AlterColumnAction,
+    },
+    Options(Vec<SqlMedOptionAction>),
+    OwnerTo(Ident),
+    RenameTo(Ident),
+    RenameColumn {
+        old_name: Ident,
+        new_name: Ident,
+    },
+    SetSchema(Ident),
+}
+
+/// Actions for ALTER COLUMN in foreign tables
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum AlterColumnAction {
+    SetDataType(DataType),
+    SetNotNull,
+    DropNotNull,
+    SetDefault(Expr),
+    DropDefault,
+    Options(Vec<SqlMedOptionAction>),
+}
+
+impl fmt::Display for AlterColumnAction {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            AlterColumnAction::SetDataType(dt) => write!(f, "SET DATA TYPE {dt}"),
+            AlterColumnAction::SetNotNull => write!(f, "SET NOT NULL"),
+            AlterColumnAction::DropNotNull => write!(f, "DROP NOT NULL"),
+            AlterColumnAction::SetDefault(expr) => write!(f, "SET DEFAULT {expr}"),
+            AlterColumnAction::DropDefault => write!(f, "DROP DEFAULT"),
+            AlterColumnAction::Options(opts) => {
+                write!(f, "OPTIONS ({})", display_comma_separated(opts))
+            }
+        }
+    }
+}
+
+impl fmt::Display for AlterForeignTableOperation {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            AlterForeignTableOperation::AddColumn {
+                column_keyword,
+                if_not_exists,
+                column_def,
+            } => {
+                write!(f, "ADD")?;
+                if *column_keyword {
+                    write!(f, " COLUMN")?;
+                }
+                if *if_not_exists {
+                    write!(f, " IF NOT EXISTS")?;
+                }
+                write!(f, " {column_def}")
+            }
+            AlterForeignTableOperation::DropColumn {
+                column_keyword,
+                if_exists,
+                column_name,
+                drop_behavior,
+            } => {
+                write!(f, "DROP")?;
+                if *column_keyword {
+                    write!(f, " COLUMN")?;
+                }
+                if *if_exists {
+                    write!(f, " IF EXISTS")?;
+                }
+                write!(f, " {column_name}")?;
+                if let Some(behavior) = drop_behavior {
+                    write!(f, " {behavior}")?;
+                }
+                Ok(())
+            }
+            AlterForeignTableOperation::AlterColumn {
+                column_name,
+                action,
+            } => {
+                write!(f, "ALTER COLUMN {column_name} {action}")
+            }
+            AlterForeignTableOperation::Options(opts) => {
+                write!(f, "OPTIONS ({})", display_comma_separated(opts))
+            }
+            AlterForeignTableOperation::OwnerTo(owner) => write!(f, "OWNER TO {owner}"),
+            AlterForeignTableOperation::RenameTo(name) => write!(f, "RENAME TO {name}"),
+            AlterForeignTableOperation::RenameColumn { old_name, new_name } => {
+                write!(f, "RENAME COLUMN {old_name} TO {new_name}")
+            }
+            AlterForeignTableOperation::SetSchema(schema) => write!(f, "SET SCHEMA {schema}"),
+        }
+    }
+}
+
+/// DROP FOREIGN TABLE statement
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct DropForeignTableStatement {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
+    pub names: Vec<ObjectName>,
+    pub if_exists: bool,
+    pub drop_behavior: Option<DropBehavior>,
+}
+
+impl fmt::Display for DropForeignTableStatement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "DROP FOREIGN TABLE ")?;
+        if self.if_exists {
+            write!(f, "IF EXISTS ")?;
+        }
+        write!(f, "{}", display_comma_separated(&self.names))?;
+        if let Some(behavior) = &self.drop_behavior {
+            write!(f, " {behavior}")?;
+        }
+        Ok(())
+    }
+}
+
+/// User specification for USER MAPPING statements
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum UserMappingUser {
+    /// A specific user name
+    User(Ident),
+    /// CURRENT_USER
+    CurrentUser,
+    /// CURRENT_ROLE
+    CurrentRole,
+    /// USER keyword (meaning current user)
+    UserKeyword,
+    /// PUBLIC
+    Public,
+}
+
+impl fmt::Display for UserMappingUser {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            UserMappingUser::User(name) => write!(f, "{name}"),
+            UserMappingUser::CurrentUser => write!(f, "CURRENT_USER"),
+            UserMappingUser::CurrentRole => write!(f, "CURRENT_ROLE"),
+            UserMappingUser::UserKeyword => write!(f, "USER"),
+            UserMappingUser::Public => write!(f, "PUBLIC"),
+        }
+    }
+}
+
+/// CREATE USER MAPPING statement
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct CreateUserMappingStatement {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
+    pub if_not_exists: bool,
+    pub user: UserMappingUser,
+    pub server: ObjectName,
+    pub options: Option<Vec<CreateServerOption>>,
+}
+
+impl fmt::Display for CreateUserMappingStatement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "CREATE USER MAPPING ")?;
+        if self.if_not_exists {
+            write!(f, "IF NOT EXISTS ")?;
+        }
+        write!(f, "FOR {} SERVER {}", self.user, self.server)?;
+        if let Some(opts) = &self.options {
+            write!(f, " OPTIONS ({})", display_comma_separated(opts))?;
+        }
+        Ok(())
+    }
+}
+
+/// ALTER USER MAPPING statement
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct AlterUserMappingStatement {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
+    pub user: UserMappingUser,
+    pub server: ObjectName,
+    pub options: Vec<SqlMedOptionAction>,
+}
+
+impl fmt::Display for AlterUserMappingStatement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "ALTER USER MAPPING FOR {} SERVER {} OPTIONS ({})",
+            self.user,
+            self.server,
+            display_comma_separated(&self.options)
+        )
+    }
+}
+
+/// DROP USER MAPPING statement
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct DropUserMappingStatement {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
+    pub if_exists: bool,
+    pub user: UserMappingUser,
+    pub server: ObjectName,
+}
+
+impl fmt::Display for DropUserMappingStatement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "DROP USER MAPPING ")?;
+        if self.if_exists {
+            write!(f, "IF EXISTS ")?;
+        }
+        write!(f, "FOR {} SERVER {}", self.user, self.server)
+    }
+}
+
+/// IMPORT FOREIGN SCHEMA limit type
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum ImportForeignSchemaLimitType {
+    LimitTo,
+    Except,
+}
+
+impl fmt::Display for ImportForeignSchemaLimitType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ImportForeignSchemaLimitType::LimitTo => write!(f, "LIMIT TO"),
+            ImportForeignSchemaLimitType::Except => write!(f, "EXCEPT"),
+        }
+    }
+}
+
+/// IMPORT FOREIGN SCHEMA statement
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct ImportForeignSchemaStatement {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
+    pub remote_schema: Ident,
+    pub limit_type: Option<ImportForeignSchemaLimitType>,
+    pub tables: Vec<Ident>,
+    pub server: ObjectName,
+    pub local_schema: Ident,
+    pub options: Option<Vec<CreateServerOption>>,
+}
+
+impl fmt::Display for ImportForeignSchemaStatement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "IMPORT FOREIGN SCHEMA {}", self.remote_schema)?;
+
+        if let Some(limit_type) = &self.limit_type {
+            write!(
+                f,
+                " {limit_type} ({})",
+                display_comma_separated(&self.tables)
+            )?;
+        }
+
+        write!(f, " FROM SERVER {} INTO {}", self.server, self.local_schema)?;
+
+        if let Some(opts) = &self.options {
+            write!(f, " OPTIONS ({})", display_comma_separated(opts))?;
+        }
+
+        Ok(())
     }
 }
 
