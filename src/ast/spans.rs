@@ -2640,6 +2640,7 @@ impl Spanned for SqlPsmDeclaration {
             data_type,
             collation,
             not_null: _,
+            default_operator: _,
             default,
         } = self;
         union_spans(

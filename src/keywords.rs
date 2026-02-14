@@ -344,6 +344,7 @@ define_keywords!(
     ELEMENTS,
     ELSE,
     ELSEIF,
+    ELSIF,
     EMPTY,
     EMPTYASNULL,
     ENABLE,

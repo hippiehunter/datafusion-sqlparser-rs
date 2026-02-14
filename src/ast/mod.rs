@@ -3584,6 +3584,29 @@ pub enum SqlPsmDataType {
     Cursor(SqlPsmCursorDeclaration),
 }
 
+/// The assignment operator used for default values in declarations.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum DeclarationAssignmentOperator {
+    /// `:=` (PL/pgSQL style)
+    Assignment,
+    /// `DEFAULT` keyword (SQL/PSM standard)
+    Default,
+    /// `=` (PL/pgSQL shorthand)
+    Equals,
+}
+
+impl fmt::Display for DeclarationAssignmentOperator {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            DeclarationAssignmentOperator::Assignment => write!(f, ":="),
+            DeclarationAssignmentOperator::Default => write!(f, "DEFAULT"),
+            DeclarationAssignmentOperator::Equals => write!(f, "="),
+        }
+    }
+}
+
 /// A SQL/PSM variable declaration in a DECLARE section.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -3594,6 +3617,7 @@ pub struct SqlPsmDeclaration {
     pub data_type: SqlPsmDataType,
     pub collation: Option<Ident>,
     pub not_null: bool,
+    pub default_operator: Option<DeclarationAssignmentOperator>,
     pub default: Option<Expr>,
 }
 
@@ -3649,7 +3673,11 @@ impl fmt::Display for SqlPsmDeclaration {
             write!(f, " NOT NULL")?;
         }
         if let Some(ref default) = self.default {
-            write!(f, " := {}", default)?;
+            if let Some(ref op) = self.default_operator {
+                write!(f, " {} {}", op, default)?;
+            } else {
+                write!(f, " := {}", default)?;
+            }
         }
         Ok(())
     }

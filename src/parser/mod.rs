@@ -1168,20 +1168,31 @@ impl<'a> Parser<'a> {
         let if_block = self.parse_conditional_statement_block(&[
             Keyword::ELSE,
             Keyword::ELSEIF,
+            Keyword::ELSIF,
             Keyword::END,
         ])?;
 
-        let elseif_blocks = if self.parse_keyword(Keyword::ELSEIF) {
-            self.parse_keyword_separated(Keyword::ELSEIF, |parser| {
-                parser.parse_conditional_statement_block(&[
-                    Keyword::ELSEIF,
-                    Keyword::ELSE,
-                    Keyword::END,
-                ])
-            })?
-        } else {
-            vec![]
-        };
+        // Accept both ELSEIF (SQL/PSM standard) and ELSIF (PL/pgSQL)
+        let elseif_blocks =
+            if self.parse_keyword(Keyword::ELSEIF) || self.parse_keyword(Keyword::ELSIF) {
+                let mut blocks = vec![];
+                loop {
+                    blocks.push(self.parse_conditional_statement_block(&[
+                        Keyword::ELSEIF,
+                        Keyword::ELSIF,
+                        Keyword::ELSE,
+                        Keyword::END,
+                    ])?);
+                    if !self.parse_keyword(Keyword::ELSEIF)
+                        && !self.parse_keyword(Keyword::ELSIF)
+                    {
+                        break;
+                    }
+                }
+                blocks
+            } else {
+                vec![]
+            };
 
         let else_block = if self.parse_keyword(Keyword::ELSE) {
             Some(self.parse_conditional_statement_block(&[Keyword::END])?)
@@ -6935,12 +6946,15 @@ impl<'a> Parser<'a> {
 
         let not_null = self.parse_keywords(&[Keyword::NOT, Keyword::NULL]);
 
-        let default = if self.consume_token(&BorrowedToken::Assignment) {
-            Some(self.parse_expr()?)
+        // Accept := (PL/pgSQL), DEFAULT (SQL/PSM standard), or = (PL/pgSQL shorthand)
+        let (default_operator, default) = if self.consume_token(&BorrowedToken::Assignment) {
+            (Some(DeclarationAssignmentOperator::Assignment), Some(self.parse_expr()?))
         } else if self.parse_keyword(Keyword::DEFAULT) {
-            Some(self.parse_expr()?)
+            (Some(DeclarationAssignmentOperator::Default), Some(self.parse_expr()?))
+        } else if self.consume_token(&BorrowedToken::Eq) {
+            (Some(DeclarationAssignmentOperator::Equals), Some(self.parse_expr()?))
         } else {
-            None
+            (None, None)
         };
 
         Ok(SqlPsmDeclaration {
@@ -6949,6 +6963,7 @@ impl<'a> Parser<'a> {
             data_type,
             collation,
             not_null,
+            default_operator,
             default,
         })
     }
