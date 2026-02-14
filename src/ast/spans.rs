@@ -38,8 +38,8 @@ use super::{
     LateralView, LeaveStatement, LimitClause, LoopStatement, MatchRecognizePattern, MdArray,
     MdArrayDimension, Measure, NamedParenthesizedList, NamedWindowDefinition, ObjectName,
     ObjectNamePart, Offset, OnConflict, OnConflictAction, OnInsert, OpenStatement, OrderBy,
-    OrderByExpr, OrderByKind, Partition, PerformStatement, PivotValueSource, PlPgSqlAssignment,
-    PlPgSqlDataType, PlPgSqlDeclaration, ProjectionSelect, Query, RaiseMessage, RaiseStatement,
+    OrderByExpr, OrderByKind, Partition, PerformStatement, PivotValueSource, SqlPsmAssignment,
+    SqlPsmDataType, SqlPsmDeclaration, ProjectionSelect, Query, RaiseMessage, RaiseStatement,
     RaiseUsingItem, ReferentialAction, RenameSelectItem, RepeatStatement, ReplaceSelectElement,
     ReplaceSelectItem, Select, SelectInto, SelectItem, SetExpr, SqlOption, Statement, Subscript,
     SubsetDefinition, SymbolDefinition, TableAlias, TableAliasColumnDef, TableConstraint,
@@ -297,7 +297,7 @@ impl Spanned for Statement {
             Statement::GetDiagnostics(stmt) => stmt.token.0.span,
             Statement::Raise(stmt) => stmt.span(),
             Statement::Perform(stmt) => stmt.span(),
-            Statement::PlPgSqlAssignment(stmt) => stmt.span(),
+            Statement::SqlPsmAssignment(stmt) => stmt.span(),
             Statement::Do(stmt) => stmt.span(),
             Statement::Null => Span::empty(),
             Statement::Call(function) => function.span(),
@@ -856,9 +856,9 @@ impl Spanned for PerformStatement {
     }
 }
 
-impl Spanned for PlPgSqlAssignment {
+impl Spanned for SqlPsmAssignment {
     fn span(&self) -> Span {
-        let PlPgSqlAssignment { target, value } = self;
+        let SqlPsmAssignment { target, value } = self;
         union_spans(iter::once(target.span()).chain(iter::once(value.span())))
     }
 }
@@ -2584,9 +2584,9 @@ impl Spanned for super::CursorParameter {
     }
 }
 
-impl Spanned for super::PlPgSqlCursorDeclaration {
+impl Spanned for super::SqlPsmCursorDeclaration {
     fn span(&self) -> Span {
-        let super::PlPgSqlCursorDeclaration {
+        let super::SqlPsmCursorDeclaration {
             scroll: _,
             parameters,
             query,
@@ -2620,26 +2620,27 @@ impl Spanned for super::ExecuteInto {
     }
 }
 
-impl Spanned for PlPgSqlDataType {
+impl Spanned for SqlPsmDataType {
     fn span(&self) -> Span {
         match self {
-            PlPgSqlDataType::DataType(_) => Span::empty(),
-            PlPgSqlDataType::TypeOf(name) => name.span(),
-            PlPgSqlDataType::RowTypeOf(name) => name.span(),
-            PlPgSqlDataType::Record => Span::empty(),
-            PlPgSqlDataType::Cursor(decl) => decl.span(),
+            SqlPsmDataType::DataType(_) => Span::empty(),
+            SqlPsmDataType::TypeOf(name) => name.span(),
+            SqlPsmDataType::RowTypeOf(name) => name.span(),
+            SqlPsmDataType::Record => Span::empty(),
+            SqlPsmDataType::Cursor(decl) => decl.span(),
         }
     }
 }
 
-impl Spanned for PlPgSqlDeclaration {
+impl Spanned for SqlPsmDeclaration {
     fn span(&self) -> Span {
-        let PlPgSqlDeclaration {
+        let SqlPsmDeclaration {
             name,
             constant: _,
             data_type,
             collation,
             not_null: _,
+            default_operator: _,
             default,
         } = self;
         union_spans(

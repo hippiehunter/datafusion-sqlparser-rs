@@ -3547,7 +3547,7 @@ pub enum CursorScrollOption {
     NoScroll,
 }
 
-/// PL/pgSQL cursor parameter
+/// SQL/PSM cursor parameter
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -3556,22 +3556,22 @@ pub struct CursorParameter {
     pub data_type: DataType,
 }
 
-/// Cursor declaration for PL/pgSQL
+/// Cursor declaration for SQL/PSM
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct PlPgSqlCursorDeclaration {
+pub struct SqlPsmCursorDeclaration {
     pub scroll: CursorScrollOption,
     pub parameters: Option<Vec<CursorParameter>>,
     pub query: Box<Query>,
 }
 
-/// PL/pgSQL data type specification.
+/// SQL/PSM data type specification.
 /// Supports standard types plus %TYPE and %ROWTYPE references.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum PlPgSqlDataType {
+pub enum SqlPsmDataType {
     /// Standard SQL data type
     DataType(DataType),
     /// Reference to another variable or column's type: `variable%TYPE`
@@ -3581,19 +3581,43 @@ pub enum PlPgSqlDataType {
     /// The generic RECORD type
     Record,
     /// Cursor declaration with optional parameters and query
-    Cursor(PlPgSqlCursorDeclaration),
+    Cursor(SqlPsmCursorDeclaration),
 }
 
-/// A PL/pgSQL variable declaration in a DECLARE section.
+/// The assignment operator used for default values in declarations.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct PlPgSqlDeclaration {
+pub enum DeclarationAssignmentOperator {
+    /// `:=` (PL/pgSQL style)
+    Assignment,
+    /// `DEFAULT` keyword (SQL/PSM standard)
+    Default,
+    /// `=` (PL/pgSQL shorthand)
+    Equals,
+}
+
+impl fmt::Display for DeclarationAssignmentOperator {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            DeclarationAssignmentOperator::Assignment => write!(f, ":="),
+            DeclarationAssignmentOperator::Default => write!(f, "DEFAULT"),
+            DeclarationAssignmentOperator::Equals => write!(f, "="),
+        }
+    }
+}
+
+/// A SQL/PSM variable declaration in a DECLARE section.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct SqlPsmDeclaration {
     pub name: Ident,
     pub constant: bool,
-    pub data_type: PlPgSqlDataType,
+    pub data_type: SqlPsmDataType,
     pub collation: Option<Ident>,
     pub not_null: bool,
+    pub default_operator: Option<DeclarationAssignmentOperator>,
     pub default: Option<Expr>,
 }
 
@@ -3613,7 +3637,7 @@ impl fmt::Display for CursorParameter {
     }
 }
 
-impl fmt::Display for PlPgSqlCursorDeclaration {
+impl fmt::Display for SqlPsmCursorDeclaration {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "CURSOR {}", self.scroll)?;
         if let Some(params) = &self.parameters {
@@ -3623,19 +3647,19 @@ impl fmt::Display for PlPgSqlCursorDeclaration {
     }
 }
 
-impl fmt::Display for PlPgSqlDataType {
+impl fmt::Display for SqlPsmDataType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            PlPgSqlDataType::DataType(dt) => write!(f, "{}", dt),
-            PlPgSqlDataType::TypeOf(name) => write!(f, "{}%TYPE", name),
-            PlPgSqlDataType::RowTypeOf(name) => write!(f, "{}%ROWTYPE", name),
-            PlPgSqlDataType::Record => write!(f, "RECORD"),
-            PlPgSqlDataType::Cursor(decl) => write!(f, "{}", decl),
+            SqlPsmDataType::DataType(dt) => write!(f, "{}", dt),
+            SqlPsmDataType::TypeOf(name) => write!(f, "{}%TYPE", name),
+            SqlPsmDataType::RowTypeOf(name) => write!(f, "{}%ROWTYPE", name),
+            SqlPsmDataType::Record => write!(f, "RECORD"),
+            SqlPsmDataType::Cursor(decl) => write!(f, "{}", decl),
         }
     }
 }
 
-impl fmt::Display for PlPgSqlDeclaration {
+impl fmt::Display for SqlPsmDeclaration {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.name)?;
         if self.constant {
@@ -3649,7 +3673,11 @@ impl fmt::Display for PlPgSqlDeclaration {
             write!(f, " NOT NULL")?;
         }
         if let Some(ref default) = self.default {
-            write!(f, " := {}", default)?;
+            if let Some(ref op) = self.default_operator {
+                write!(f, " {} {}", op, default)?;
+            } else {
+                write!(f, " := {}", default)?;
+            }
         }
         Ok(())
     }
@@ -3670,7 +3698,7 @@ pub struct BeginEndStatements {
     #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
     pub begin_token: AttachedToken,
     pub label: Option<Ident>,
-    pub declarations: Vec<PlPgSqlDeclaration>,
+    pub declarations: Vec<SqlPsmDeclaration>,
     pub statements: Vec<Statement>,
     pub exception_handlers: Option<Vec<ExceptionWhen>>,
     #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
@@ -3962,7 +3990,7 @@ impl fmt::Display for SignalSetItem {
     }
 }
 
-/// Represents a `PERFORM` statement (PL/pgSQL).
+/// Represents a `PERFORM` statement (SQL/PSM, PL/pgSQL).
 ///
 /// PERFORM executes a query and discards the result.
 ///
@@ -3987,31 +4015,29 @@ impl fmt::Display for PerformStatement {
     }
 }
 
-/// Represents a PL/pgSQL assignment statement using `:=`.
+/// Represents a SQL/PSM assignment statement using `:=`.
 ///
 /// Examples:
 /// ```sql
 /// my_var := 42;
 /// result := x + y;
 /// ```
-///
-/// [PostgreSQL](https://www.postgresql.org/docs/current/plpgsql-statements.html#PLPGSQL-STATEMENTS-ASSIGNMENT)
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct PlPgSqlAssignment {
+pub struct SqlPsmAssignment {
     pub target: Expr,
     pub value: Expr,
 }
 
-impl fmt::Display for PlPgSqlAssignment {
+impl fmt::Display for SqlPsmAssignment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let PlPgSqlAssignment { target, value } = self;
+        let SqlPsmAssignment { target, value } = self;
         write!(f, "{} := {}", target, value)
     }
 }
 
-/// A PostgreSQL DO statement for executing anonymous code blocks.
+/// A `DO` statement for executing anonymous code blocks.
 ///
 /// Examples:
 /// ```sql
@@ -4029,8 +4055,6 @@ impl fmt::Display for PlPgSqlAssignment {
 /// END
 /// $$;
 /// ```
-///
-/// [PostgreSQL](https://www.postgresql.org/docs/current/sql-do.html)
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -4061,7 +4085,7 @@ impl fmt::Display for DoStatement {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub enum DoBody {
-    /// A parsed PL/pgSQL block structure with DECLARE, BEGIN...END, etc.
+    /// A parsed SQL/PSM block structure with DECLARE, BEGIN...END, etc.
     Block(BeginEndStatements),
     /// A raw body expression (typically a dollar-quoted string that wasn't parsed)
     RawBody(Expr),
@@ -4817,17 +4841,17 @@ pub enum Statement {
     Signal(SignalStatement),
     /// A `RESIGNAL` statement.
     Resignal(ResignalStatement),
-    /// A `PERFORM` statement (PL/pgSQL).
+    /// A `PERFORM` statement (SQL/PSM, PL/pgSQL).
     Perform(PerformStatement),
-    /// A PL/pgSQL assignment statement using `:=`.
-    PlPgSqlAssignment(PlPgSqlAssignment),
+    /// A SQL/PSM assignment statement using `:=`.
+    SqlPsmAssignment(SqlPsmAssignment),
     /// A `DO` statement (PostgreSQL anonymous code block).
     ///
     /// ```sql
     /// DO $$ BEGIN RAISE NOTICE 'Hello'; END $$;
     /// ```
     Do(DoStatement),
-    /// A `NULL` statement (PL/pgSQL no-op).
+    /// A `NULL` statement (SQL/PSM no-op).
     ///
     /// Used as a placeholder in control structures when no action is needed.
     /// ```sql
@@ -6241,7 +6265,7 @@ impl fmt::Display for Statement {
             Statement::Perform(stmt) => {
                 write!(f, "{stmt}")
             }
-            Statement::PlPgSqlAssignment(stmt) => {
+            Statement::SqlPsmAssignment(stmt) => {
                 write!(f, "{stmt}")
             }
             Statement::Do(stmt) => {

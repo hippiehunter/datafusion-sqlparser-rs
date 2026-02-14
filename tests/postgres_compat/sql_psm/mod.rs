@@ -15,14 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Tests for PL/pgSQL language constructs compatibility
+//! Tests for SQL/PSM procedural language constructs compatibility
 //!
 //! Reference: <https://www.postgresql.org/docs/current/plpgsql.html>
 //!
-//! # PL/pgSQL - PostgreSQL Procedural Language
+//! # SQL/PSM - SQL Persistent Stored Modules
 //!
-//! PL/pgSQL is PostgreSQL's native procedural language for writing functions, procedures,
-//! and triggers. It extends SQL with:
+//! SQL/PSM (ISO/IEC 9075-4) is the SQL standard for procedural extensions. This module
+//! tests constructs used by both the SQL standard and PL/pgSQL (PostgreSQL's implementation):
 //!
 //! - Variables and constants
 //! - Control structures (IF, CASE, LOOP, WHILE, FOR)
@@ -46,27 +46,27 @@
 //!
 //! **NOT IMPLEMENTED** - Most tests currently expect parse errors.
 //!
-//! PL/pgSQL function bodies are currently stored as raw strings (dollar-quoted literals)
-//! without parsing the procedural code inside. True PL/pgSQL support requires:
+//! SQL/PSM function bodies are currently stored as raw strings (dollar-quoted literals)
+//! without parsing the procedural code inside. Full SQL/PSM support requires:
 //!
-//! 1. **Full procedural AST** - Parse PL/pgSQL blocks into AST nodes
-//! 2. **Statement types** - Support all PL/pgSQL statement types (not just SQL)
-//! 3. **Expression extensions** - Handle PL/pgSQL-specific expressions
+//! 1. **Full procedural AST** - Parse SQL/PSM blocks into AST nodes
+//! 2. **Statement types** - Support all SQL/PSM statement types (not just SQL)
+//! 3. **Expression extensions** - Handle procedural-specific expressions
 //! 4. **Variable scoping** - Track variable declarations and usage
 //!
 //! ## Running Tests
 //!
 //! ```bash
-//! # Run all PL/pgSQL tests
-//! cargo test postgres_compat::plpgsql
+//! # Run all SQL/PSM tests
+//! cargo test postgres_compat::sql_psm
 //!
 //! # Run specific category
-//! cargo test postgres_compat::plpgsql::declarations
-//! cargo test postgres_compat::plpgsql::control_flow
-//! cargo test postgres_compat::plpgsql::raise
+//! cargo test postgres_compat::sql_psm::declarations
+//! cargo test postgres_compat::sql_psm::control_flow
+//! cargo test postgres_compat::sql_psm::raise
 //!
 //! # See detailed output for failing tests
-//! cargo test postgres_compat::plpgsql -- --nocapture
+//! cargo test postgres_compat::sql_psm -- --nocapture
 //! ```
 //!
 //! ## Reference Documentation
