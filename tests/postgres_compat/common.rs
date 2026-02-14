@@ -27,7 +27,7 @@
 //! - Procedures: <https://www.postgresql.org/docs/current/sql-createprocedure.html>
 //! - Routines: <https://www.postgresql.org/docs/current/sql-alterroutine.html>
 //! - DO blocks: <https://www.postgresql.org/docs/current/sql-do.html>
-//! - PL/pgSQL: <https://www.postgresql.org/docs/current/plpgsql.html>
+//! - SQL/PSM / PL/pgSQL: <https://www.postgresql.org/docs/current/plpgsql.html>
 //! - Triggers: <https://www.postgresql.org/docs/current/sql-createtrigger.html>
 //! - Aggregates: <https://www.postgresql.org/docs/current/sql-createaggregate.html>
 //! - Operators: <https://www.postgresql.org/docs/current/sql-createoperator.html>

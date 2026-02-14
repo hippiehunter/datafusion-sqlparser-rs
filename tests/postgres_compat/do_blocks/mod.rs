@@ -43,7 +43,7 @@
 //! 1. **Anonymous execution** - No function/procedure is created
 //! 2. **No return value** - DO blocks cannot return values
 //! 3. **Language specification** - Defaults to plpgsql if not specified
-//! 4. **Full PL/pgSQL support** - DECLARE, control flow, exception handling
+//! 4. **Full SQL/PSM support** - DECLARE, control flow, exception handling
 //! 5. **Transaction control** - Can include COMMIT/ROLLBACK in procedures
 //!
 //! ## Common Use Cases

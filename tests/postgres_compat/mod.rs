@@ -26,7 +26,7 @@
 //!
 //! 1. **Tests expect correct behavior** - Each test verifies both parsing AND AST shape
 //! 2. **Tests fail until implemented** - Failures document the compatibility gap
-//! 3. **Full AST for procedure bodies** - PL/pgSQL must produce real AST nodes, not strings
+//! 3. **Full AST for procedure bodies** - SQL/PSM must produce real AST nodes, not strings
 //!
 //! # Test Organization
 //!
@@ -37,13 +37,13 @@
 //! - `create_function` - CREATE FUNCTION with all PostgreSQL options
 //!   - Function arguments (IN, OUT, INOUT, VARIADIC)
 //!   - Return types (RETURNS, RETURNS TABLE, RETURNS SETOF)
-//!   - Function bodies (SQL, PL/pgSQL, external languages)
+//!   - Function bodies (SQL, SQL/PSM, PL/pgSQL, external languages)
 //!   - Function attributes (VOLATILITY, PARALLEL SAFETY, SECURITY, etc.)
 //!   - Overloading and polymorphic functions
 //!
 //! - `create_procedure` - CREATE PROCEDURE with all PostgreSQL options
 //!   - Procedure arguments (IN, OUT, INOUT)
-//!   - Procedure bodies (SQL, PL/pgSQL)
+//!   - Procedure bodies (SQL, SQL/PSM, PL/pgSQL)
 //!   - Transaction control in procedures
 //!
 //! - `alter_routine` - ALTER FUNCTION and ALTER PROCEDURE
@@ -60,13 +60,13 @@
 //! ## Anonymous Code Blocks
 //!
 //! - `do_blocks` - DO statement for anonymous code blocks
-//!   - DO with PL/pgSQL
+//!   - DO with SQL/PSM / PL/pgSQL
 //!   - DO with other procedural languages
 //!   - Variable declarations and control flow
 //!
-//! ## PL/pgSQL Language Constructs
+//! ## SQL/PSM Language Constructs
 //!
-//! - `plpgsql` - PL/pgSQL-specific syntax
+//! - `sql_psm` - SQL/PSM procedural syntax (including PL/pgSQL)
 //!   - DECLARE blocks and variable declarations
 //!   - Control structures (IF, CASE, LOOP, WHILE, FOR)
 //!   - RAISE statements for errors and notices
@@ -132,7 +132,7 @@
 //!
 //! # Run specific category
 //! cargo test postgres_compat::create_function
-//! cargo test postgres_compat::plpgsql
+//! cargo test postgres_compat::sql_psm
 //! cargo test postgres_compat::triggers
 //!
 //! # See detailed output for failing tests
@@ -146,7 +146,7 @@
 //!
 //! All tests reference official PostgreSQL documentation:
 //! - SQL Commands: <https://www.postgresql.org/docs/current/sql-commands.html>
-//! - PL/pgSQL: <https://www.postgresql.org/docs/current/plpgsql.html>
+//! - SQL/PSM / PL/pgSQL: <https://www.postgresql.org/docs/current/plpgsql.html>
 //! - Server Programming: <https://www.postgresql.org/docs/current/server-programming.html>
 //!
 //! # Contributing
@@ -195,9 +195,9 @@ pub mod drop_routine;
 #[path = "do_blocks/mod.rs"]
 pub mod do_blocks;
 
-// PL/pgSQL Language Constructs
-#[path = "plpgsql/mod.rs"]
-pub mod plpgsql;
+// SQL/PSM Language Constructs
+#[path = "sql_psm/mod.rs"]
+pub mod sql_psm;
 
 // Triggers and Event Triggers
 pub mod triggers;

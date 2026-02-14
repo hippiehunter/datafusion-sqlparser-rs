@@ -1051,7 +1051,7 @@ impl<'a> Parser<'a> {
                     self.parse_vacuum()
                 }
                 Keyword::RESET => self.parse_reset(),
-                // PL/pgSQL NULL statement (no-op)
+                // SQL/PSM NULL statement (no-op)
                 Keyword::NULL => Ok(Statement::Null),
                 _ => {
                     // Check for labeled statement: identifier COLON (LOOP | REPEAT | WHILE | BEGIN)
@@ -1087,7 +1087,7 @@ impl<'a> Parser<'a> {
                         }
                     }
 
-                    // Try PL/pgSQL assignment: identifier := value or identifier.field := value
+                    // Try SQL/PSM assignment: identifier := value or identifier.field := value
                     // Keywords like NEW, OLD can start assignments in trigger functions
                     // The expression parser handles := as BinaryOperator::Assignment,
                     // so we parse as an expression and check if it's an assignment.
@@ -1101,12 +1101,12 @@ impl<'a> Parser<'a> {
                             right,
                         } = expr
                         {
-                            Ok(Statement::PlPgSqlAssignment(PlPgSqlAssignment {
+                            Ok(Statement::SqlPsmAssignment(SqlPsmAssignment {
                                 target: *left,
                                 value: *right,
                             }))
                         } else {
-                            parser_err!("Not a PL/pgSQL assignment", parser.peek_token().span.start)
+                            parser_err!("Not a SQL/PSM assignment", parser.peek_token().span.start)
                         }
                     }) {
                         return Ok(assignment);
@@ -1778,7 +1778,7 @@ impl<'a> Parser<'a> {
 
     /// Parse a `RAISE` statement.
     ///
-    /// Supports PL/pgSQL RAISE syntax:
+    /// Supports SQL/PSM RAISE syntax:
     /// - `RAISE` - re-raise current exception
     /// - `RAISE level` - raise with level (DEBUG, LOG, INFO, NOTICE, WARNING, EXCEPTION)
     /// - `RAISE level 'format'` - format string
@@ -1880,7 +1880,7 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    /// Parse a `PERFORM` statement (PL/pgSQL).
+    /// Parse a `PERFORM` statement (SQL/PSM, PL/pgSQL).
     ///
     /// PERFORM executes a query and discards the result.
     ///
@@ -1895,11 +1895,12 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    /// Parse a PostgreSQL `DO` statement (anonymous code block).
+    /// Parse a `DO` statement (anonymous code block).
     ///
     /// Supports syntax variants:
-    /// - `DO $$ ... $$` - anonymous plpgsql block (default language)
+    /// - `DO $$ ... $$` - anonymous SQL/PSM block (default language)
     /// - `DO LANGUAGE plpgsql $$ ... $$` - explicit language before body
+    /// - `DO LANGUAGE pgsql $$ ... $$` - PL/pgSQL variant
     /// - `DO $$ ... $$ LANGUAGE plpgsql` - explicit language after body
     /// - `DO LANGUAGE sql $$ ... $$` - other languages (stored as raw body)
     ///
@@ -1927,15 +1928,15 @@ impl<'a> Parser<'a> {
 
         let language = language_before.or(language_after);
 
-        // Re-parse as PL/pgSQL block if language is plpgsql or not specified (defaults to plpgsql)
+        // Re-parse as SQL/PSM block if language is plpgsql/pgsql or not specified
         let body = if let Some(ref lang) = language {
-            if lang.value.eq_ignore_ascii_case("plpgsql") {
+            if Self::is_sql_psm_language(lang) {
                 if let Expr::Value(ValueWithSpan {
                     value: Value::DollarQuotedString(ref dqs),
                     ..
                 }) = body_expr
                 {
-                    let parsed_block = self.reparse_as_plpgsql_block(&dqs.value)?;
+                    let parsed_block = self.reparse_as_sql_psm_block(&dqs.value)?;
                     DoBody::Block(parsed_block)
                 } else {
                     DoBody::RawBody(body_expr)
@@ -1944,13 +1945,13 @@ impl<'a> Parser<'a> {
                 DoBody::RawBody(body_expr)
             }
         } else {
-            // Default to plpgsql if no language specified
+            // Default to SQL/PSM block if no language specified
             if let Expr::Value(ValueWithSpan {
                 value: Value::DollarQuotedString(ref dqs),
                 ..
             }) = body_expr
             {
-                let parsed_block = self.reparse_as_plpgsql_block(&dqs.value)?;
+                let parsed_block = self.reparse_as_sql_psm_block(&dqs.value)?;
                 DoBody::Block(parsed_block)
             } else {
                 DoBody::RawBody(body_expr)
@@ -6835,8 +6836,17 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Parse a PL/pgSQL label: <<label_name>>
-    fn parse_plpgsql_label(&self) -> Result<Option<Ident>, ParserError> {
+    /// Returns true if the given language identifier is a SQL/PSM variant
+    /// that should be parsed as a structured block.
+    ///
+    /// Accepts both PL/pgSQL (`plpgsql`, `pgsql`) and standard SQL/PSM identifiers.
+    fn is_sql_psm_language(lang: &Ident) -> bool {
+        lang.value.eq_ignore_ascii_case("plpgsql")
+            || lang.value.eq_ignore_ascii_case("pgsql")
+    }
+
+    /// Parse a SQL/PSM label: <<label_name>>
+    fn parse_sql_psm_label(&self) -> Result<Option<Ident>, ParserError> {
         if self.consume_token(&BorrowedToken::ShiftLeft) {
             let label = self.parse_identifier()?;
             self.expect_token(&BorrowedToken::ShiftRight)?;
@@ -6846,10 +6856,10 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Parse a PL/pgSQL data type (supports %TYPE and %ROWTYPE)
-    fn parse_plpgsql_data_type(&self) -> Result<PlPgSqlDataType, ParserError> {
+    /// Parse a SQL/PSM data type (supports %TYPE and %ROWTYPE)
+    fn parse_sql_psm_data_type(&self) -> Result<SqlPsmDataType, ParserError> {
         if self.parse_keyword(Keyword::RECORD) {
-            return Ok(PlPgSqlDataType::Record);
+            return Ok(SqlPsmDataType::Record);
         }
 
         // Check for CURSOR declaration
@@ -6881,7 +6891,7 @@ impl<'a> Parser<'a> {
             self.expect_keyword(Keyword::FOR)?;
             let query = self.parse_query()?;
 
-            return Ok(PlPgSqlDataType::Cursor(PlPgSqlCursorDeclaration {
+            return Ok(SqlPsmDataType::Cursor(SqlPsmCursorDeclaration {
                 scroll,
                 parameters,
                 query,
@@ -6893,9 +6903,9 @@ impl<'a> Parser<'a> {
             let name = parser.parse_object_name(false)?;
             if parser.consume_token(&BorrowedToken::Mod) {
                 if parser.parse_keyword(Keyword::TYPE) {
-                    Ok(PlPgSqlDataType::TypeOf(name))
+                    Ok(SqlPsmDataType::TypeOf(name))
                 } else if parser.parse_keyword(Keyword::ROWTYPE) {
-                    Ok(PlPgSqlDataType::RowTypeOf(name))
+                    Ok(SqlPsmDataType::RowTypeOf(name))
                 } else {
                     parser.expected("TYPE or ROWTYPE after %", parser.peek_token())
                 }
@@ -6908,14 +6918,14 @@ impl<'a> Parser<'a> {
 
         // Parse as standard data type
         let data_type = self.parse_data_type()?;
-        Ok(PlPgSqlDataType::DataType(data_type))
+        Ok(SqlPsmDataType::DataType(data_type))
     }
 
-    /// Parse a single PL/pgSQL variable declaration
-    fn parse_plpgsql_declaration(&self) -> Result<PlPgSqlDeclaration, ParserError> {
+    /// Parse a single SQL/PSM variable declaration
+    fn parse_sql_psm_declaration(&self) -> Result<SqlPsmDeclaration, ParserError> {
         let name = self.parse_identifier()?;
         let constant = self.parse_keyword(Keyword::CONSTANT);
-        let data_type = self.parse_plpgsql_data_type()?;
+        let data_type = self.parse_sql_psm_data_type()?;
 
         let collation = if self.parse_keyword(Keyword::COLLATE) {
             Some(self.parse_identifier()?)
@@ -6933,7 +6943,7 @@ impl<'a> Parser<'a> {
             None
         };
 
-        Ok(PlPgSqlDeclaration {
+        Ok(SqlPsmDeclaration {
             name,
             constant,
             data_type,
@@ -6943,8 +6953,8 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// Parse the DECLARE section of a PL/pgSQL block
-    fn parse_plpgsql_declarations(&self) -> Result<Vec<PlPgSqlDeclaration>, ParserError> {
+    /// Parse the DECLARE section of a SQL/PSM block
+    fn parse_sql_psm_declarations(&self) -> Result<Vec<SqlPsmDeclaration>, ParserError> {
         let mut declarations = vec![];
 
         if !self.parse_keyword(Keyword::DECLARE) {
@@ -6957,30 +6967,30 @@ impl<'a> Parser<'a> {
                 break;
             }
 
-            declarations.push(self.parse_plpgsql_declaration()?);
+            declarations.push(self.parse_sql_psm_declaration()?);
             self.expect_token(&BorrowedToken::SemiColon)?;
         }
 
         Ok(declarations)
     }
 
-    /// Create a sub-parser to parse PL/pgSQL block content
-    fn reparse_as_plpgsql_block(&self, body: &str) -> Result<BeginEndStatements, ParserError> {
+    /// Create a sub-parser to parse SQL/PSM block content
+    fn reparse_as_sql_psm_block(&self, body: &str) -> Result<BeginEndStatements, ParserError> {
         let dialect = self.dialect;
         let mut tokenizer = Tokenizer::new(dialect, body);
         let tokens = tokenizer.tokenize_with_location()?;
 
         let parser = Parser::new(dialect).with_tokens_with_locations(tokens);
-        parser.parse_plpgsql_block()
+        parser.parse_sql_psm_block()
     }
 
-    /// Parse a full PL/pgSQL block structure
-    fn parse_plpgsql_block(&self) -> Result<BeginEndStatements, ParserError> {
+    /// Parse a full SQL/PSM block structure
+    fn parse_sql_psm_block(&self) -> Result<BeginEndStatements, ParserError> {
         // Parse optional label
-        let label = self.parse_plpgsql_label()?;
+        let label = self.parse_sql_psm_label()?;
 
         // Parse DECLARE section
-        let declarations = self.parse_plpgsql_declarations()?;
+        let declarations = self.parse_sql_psm_declarations()?;
 
         // Parse BEGIN
         let begin_token = self.expect_keyword(Keyword::BEGIN)?;
@@ -7189,15 +7199,15 @@ impl<'a> Parser<'a> {
             }
         }
 
-        // Re-parse dollar-quoted body if LANGUAGE plpgsql
+        // Re-parse dollar-quoted body if LANGUAGE is a SQL/PSM variant (plpgsql, pgsql)
         if let Some(ref lang) = body.language {
-            if lang.value.eq_ignore_ascii_case("plpgsql") {
+            if Self::is_sql_psm_language(lang) {
                 if let Some(CreateFunctionBody::AsBeforeOptions(Expr::Value(ValueWithSpan {
                     value: Value::DollarQuotedString(ref dqs),
                     ..
                 }))) = body.function_body
                 {
-                    let parsed_block = self.reparse_as_plpgsql_block(&dqs.value)?;
+                    let parsed_block = self.reparse_as_sql_psm_block(&dqs.value)?;
                     body.function_body = Some(CreateFunctionBody::AsBeginEnd(parsed_block));
                 }
             }
@@ -19955,14 +19965,14 @@ impl<'a> Parser<'a> {
         let is_immediate =
             self.dialect.supports_execute_immediate() && self.parse_keyword(Keyword::IMMEDIATE);
 
-        // For PL/pgSQL dynamic SQL: EXECUTE query_expr INTO ...
+        // For SQL/PSM dynamic SQL: EXECUTE query_expr INTO ...
         // Try to parse as expression first (for dynamic SQL case)
         // Only treat as dynamic SQL if expression is NOT a bare identifier
         // (bare identifier + USING is prepared statement execution)
         if !is_immediate {
             if let Ok(Some(query_expr)) = self.maybe_parse(|parser| {
                 let expr = parser.parse_expr()?;
-                // Check if this looks like PL/pgSQL dynamic EXECUTE
+                // Check if this looks like SQL/PSM dynamic EXECUTE
                 // Must have INTO (with optional STRICT) or USING, AND
                 // expression must not be a simple identifier (those are prepared statements)
                 let is_simple_ident = matches!(&expr, Expr::Identifier(_));
@@ -19972,12 +19982,12 @@ impl<'a> Parser<'a> {
                     Ok(expr)
                 } else {
                     parser_err!(
-                        "Not a PL/pgSQL dynamic EXECUTE",
+                        "Not a SQL/PSM dynamic EXECUTE",
                         parser.peek_token().span.start
                     )
                 }
             }) {
-                // This is PL/pgSQL dynamic SQL: EXECUTE expr [INTO [STRICT] ...] [USING ...]
+                // This is SQL/PSM dynamic SQL: EXECUTE expr [INTO [STRICT] ...] [USING ...]
                 let into = if self.parse_keyword(Keyword::INTO) {
                     let strict = self.parse_keyword(Keyword::STRICT);
                     let targets = self.parse_comma_separated(Self::parse_identifier)?;
