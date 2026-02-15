@@ -2075,6 +2075,101 @@ fn parse_pg_returning() {
     };
 }
 
+#[test]
+fn parse_pg_for_no_key_update() {
+    let sql = "SELECT * FROM student WHERE id = '1' FOR NO KEY UPDATE";
+    let mut ast = pg().verified_query(sql);
+    assert_eq!(ast.locks.len(), 1);
+    let lock = ast.locks.pop().unwrap();
+    assert_eq!(lock.lock_type, LockType::NoKeyUpdate);
+    assert!(lock.of.is_none());
+    assert!(lock.nonblock.is_none());
+}
+
+#[test]
+fn parse_pg_for_key_share() {
+    let sql = "SELECT * FROM student WHERE id = '1' FOR KEY SHARE";
+    let mut ast = pg().verified_query(sql);
+    assert_eq!(ast.locks.len(), 1);
+    let lock = ast.locks.pop().unwrap();
+    assert_eq!(lock.lock_type, LockType::KeyShare);
+    assert!(lock.of.is_none());
+    assert!(lock.nonblock.is_none());
+}
+
+#[test]
+fn parse_pg_for_no_key_update_with_of_and_nowait() {
+    let sql = "SELECT * FROM student WHERE id = '1' FOR NO KEY UPDATE OF school NOWAIT";
+    let mut ast = pg().verified_query(sql);
+    assert_eq!(ast.locks.len(), 1);
+    let lock = ast.locks.pop().unwrap();
+    assert_eq!(lock.lock_type, LockType::NoKeyUpdate);
+    assert_eq!(
+        lock.of.unwrap(),
+        ObjectName::from(vec![Ident {
+            value: "school".to_string(),
+            quote_style: None,
+            span: Span::empty(),
+        }])
+    );
+    assert_eq!(lock.nonblock.unwrap(), NonBlock::Nowait);
+}
+
+#[test]
+fn parse_pg_for_key_share_with_of_and_skip_locked() {
+    let sql = "SELECT * FROM student WHERE id = '1' FOR KEY SHARE OF school SKIP LOCKED";
+    let mut ast = pg().verified_query(sql);
+    assert_eq!(ast.locks.len(), 1);
+    let lock = ast.locks.pop().unwrap();
+    assert_eq!(lock.lock_type, LockType::KeyShare);
+    assert_eq!(
+        lock.of.unwrap(),
+        ObjectName::from(vec![Ident {
+            value: "school".to_string(),
+            quote_style: None,
+            span: Span::empty(),
+        }])
+    );
+    assert_eq!(lock.nonblock.unwrap(), NonBlock::SkipLocked);
+}
+
+#[test]
+fn parse_pg_mixed_lock_clauses() {
+    let sql = "SELECT * FROM student WHERE id = '1' FOR KEY SHARE OF school FOR NO KEY UPDATE OF student FOR UPDATE OF grades";
+    let mut ast = pg().verified_query(sql);
+    assert_eq!(ast.locks.len(), 3);
+    let lock = ast.locks.remove(0);
+    assert_eq!(lock.lock_type, LockType::KeyShare);
+    assert_eq!(
+        lock.of.unwrap(),
+        ObjectName::from(vec![Ident {
+            value: "school".to_string(),
+            quote_style: None,
+            span: Span::empty(),
+        }])
+    );
+    let lock = ast.locks.remove(0);
+    assert_eq!(lock.lock_type, LockType::NoKeyUpdate);
+    assert_eq!(
+        lock.of.unwrap(),
+        ObjectName::from(vec![Ident {
+            value: "student".to_string(),
+            quote_style: None,
+            span: Span::empty(),
+        }])
+    );
+    let lock = ast.locks.remove(0);
+    assert_eq!(lock.lock_type, LockType::Update);
+    assert_eq!(
+        lock.of.unwrap(),
+        ObjectName::from(vec![Ident {
+            value: "grades".to_string(),
+            quote_style: None,
+            span: Span::empty(),
+        }])
+    );
+}
+
 fn test_operator(operator: &str, dialect: &TestedDialects, expected: BinaryOperator) {
     let operator_tokens =
         sqlparser::tokenizer::Tokenizer::new(&PostgreSqlDialect {}, &format!("a{operator}b"))

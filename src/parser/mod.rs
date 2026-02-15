@@ -19566,12 +19566,18 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// Parse a FOR UPDATE/FOR SHARE clause
+    /// Parse a FOR UPDATE/FOR SHARE/FOR NO KEY UPDATE/FOR KEY SHARE clause
     pub fn parse_lock(&self) -> Result<LockClause, ParserError> {
-        let lock_type = match self.expect_one_of_keywords(&[Keyword::UPDATE, Keyword::SHARE])? {
-            Keyword::UPDATE => LockType::Update,
-            Keyword::SHARE => LockType::Share,
-            _ => unreachable!(),
+        let lock_type = if self.parse_keywords(&[Keyword::NO, Keyword::KEY, Keyword::UPDATE]) {
+            LockType::NoKeyUpdate
+        } else if self.parse_keywords(&[Keyword::KEY, Keyword::SHARE]) {
+            LockType::KeyShare
+        } else {
+            match self.expect_one_of_keywords(&[Keyword::UPDATE, Keyword::SHARE])? {
+                Keyword::UPDATE => LockType::Update,
+                Keyword::SHARE => LockType::Share,
+                _ => unreachable!(),
+            }
         };
         let of = if self.parse_keyword(Keyword::OF) {
             Some(self.parse_object_name(false)?)

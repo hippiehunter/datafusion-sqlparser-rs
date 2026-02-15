@@ -3537,6 +3537,10 @@ impl fmt::Display for LockClause {
 pub enum LockType {
     Share,
     Update,
+    /// FOR NO KEY UPDATE (PostgreSQL-specific)
+    NoKeyUpdate,
+    /// FOR KEY SHARE (PostgreSQL-specific)
+    KeyShare,
 }
 
 impl fmt::Display for LockType {
@@ -3544,6 +3548,8 @@ impl fmt::Display for LockType {
         let select_lock = match self {
             LockType::Share => "SHARE",
             LockType::Update => "UPDATE",
+            LockType::NoKeyUpdate => "NO KEY UPDATE",
+            LockType::KeyShare => "KEY SHARE",
         };
         write!(f, "{select_lock}")
     }
