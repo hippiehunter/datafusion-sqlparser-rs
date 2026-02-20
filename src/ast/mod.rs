@@ -52,7 +52,10 @@ pub use self::data_type::{
     ArrayElemTypeDef, BinaryLength, CharLengthUnits, CharacterLength, DataType, EnumMember,
     ExactNumberInfo, IntervalFields, MdArrayTypeDef, StructBracketKind, TimezoneInfo,
 };
-pub use self::dcl::{AlterRoleOperation, CreateRole, ResetConfig, RoleOption, SetConfigValue, Use};
+pub use self::dcl::{
+    AlterConfigurationOperation, AlterRoleOperation, CreateRole, ResetConfig, RoleOption,
+    SetConfigValue, Use,
+};
 pub use self::ddl::{
     Alignment, AlterColumnOperation, AlterIndexOperation, AlterPolicyOperation, AlterSchema,
     AlterSchemaOperation, AlterTable, AlterTableAlgorithm, AlterTableLock, AlterTableOperation,
@@ -4739,16 +4742,20 @@ pub struct Analyze {
 
 impl fmt::Display for Analyze {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "ANALYZE{}{table_name}",
-            if self.has_table_keyword {
-                " TABLE "
-            } else {
-                " "
-            },
-            table_name = self.table_name
-        )?;
+        if self.table_name.0.is_empty() {
+            write!(f, "ANALYZE")?;
+        } else {
+            write!(
+                f,
+                "ANALYZE{}{table_name}",
+                if self.has_table_keyword {
+                    " TABLE "
+                } else {
+                    " "
+                },
+                table_name = self.table_name
+            )?;
+        }
         if let Some(ref parts) = self.partitions {
             if !parts.is_empty() {
                 write!(f, " PARTITION ({})", display_comma_separated(parts))?;
@@ -5047,6 +5054,24 @@ pub enum Statement {
         token: AttachedToken,
         name: Ident,
         operation: AlterRoleOperation,
+    },
+    /// ```sql
+    /// ALTER SYSTEM
+    /// ```
+    AlterSystem {
+        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+        token: AttachedToken,
+        operation: AlterConfigurationOperation,
+    },
+    /// ```sql
+    /// ALTER DATABASE
+    /// ```
+    AlterDatabase {
+        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+        token: AttachedToken,
+        #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
+        database_name: ObjectName,
+        operation: AlterConfigurationOperation,
     },
     /// ```sql
     /// ALTER POLICY <NAME> ON <TABLE NAME> [<OPERATION>]
@@ -6560,6 +6585,16 @@ impl fmt::Display for Statement {
                 name, operation, ..
             } => {
                 write!(f, "ALTER ROLE {name} {operation}")
+            }
+            Statement::AlterSystem { operation, .. } => {
+                write!(f, "ALTER SYSTEM {operation}")
+            }
+            Statement::AlterDatabase {
+                database_name,
+                operation,
+                ..
+            } => {
+                write!(f, "ALTER DATABASE {database_name} {operation}")
             }
             Statement::AlterPolicy {
                 name,

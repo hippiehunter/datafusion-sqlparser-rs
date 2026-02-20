@@ -19,8 +19,8 @@ use super::{AttachedToken, Parser, ParserError};
 use crate::{
     ast::{
         helpers::key_value_options::{KeyValueOptions, KeyValueOptionsDelimiter},
-        AlterPolicyOperation, AlterRoleOperation, AlterUser, Expr, Password, ResetConfig,
-        RoleOption, SetConfigValue, Statement,
+        AlterConfigurationOperation, AlterPolicyOperation, AlterRoleOperation, AlterUser, Expr,
+        ObjectName, Password, ResetConfig, RoleOption, SetConfigValue, Statement,
     },
     dialect::{MsSqlDialect, PostgreSqlDialect},
     keywords::Keyword,
@@ -28,6 +28,63 @@ use crate::{
 };
 
 impl Parser<'_> {
+    pub fn parse_alter_system(&self) -> Result<Statement, ParserError> {
+        if !dialect_of!(self is PostgreSqlDialect) {
+            return Err(ParserError::ParserError(
+                "ALTER SYSTEM is only support for PostgreSqlDialect".into(),
+            ));
+        }
+
+        // We need to get the ALTER token which was consumed before this function
+        // The parser is currently at the position after SYSTEM, so we go back 2 positions
+        let token = {
+            let current_pos = self.index();
+            self.prev_token();
+            self.prev_token();
+            let t = AttachedToken(self.get_current_token().clone().to_static());
+            // Restore position
+            while self.index() < current_pos {
+                self.next_token();
+            }
+            t
+        };
+
+        let operation = self.parse_pg_alter_configuration_operation()?;
+
+        Ok(Statement::AlterSystem { token, operation })
+    }
+
+    pub fn parse_alter_database(&self) -> Result<Statement, ParserError> {
+        if !dialect_of!(self is PostgreSqlDialect) {
+            return Err(ParserError::ParserError(
+                "ALTER DATABASE is only support for PostgreSqlDialect".into(),
+            ));
+        }
+
+        // We need to get the ALTER token which was consumed before this function
+        // The parser is currently at the position after DATABASE, so we go back 2 positions
+        let token = {
+            let current_pos = self.index();
+            self.prev_token();
+            self.prev_token();
+            let t = AttachedToken(self.get_current_token().clone().to_static());
+            // Restore position
+            while self.index() < current_pos {
+                self.next_token();
+            }
+            t
+        };
+
+        let database_name = self.parse_object_name(false)?;
+        let operation = self.parse_pg_alter_configuration_operation()?;
+
+        Ok(Statement::AlterDatabase {
+            token,
+            database_name,
+            operation,
+        })
+    }
+
     pub fn parse_alter_role(&self) -> Result<Statement, ParserError> {
         if dialect_of!(self is PostgreSqlDialect) {
             return self.parse_pg_alter_role();
@@ -230,50 +287,8 @@ impl Parser<'_> {
             } else {
                 return self.expected("TO after RENAME", self.peek_token());
             }
-        // SET
-        } else if self.parse_keyword(Keyword::SET) {
-            let config_name = self.parse_object_name(false)?;
-            // FROM CURRENT
-            if self.parse_keywords(&[Keyword::FROM, Keyword::CURRENT]) {
-                AlterRoleOperation::Set {
-                    config_name,
-                    config_value: SetConfigValue::FromCurrent,
-                    in_database,
-                }
-            // { TO | = } { value | DEFAULT }
-            } else if self.consume_token(&BorrowedToken::Eq) || self.parse_keyword(Keyword::TO) {
-                if self.parse_keyword(Keyword::DEFAULT) {
-                    AlterRoleOperation::Set {
-                        config_name,
-                        config_value: SetConfigValue::Default,
-                        in_database,
-                    }
-                } else if let Ok(expr) = self.parse_expr() {
-                    AlterRoleOperation::Set {
-                        config_name,
-                        config_value: SetConfigValue::Value(expr),
-                        in_database,
-                    }
-                } else {
-                    self.expected("config value", self.peek_token())?
-                }
-            } else {
-                self.expected("'TO' or '=' or 'FROM CURRENT'", self.peek_token())?
-            }
-        // RESET
-        } else if self.parse_keyword(Keyword::RESET) {
-            if self.parse_keyword(Keyword::ALL) {
-                AlterRoleOperation::Reset {
-                    config_name: ResetConfig::ALL,
-                    in_database,
-                }
-            } else {
-                let config_name = self.parse_object_name(false)?;
-                AlterRoleOperation::Reset {
-                    config_name: ResetConfig::ConfigName(config_name),
-                    in_database,
-                }
-            }
+        } else if self.peek_keyword(Keyword::SET) || self.peek_keyword(Keyword::RESET) {
+            self.parse_pg_alter_set_reset_operation(in_database)?
         // option
         } else {
             // [ WITH ]
@@ -296,6 +311,100 @@ impl Parser<'_> {
             name: role_name,
             operation,
         })
+    }
+
+    fn parse_pg_alter_set_reset_operation(
+        &self,
+        in_database: Option<ObjectName>,
+    ) -> Result<AlterRoleOperation, ParserError> {
+        if self.parse_keyword(Keyword::SET) {
+            let config_name = self.parse_object_name(false)?;
+            // FROM CURRENT
+            if self.parse_keywords(&[Keyword::FROM, Keyword::CURRENT]) {
+                Ok(AlterRoleOperation::Set {
+                    config_name,
+                    config_value: SetConfigValue::FromCurrent,
+                    in_database,
+                })
+            // { TO | = } { value | DEFAULT }
+            } else if self.consume_token(&BorrowedToken::Eq) || self.parse_keyword(Keyword::TO) {
+                if self.parse_keyword(Keyword::DEFAULT) {
+                    Ok(AlterRoleOperation::Set {
+                        config_name,
+                        config_value: SetConfigValue::Default,
+                        in_database,
+                    })
+                } else {
+                    let expr = self.parse_expr()?;
+                    Ok(AlterRoleOperation::Set {
+                        config_name,
+                        config_value: SetConfigValue::Value(expr),
+                        in_database,
+                    })
+                }
+            } else {
+                self.expected("'TO' or '=' or 'FROM CURRENT'", self.peek_token())
+            }
+        } else if self.parse_keyword(Keyword::RESET) {
+            if self.parse_keyword(Keyword::ALL) {
+                Ok(AlterRoleOperation::Reset {
+                    config_name: ResetConfig::ALL,
+                    in_database,
+                })
+            } else {
+                let config_name = self.parse_object_name(false)?;
+                Ok(AlterRoleOperation::Reset {
+                    config_name: ResetConfig::ConfigName(config_name),
+                    in_database,
+                })
+            }
+        } else {
+            self.expected("'SET' or 'RESET'", self.peek_token())
+        }
+    }
+
+    fn parse_pg_alter_configuration_operation(
+        &self,
+    ) -> Result<AlterConfigurationOperation, ParserError> {
+        if self.parse_keyword(Keyword::SET) {
+            let config_name = self.parse_object_name(false)?;
+            // FROM CURRENT
+            if self.parse_keywords(&[Keyword::FROM, Keyword::CURRENT]) {
+                Ok(AlterConfigurationOperation::Set {
+                    config_name,
+                    config_value: SetConfigValue::FromCurrent,
+                })
+            // { TO | = } { value | DEFAULT }
+            } else if self.consume_token(&BorrowedToken::Eq) || self.parse_keyword(Keyword::TO) {
+                if self.parse_keyword(Keyword::DEFAULT) {
+                    Ok(AlterConfigurationOperation::Set {
+                        config_name,
+                        config_value: SetConfigValue::Default,
+                    })
+                } else {
+                    let expr = self.parse_expr()?;
+                    Ok(AlterConfigurationOperation::Set {
+                        config_name,
+                        config_value: SetConfigValue::Value(expr),
+                    })
+                }
+            } else {
+                self.expected("'TO' or '=' or 'FROM CURRENT'", self.peek_token())
+            }
+        } else if self.parse_keyword(Keyword::RESET) {
+            if self.parse_keyword(Keyword::ALL) {
+                Ok(AlterConfigurationOperation::Reset {
+                    config_name: ResetConfig::ALL,
+                })
+            } else {
+                let config_name = self.parse_object_name(false)?;
+                Ok(AlterConfigurationOperation::Reset {
+                    config_name: ResetConfig::ConfigName(config_name),
+                })
+            }
+        } else {
+            self.expected("'SET' or 'RESET'", self.peek_token())
+        }
     }
 
     fn parse_pg_role_option(&self) -> Result<RoleOption, ParserError> {

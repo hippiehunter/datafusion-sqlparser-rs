@@ -1183,9 +1183,7 @@ impl<'a> Parser<'a> {
                         Keyword::ELSE,
                         Keyword::END,
                     ])?);
-                    if !self.parse_keyword(Keyword::ELSEIF)
-                        && !self.parse_keyword(Keyword::ELSIF)
-                    {
+                    if !self.parse_keyword(Keyword::ELSEIF) && !self.parse_keyword(Keyword::ELSIF) {
                         break;
                     }
                 }
@@ -1763,22 +1761,66 @@ impl<'a> Parser<'a> {
     ) -> Result<ConditionalStatements, ParserError> {
         let conditional_statements = if self.peek_keyword(Keyword::BEGIN) {
             let begin_token = self.expect_keyword(Keyword::BEGIN)?;
-            // When inside BEGIN...END, stop at END (not the outer terminal keywords)
-            let statements = self.parse_statement_list(&[Keyword::END])?;
+            // BEGIN blocks inside procedural statements can carry optional
+            // EXCEPTION handlers in PL/pgSQL.
+            let statements = self.parse_statement_list(&[Keyword::EXCEPTION, Keyword::END])?;
+
+            let exception_handlers = if self.parse_keyword(Keyword::EXCEPTION) {
+                let mut handlers = vec![];
+                while self.parse_keyword(Keyword::WHEN) {
+                    let mut idents = vec![self.parse_identifier()?];
+                    while self.parse_keyword(Keyword::OR) {
+                        idents.push(self.parse_identifier()?);
+                    }
+                    self.expect_keyword(Keyword::THEN)?;
+                    let handler_statements =
+                        self.parse_statement_list(&[Keyword::WHEN, Keyword::END])?;
+                    handlers.push(ExceptionWhen {
+                        idents,
+                        statements: handler_statements,
+                    });
+                }
+                Some(handlers)
+            } else {
+                None
+            };
+
             let end_token = self.expect_keyword(Keyword::END)?;
 
             // Consume optional trailing semicolon after BEGIN...END block
             let _ = self.consume_token(&BorrowedToken::SemiColon);
 
-            ConditionalStatements::BeginEnd(BeginEndStatements {
-                begin_token: AttachedToken(begin_token.to_static()),
-                label: None,
-                declarations: vec![],
-                statements,
-                exception_handlers: None,
-                end_token: AttachedToken(end_token.to_static()),
-                end_label: None,
-            })
+            let at_terminal = match &self.peek_nth_token_ref(0).token {
+                BorrowedToken::EOF => true,
+                BorrowedToken::Word(w) => {
+                    w.quote_style.is_none() && terminal_keywords.contains(&w.keyword)
+                }
+                _ => false,
+            };
+
+            if at_terminal {
+                ConditionalStatements::BeginEnd(BeginEndStatements {
+                    begin_token: AttachedToken(begin_token.to_static()),
+                    label: None,
+                    declarations: vec![],
+                    statements,
+                    exception_handlers,
+                    end_token: AttachedToken(end_token.to_static()),
+                    end_label: None,
+                })
+            } else {
+                let mut sequence = vec![Statement::LabeledBlock(LabeledBlock {
+                    token: AttachedToken(begin_token.to_static()),
+                    label: None,
+                    statements,
+                    exception: exception_handlers,
+                    end_label: None,
+                })];
+                sequence.extend(self.parse_statement_list(terminal_keywords)?);
+                ConditionalStatements::Sequence {
+                    statements: sequence,
+                }
+            }
         } else {
             ConditionalStatements::Sequence {
                 statements: self.parse_statement_list(terminal_keywords)?,
@@ -2248,7 +2290,25 @@ impl<'a> Parser<'a> {
 
     pub fn parse_analyze(&self) -> Result<Statement, ParserError> {
         let has_table_keyword = self.parse_keyword(Keyword::TABLE);
-        let table_name = self.parse_object_name(false)?;
+        let table_name = if has_table_keyword {
+            self.parse_object_name(false)?
+        } else if matches!(
+            self.peek_token().token,
+            BorrowedToken::SemiColon | BorrowedToken::EOF
+        ) || self
+            .peek_one_of_keywords(&[
+                Keyword::PARTITION,
+                Keyword::FOR,
+                Keyword::CACHE,
+                Keyword::NOSCAN,
+                Keyword::COMPUTE,
+            ])
+            .is_some()
+        {
+            ObjectName(vec![])
+        } else {
+            self.parse_object_name(false)?
+        };
         let mut for_columns = false;
         let mut cache_metadata = false;
         let mut noscan = false;
@@ -6497,6 +6557,9 @@ impl<'a> Parser<'a> {
             // Check if this is CREATE USER MAPPING
             if self.parse_keyword(Keyword::MAPPING) {
                 self.parse_create_user_mapping(create_token)
+            } else if dialect_of!(self is PostgreSqlDialect) {
+                // PostgreSQL treats CREATE USER as an alias of CREATE ROLE.
+                self.parse_create_role()
             } else {
                 self.parse_create_user(or_replace)
             }
@@ -6852,8 +6915,7 @@ impl<'a> Parser<'a> {
     ///
     /// Accepts both PL/pgSQL (`plpgsql`, `pgsql`) and standard SQL/PSM identifiers.
     fn is_sql_psm_language(lang: &Ident) -> bool {
-        lang.value.eq_ignore_ascii_case("plpgsql")
-            || lang.value.eq_ignore_ascii_case("pgsql")
+        lang.value.eq_ignore_ascii_case("plpgsql") || lang.value.eq_ignore_ascii_case("pgsql")
     }
 
     /// Parse a SQL/PSM label: <<label_name>>
@@ -6948,11 +7010,20 @@ impl<'a> Parser<'a> {
 
         // Accept := (PL/pgSQL), DEFAULT (SQL/PSM standard), or = (PL/pgSQL shorthand)
         let (default_operator, default) = if self.consume_token(&BorrowedToken::Assignment) {
-            (Some(DeclarationAssignmentOperator::Assignment), Some(self.parse_expr()?))
+            (
+                Some(DeclarationAssignmentOperator::Assignment),
+                Some(self.parse_expr()?),
+            )
         } else if self.parse_keyword(Keyword::DEFAULT) {
-            (Some(DeclarationAssignmentOperator::Default), Some(self.parse_expr()?))
+            (
+                Some(DeclarationAssignmentOperator::Default),
+                Some(self.parse_expr()?),
+            )
         } else if self.consume_token(&BorrowedToken::Eq) {
-            (Some(DeclarationAssignmentOperator::Equals), Some(self.parse_expr()?))
+            (
+                Some(DeclarationAssignmentOperator::Equals),
+                Some(self.parse_expr()?),
+            )
         } else {
             (None, None)
         };
@@ -8675,7 +8746,12 @@ impl<'a> Parser<'a> {
             if self.parse_keyword(Keyword::MAPPING) {
                 return self.parse_drop_user_mapping(drop_token);
             }
-            ObjectType::User
+            if dialect_of!(self is PostgreSqlDialect) {
+                // PostgreSQL treats DROP USER as an alias of DROP ROLE.
+                ObjectType::Role
+            } else {
+                ObjectType::User
+            }
         } else if self.parse_keyword(Keyword::STREAM) {
             ObjectType::Stream
         } else if self.parse_keyword(Keyword::SERVER) {
@@ -11553,10 +11629,12 @@ impl<'a> Parser<'a> {
             Keyword::TYPE,
             Keyword::TABLE,
             Keyword::INDEX,
+            Keyword::DATABASE,
             Keyword::ROLE,
             Keyword::POLICY,
             Keyword::ICEBERG,
             Keyword::SCHEMA,
+            Keyword::SYSTEM,
             Keyword::USER,
             Keyword::SEQUENCE,
             Keyword::SERVER,
@@ -11593,12 +11671,17 @@ impl<'a> Parser<'a> {
                     operation,
                 })
             }
+            Keyword::DATABASE => self.parse_alter_database(),
             Keyword::ROLE => self.parse_alter_role(),
             Keyword::POLICY => self.parse_alter_policy(),
+            Keyword::SYSTEM => self.parse_alter_system(),
             Keyword::USER => {
                 // Check if this is ALTER USER MAPPING
                 if self.parse_keyword(Keyword::MAPPING) {
                     self.parse_alter_user_mapping()
+                } else if dialect_of!(self is PostgreSqlDialect) {
+                    // PostgreSQL treats ALTER USER as an alias of ALTER ROLE.
+                    self.parse_alter_role()
                 } else {
                     self.parse_alter_user()
                 }
@@ -19667,8 +19750,13 @@ impl<'a> Parser<'a> {
                 || self.peek_keyword(Keyword::CATCH)
                 || self.peek_keyword(Keyword::TRANSACTION)
                 || self.peek_keyword(Keyword::WORK)
+                || self.peek_keyword(Keyword::ISOLATION)
+                || self.peek_keyword(Keyword::READ)
         } else {
-            self.peek_keyword(Keyword::TRANSACTION) || self.peek_keyword(Keyword::WORK)
+            self.peek_keyword(Keyword::TRANSACTION)
+                || self.peek_keyword(Keyword::WORK)
+                || self.peek_keyword(Keyword::ISOLATION)
+                || self.peek_keyword(Keyword::READ)
         };
 
         // Also check if we're at EOF or semicolon (bare BEGIN for transaction)
@@ -20459,44 +20547,65 @@ impl<'a> Parser<'a> {
 
     fn parse_create_sequence_options(&self) -> Result<Vec<SequenceOptions>, ParserError> {
         let mut sequence_options = vec![];
-        //[ INCREMENT [ BY ] increment ]
-        if self.parse_keywords(&[Keyword::INCREMENT]) {
-            if self.parse_keywords(&[Keyword::BY]) {
-                sequence_options.push(SequenceOptions::IncrementBy(self.parse_number()?, true));
-            } else {
-                sequence_options.push(SequenceOptions::IncrementBy(self.parse_number()?, false));
+        loop {
+            //[ INCREMENT [ BY ] increment ]
+            if self.parse_keywords(&[Keyword::INCREMENT]) {
+                if self.parse_keywords(&[Keyword::BY]) {
+                    sequence_options.push(SequenceOptions::IncrementBy(self.parse_number()?, true));
+                } else {
+                    sequence_options
+                        .push(SequenceOptions::IncrementBy(self.parse_number()?, false));
+                }
+                continue;
             }
-        }
-        //[ MINVALUE minvalue | NO MINVALUE ]
-        if self.parse_keyword(Keyword::MINVALUE) {
-            sequence_options.push(SequenceOptions::MinValue(Some(self.parse_number()?)));
-        } else if self.parse_keywords(&[Keyword::NO, Keyword::MINVALUE]) {
-            sequence_options.push(SequenceOptions::MinValue(None));
-        }
-        //[ MAXVALUE maxvalue | NO MAXVALUE ]
-        if self.parse_keywords(&[Keyword::MAXVALUE]) {
-            sequence_options.push(SequenceOptions::MaxValue(Some(self.parse_number()?)));
-        } else if self.parse_keywords(&[Keyword::NO, Keyword::MAXVALUE]) {
-            sequence_options.push(SequenceOptions::MaxValue(None));
-        }
 
-        //[ START [ WITH ] start ]
-        if self.parse_keywords(&[Keyword::START]) {
-            if self.parse_keywords(&[Keyword::WITH]) {
-                sequence_options.push(SequenceOptions::StartWith(self.parse_number()?, true));
-            } else {
-                sequence_options.push(SequenceOptions::StartWith(self.parse_number()?, false));
+            //[ MINVALUE minvalue | NO MINVALUE ]
+            if self.parse_keywords(&[Keyword::NO, Keyword::MINVALUE]) {
+                sequence_options.push(SequenceOptions::MinValue(None));
+                continue;
             }
-        }
-        //[ CACHE cache ]
-        if self.parse_keywords(&[Keyword::CACHE]) {
-            sequence_options.push(SequenceOptions::Cache(self.parse_number()?));
-        }
-        // [ [ NO ] CYCLE ]
-        if self.parse_keywords(&[Keyword::NO, Keyword::CYCLE]) {
-            sequence_options.push(SequenceOptions::Cycle(true));
-        } else if self.parse_keywords(&[Keyword::CYCLE]) {
-            sequence_options.push(SequenceOptions::Cycle(false));
+            if self.parse_keyword(Keyword::MINVALUE) {
+                sequence_options.push(SequenceOptions::MinValue(Some(self.parse_number()?)));
+                continue;
+            }
+
+            //[ MAXVALUE maxvalue | NO MAXVALUE ]
+            if self.parse_keywords(&[Keyword::NO, Keyword::MAXVALUE]) {
+                sequence_options.push(SequenceOptions::MaxValue(None));
+                continue;
+            }
+            if self.parse_keywords(&[Keyword::MAXVALUE]) {
+                sequence_options.push(SequenceOptions::MaxValue(Some(self.parse_number()?)));
+                continue;
+            }
+
+            //[ START [ WITH ] start ]
+            if self.parse_keywords(&[Keyword::START]) {
+                if self.parse_keywords(&[Keyword::WITH]) {
+                    sequence_options.push(SequenceOptions::StartWith(self.parse_number()?, true));
+                } else {
+                    sequence_options.push(SequenceOptions::StartWith(self.parse_number()?, false));
+                }
+                continue;
+            }
+
+            //[ CACHE cache ]
+            if self.parse_keywords(&[Keyword::CACHE]) {
+                sequence_options.push(SequenceOptions::Cache(self.parse_number()?));
+                continue;
+            }
+
+            // [ [ NO ] CYCLE ]
+            if self.parse_keywords(&[Keyword::NO, Keyword::CYCLE]) {
+                sequence_options.push(SequenceOptions::Cycle(true));
+                continue;
+            }
+            if self.parse_keywords(&[Keyword::CYCLE]) {
+                sequence_options.push(SequenceOptions::Cycle(false));
+                continue;
+            }
+
+            break;
         }
 
         Ok(sequence_options)

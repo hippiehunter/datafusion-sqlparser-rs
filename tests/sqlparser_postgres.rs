@@ -305,10 +305,110 @@ fn parse_create_sequence() {
         "CREATE SEQUENCE name5 AS BIGINT INCREMENT +10 MINVALUE +30 MAXVALUE +5000 START WITH +45",
     );
 
+    let sql9 = "CREATE SEQUENCE seq_unordered
+    START WITH 10
+    INCREMENT BY 2
+    NO MAXVALUE
+    MINVALUE 1
+    CACHE 8
+    NO CYCLE";
+    pg().one_statement_parses_to(
+        sql9,
+        "CREATE SEQUENCE seq_unordered START WITH 10 INCREMENT BY 2 NO MAXVALUE MINVALUE 1 CACHE 8 NO CYCLE",
+    );
+
     assert!(matches!(
         pg().parse_sql_statements("CREATE SEQUENCE foo INCREMENT 1 NO MINVALUE NO"),
         Err(ParserError::ParserError(_))
     ));
+}
+
+#[test]
+fn parse_postgres_user_aliases() {
+    let create = pg().one_statement_parses_to(
+        "CREATE USER alice WITH LOGIN PASSWORD 'secret'",
+        "CREATE ROLE alice LOGIN PASSWORD 'secret'",
+    );
+    assert!(
+        matches!(create, Statement::CreateRole(_)),
+        "CREATE USER should parse as CREATE ROLE, got {create:?}"
+    );
+
+    let alter =
+        pg().one_statement_parses_to("ALTER USER alice RESET ALL", "ALTER ROLE alice RESET ALL");
+    assert!(
+        matches!(alter, Statement::AlterRole { .. }),
+        "ALTER USER should parse as ALTER ROLE, got {alter:?}"
+    );
+
+    let drop =
+        pg().one_statement_parses_to("DROP USER IF EXISTS alice", "DROP ROLE IF EXISTS alice");
+    assert!(
+        matches!(
+            drop,
+            Statement::Drop {
+                object_type: ObjectType::Role,
+                ..
+            }
+        ),
+        "DROP USER should parse as DROP ROLE, got {drop:?}"
+    );
+}
+
+#[test]
+fn parse_begin_isolation_level_as_transaction() {
+    let stmt = pg().verified_stmt("BEGIN ISOLATION LEVEL REPEATABLE READ");
+    assert_eq!(
+        stmt,
+        Statement::StartTransaction {
+            start_token: AttachedToken::empty(),
+            modes: vec![TransactionMode::IsolationLevel(
+                TransactionIsolationLevel::RepeatableRead,
+            )],
+            begin: true,
+            transaction: None,
+            modifier: None,
+            statements: vec![],
+            exception: None,
+            has_end_keyword: false,
+        }
+    );
+}
+
+#[test]
+fn parse_plpgsql_nested_begin_exception_inside_loop() {
+    let sql = r#"
+        CREATE FUNCTION plerr_var_survives(n BIGINT) RETURNS BIGINT AS $$
+        DECLARE
+            result BIGINT := 0;
+            i BIGINT := 1;
+        BEGIN
+            WHILE i <= n LOOP
+                BEGIN
+                    IF i = 3 THEN
+                        RAISE EXCEPTION 'skip 3';
+                    END IF;
+                    result := result + i;
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        result := result + 100;
+                END;
+                i := i + 1;
+            END LOOP;
+            RETURN result;
+        END;
+        $$ LANGUAGE plpgsql IMMUTABLE
+    "#;
+
+    let statements = pg()
+        .parse_sql_statements(sql)
+        .expect("nested BEGIN...EXCEPTION...END inside WHILE LOOP should parse");
+    assert_eq!(statements.len(), 1);
+    assert!(
+        matches!(statements[0], Statement::CreateFunction(_)),
+        "expected CREATE FUNCTION, got {:?}",
+        statements[0]
+    );
 }
 
 #[test]
@@ -4281,6 +4381,81 @@ fn parse_alter_role() {
                     quote_style: None,
                     span: Span::empty(),
                 }]))
+            },
+        }
+    );
+}
+
+#[test]
+fn parse_alter_system_and_database() {
+    let sql = "ALTER SYSTEM SET maintenance_work_mem TO 100000";
+    assert_eq!(
+        pg().verified_stmt(sql),
+        Statement::AlterSystem {
+            token: AttachedToken::empty(),
+            operation: AlterConfigurationOperation::Set {
+                config_name: ObjectName::from(vec![Ident {
+                    value: "maintenance_work_mem".into(),
+                    quote_style: None,
+                    span: Span::empty(),
+                }]),
+                config_value: SetConfigValue::Value(Expr::Value(
+                    (number("100000")).with_empty_span()
+                )),
+            },
+        }
+    );
+
+    let sql = "ALTER SYSTEM RESET ALL";
+    assert_eq!(
+        pg().verified_stmt(sql),
+        Statement::AlterSystem {
+            token: AttachedToken::empty(),
+            operation: AlterConfigurationOperation::Reset {
+                config_name: ResetConfig::ALL,
+            },
+        }
+    );
+
+    let sql = "ALTER DATABASE database_name SET maintenance_work_mem TO 100000";
+    assert_eq!(
+        pg().verified_stmt(sql),
+        Statement::AlterDatabase {
+            token: AttachedToken::empty(),
+            database_name: ObjectName::from(vec![Ident {
+                value: "database_name".into(),
+                quote_style: None,
+                span: Span::empty(),
+            }]),
+            operation: AlterConfigurationOperation::Set {
+                config_name: ObjectName::from(vec![Ident {
+                    value: "maintenance_work_mem".into(),
+                    quote_style: None,
+                    span: Span::empty(),
+                }]),
+                config_value: SetConfigValue::Value(Expr::Value(
+                    (number("100000")).with_empty_span()
+                )),
+            },
+        }
+    );
+
+    let sql = "ALTER DATABASE database_name RESET maintenance_work_mem";
+    assert_eq!(
+        pg().verified_stmt(sql),
+        Statement::AlterDatabase {
+            token: AttachedToken::empty(),
+            database_name: ObjectName::from(vec![Ident {
+                value: "database_name".into(),
+                quote_style: None,
+                span: Span::empty(),
+            }]),
+            operation: AlterConfigurationOperation::Reset {
+                config_name: ResetConfig::ConfigName(ObjectName::from(vec![Ident {
+                    value: "maintenance_work_mem".into(),
+                    quote_style: None,
+                    span: Span::empty(),
+                }])),
             },
         }
     );

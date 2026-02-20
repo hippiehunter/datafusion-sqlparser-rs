@@ -120,6 +120,39 @@ pub enum ResetConfig {
     ConfigName(ObjectName),
 }
 
+/// Shared SET/RESET operation payload used by ALTER SYSTEM / ALTER DATABASE.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum AlterConfigurationOperation {
+    Set {
+        config_name: ObjectName,
+        config_value: SetConfigValue,
+    },
+    Reset {
+        config_name: ResetConfig,
+    },
+}
+
+impl fmt::Display for AlterConfigurationOperation {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            AlterConfigurationOperation::Set {
+                config_name,
+                config_value,
+            } => match config_value {
+                SetConfigValue::Default => write!(f, "SET {config_name} TO DEFAULT"),
+                SetConfigValue::FromCurrent => write!(f, "SET {config_name} FROM CURRENT"),
+                SetConfigValue::Value(expr) => write!(f, "SET {config_name} TO {expr}"),
+            },
+            AlterConfigurationOperation::Reset { config_name } => match config_name {
+                ResetConfig::ALL => write!(f, "RESET ALL"),
+                ResetConfig::ConfigName(name) => write!(f, "RESET {name}"),
+            },
+        }
+    }
+}
+
 /// An `ALTER ROLE` (`Statement::AlterRole`) operation
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

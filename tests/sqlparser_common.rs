@@ -632,6 +632,7 @@ fn parse_select_with_table_alias() {
 
 #[test]
 fn parse_analyze() {
+    verified_stmt("ANALYZE");
     verified_stmt("ANALYZE TABLE test_table");
     verified_stmt("ANALYZE test_table");
 }
