@@ -167,6 +167,7 @@ impl Dialect for PostgreSqlDialect {
             Precedence::UnaryNot => NOT_PREC,
             Precedence::And => AND_PREC,
             Precedence::Or => OR_PREC,
+            Precedence::Assignment => 2,
         }
     }
 

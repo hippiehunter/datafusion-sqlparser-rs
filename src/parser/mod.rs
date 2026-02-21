@@ -9120,13 +9120,19 @@ impl<'a> Parser<'a> {
             });
         }
 
-        // Variable declaration: DECLARE name TYPE [DEFAULT expr] [, name2 TYPE2 ...]
+        // Variable declaration: DECLARE name TYPE [DEFAULT|:=|= expr] [, name2 TYPE2 ...]
         let mut stmts = vec![];
 
         // Parse first variable
         let data_type = Some(self.parse_data_type()?);
         let assignment = if self.parse_keyword(Keyword::DEFAULT) {
             Some(DeclareAssignment::Default(Box::new(self.parse_expr()?)))
+        } else if self.consume_token(&BorrowedToken::Assignment) {
+            Some(DeclareAssignment::DuckAssignment(Box::new(
+                self.parse_expr()?,
+            )))
+        } else if self.consume_token(&BorrowedToken::Eq) {
+            Some(DeclareAssignment::Expr(Box::new(self.parse_expr()?)))
         } else {
             None
         };
@@ -9150,6 +9156,12 @@ impl<'a> Parser<'a> {
             let var_type = Some(self.parse_data_type()?);
             let var_assignment = if self.parse_keyword(Keyword::DEFAULT) {
                 Some(DeclareAssignment::Default(Box::new(self.parse_expr()?)))
+            } else if self.consume_token(&BorrowedToken::Assignment) {
+                Some(DeclareAssignment::DuckAssignment(Box::new(
+                    self.parse_expr()?,
+                )))
+            } else if self.consume_token(&BorrowedToken::Eq) {
+                Some(DeclareAssignment::Expr(Box::new(self.parse_expr()?)))
             } else {
                 None
             };

@@ -676,8 +676,8 @@ pub trait Dialect: Debug + Any {
             BorrowedToken::Word(w) if w.keyword == Keyword::IMMEDIATELY => Ok(p!(Between)),
             BorrowedToken::Word(w) if w.keyword == Keyword::DIV => Ok(p!(MulDivModOp)),
             BorrowedToken::Period => Ok(p!(Period)),
-            BorrowedToken::Assignment
-            | BorrowedToken::Eq
+            BorrowedToken::Assignment => Ok(p!(Assignment)),
+            BorrowedToken::Eq
             | BorrowedToken::Lt
             | BorrowedToken::LtEq
             | BorrowedToken::Neq
@@ -787,6 +787,7 @@ pub trait Dialect: Debug + Any {
             Precedence::UnaryNot => 15,
             Precedence::And => 10,
             Precedence::Or => 5,
+            Precedence::Assignment => 2,
         }
     }
 
@@ -1181,6 +1182,7 @@ pub enum Precedence {
     UnaryNot,
     And,
     Or,
+    Assignment,
 }
 
 impl dyn Dialect {
