@@ -12001,8 +12001,11 @@ impl<'a> Parser<'a> {
             legacy_options.push(opt);
         }
         let values = if let CopyTarget::Stdin = target {
-            self.expect_token(&BorrowedToken::SemiColon)?;
-            self.parse_tsv()
+            if self.consume_token(&BorrowedToken::SemiColon) {
+                self.parse_tsv()
+            } else {
+                vec![]
+            }
         } else {
             vec![]
         };
