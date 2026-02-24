@@ -1960,7 +1960,51 @@ impl<'a> Parser<'a> {
     pub fn parse_perform(&self) -> Result<Statement, ParserError> {
         self.expect_keyword_is(Keyword::PERFORM)?;
 
-        let query = self.parse_query()?;
+        let query = if self.peek_keyword(Keyword::SELECT)
+            || self.peek_keyword(Keyword::WITH)
+            || self.peek_keyword(Keyword::VALUES)
+            || self.peek_keyword(Keyword::FROM)
+            || self.peek_token_ref().token == BorrowedToken::LParen
+        {
+            self.parse_query()?
+        } else {
+            // PostgreSQL allows `PERFORM func_call(...)` without an explicit SELECT.
+            // Normalize this to a single-expression SELECT query in the AST.
+            let expr = self.parse_expr()?;
+            Box::new(Query {
+                with: None,
+                body: Box::new(SetExpr::Select(Box::new(Select {
+                    select_token: AttachedToken::empty(),
+                    distinct: None,
+                    top: None,
+                    top_before_distinct: false,
+                    projection: vec![SelectItem::UnnamedExpr(expr)],
+                    exclude: None,
+                    into: None,
+                    from: vec![],
+                    lateral_views: vec![],
+                    prewhere: None,
+                    selection: None,
+                    group_by: GroupByExpr::Expressions(vec![], vec![]),
+                    cluster_by: vec![],
+                    distribute_by: vec![],
+                    sort_by: vec![],
+                    having: None,
+                    named_window: vec![],
+                    qualify: None,
+                    window_before_qualify: false,
+                    connect_by: None,
+                    flavor: SelectFlavor::Standard,
+                }))),
+                order_by: None,
+                limit_clause: None,
+                fetch: None,
+                locks: vec![],
+                for_clause: None,
+                settings: None,
+                format_clause: None,
+            })
+        };
 
         Ok(Statement::Perform(PerformStatement {
             query: Box::new(*query),
@@ -2008,7 +2052,8 @@ impl<'a> Parser<'a> {
                     ..
                 }) = body_expr
                 {
-                    let parsed_block = self.reparse_as_sql_psm_block(&dqs.value)?;
+                    let rewritten = Self::rewrite_sql_psm_for_integer_ranges(&dqs.value);
+                    let parsed_block = self.reparse_as_sql_psm_block(&rewritten)?;
                     DoBody::Block(parsed_block)
                 } else {
                     DoBody::RawBody(body_expr)
@@ -2023,7 +2068,8 @@ impl<'a> Parser<'a> {
                 ..
             }) = body_expr
             {
-                let parsed_block = self.reparse_as_sql_psm_block(&dqs.value)?;
+                let rewritten = Self::rewrite_sql_psm_for_integer_ranges(&dqs.value);
+                let parsed_block = self.reparse_as_sql_psm_block(&rewritten)?;
                 DoBody::Block(parsed_block)
             } else {
                 DoBody::RawBody(body_expr)
@@ -7052,14 +7098,31 @@ impl<'a> Parser<'a> {
             let line = segment.strip_suffix('\n').unwrap_or(segment);
             let trimmed = line.trim_start();
 
-            if trimmed.len() >= 4
-                && trimmed[..4].eq_ignore_ascii_case("FOR ")
-                && line.contains(" .. ")
-            {
-                if let Some(range_pos) = line.find(" .. ") {
-                    rewritten.push_str(&line[..range_pos]);
+            if trimmed.len() >= 4 && trimmed[..4].eq_ignore_ascii_case("FOR ") {
+                let bytes = line.as_bytes();
+                let mut range_pos = None;
+                let mut i = 0usize;
+                while i + 1 < bytes.len() {
+                    if bytes[i] == b'.' && bytes[i + 1] == b'.' {
+                        let prev = if i == 0 { None } else { Some(bytes[i - 1]) };
+                        let next = if i + 2 < bytes.len() {
+                            Some(bytes[i + 2])
+                        } else {
+                            None
+                        };
+                        // Avoid rewriting ellipses, only the standalone `..` range operator.
+                        if prev != Some(b'.') && next != Some(b'.') {
+                            range_pos = Some(i);
+                            break;
+                        }
+                    }
+                    i += 1;
+                }
+
+                if let Some(pos) = range_pos {
+                    rewritten.push_str(&line[..pos]);
                     rewritten.push_str(" TO ");
-                    rewritten.push_str(&line[range_pos + 4..]);
+                    rewritten.push_str(&line[pos + 2..]);
                     if segment.ends_with('\n') {
                         rewritten.push('\n');
                     }
@@ -8610,11 +8673,38 @@ impl<'a> Parser<'a> {
     ///
     /// Examples: `+`, `myschema.+`, `pg_catalog.<=`
     fn parse_operator_name(&self) -> Result<ObjectName, ParserError> {
+        // PostgreSQL wrapper form: OPERATOR(schema.=)
+        if self.parse_keyword(Keyword::OPERATOR) {
+            self.expect_token(&Token::LParen)?;
+
+            let mut parts = vec![];
+            // Optional qualifier(s), e.g. schema/operator family components.
+            while matches!(self.peek_token_ref().token, BorrowedToken::Word(_))
+                && self.peek_nth_token_ref(1).token == BorrowedToken::Period
+            {
+                parts.push(ObjectNamePart::Identifier(self.parse_identifier()?));
+                self.expect_token(&Token::Period)?;
+            }
+
+            let token = self.next_token();
+            if matches!(token.token, BorrowedToken::RParen | BorrowedToken::EOF) {
+                return self.expected("operator symbol", token);
+            }
+            parts.push(ObjectNamePart::Identifier(Ident::new(token.to_string())));
+
+            self.expect_token(&Token::RParen)?;
+            return Ok(ObjectName(parts));
+        }
+
         let mut parts = vec![];
         loop {
-            parts.push(ObjectNamePart::Identifier(Ident::new(
-                self.next_token().to_string(),
-            )));
+            let mut part = self.next_token().to_string();
+            // Some PostgreSQL operator symbols (for example `~=`) can be
+            // tokenized as multiple operator fragments.
+            while self.peek_token().token == BorrowedToken::Eq {
+                part.push_str(&self.next_token().to_string());
+            }
+            parts.push(ObjectNamePart::Identifier(Ident::new(part)));
             if !self.consume_token(&Token::Period) {
                 break;
             }
@@ -8802,6 +8892,16 @@ impl<'a> Parser<'a> {
                     None
                 };
 
+                // PostgreSQL allows RECHECK on operator items for lossy indexes.
+                if matches!(
+                    self.peek_token().token,
+                    BorrowedToken::Word(w)
+                        if w.keyword == Keyword::NoKeyword
+                            && w.value.eq_ignore_ascii_case("RECHECK")
+                ) {
+                    self.next_token();
+                }
+
                 items.push(OperatorClassItem::Operator {
                     strategy_number,
                     operator_name,
@@ -8850,6 +8950,20 @@ impl<'a> Parser<'a> {
                     vec![]
                 };
 
+                // PostgreSQL allows FOR ORDER BY sort_family on support functions.
+                let _purpose = if self.parse_keyword(Keyword::FOR) {
+                    if self.parse_keyword(Keyword::SEARCH) {
+                        Some(OperatorPurpose::ForSearch)
+                    } else if self.parse_keywords(&[Keyword::ORDER, Keyword::BY]) {
+                        let sort_family = self.parse_object_name(false)?;
+                        Some(OperatorPurpose::ForOrderBy { sort_family })
+                    } else {
+                        return self.expected("SEARCH or ORDER BY after FOR", self.peek_token());
+                    }
+                } else {
+                    None
+                };
+
                 items.push(OperatorClassItem::Function {
                     support_number,
                     op_types,
@@ -8863,10 +8977,18 @@ impl<'a> Parser<'a> {
                 break;
             }
 
-            // Check for comma separator
-            if !self.consume_token(&Token::Comma) {
-                break;
+            // Check for comma separator.
+            // Some PostgreSQL geometric operators (for example `&>`) may be tokenized
+            // in a way that swallows the trailing comma, so also accept an immediate
+            // next item keyword as a separator boundary.
+            if self.consume_token(&Token::Comma)
+                || self.peek_keyword(Keyword::OPERATOR)
+                || self.peek_keyword(Keyword::FUNCTION)
+                || self.peek_keyword(Keyword::STORAGE)
+            {
+                continue;
             }
+            break;
         }
 
         Ok(Statement::CreateOperatorClass(CreateOperatorClass {
@@ -21598,30 +21720,33 @@ impl<'a> Parser<'a> {
         // PostgreSQL commonly uses `AS $$ ... $$ LANGUAGE plpgsql`.
         let has_as = self.parse_keyword(Keyword::AS);
 
-        let body = if has_as {
-            match self.peek_token().token {
-                BorrowedToken::DollarQuotedString(_) | BorrowedToken::SingleQuotedString(_) => {
-                    let body_string = self.parse_create_function_body_string()?;
-                    let raw_body = match body_string {
-                        Expr::Value(ValueWithSpan {
-                            value: Value::DollarQuotedString(dqs),
-                            ..
-                        }) => dqs.value,
-                        Expr::Value(ValueWithSpan {
-                            value: Value::SingleQuotedString(s),
-                            ..
-                        }) => s,
-                        _ => {
-                            return Err(ParserError::ParserError(
-                                "unsupported procedure body format".to_string(),
-                            ));
-                        }
-                    };
+        let mut raw_body: Option<String> = None;
 
-                    let rewritten_body = Self::rewrite_sql_psm_for_integer_ranges(&raw_body);
-                    ConditionalStatements::BeginEnd(self.reparse_as_sql_psm_block(&rewritten_body)?)
-                }
-                _ => self.parse_conditional_statements(&[Keyword::END])?,
+        let mut body = if has_as {
+            if matches!(
+                self.peek_token().token,
+                BorrowedToken::DollarQuotedString(_) | BorrowedToken::SingleQuotedString(_)
+            ) {
+                let body_string = self.parse_create_function_body_string()?;
+                raw_body = Some(match body_string {
+                    Expr::Value(ValueWithSpan {
+                        value: Value::DollarQuotedString(dqs),
+                        ..
+                    }) => dqs.value,
+                    Expr::Value(ValueWithSpan {
+                        value: Value::SingleQuotedString(s),
+                        ..
+                    }) => s,
+                    _ => {
+                        return Err(ParserError::ParserError(
+                            "unsupported procedure body format".to_string(),
+                        ));
+                    }
+                });
+                // Defer body parsing until optional trailing LANGUAGE has been parsed.
+                ConditionalStatements::Sequence { statements: vec![] }
+            } else {
+                self.parse_conditional_statements(&[Keyword::END])?
             }
         } else {
             self.parse_conditional_statements(&[Keyword::END])?
@@ -21634,6 +21759,26 @@ impl<'a> Parser<'a> {
                 ));
             }
             language = Some(self.parse_identifier()?);
+        }
+
+        if let Some(raw_body) = raw_body {
+            body = if let Some(lang) = language.as_ref() {
+                if lang.value.eq_ignore_ascii_case("sql") {
+                    // SQL-language procedures may contain raw SQL statements
+                    // rather than a BEGIN...END PL/pgSQL block.
+                    ConditionalStatements::Sequence {
+                        statements: Parser::parse_sql(self.dialect, &raw_body)?,
+                    }
+                } else {
+                    let rewritten_body = Self::rewrite_sql_psm_for_integer_ranges(&raw_body);
+                    ConditionalStatements::BeginEnd(
+                        self.reparse_as_sql_psm_block(&rewritten_body)?,
+                    )
+                }
+            } else {
+                let rewritten_body = Self::rewrite_sql_psm_for_integer_ranges(&raw_body);
+                ConditionalStatements::BeginEnd(self.reparse_as_sql_psm_block(&rewritten_body)?)
+            };
         }
 
         Ok(Statement::CreateProcedure {

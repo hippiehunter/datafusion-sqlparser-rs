@@ -183,11 +183,14 @@ fn test_create_operator_class_operator_for_order_by() {
 fn test_create_operator_class_operator_qualified() {
     // https://www.postgresql.org/docs/current/sql-createopclass.html
     // Operator with schema qualification
-    pg_expect_parse_error!(
+    pg_test!(
         "CREATE OPERATOR CLASS int4_ops
             FOR TYPE int4 USING btree AS
             OPERATOR 1 pg_catalog.<(int4, int4),
-            OPERATOR 3 OPERATOR(pg_catalog.=)"
+            OPERATOR 3 OPERATOR(pg_catalog.=)",
+        |stmt: Statement| {
+            assert!(matches!(stmt, Statement::CreateOperatorClass(_)));
+        }
     );
 }
 
@@ -195,11 +198,14 @@ fn test_create_operator_class_operator_qualified() {
 fn test_create_operator_class_operator_recheck() {
     // https://www.postgresql.org/docs/current/sql-createopclass.html
     // OPERATOR with RECHECK (for lossy index types)
-    pg_expect_parse_error!(
+    pg_test!(
         "CREATE OPERATOR CLASS gist_int4_ops
             FOR TYPE int4 USING gist AS
             OPERATOR 1 <,
-            OPERATOR 3 = RECHECK"
+            OPERATOR 3 = RECHECK",
+        |stmt: Statement| {
+            assert!(matches!(stmt, Statement::CreateOperatorClass(_)));
+        }
     );
 }
 
@@ -231,11 +237,14 @@ fn test_create_operator_class_function_support() {
 fn test_create_operator_class_function_for_order_by() {
     // https://www.postgresql.org/docs/current/sql-createopclass.html
     // Support function FOR ORDER BY
-    pg_expect_parse_error!(
+    pg_test!(
         "CREATE OPERATOR CLASS gist_point_ops
             FOR TYPE point USING gist AS
             OPERATOR 15 <-> FOR ORDER BY float_ops,
-            FUNCTION 8 (point, point) point_distance(point, point) FOR ORDER BY float_ops"
+            FUNCTION 8 (point, point) point_distance(point, point) FOR ORDER BY float_ops",
+        |stmt: Statement| {
+            assert!(matches!(stmt, Statement::CreateOperatorClass(_)));
+        }
     );
 }
 
@@ -307,7 +316,7 @@ fn test_create_operator_class_hash_extended() {
 fn test_create_operator_class_gist_complete() {
     // https://www.postgresql.org/docs/current/sql-createopclass.html
     // Complete GiST operator class
-    pg_expect_parse_error!(
+    pg_test!(
         "CREATE OPERATOR CLASS gist_box_ops
             DEFAULT FOR TYPE box USING gist AS
             OPERATOR 1 << ,
@@ -324,7 +333,10 @@ fn test_create_operator_class_gist_complete() {
             FUNCTION 4 gist_box_decompress(internal),
             FUNCTION 5 gist_box_penalty(internal, internal, internal),
             FUNCTION 6 gist_box_picksplit(internal, internal),
-            FUNCTION 7 gist_box_same(box, box, internal)"
+            FUNCTION 7 gist_box_same(box, box, internal)",
+        |stmt: Statement| {
+            assert!(matches!(stmt, Statement::CreateOperatorClass(_)));
+        }
     );
 }
 

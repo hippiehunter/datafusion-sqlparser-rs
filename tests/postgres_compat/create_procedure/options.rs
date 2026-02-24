@@ -30,8 +30,13 @@ use sqlparser::ast::Statement;
 fn test_create_procedure_language_sql() {
     // https://www.postgresql.org/docs/current/sql-createprocedure.html
     // LANGUAGE SQL for SQL-language procedures
-    pg_expect_parse_error!(
-        "CREATE PROCEDURE sql_proc() LANGUAGE SQL AS $$ INSERT INTO tbl VALUES (1) $$"
+    pg_test!(
+        "CREATE PROCEDURE sql_proc() LANGUAGE SQL AS $$ INSERT INTO tbl VALUES (1) $$",
+        |stmt: Statement| {
+            let proc = extract_create_procedure(&stmt);
+            assert!(proc.language.is_some());
+            assert_eq!(proc.language.as_ref().unwrap().to_string(), "SQL");
+        }
     );
 }
 
