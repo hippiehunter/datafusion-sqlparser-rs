@@ -20,7 +20,7 @@
 //! Reference: <https://www.postgresql.org/docs/current/sql-createprocedure.html>
 
 use crate::postgres_compat::common::*;
-use sqlparser::ast::Statement;
+use sqlparser::ast::{ProcedureSecurity, Statement};
 
 // ============================================================================
 // LANGUAGE Options
@@ -77,121 +77,163 @@ fn test_create_procedure_no_language_clause() {
     pg_test!(
         "CREATE PROCEDURE no_lang() AS BEGIN SELECT 1; END",
         |stmt: Statement| {
-            let proc = extract_create_procedure(&stmt);
+            let _ = extract_create_procedure(&stmt);
             // Language might be None or default to SQL
         }
     );
 }
 
 // ============================================================================
-// SECURITY Options (LIKELY FAIL - not in AST)
+// SECURITY Options
 // ============================================================================
 
 #[test]
-fn test_create_procedure_security_definer_not_supported() {
+fn test_create_procedure_security_definer() {
     // https://www.postgresql.org/docs/current/sql-createprocedure.html
     // SECURITY DEFINER runs with privileges of procedure owner
-    // This option is not in the current AST
-    pg_expect_parse_error!(
-        "CREATE PROCEDURE sec_definer() SECURITY DEFINER AS BEGIN SELECT 1; END"
+    pg_test!(
+        "CREATE PROCEDURE sec_definer() SECURITY DEFINER AS BEGIN SELECT 1; END",
+        |stmt: Statement| {
+            let proc = extract_create_procedure(&stmt);
+            assert_eq!(proc.security, &Some(ProcedureSecurity::Definer));
+        }
     );
 }
 
 #[test]
-fn test_create_procedure_security_invoker_not_supported() {
+fn test_create_procedure_security_invoker() {
     // https://www.postgresql.org/docs/current/sql-createprocedure.html
     // SECURITY INVOKER runs with privileges of caller (default)
-    // This option is not in the current AST
-    pg_expect_parse_error!(
-        "CREATE PROCEDURE sec_invoker() SECURITY INVOKER AS BEGIN SELECT 1; END"
+    pg_test!(
+        "CREATE PROCEDURE sec_invoker() SECURITY INVOKER AS BEGIN SELECT 1; END",
+        |stmt: Statement| {
+            let proc = extract_create_procedure(&stmt);
+            assert_eq!(proc.security, &Some(ProcedureSecurity::Invoker));
+        }
     );
 }
 
 #[test]
-fn test_create_procedure_external_security_definer_not_supported() {
+fn test_create_procedure_external_security_definer() {
     // https://www.postgresql.org/docs/current/sql-createprocedure.html
     // EXTERNAL SECURITY DEFINER is an alternative syntax
-    // This option is not in the current AST
-    pg_expect_parse_error!(
-        "CREATE PROCEDURE ext_sec_definer() EXTERNAL SECURITY DEFINER AS BEGIN SELECT 1; END"
+    pg_test!(
+        "CREATE PROCEDURE ext_sec_definer() EXTERNAL SECURITY DEFINER AS BEGIN SELECT 1; END",
+        |stmt: Statement| {
+            let proc = extract_create_procedure(&stmt);
+            assert_eq!(proc.security, &Some(ProcedureSecurity::Definer));
+        }
     );
 }
 
 #[test]
-fn test_create_procedure_external_security_invoker_not_supported() {
+fn test_create_procedure_external_security_invoker() {
     // https://www.postgresql.org/docs/current/sql-createprocedure.html
     // EXTERNAL SECURITY INVOKER is an alternative syntax
-    // This option is not in the current AST
-    pg_expect_parse_error!(
-        "CREATE PROCEDURE ext_sec_invoker() EXTERNAL SECURITY INVOKER AS BEGIN SELECT 1; END"
+    pg_test!(
+        "CREATE PROCEDURE ext_sec_invoker() EXTERNAL SECURITY INVOKER AS BEGIN SELECT 1; END",
+        |stmt: Statement| {
+            let proc = extract_create_procedure(&stmt);
+            assert_eq!(proc.security, &Some(ProcedureSecurity::Invoker));
+        }
     );
 }
 
 // ============================================================================
-// SET Configuration (LIKELY FAIL - not in AST)
+// SET Configuration
 // ============================================================================
 
 #[test]
-fn test_create_procedure_set_single_parameter_not_supported() {
+fn test_create_procedure_set_single_parameter() {
     // https://www.postgresql.org/docs/current/sql-createprocedure.html
     // SET allows setting runtime configuration for the procedure
-    // This option is not in the current AST
-    pg_expect_parse_error!(
-        "CREATE PROCEDURE set_param() SET search_path = public AS BEGIN SELECT 1; END"
+    pg_test!(
+        "CREATE PROCEDURE set_param() SET search_path = public AS BEGIN SELECT 1; END",
+        |stmt: Statement| {
+            let proc = extract_create_procedure(&stmt);
+            assert_eq!(proc.set_options.len(), 1);
+            assert_eq!(proc.set_options[0].to_string(), "SET search_path TO public");
+        }
     );
 }
 
 #[test]
-fn test_create_procedure_set_multiple_parameters_not_supported() {
+fn test_create_procedure_set_multiple_parameters() {
     // https://www.postgresql.org/docs/current/sql-createprocedure.html
     // Multiple SET clauses can be specified
-    // This option is not in the current AST
-    pg_expect_parse_error!(
-        "CREATE PROCEDURE multi_set() SET search_path = public SET work_mem = '16MB' AS BEGIN SELECT 1; END"
+    pg_test!(
+        "CREATE PROCEDURE multi_set() SET search_path = public SET work_mem = '16MB' AS BEGIN SELECT 1; END",
+        |stmt: Statement| {
+            let proc = extract_create_procedure(&stmt);
+            assert_eq!(proc.set_options.len(), 2);
+            assert_eq!(proc.set_options[0].to_string(), "SET search_path TO public");
+            assert_eq!(proc.set_options[1].to_string(), "SET work_mem TO '16MB'");
+        }
     );
 }
 
 #[test]
-fn test_create_procedure_set_timezone_not_supported() {
+fn test_create_procedure_set_timezone() {
     // https://www.postgresql.org/docs/current/sql-createprocedure.html
     // Common use: setting timezone for the procedure
-    // This option is not in the current AST
-    pg_expect_parse_error!(
-        "CREATE PROCEDURE set_tz() SET timezone = 'UTC' AS BEGIN SELECT NOW(); END"
+    pg_test!(
+        "CREATE PROCEDURE set_tz() SET timezone = 'UTC' AS BEGIN SELECT NOW(); END",
+        |stmt: Statement| {
+            let proc = extract_create_procedure(&stmt);
+            assert_eq!(proc.set_options.len(), 1);
+            assert_eq!(proc.set_options[0].to_string(), "SET timezone TO 'UTC'");
+        }
     );
 }
 
 #[test]
-fn test_create_procedure_set_from_current_not_supported() {
+fn test_create_procedure_set_from_current() {
     // https://www.postgresql.org/docs/current/sql-createprocedure.html
     // SET can use FROM CURRENT to capture current session value
-    // This option is not in the current AST
-    pg_expect_parse_error!(
-        "CREATE PROCEDURE set_current() SET search_path FROM CURRENT AS BEGIN SELECT 1; END"
+    pg_test!(
+        "CREATE PROCEDURE set_current() SET search_path FROM CURRENT AS BEGIN SELECT 1; END",
+        |stmt: Statement| {
+            let proc = extract_create_procedure(&stmt);
+            assert_eq!(proc.set_options.len(), 1);
+            assert_eq!(
+                proc.set_options[0].to_string(),
+                "SET search_path FROM CURRENT"
+            );
+        }
     );
 }
 
 // ============================================================================
-// Combined Options (LIKELY FAIL - not in AST)
+// Combined Options
 // ============================================================================
 
 #[test]
-fn test_create_procedure_language_and_security_not_supported() {
+fn test_create_procedure_language_and_security() {
     // https://www.postgresql.org/docs/current/sql-createprocedure.html
     // Language and security options can be combined
-    // Security options are not in the current AST
-    pg_expect_parse_error!(
-        "CREATE PROCEDURE lang_sec() LANGUAGE plpgsql SECURITY DEFINER AS $$ BEGIN END $$"
+    pg_test!(
+        "CREATE PROCEDURE lang_sec() LANGUAGE plpgsql SECURITY DEFINER AS $$ BEGIN END $$",
+        |stmt: Statement| {
+            let proc = extract_create_procedure(&stmt);
+            assert_eq!(proc.language.as_ref().unwrap().to_string(), "plpgsql");
+            assert_eq!(proc.security, &Some(ProcedureSecurity::Definer));
+        }
     );
 }
 
 #[test]
-fn test_create_procedure_all_options_not_supported() {
+fn test_create_procedure_all_options() {
     // https://www.postgresql.org/docs/current/sql-createprocedure.html
     // All options combined
-    // Most options are not in the current AST
-    pg_expect_parse_error!(
-        "CREATE PROCEDURE all_opts() LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$ BEGIN END $$"
+    pg_test!(
+        "CREATE PROCEDURE all_opts() LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$ BEGIN END $$",
+        |stmt: Statement| {
+            let proc = extract_create_procedure(&stmt);
+            assert_eq!(proc.language.as_ref().unwrap().to_string(), "plpgsql");
+            assert_eq!(proc.security, &Some(ProcedureSecurity::Definer));
+            assert_eq!(proc.set_options.len(), 1);
+            assert_eq!(proc.set_options[0].to_string(), "SET search_path TO public");
+        }
     );
 }
 

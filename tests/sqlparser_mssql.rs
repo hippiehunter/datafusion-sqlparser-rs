@@ -182,6 +182,8 @@ fn parse_create_procedure() {
                 span: Span::empty(),
             }]),
             language: None,
+            security: None,
+            set_options: vec![],
             has_as: true,
         }
     )

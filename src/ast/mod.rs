@@ -5568,6 +5568,8 @@ pub enum Statement {
         name: ObjectName,
         params: Option<Vec<ProcedureParam>>,
         language: Option<Ident>,
+        security: Option<ProcedureSecurity>,
+        set_options: Vec<ProcedureSetConfig>,
         /// Whether AS keyword was used before the body
         has_as: bool,
         body: ConditionalStatements,
@@ -6426,6 +6428,8 @@ impl fmt::Display for Statement {
                 or_alter,
                 params,
                 language,
+                security,
+                set_options,
                 has_as,
                 body,
             } => {
@@ -6442,6 +6446,14 @@ impl fmt::Display for Statement {
 
                 if let Some(language) = language {
                     write!(f, " LANGUAGE {language}")?;
+                }
+
+                if let Some(security) = security {
+                    write!(f, " {security}")?;
+                }
+
+                for set_option in set_options {
+                    write!(f, " {set_option}")?;
                 }
 
                 if *has_as {
@@ -11206,6 +11218,45 @@ impl fmt::Display for FunctionParallel {
             FunctionParallel::Unsafe => write!(f, "PARALLEL UNSAFE"),
             FunctionParallel::Restricted => write!(f, "PARALLEL RESTRICTED"),
             FunctionParallel::Safe => write!(f, "PARALLEL SAFE"),
+        }
+    }
+}
+
+/// Security execution context for PostgreSQL CREATE PROCEDURE.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum ProcedureSecurity {
+    Invoker,
+    Definer,
+}
+
+impl fmt::Display for ProcedureSecurity {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ProcedureSecurity::Invoker => write!(f, "SECURITY INVOKER"),
+            ProcedureSecurity::Definer => write!(f, "SECURITY DEFINER"),
+        }
+    }
+}
+
+/// PostgreSQL CREATE PROCEDURE SET option.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct ProcedureSetConfig {
+    pub config_name: ObjectName,
+    pub config_value: SetConfigValue,
+}
+
+impl fmt::Display for ProcedureSetConfig {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match &self.config_value {
+            SetConfigValue::Default => write!(f, "SET {} TO DEFAULT", self.config_name),
+            SetConfigValue::FromCurrent => {
+                write!(f, "SET {} FROM CURRENT", self.config_name)
+            }
+            SetConfigValue::Value(expr) => write!(f, "SET {} TO {}", self.config_name, expr),
         }
     }
 }

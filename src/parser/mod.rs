@@ -21710,56 +21710,114 @@ impl<'a> Parser<'a> {
         let name = self.parse_object_name(false)?;
         let params = self.parse_optional_procedure_parameters()?;
 
-        let mut language = if self.parse_keyword(Keyword::LANGUAGE) {
-            Some(self.parse_identifier()?)
-        } else {
-            None
-        };
-
-        // AS is optional before BEGIN for SQL:2016 PSM compatibility.
-        // PostgreSQL commonly uses `AS $$ ... $$ LANGUAGE plpgsql`.
-        let has_as = self.parse_keyword(Keyword::AS);
-
-        let mut raw_body: Option<String> = None;
-
-        let mut body = if has_as {
-            if matches!(
-                self.peek_token().token,
-                BorrowedToken::DollarQuotedString(_) | BorrowedToken::SingleQuotedString(_)
-            ) {
-                let body_string = self.parse_create_function_body_string()?;
-                raw_body = Some(match body_string {
-                    Expr::Value(ValueWithSpan {
-                        value: Value::DollarQuotedString(dqs),
-                        ..
-                    }) => dqs.value,
-                    Expr::Value(ValueWithSpan {
-                        value: Value::SingleQuotedString(s),
-                        ..
-                    }) => s,
-                    _ => {
-                        return Err(ParserError::ParserError(
-                            "unsupported procedure body format".to_string(),
-                        ));
-                    }
-                });
-                // Defer body parsing until optional trailing LANGUAGE has been parsed.
-                ConditionalStatements::Sequence { statements: vec![] }
-            } else {
-                self.parse_conditional_statements(&[Keyword::END])?
+        fn ensure_not_set<T>(field: &Option<T>, name: &str) -> Result<(), ParserError> {
+            if field.is_some() {
+                return Err(ParserError::ParserError(format!(
+                    "{name} specified more than once",
+                )));
             }
-        } else {
-            self.parse_conditional_statements(&[Keyword::END])?
-        };
-
-        if self.parse_keyword(Keyword::LANGUAGE) {
-            if language.is_some() {
-                return Err(ParserError::ParserError(
-                    "LANGUAGE specified more than once".to_string(),
-                ));
-            }
-            language = Some(self.parse_identifier()?);
+            Ok(())
         }
+
+        let mut language: Option<Ident> = None;
+        let mut security: Option<ProcedureSecurity> = None;
+        let mut set_options = Vec::new();
+        let mut has_as = false;
+        let mut raw_body: Option<String> = None;
+        let mut body: Option<ConditionalStatements> = None;
+
+        loop {
+            if self.parse_keyword(Keyword::LANGUAGE) {
+                ensure_not_set(&language, "LANGUAGE")?;
+                language = Some(self.parse_identifier()?);
+            } else if self.parse_keyword(Keyword::EXTERNAL) {
+                self.expect_keyword_is(Keyword::SECURITY)?;
+                ensure_not_set(&security, "SECURITY")?;
+                security = if self.parse_keyword(Keyword::INVOKER) {
+                    Some(ProcedureSecurity::Invoker)
+                } else if self.parse_keyword(Keyword::DEFINER) {
+                    Some(ProcedureSecurity::Definer)
+                } else {
+                    return self.expected("INVOKER or DEFINER after SECURITY", self.peek_token());
+                };
+            } else if self.parse_keyword(Keyword::SECURITY) {
+                ensure_not_set(&security, "SECURITY")?;
+                security = if self.parse_keyword(Keyword::INVOKER) {
+                    Some(ProcedureSecurity::Invoker)
+                } else if self.parse_keyword(Keyword::DEFINER) {
+                    Some(ProcedureSecurity::Definer)
+                } else {
+                    return self.expected("INVOKER or DEFINER after SECURITY", self.peek_token());
+                };
+            } else if self.parse_keyword(Keyword::SET) {
+                let config_name = self.parse_object_name(false)?;
+                let config_value = if self.parse_keywords(&[Keyword::FROM, Keyword::CURRENT]) {
+                    SetConfigValue::FromCurrent
+                } else if self.parse_keyword(Keyword::TO) || self.consume_token(&BorrowedToken::Eq)
+                {
+                    if self.parse_keyword(Keyword::DEFAULT) {
+                        SetConfigValue::Default
+                    } else {
+                        SetConfigValue::Value(self.parse_expr()?)
+                    }
+                } else {
+                    return self.expected("TO, =, or FROM CURRENT", self.peek_token());
+                };
+                set_options.push(ProcedureSetConfig {
+                    config_name,
+                    config_value,
+                });
+            } else if self.parse_keyword(Keyword::AS) {
+                if has_as {
+                    return Err(ParserError::ParserError(
+                        "AS specified more than once".to_string(),
+                    ));
+                }
+                has_as = true;
+                if body.is_some() || raw_body.is_some() {
+                    return Err(ParserError::ParserError(
+                        "procedure body specified more than once".to_string(),
+                    ));
+                }
+                if matches!(
+                    self.peek_token().token,
+                    BorrowedToken::DollarQuotedString(_) | BorrowedToken::SingleQuotedString(_)
+                ) {
+                    let body_string = self.parse_create_function_body_string()?;
+                    raw_body = Some(match body_string {
+                        Expr::Value(ValueWithSpan {
+                            value: Value::DollarQuotedString(dqs),
+                            ..
+                        }) => dqs.value,
+                        Expr::Value(ValueWithSpan {
+                            value: Value::SingleQuotedString(s),
+                            ..
+                        }) => s,
+                        _ => {
+                            return Err(ParserError::ParserError(
+                                "unsupported procedure body format".to_string(),
+                            ));
+                        }
+                    });
+                } else {
+                    body = Some(self.parse_conditional_statements(&[Keyword::END])?);
+                }
+            } else if body.is_none() && raw_body.is_none() && self.peek_keyword(Keyword::BEGIN) {
+                // SQL:2016 PSM allows BEGIN...END bodies without AS.
+                body = Some(self.parse_conditional_statements(&[Keyword::END])?);
+            } else {
+                break;
+            }
+        }
+
+        let mut body = if let Some(body) = body {
+            body
+        } else if raw_body.is_none() {
+            self.parse_conditional_statements(&[Keyword::END])?
+        } else {
+            // Placeholder body; replaced below after language-sensitive reparsing.
+            ConditionalStatements::Sequence { statements: vec![] }
+        };
 
         if let Some(raw_body) = raw_body {
             body = if let Some(lang) = language.as_ref() {
@@ -21771,9 +21829,7 @@ impl<'a> Parser<'a> {
                     }
                 } else {
                     let rewritten_body = Self::rewrite_sql_psm_for_integer_ranges(&raw_body);
-                    ConditionalStatements::BeginEnd(
-                        self.reparse_as_sql_psm_block(&rewritten_body)?,
-                    )
+                    ConditionalStatements::BeginEnd(self.reparse_as_sql_psm_block(&rewritten_body)?)
                 }
             } else {
                 let rewritten_body = Self::rewrite_sql_psm_for_integer_ranges(&raw_body);
@@ -21787,6 +21843,8 @@ impl<'a> Parser<'a> {
             or_alter,
             params,
             language,
+            security,
+            set_options,
             has_as,
             body,
         })

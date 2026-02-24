@@ -34,7 +34,7 @@
 
 use sqlparser::ast::{
     ConditionalStatements, CreateFunction, CreateTrigger, Ident, ObjectName, ProcedureParam,
-    Statement,
+    ProcedureSecurity, ProcedureSetConfig, Statement,
 };
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::{Parser, ParserError};
@@ -154,6 +154,8 @@ pub struct CreateProcedureExtract<'a> {
     pub name: &'a ObjectName,
     pub params: &'a Option<Vec<ProcedureParam>>,
     pub language: &'a Option<Ident>,
+    pub security: &'a Option<ProcedureSecurity>,
+    pub set_options: &'a Vec<ProcedureSetConfig>,
     pub has_as: bool,
     pub body: &'a ConditionalStatements,
 }
@@ -170,6 +172,8 @@ pub fn extract_create_procedure(stmt: &Statement) -> CreateProcedureExtract<'_> 
             name,
             params,
             language,
+            security,
+            set_options,
             has_as,
             body,
             ..
@@ -178,6 +182,8 @@ pub fn extract_create_procedure(stmt: &Statement) -> CreateProcedureExtract<'_> 
             name,
             params,
             language,
+            security,
+            set_options,
             has_as: *has_as,
             body,
         },
