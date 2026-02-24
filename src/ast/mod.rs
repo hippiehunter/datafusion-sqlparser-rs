@@ -75,7 +75,7 @@ pub use self::ddl::{
     UserDefinedTypeInternalLength, UserDefinedTypeRangeOption, UserDefinedTypeRepresentation,
     UserDefinedTypeSqlDefinitionOption, UserDefinedTypeStorage, ViewColumnDef,
 };
-pub use self::dml::{Delete, ForPortionOf, Insert, Update};
+pub use self::dml::{Delete, ForPortionOf, Insert, OverridingKind, Update};
 pub use self::operator::{BinaryOperator, UnaryOperator};
 pub use self::query::{
     AfterMatchSkip, ConnectBy, Cte, CteAsMaterialized, CycleClause, Distinct, EdgeDirection,
@@ -12463,12 +12463,34 @@ impl fmt::Display for CreateTableLikeDefaults {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum CreateTableLikeOption {
+    IncludingDefaults,
+    ExcludingDefaults,
+    IncludingConstraints,
+    ExcludingConstraints,
+}
+
+impl fmt::Display for CreateTableLikeOption {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            CreateTableLikeOption::IncludingDefaults => write!(f, "INCLUDING DEFAULTS"),
+            CreateTableLikeOption::ExcludingDefaults => write!(f, "EXCLUDING DEFAULTS"),
+            CreateTableLikeOption::IncludingConstraints => write!(f, "INCLUDING CONSTRAINTS"),
+            CreateTableLikeOption::ExcludingConstraints => write!(f, "EXCLUDING CONSTRAINTS"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct CreateTableLike {
     pub name: ObjectName,
     pub defaults: Option<CreateTableLikeDefaults>,
+    pub options: Vec<CreateTableLikeOption>,
 }
 
 impl fmt::Display for CreateTableLike {
@@ -12476,6 +12498,9 @@ impl fmt::Display for CreateTableLike {
         write!(f, "LIKE {}", self.name)?;
         if let Some(defaults) = &self.defaults {
             write!(f, " {defaults}")?;
+        }
+        for opt in &self.options {
+            write!(f, " {opt}")?;
         }
         Ok(())
     }

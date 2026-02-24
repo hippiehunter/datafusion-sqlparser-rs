@@ -1404,7 +1404,8 @@ impl Spanned for Insert {
             table,
             table_alias,
             columns,
-            overwrite: _, // bool
+            overriding: _, // enum, pg specific
+            overwrite: _,  // bool
             source,
             partitioned,
             after_columns,

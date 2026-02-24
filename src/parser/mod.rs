@@ -9772,6 +9772,24 @@ impl<'a> Parser<'a> {
             .build())
     }
 
+    fn parse_create_table_like_options(&self) -> Vec<CreateTableLikeOption> {
+        let mut options = Vec::new();
+        loop {
+            if self.parse_keywords(&[Keyword::INCLUDING, Keyword::DEFAULTS]) {
+                options.push(CreateTableLikeOption::IncludingDefaults);
+            } else if self.parse_keywords(&[Keyword::EXCLUDING, Keyword::DEFAULTS]) {
+                options.push(CreateTableLikeOption::ExcludingDefaults);
+            } else if self.parse_keywords(&[Keyword::INCLUDING, Keyword::CONSTRAINTS]) {
+                options.push(CreateTableLikeOption::IncludingConstraints);
+            } else if self.parse_keywords(&[Keyword::EXCLUDING, Keyword::CONSTRAINTS]) {
+                options.push(CreateTableLikeOption::ExcludingConstraints);
+            } else {
+                break;
+            }
+        }
+        options
+    }
+
     fn maybe_parse_create_table_like(
         &self,
         allow_unquoted_hyphen: bool,
@@ -9781,17 +9799,21 @@ impl<'a> Parser<'a> {
         {
             if self.parse_keyword(Keyword::LIKE) {
                 let name = self.parse_object_name(allow_unquoted_hyphen)?;
-                let defaults = if self.parse_keywords(&[Keyword::INCLUDING, Keyword::DEFAULTS]) {
-                    Some(CreateTableLikeDefaults::Including)
-                } else if self.parse_keywords(&[Keyword::EXCLUDING, Keyword::DEFAULTS]) {
-                    Some(CreateTableLikeDefaults::Excluding)
-                } else {
-                    None
-                };
+                let options = self.parse_create_table_like_options();
+                let defaults = options.iter().find_map(|o| match o {
+                    CreateTableLikeOption::IncludingDefaults => {
+                        Some(CreateTableLikeDefaults::Including)
+                    }
+                    CreateTableLikeOption::ExcludingDefaults => {
+                        Some(CreateTableLikeDefaults::Excluding)
+                    }
+                    _ => None,
+                });
                 self.expect_token(&BorrowedToken::RParen)?;
                 Some(CreateTableLikeKind::Parenthesized(CreateTableLike {
                     name,
                     defaults,
+                    options,
                 }))
             } else {
                 // Rollback the '(' it's probably the columns list
@@ -9803,6 +9825,7 @@ impl<'a> Parser<'a> {
             Some(CreateTableLikeKind::Plain(CreateTableLike {
                 name,
                 defaults: None,
+                options: Vec::new(),
             }))
         } else {
             None
@@ -18489,10 +18512,10 @@ impl<'a> Parser<'a> {
 
             let is_mysql = dialect_of!(self is MySqlDialect);
 
-            let (columns, partitioned, after_columns, source, assignments) = if self
+            let (columns, partitioned, after_columns, source, assignments, overriding) = if self
                 .parse_keywords(&[Keyword::DEFAULT, Keyword::VALUES])
             {
-                (vec![], None, vec![], None, vec![])
+                (vec![], None, vec![], None, vec![], None)
             } else {
                 let (columns, partitioned, after_columns) = if !self.peek_subquery_start() {
                     let columns = self.parse_parenthesized_column_list(Optional, is_mysql)?;
@@ -18505,6 +18528,21 @@ impl<'a> Parser<'a> {
                     Default::default()
                 };
 
+                let overriding = if self.parse_keyword(Keyword::OVERRIDING) {
+                    if self.parse_keywords(&[Keyword::SYSTEM, Keyword::VALUE]) {
+                        Some(crate::ast::OverridingKind::SystemValue)
+                    } else if self.parse_keywords(&[Keyword::USER, Keyword::VALUE]) {
+                        Some(crate::ast::OverridingKind::UserValue)
+                    } else {
+                        return self.expected(
+                            "SYSTEM VALUE or USER VALUE after OVERRIDING",
+                            self.peek_token(),
+                        );
+                    }
+                } else {
+                    None
+                };
+
                 let (source, assignments) = if self.peek_keyword(Keyword::FORMAT)
                     || self.peek_keyword(Keyword::SETTINGS)
                 {
@@ -18515,7 +18553,7 @@ impl<'a> Parser<'a> {
                     (Some(self.parse_query()?), vec![])
                 };
 
-                (columns, partitioned, after_columns, source, assignments)
+                (columns, partitioned, after_columns, source, assignments, overriding)
             };
 
             let (format_clause, settings) = if self.dialect.supports_insert_format() {
@@ -18610,6 +18648,7 @@ impl<'a> Parser<'a> {
                 overwrite,
                 partitioned,
                 columns,
+                overriding,
                 after_columns,
                 source,
                 assignments,

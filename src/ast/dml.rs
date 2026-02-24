@@ -60,6 +60,24 @@ impl Display for ForPortionOf {
     }
 }
 
+/// OVERRIDING { SYSTEM | USER } VALUE clause for INSERT (PostgreSQL).
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OverridingKind {
+    SystemValue,
+    UserValue,
+}
+
+impl Display for OverridingKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            OverridingKind::SystemValue => write!(f, "OVERRIDING SYSTEM VALUE"),
+            OverridingKind::UserValue => write!(f, "OVERRIDING USER VALUE"),
+        }
+    }
+}
+
 /// INSERT statement.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -79,6 +97,8 @@ pub struct Insert {
     pub table_alias: Option<Ident>,
     /// COLUMNS
     pub columns: Vec<Ident>,
+    /// OVERRIDING { SYSTEM | USER } VALUE (PostgreSQL)
+    pub overriding: Option<OverridingKind>,
     /// OVERWRITE - INSERT OVERWRITE INTO syntax
     pub overwrite: bool,
     /// A SQL query that specifies what to insert
@@ -152,6 +172,10 @@ impl Display for Insert {
         }
         if !self.columns.is_empty() {
             write!(f, "({})", display_comma_separated(&self.columns))?;
+            SpaceOrNewline.fmt(f)?;
+        }
+        if let Some(ref overriding) = self.overriding {
+            write!(f, "{overriding}")?;
             SpaceOrNewline.fmt(f)?;
         }
         if let Some(ref parts) = self.partitioned {

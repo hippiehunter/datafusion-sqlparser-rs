@@ -750,6 +750,7 @@ define_keywords!(
     OVERLAPS,
     OVERLAY,
     OVERRIDE,
+    OVERRIDING,
     OVERWRITE,
     OWNED,
     OWNER,
