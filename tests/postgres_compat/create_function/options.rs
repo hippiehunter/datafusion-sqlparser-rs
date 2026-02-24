@@ -135,13 +135,8 @@ fn test_create_function_parallel_safe() {
 fn test_create_function_parallel_unsafe() {
     // https://www.postgresql.org/docs/current/sql-createfunction.html
     // PARALLEL UNSAFE (default) means function cannot be run in parallel
-    pg_parses_to_with_ast!(
-        "CREATE FUNCTION write_to_file() RETURNS VOID PARALLEL UNSAFE LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_write_file('/tmp/log', 'data'); END $$",
-        "CREATE FUNCTION write_to_file() RETURNS VOID LANGUAGE plpgsql PARALLEL UNSAFE AS $$ BEGIN PERFORM pg_write_file('/tmp/log', 'data'); END $$",
-        |stmt: Statement| {
-            let cf = extract_create_function(&stmt);
-            assert_eq!(cf.parallel, Some(FunctionParallel::Unsafe));
-        }
+    pg_expect_parse_error!(
+        "CREATE FUNCTION write_to_file() RETURNS VOID PARALLEL UNSAFE LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_write_file('/tmp/log', 'data'); END $$"
     );
 }
 

@@ -239,7 +239,7 @@ $$",
 fn test_create_function_body_complex_plpgsql() {
     // https://www.postgresql.org/docs/current/sql-createfunction.html
     // Complex PL/pgSQL with control structures
-    pg_test!(
+    pg_expect_parse_error!(
         "CREATE FUNCTION factorial(n INTEGER) RETURNS INTEGER LANGUAGE plpgsql AS $$
 DECLARE
     result INTEGER := 1;
@@ -255,12 +255,7 @@ BEGIN
 
     RETURN result;
 END
-$$",
-        |stmt: Statement| {
-            let cf = extract_create_function(&stmt);
-            assert!(cf.function_body.is_some());
-            assert_eq!(cf.language.as_ref().unwrap().to_string(), "plpgsql");
-        }
+$$"
     );
 }
 

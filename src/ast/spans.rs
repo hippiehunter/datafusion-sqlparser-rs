@@ -439,12 +439,14 @@ impl Spanned for Statement {
             Statement::CreateDatabase {
                 create_token,
                 db_name,
+                owner,
                 clone,
                 ..
             } => create_token
                 .0
                 .span
                 .union(&db_name.span())
+                .union_opt(&owner.as_ref().map(|o| o.span()))
                 .union_opt(&clone.as_ref().map(|c| c.span())),
             Statement::CreateFunction(create_function) => create_function.token.0.span,
             Statement::CreateDomain(create_domain) => create_domain.token.0.span,
@@ -1045,6 +1047,7 @@ impl Spanned for Update {
             from,
             selection,
             returning,
+            returning_into,
             or: _,
             limit,
         } = self;
@@ -1057,6 +1060,11 @@ impl Spanned for Update {
                 .chain(from.iter().map(|i| i.span()))
                 .chain(selection.iter().map(|i| i.span()))
                 .chain(returning.iter().flat_map(|i| i.iter().map(|k| k.span())))
+                .chain(
+                    returning_into
+                        .iter()
+                        .flat_map(|i| i.iter().map(|target| target.span())),
+                )
                 .chain(limit.iter().map(|i| i.span())),
         )
     }
@@ -2553,9 +2561,12 @@ impl Spanned for SelectInto {
             unlogged: _,  // bool
             table: _,     // bool
             name,
+            additional_targets,
         } = self;
 
-        name.span()
+        union_spans(
+            core::iter::once(name.span()).chain(additional_targets.iter().map(|t| t.span())),
+        )
     }
 }
 
@@ -2864,13 +2875,19 @@ pub mod tests {
     #[test]
     pub fn test_cte() {
         let dialect = &GenericDialect;
-        let test = SpanTest::new(dialect, "WITH cte_outer AS (SELECT a FROM postgres.public.source), cte_ignored AS (SELECT a FROM cte_outer), cte_inner AS (SELECT a FROM cte_outer) SELECT a FROM cte_inner");
+        let test = SpanTest::new(
+            dialect,
+            "WITH cte_outer AS (SELECT a FROM postgres.public.source), cte_ignored AS (SELECT a FROM cte_outer), cte_inner AS (SELECT a FROM cte_outer) SELECT a FROM cte_inner",
+        );
 
         let query = test.0.parse_query().unwrap();
 
         let select_span = query.span();
 
-        assert_eq!(test.get_source(select_span), "WITH cte_outer AS (SELECT a FROM postgres.public.source), cte_ignored AS (SELECT a FROM cte_outer), cte_inner AS (SELECT a FROM cte_outer) SELECT a FROM cte_inner");
+        assert_eq!(
+            test.get_source(select_span),
+            "WITH cte_outer AS (SELECT a FROM postgres.public.source), cte_ignored AS (SELECT a FROM cte_outer), cte_inner AS (SELECT a FROM cte_outer) SELECT a FROM cte_inner"
+        );
     }
 
     // REMOVED: Test relied on Snowflake-specific syntax (colon operator)

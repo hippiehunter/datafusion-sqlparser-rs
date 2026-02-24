@@ -1397,14 +1397,27 @@ impl<'a> Parser<'a> {
                     None
                 };
                 ForLoopVariant::DynamicQuery { query_expr, using }
+            } else if self.peek_keyword(Keyword::SELECT)
+                || self.peek_keyword(Keyword::WITH)
+                || self.peek_token_ref().token == BorrowedToken::LParen
+            {
+                // PL/pgSQL query loop: FOR rec IN SELECT ... LOOP ... END LOOP
+                ForLoopVariant::Query {
+                    cursor_name: None,
+                    query: self.parse_query()?,
+                }
             } else {
-                // Try to parse integer range: [REVERSE] lower..upper [BY step]
+                // Try to parse integer range:
+                // [REVERSE] lower..upper [BY step]
+                // [REVERSE] lower TO upper [BY step]   (compat form)
                 let reverse = self.parse_keyword(Keyword::REVERSE);
                 let lower = Box::new(self.parse_expr()?);
 
-                // Expect .. (two periods) - tokenizer gives us two Period tokens
-                self.expect_token(&BorrowedToken::Period)?;
-                self.expect_token(&BorrowedToken::Period)?;
+                if !self.parse_keyword(Keyword::TO) {
+                    // Expect .. (two periods) - tokenizer gives us two Period tokens
+                    self.expect_token(&BorrowedToken::Period)?;
+                    self.expect_token(&BorrowedToken::Period)?;
+                }
 
                 let upper = Box::new(self.parse_expr()?);
                 let step = if self.parse_keyword(Keyword::BY) {
@@ -1429,11 +1442,17 @@ impl<'a> Parser<'a> {
         // Parse body based on variant
         let (body, _end_keyword) = match &variant {
             ForLoopVariant::Query { .. } => {
-                // Query variant uses DO ... END FOR
-                self.expect_keyword_is(Keyword::DO)?;
-                let body = self.parse_conditional_statements(&[Keyword::END])?;
-                self.expect_keywords(&[Keyword::END, Keyword::FOR])?;
-                (body, "FOR")
+                // SQL:2016 uses DO...END FOR, PL/pgSQL uses LOOP...END LOOP.
+                if self.parse_keyword(Keyword::DO) {
+                    let body = self.parse_conditional_statements(&[Keyword::END])?;
+                    self.expect_keywords(&[Keyword::END, Keyword::FOR])?;
+                    (body, "FOR")
+                } else {
+                    self.expect_keyword_is(Keyword::LOOP)?;
+                    let body = self.parse_conditional_statements(&[Keyword::END])?;
+                    self.expect_keywords(&[Keyword::END, Keyword::LOOP])?;
+                    (body, "LOOP")
+                }
             }
             ForLoopVariant::IntegerRange { .. } | ForLoopVariant::DynamicQuery { .. } => {
                 // Integer range and dynamic query use LOOP ... END LOOP
@@ -1537,7 +1556,7 @@ impl<'a> Parser<'a> {
                     _ => {
                         return Err(ParserError::ParserError(
                             "SLICE requires an integer literal".to_string(),
-                        ))
+                        ));
                     }
                 }
             } else {
@@ -2964,7 +2983,7 @@ impl<'a> Parser<'a> {
                     _ => {
                         return Err(ParserError::ParserError(format!(
                             "Unexpected token in unary operator parsing: {tok:?}"
-                        )))
+                        )));
                     }
                 };
                 Ok(Expr::UnaryOp {
@@ -3984,7 +4003,7 @@ impl<'a> Parser<'a> {
                 _ => {
                     return Err(ParserError::ParserError(
                         "Scale field can only be of number type".to_string(),
-                    ))
+                    ));
                 }
             }
         } else {
@@ -5161,8 +5180,8 @@ impl<'a> Parser<'a> {
                 ) {
                     return parser_err!(
                         format!(
-                        "Expected one of [=, >, <, =>, =<, !=, ~, ~*, !~, !~*, ~~, ~~*, !~~, !~~*] as comparison operator, found: {op}"
-                    ),
+                            "Expected one of [=, >, <, =>, =<, !=, ~, ~*, !~, !~*, ~~, ~~*, !~~, !~~*] as comparison operator, found: {op}"
+                        ),
                         span.start
                     );
                 };
@@ -6563,9 +6582,11 @@ impl<'a> Parser<'a> {
             } else {
                 self.parse_create_user(or_replace)
             }
+        } else if self.parse_keyword(Keyword::PROCEDURE) {
+            self.parse_create_procedure(create_token, or_alter)
         } else if or_replace {
             self.expected(
-                "[EXTERNAL] TABLE or [MATERIALIZED] VIEW or FUNCTION after CREATE OR REPLACE",
+                "[EXTERNAL] TABLE or [MATERIALIZED] VIEW or FUNCTION or PROCEDURE after CREATE OR REPLACE",
                 self.peek_token(),
             )
         } else if self.parse_keyword(Keyword::EXTENSION) {
@@ -6586,8 +6607,6 @@ impl<'a> Parser<'a> {
             self.parse_create_sequence(create_token, temporary)
         } else if self.parse_keyword(Keyword::TYPE) {
             self.parse_create_type(create_token)
-        } else if self.parse_keyword(Keyword::PROCEDURE) {
-            self.parse_create_procedure(create_token, or_alter)
         } else if self.parse_keyword(Keyword::OPERATOR) {
             // Check if this is CREATE OPERATOR FAMILY or CREATE OPERATOR CLASS
             if self.parse_keyword(Keyword::FAMILY) {
@@ -6842,13 +6861,29 @@ impl<'a> Parser<'a> {
         let db_name = self.parse_object_name(false)?;
         let mut location = None;
         let mut managed_location = None;
+        let mut owner = None;
+        let with_options = self.parse_keyword(Keyword::WITH);
         loop {
-            match self.parse_one_of_keywords(&[Keyword::LOCATION, Keyword::MANAGEDLOCATION]) {
+            match self.parse_one_of_keywords(&[
+                Keyword::LOCATION,
+                Keyword::MANAGEDLOCATION,
+                Keyword::OWNER,
+            ]) {
                 Some(Keyword::LOCATION) => location = Some(self.parse_literal_string()?),
                 Some(Keyword::MANAGEDLOCATION) => {
                     managed_location = Some(self.parse_literal_string()?)
                 }
+                Some(Keyword::OWNER) => {
+                    // PostgreSQL accepts:
+                    //   CREATE DATABASE db OWNER role
+                    //   CREATE DATABASE db WITH OWNER = role
+                    let _ = self.consume_token(&BorrowedToken::Eq);
+                    owner = Some(self.parse_object_name(false)?);
+                }
                 _ => break,
+            }
+            if with_options {
+                let _ = self.consume_token(&BorrowedToken::Comma);
             }
         }
         let clone = if self.parse_keyword(Keyword::CLONE) {
@@ -6863,6 +6898,7 @@ impl<'a> Parser<'a> {
             if_not_exists: ine,
             location,
             managed_location,
+            owner,
             or_replace: false,
             transient: false,
             clone,
@@ -6916,6 +6952,125 @@ impl<'a> Parser<'a> {
     /// Accepts both PL/pgSQL (`plpgsql`, `pgsql`) and standard SQL/PSM identifiers.
     fn is_sql_psm_language(lang: &Ident) -> bool {
         lang.value.eq_ignore_ascii_case("plpgsql") || lang.value.eq_ignore_ascii_case("pgsql")
+    }
+
+    /// Returns true when the provided token is a plain SQL identifier.
+    fn is_simple_identifier(name: &str) -> bool {
+        let mut chars = name.chars();
+        let Some(first) = chars.next() else {
+            return false;
+        };
+
+        if !(first == '_' || first.is_ascii_alphabetic()) {
+            return false;
+        }
+
+        chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+    }
+
+    /// Parse a PL/pgSQL alias declaration line in the form:
+    /// `<ident> ALIAS FOR $<n>;`
+    fn parse_sql_psm_alias_declaration(line: &str) -> Option<(&str, usize)> {
+        let declaration = line.trim();
+        let declaration = declaration.strip_suffix(';')?;
+        let mut parts = declaration.split_whitespace();
+
+        let name = parts.next()?;
+        if !Self::is_simple_identifier(name) {
+            return None;
+        }
+
+        let alias_kw = parts.next()?;
+        if !alias_kw.eq_ignore_ascii_case("ALIAS") {
+            return None;
+        }
+
+        let for_kw = parts.next()?;
+        if !for_kw.eq_ignore_ascii_case("FOR") {
+            return None;
+        }
+
+        let placeholder = parts.next()?;
+        if parts.next().is_some() {
+            return None;
+        }
+
+        let index = placeholder.strip_prefix('$')?.parse::<usize>().ok()?;
+        if index == 0 {
+            return None;
+        }
+
+        Some((name, index))
+    }
+
+    /// Rewrites PL/pgSQL alias declarations into equivalent typed declarations.
+    ///
+    /// Example:
+    /// `x ALIAS FOR $1;` -> `x INTEGER := $1;`
+    ///
+    /// This allows the SQL/PSM parser to consume common PL/pgSQL alias syntax
+    /// without introducing a dedicated AST variant.
+    fn rewrite_sql_psm_alias_declarations(body: &str, args: &[OperateFunctionArg]) -> String {
+        let mut rewritten = String::with_capacity(body.len());
+
+        for segment in body.split_inclusive('\n') {
+            let line = segment.strip_suffix('\n').unwrap_or(segment);
+
+            if let Some((name, param_index)) = Self::parse_sql_psm_alias_declaration(line) {
+                if let Some(arg) = args.get(param_index - 1) {
+                    let indent_len = line.len() - line.trim_start().len();
+                    let indent = &line[..indent_len];
+
+                    rewritten.push_str(indent);
+                    rewritten.push_str(name);
+                    rewritten.push(' ');
+                    rewritten.push_str(&arg.data_type.to_string());
+                    rewritten.push_str(" := $");
+                    rewritten.push_str(&param_index.to_string());
+                    rewritten.push(';');
+
+                    if segment.ends_with('\n') {
+                        rewritten.push('\n');
+                    }
+
+                    continue;
+                }
+            }
+
+            rewritten.push_str(segment);
+        }
+
+        rewritten
+    }
+
+    /// Rewrite PL/pgSQL integer FOR-range syntax `lower .. upper` into
+    /// a parser-friendly `lower TO upper` form.
+    fn rewrite_sql_psm_for_integer_ranges(body: &str) -> String {
+        let mut rewritten = String::with_capacity(body.len());
+
+        for segment in body.split_inclusive('\n') {
+            let line = segment.strip_suffix('\n').unwrap_or(segment);
+            let trimmed = line.trim_start();
+
+            if trimmed.len() >= 4
+                && trimmed[..4].eq_ignore_ascii_case("FOR ")
+                && line.contains(" .. ")
+            {
+                if let Some(range_pos) = line.find(" .. ") {
+                    rewritten.push_str(&line[..range_pos]);
+                    rewritten.push_str(" TO ");
+                    rewritten.push_str(&line[range_pos + 4..]);
+                    if segment.ends_with('\n') {
+                        rewritten.push('\n');
+                    }
+                    continue;
+                }
+            }
+
+            rewritten.push_str(segment);
+        }
+
+        rewritten
     }
 
     /// Parse a SQL/PSM label: <<label_name>>
@@ -7293,7 +7448,10 @@ impl<'a> Parser<'a> {
                     ..
                 }))) = body.function_body
                 {
-                    let parsed_block = self.reparse_as_sql_psm_block(&dqs.value)?;
+                    let rewritten_body =
+                        Self::rewrite_sql_psm_alias_declarations(&dqs.value, &args);
+                    let rewritten_body = Self::rewrite_sql_psm_for_integer_ranges(&rewritten_body);
+                    let parsed_block = self.reparse_as_sql_psm_block(&rewritten_body)?;
                     body.function_body = Some(CreateFunctionBody::AsBeginEnd(parsed_block));
                 }
             }
@@ -8163,19 +8321,23 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_owner(&self) -> Result<Owner, ParserError> {
-        let owner = match self.parse_one_of_keywords(&[Keyword::CURRENT_USER, Keyword::CURRENT_ROLE, Keyword::SESSION_USER]) {
+        let owner = match self.parse_one_of_keywords(&[
+            Keyword::CURRENT_USER,
+            Keyword::CURRENT_ROLE,
+            Keyword::SESSION_USER,
+        ]) {
             Some(Keyword::CURRENT_USER) => Owner::CurrentUser,
             Some(Keyword::CURRENT_ROLE) => Owner::CurrentRole,
             Some(Keyword::SESSION_USER) => Owner::SessionUser,
             Some(_) => unreachable!(),
-            None => {
-                match self.parse_identifier() {
-                    Ok(ident) => Owner::Ident(ident),
-                    Err(e) => {
-                        return Err(ParserError::ParserError(format!("Expected: CURRENT_USER, CURRENT_ROLE, SESSION_USER or identifier after OWNER TO. {e}")))
-                    }
+            None => match self.parse_identifier() {
+                Ok(ident) => Owner::Ident(ident),
+                Err(e) => {
+                    return Err(ParserError::ParserError(format!(
+                        "Expected: CURRENT_USER, CURRENT_ROLE, SESSION_USER or identifier after OWNER TO. {e}"
+                    )));
                 }
-            }
+            },
         };
         Ok(owner)
     }
@@ -8544,7 +8706,7 @@ impl<'a> Parser<'a> {
                     return Err(ParserError::ParserError(format!(
                         "Duplicate or unexpected keyword {:?} in CREATE OPERATOR",
                         keyword
-                    )))
+                    )));
                 }
             }
 
@@ -9384,10 +9546,13 @@ impl<'a> Parser<'a> {
             }
         } else if self.parse_keyword(Keyword::ALL) {
             FetchDirection::All
-        } else {
+        } else if matches!(self.peek_token_ref().token, BorrowedToken::Number(_, _)) {
             FetchDirection::Count {
                 limit: self.parse_number_value()?.value,
             }
+        } else {
+            // PostgreSQL default direction when omitted.
+            FetchDirection::Next
         };
 
         // Position is now optional - check if FROM or IN is present
@@ -9404,7 +9569,12 @@ impl<'a> Parser<'a> {
         let name = self.parse_identifier()?;
 
         let into = if self.parse_keyword(Keyword::INTO) {
-            Some(self.parse_object_name(false)?)
+            let mut targets = self.parse_object_name(false)?;
+            while self.consume_token(&BorrowedToken::Comma) {
+                let next = self.parse_object_name(false)?;
+                targets.0.extend(next.0);
+            }
+            Some(targets)
         } else {
             None
         };
@@ -10231,7 +10401,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_procedure_param(&self) -> Result<ProcedureParam, ParserError> {
-        let mode = if self.parse_keyword(Keyword::IN) {
+        let leading_mode = if self.parse_keyword(Keyword::IN) {
             Some(ArgMode::In)
         } else if self.parse_keyword(Keyword::OUT) {
             Some(ArgMode::Out)
@@ -10240,13 +10410,31 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
+
         let name = self.parse_identifier()?;
-        let data_type = self.parse_data_type()?;
-        let default = if self.consume_token(&BorrowedToken::Eq) {
-            Some(self.parse_expr()?)
+
+        let trailing_mode = if leading_mode.is_none() {
+            if self.parse_keyword(Keyword::IN) {
+                Some(ArgMode::In)
+            } else if self.parse_keyword(Keyword::OUT) {
+                Some(ArgMode::Out)
+            } else if self.parse_keyword(Keyword::INOUT) {
+                Some(ArgMode::InOut)
+            } else {
+                None
+            }
         } else {
             None
         };
+
+        let mode = leading_mode.or(trailing_mode);
+        let data_type = self.parse_data_type()?;
+        let default =
+            if self.consume_token(&BorrowedToken::Eq) || self.parse_keyword(Keyword::DEFAULT) {
+                Some(self.parse_expr()?)
+            } else {
+                None
+            };
 
         Ok(ProcedureParam {
             name,
@@ -13257,14 +13445,14 @@ impl<'a> Parser<'a> {
                     return self.expected(
                         "expected to match USE/IGNORE/FORCE keyword",
                         self.peek_token(),
-                    )
+                    );
                 }
             };
             let index_type = match self.parse_one_of_keywords(&[Keyword::INDEX, Keyword::KEY]) {
                 Some(Keyword::INDEX) => TableIndexType::Index,
                 Some(Keyword::KEY) => TableIndexType::Key,
                 _ => {
-                    return self.expected("expected to match INDEX/KEY keyword", self.peek_token())
+                    return self.expected("expected to match INDEX/KEY keyword", self.peek_token());
                 }
             };
             let for_clause = if self.parse_keyword(Keyword::FOR) {
@@ -13394,7 +13582,7 @@ impl<'a> Parser<'a> {
                             return parser_err!(
                                 "BUG: expected to match GroupBy modifier keyword",
                                 self.peek_token().span.start
-                            )
+                            );
                         }
                     });
                 }
@@ -13644,12 +13832,12 @@ impl<'a> Parser<'a> {
             BorrowedToken::EOF => {
                 return Err(ParserError::ParserError(
                     "Empty input when parsing identifier".to_string(),
-                ))?
+                ))?;
             }
             token => {
                 return Err(ParserError::ParserError(format!(
                     "Unexpected token in identifier: {token}"
-                )))?
+                )))?;
             }
         };
 
@@ -13664,12 +13852,12 @@ impl<'a> Parser<'a> {
                         BorrowedToken::EOF => {
                             return Err(ParserError::ParserError(
                                 "Trailing period in identifier".to_string(),
-                            ))?
+                            ))?;
                         }
                         token => {
                             return Err(ParserError::ParserError(format!(
                                 "Unexpected token following period in identifier: {token}"
-                            )))?
+                            )))?;
                         }
                     }
                 }
@@ -13677,7 +13865,7 @@ impl<'a> Parser<'a> {
                 token => {
                     return Err(ParserError::ParserError(format!(
                         "Unexpected token in identifier: {token}"
-                    )))?
+                    )))?;
                 }
             }
         }
@@ -14352,6 +14540,7 @@ impl<'a> Parser<'a> {
     /// preceded with some `WITH` CTE declarations and optionally followed
     /// by `ORDER BY`. Unlike some other parse_... methods, this one doesn't
     /// expect the initial keyword to be already consumed
+    #[cfg_attr(feature = "recursive-protection", recursive::recursive)]
     pub fn parse_query(&self) -> Result<Box<Query>, ParserError> {
         let _guard = self.recursion_counter.try_decrease()?;
         let with = if self.parse_keyword(Keyword::WITH) {
@@ -14905,7 +15094,7 @@ impl<'a> Parser<'a> {
             None
         };
 
-        let into = if self.parse_keyword(Keyword::INTO) {
+        let mut into = if self.parse_keyword(Keyword::INTO) {
             Some(self.parse_select_into()?)
         } else {
             None
@@ -15030,6 +15219,11 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
+
+        // PL/pgSQL allows `SELECT ... FROM ... INTO target`.
+        if into.is_none() && self.parse_keyword(Keyword::INTO) {
+            into = Some(self.parse_select_into()?);
+        }
 
         Ok(Select {
             select_token: AttachedToken(select_token.to_static()),
@@ -15834,7 +16028,7 @@ impl<'a> Parser<'a> {
                             _ => {
                                 return Err(ParserError::ParserError(format!(
                                     "expected OUTER, SEMI, ANTI or JOIN after {kw:?}"
-                                )))
+                                )));
                             }
                         }
                     }
@@ -18325,7 +18519,7 @@ impl<'a> Parser<'a> {
                 return parser_err!(
                     "DENY statements must specify an object",
                     self.peek_token().span.start
-                )
+                );
             }
         };
 
@@ -18553,7 +18747,14 @@ impl<'a> Parser<'a> {
                     (Some(self.parse_query()?), vec![])
                 };
 
-                (columns, partitioned, after_columns, source, assignments, overriding)
+                (
+                    columns,
+                    partitioned,
+                    after_columns,
+                    source,
+                    assignments,
+                    overriding,
+                )
             };
 
             let (format_clause, settings) = if self.dialect.supports_insert_format() {
@@ -18763,10 +18964,16 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
-        let returning = if self.parse_keyword(Keyword::RETURNING) {
-            Some(self.parse_comma_separated(Parser::parse_select_item)?)
+        let (returning, returning_into) = if self.parse_keyword(Keyword::RETURNING) {
+            let returning = Some(self.parse_comma_separated(Parser::parse_select_item)?);
+            let returning_into = if self.parse_keyword(Keyword::INTO) {
+                Some(self.parse_sql_psm_into_targets()?)
+            } else {
+                None
+            };
+            (returning, returning_into)
         } else {
-            None
+            (None, None)
         };
         let limit = if self.parse_keyword(Keyword::LIMIT) {
             Some(self.parse_expr()?)
@@ -18781,10 +18988,15 @@ impl<'a> Parser<'a> {
             from,
             selection,
             returning,
+            returning_into,
             or,
             limit,
         }
         .into())
+    }
+
+    fn parse_sql_psm_into_targets(&self) -> Result<Vec<ObjectName>, ParserError> {
+        self.parse_comma_separated(|p| p.parse_object_name(false))
     }
 
     /// Parse a `var = expr` assignment, used in an UPDATE statement
@@ -20508,12 +20720,23 @@ impl<'a> Parser<'a> {
         let unlogged = self.parse_keyword(Keyword::UNLOGGED);
         let table = self.parse_keyword(Keyword::TABLE);
         let name = self.parse_object_name(false)?;
+        let mut additional_targets = vec![];
+
+        if !temporary && !unlogged && !table {
+            // PL/pgSQL variable lists:
+            //   SELECT ... INTO var1, var2, var3 ...
+            while self.consume_token(&BorrowedToken::Comma) {
+                let next_name = self.parse_object_name(false)?;
+                additional_targets.push(next_name);
+            }
+        }
 
         Ok(SelectInto {
             temporary,
             unlogged,
             table,
             name,
+            additional_targets,
         })
     }
 
@@ -21365,16 +21588,53 @@ impl<'a> Parser<'a> {
         let name = self.parse_object_name(false)?;
         let params = self.parse_optional_procedure_parameters()?;
 
-        let language = if self.parse_keyword(Keyword::LANGUAGE) {
+        let mut language = if self.parse_keyword(Keyword::LANGUAGE) {
             Some(self.parse_identifier()?)
         } else {
             None
         };
 
-        // AS is optional before BEGIN for SQL:2016 PSM compatibility
+        // AS is optional before BEGIN for SQL:2016 PSM compatibility.
+        // PostgreSQL commonly uses `AS $$ ... $$ LANGUAGE plpgsql`.
         let has_as = self.parse_keyword(Keyword::AS);
 
-        let body = self.parse_conditional_statements(&[Keyword::END])?;
+        let body = if has_as {
+            match self.peek_token().token {
+                BorrowedToken::DollarQuotedString(_) | BorrowedToken::SingleQuotedString(_) => {
+                    let body_string = self.parse_create_function_body_string()?;
+                    let raw_body = match body_string {
+                        Expr::Value(ValueWithSpan {
+                            value: Value::DollarQuotedString(dqs),
+                            ..
+                        }) => dqs.value,
+                        Expr::Value(ValueWithSpan {
+                            value: Value::SingleQuotedString(s),
+                            ..
+                        }) => s,
+                        _ => {
+                            return Err(ParserError::ParserError(
+                                "unsupported procedure body format".to_string(),
+                            ));
+                        }
+                    };
+
+                    let rewritten_body = Self::rewrite_sql_psm_for_integer_ranges(&raw_body);
+                    ConditionalStatements::BeginEnd(self.reparse_as_sql_psm_block(&rewritten_body)?)
+                }
+                _ => self.parse_conditional_statements(&[Keyword::END])?,
+            }
+        } else {
+            self.parse_conditional_statements(&[Keyword::END])?
+        };
+
+        if self.parse_keyword(Keyword::LANGUAGE) {
+            if language.is_some() {
+                return Err(ParserError::ParserError(
+                    "LANGUAGE specified more than once".to_string(),
+                ));
+            }
+            language = Some(self.parse_identifier()?);
+        }
 
         Ok(Statement::CreateProcedure {
             create_token,
@@ -21973,7 +22233,7 @@ impl<'a> Parser<'a> {
                         return self.expected(
                             "one of ACCOUNT, DATABASE, SCHEMA, TABLE or VIEW",
                             self.peek_token(),
-                        )
+                        );
                     }
                 }
             }

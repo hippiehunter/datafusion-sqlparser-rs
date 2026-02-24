@@ -485,6 +485,7 @@ fn parse_update_set_from() {
                 ])),
             }),
             returning: None,
+            returning_into: None,
             or: None,
             limit: None,
             for_portion_of: None,
@@ -505,6 +506,7 @@ fn parse_update_with_table_alias() {
             from: _from,
             selection,
             returning,
+            returning_into: None,
             or: None,
             limit: None,
             update_token: _,
@@ -1059,6 +1061,7 @@ fn parse_select_into() {
             unlogged: false,
             table: false,
             name: ObjectName::from(vec![Ident::new("table0")]),
+            additional_targets: vec![],
         },
         only(&select.into)
     );
@@ -1075,7 +1078,36 @@ fn parse_select_into() {
     assert_eq!(
         ParserError::ParserError("Expected: end of statement, found: asdf".to_string()),
         result.unwrap_err()
-    )
+    );
+
+    let sql = "SELECT c1, c2 INTO out_a, out_b FROM source_table";
+    let select = verified_only_select(sql);
+    assert_eq!(
+        &SelectInto {
+            temporary: false,
+            unlogged: false,
+            table: false,
+            name: ObjectName::from(vec![Ident::new("out_a")]),
+            additional_targets: vec![ObjectName::from(vec![Ident::new("out_b")])],
+        },
+        only(&select.into)
+    );
+
+    let sql = "SELECT c1, c2 FROM source_table INTO out_a, out_b";
+    let select = all_dialects().verified_only_select_with_canonical(
+        sql,
+        "SELECT c1, c2 INTO out_a, out_b FROM source_table",
+    );
+    assert_eq!(
+        &SelectInto {
+            temporary: false,
+            unlogged: false,
+            table: false,
+            name: ObjectName::from(vec![Ident::new("out_a")]),
+            additional_targets: vec![ObjectName::from(vec![Ident::new("out_b")])],
+        },
+        only(&select.into)
+    );
 }
 
 #[test]
@@ -7898,6 +7930,39 @@ fn parse_create_database_ine() {
 }
 
 #[test]
+fn parse_create_database_with_owner() {
+    let sql = "CREATE DATABASE tpcc OWNER tpcc";
+    match verified_stmt(sql) {
+        Statement::CreateDatabase {
+            db_name,
+            if_not_exists,
+            location,
+            managed_location,
+            owner,
+            clone,
+            ..
+        } => {
+            assert_eq!("tpcc", db_name.to_string());
+            assert!(!if_not_exists);
+            assert_eq!(None, location);
+            assert_eq!(None, managed_location);
+            assert_eq!(Some(ObjectName::from(vec![Ident::new("tpcc")])), owner);
+            assert_eq!(None, clone);
+        }
+        _ => unreachable!(),
+    }
+
+    let sql = "CREATE DATABASE tpcc WITH OWNER = tpcc";
+    match one_statement_parses_to(sql, "CREATE DATABASE tpcc OWNER tpcc") {
+        Statement::CreateDatabase { db_name, owner, .. } => {
+            assert_eq!("tpcc", db_name.to_string());
+            assert_eq!(Some(ObjectName::from(vec![Ident::new("tpcc")])), owner);
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[test]
 fn parse_drop_database() {
     let sql = "DROP DATABASE mycatalog.mydb";
     match verified_stmt(sql) {
@@ -8343,7 +8408,8 @@ fn parse_drop_view() {
 #[test]
 fn parse_drop_user() {
     let sql = "DROP USER u1";
-    match verified_stmt(sql) {
+    let user_dialects = all_dialects_except(|d| d.is::<PostgreSqlDialect>());
+    match user_dialects.verified_stmt(sql) {
         Statement::Drop {
             names, object_type, ..
         } => {
@@ -8355,7 +8421,7 @@ fn parse_drop_user() {
         }
         _ => unreachable!(),
     }
-    verified_stmt("DROP USER IF EXISTS u1");
+    user_dialects.verified_stmt("DROP USER IF EXISTS u1");
 }
 
 #[test]
@@ -15195,6 +15261,35 @@ fn parse_create_procedure_with_parameter_modes() {
         }
         _ => unreachable!(),
     }
+
+    let sql = r#"CREATE PROCEDURE test_proc(IN a INTEGER DEFAULT 1, OUT b TEXT DEFAULT '2') AS BEGIN SELECT 1; END"#;
+    match one_statement_parses_to(
+        sql,
+        "CREATE PROCEDURE test_proc(IN a INTEGER = 1, OUT b TEXT = '2') AS BEGIN SELECT 1; END",
+    ) {
+        Statement::CreateProcedure { params, .. } => {
+            assert_eq!(
+                params,
+                Some(vec![
+                    ProcedureParam {
+                        name: Ident::new("a"),
+                        data_type: DataType::Integer(None),
+                        mode: Some(ArgMode::In),
+                        default: Some(Expr::Value((number("1")).with_empty_span())),
+                    },
+                    ProcedureParam {
+                        name: Ident::new("b"),
+                        data_type: DataType::Text,
+                        mode: Some(ArgMode::Out),
+                        default: Some(Expr::Value(
+                            Value::SingleQuotedString("2".into()).with_empty_span()
+                        )),
+                    }
+                ])
+            );
+        }
+        _ => unreachable!(),
+    }
 }
 
 #[test]
@@ -15301,17 +15396,19 @@ fn parse_odbc_time_date_timestamp() {
 
 #[test]
 fn parse_create_user() {
-    let create = verified_stmt("CREATE USER u1");
+    let user_dialects = all_dialects_except(|d| d.is::<PostgreSqlDialect>());
+    let create = user_dialects.verified_stmt("CREATE USER u1");
     match create {
         Statement::CreateUser(stmt) => {
             assert_eq!(stmt.name, Ident::new("u1"));
         }
         _ => unreachable!(),
     }
-    verified_stmt("CREATE OR REPLACE USER u1");
-    verified_stmt("CREATE OR REPLACE USER IF NOT EXISTS u1");
-    verified_stmt("CREATE OR REPLACE USER IF NOT EXISTS u1 PASSWORD='secret'");
-    let dialects = all_dialects_where(|d| d.supports_boolean_literals());
+    user_dialects.verified_stmt("CREATE OR REPLACE USER u1");
+    user_dialects.verified_stmt("CREATE OR REPLACE USER IF NOT EXISTS u1");
+    user_dialects.verified_stmt("CREATE OR REPLACE USER IF NOT EXISTS u1 PASSWORD='secret'");
+    let dialects =
+        all_dialects_where(|d| d.supports_boolean_literals() && !d.is::<PostgreSqlDialect>());
     dialects.one_statement_parses_to(
         "CREATE OR REPLACE USER IF NOT EXISTS u1 PASSWORD='secret' MUST_CHANGE_PASSWORD=TRUE",
         "CREATE OR REPLACE USER IF NOT EXISTS u1 PASSWORD='secret' MUST_CHANGE_PASSWORD=true",
@@ -15481,6 +15578,7 @@ fn parse_create_table_like() {
                 Some(CreateTableLikeKind::Plain(CreateTableLike {
                     name: ObjectName::from(vec![Ident::new("old".to_string())]),
                     defaults: None,
+                    options: vec![],
                 }))
             )
         }
@@ -15698,9 +15796,11 @@ fn parse_create_index_different_using_positions() {
 
 #[test]
 fn test_parse_alter_user() {
-    verified_stmt("ALTER USER u1");
-    verified_stmt("ALTER USER IF EXISTS u1");
-    let stmt = verified_stmt("ALTER USER IF EXISTS u1 RENAME TO u2");
+    let user_dialects = all_dialects_except(|d| d.is::<PostgreSqlDialect>());
+
+    user_dialects.verified_stmt("ALTER USER u1");
+    user_dialects.verified_stmt("ALTER USER IF EXISTS u1");
+    let stmt = user_dialects.verified_stmt("ALTER USER IF EXISTS u1 RENAME TO u2");
     match stmt {
         Statement::AlterUser(alter) => {
             assert!(alter.if_exists);
@@ -15710,7 +15810,8 @@ fn test_parse_alter_user() {
         _ => unreachable!(),
     }
 
-    let dialects = all_dialects_where(|d| d.supports_boolean_literals());
+    let dialects =
+        all_dialects_where(|d| d.supports_boolean_literals() && !d.is::<PostgreSqlDialect>());
     dialects.one_statement_parses_to(
         "ALTER USER u1 SET PASSWORD='secret', MUST_CHANGE_PASSWORD=TRUE, MINS_TO_UNLOCK=10",
         "ALTER USER u1 SET PASSWORD='secret', MUST_CHANGE_PASSWORD=true, MINS_TO_UNLOCK=10",
@@ -15747,14 +15848,15 @@ fn test_parse_alter_user() {
         _ => unreachable!(),
     }
 
-    let stmt = verified_stmt("ALTER USER u1 UNSET PASSWORD");
+    let stmt = user_dialects.verified_stmt("ALTER USER u1 UNSET PASSWORD");
     match stmt {
         Statement::AlterUser(alter) => {
             assert_eq!(alter.unset_props, vec!["PASSWORD".to_string()]);
         }
         _ => unreachable!(),
     }
-    verified_stmt("ALTER USER u1 UNSET PASSWORD, MUST_CHANGE_PASSWORD, MINS_TO_UNLOCK");
+    user_dialects
+        .verified_stmt("ALTER USER u1 UNSET PASSWORD, MUST_CHANGE_PASSWORD, MINS_TO_UNLOCK");
 }
 
 #[test]

@@ -3674,6 +3674,9 @@ pub struct SelectInto {
     pub unlogged: bool,
     pub table: bool,
     pub name: ObjectName,
+    /// Additional PL/pgSQL variable targets for:
+    /// `SELECT ... INTO var1, var2, ...`
+    pub additional_targets: Vec<ObjectName>,
 }
 
 impl fmt::Display for SelectInto {
@@ -3682,7 +3685,11 @@ impl fmt::Display for SelectInto {
         let unlogged = if self.unlogged { " UNLOGGED" } else { "" };
         let table = if self.table { " TABLE" } else { "" };
 
-        write!(f, "INTO{}{}{} {}", temporary, unlogged, table, self.name)
+        write!(f, "INTO{}{}{} {}", temporary, unlogged, table, self.name)?;
+        for target in &self.additional_targets {
+            write!(f, ", {target}")?;
+        }
+        Ok(())
     }
 }
 

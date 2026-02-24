@@ -122,21 +122,24 @@ fn test_exponentiation_operator() {
 #[test]
 fn test_square_root_operator() {
     // https://www.postgresql.org/docs/current/functions-math.html
-    pg_roundtrip_only!("SELECT |/ 25");
+    one_statement_parses_to_pg("SELECT |/ 25", "SELECT |/25");
     // TODO: Validate square root operator (|/)
 }
 
 #[test]
 fn test_cube_root_operator() {
     // https://www.postgresql.org/docs/current/functions-math.html
-    pg_roundtrip_only!("SELECT ||/ 27");
+    one_statement_parses_to_pg("SELECT ||/ 27", "SELECT ||/27");
     // TODO: Validate cube root operator (||/)
 }
 
 #[test]
 fn test_at_time_zone_operator() {
     // https://www.postgresql.org/docs/current/functions-datetime.html#FUNCTIONS-DATETIME-ZONECONVERT
-    pg_roundtrip_only!("SELECT timestamp '2023-01-01 00:00:00' AT TIME ZONE 'UTC'");
+    one_statement_parses_to_pg(
+        "SELECT timestamp '2023-01-01 00:00:00' AT TIME ZONE 'UTC'",
+        "SELECT TIMESTAMP '2023-01-01 00:00:00' AT TIME ZONE 'UTC'",
+    );
     // TODO: Validate AT TIME ZONE operator
 }
 

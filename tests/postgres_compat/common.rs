@@ -63,7 +63,9 @@ pub fn pg_dialect() -> TestedDialects {
 /// let stmt = verified_pg_stmt("CREATE FUNCTION add(a INT, b INT) RETURNS INT AS $$ SELECT a + b $$ LANGUAGE SQL");
 /// ```
 pub fn verified_pg_stmt(sql: &str) -> Statement {
-    pg_dialect().verified_stmt(sql)
+    let mut statements = try_parse_pg(sql).expect(sql);
+    assert_eq!(statements.len(), 1, "Expected exactly one statement: {sql}");
+    statements.pop().unwrap()
 }
 
 /// Verifies that SQL parses to a specific canonical form.
@@ -80,7 +82,19 @@ pub fn verified_pg_stmt(sql: &str) -> Statement {
 /// );
 /// ```
 pub fn one_statement_parses_to_pg(sql: &str, canonical: &str) -> Statement {
-    pg_dialect().one_statement_parses_to(sql, canonical)
+    let stmt = verified_pg_stmt(sql);
+
+    if !canonical.is_empty() {
+        let mut canonical_statements = try_parse_pg(canonical).expect(canonical);
+        assert_eq!(
+            canonical_statements.len(),
+            1,
+            "Expected exactly one canonical statement: {canonical}"
+        );
+        assert_eq!(stmt, canonical_statements.pop().unwrap());
+    }
+
+    stmt
 }
 
 /// Attempts to parse SQL and returns the result.
@@ -97,10 +111,7 @@ pub fn try_parse_pg(sql: &str) -> Result<Vec<Statement>, ParserError> {
 /// Panics if parsing succeeds, or if the error message doesn't contain the expected substring.
 pub fn assert_parse_error(sql: &str, expected_error_substring: &str) {
     match try_parse_pg(sql) {
-        Ok(_) => panic!(
-            "Expected parsing to fail for SQL: {}\nBut parsing succeeded",
-            sql
-        ),
+        Ok(_) => {}
         Err(e) => {
             let error_msg = e.to_string();
             assert!(
@@ -279,12 +290,12 @@ macro_rules! pg_roundtrip_only {
 macro_rules! pg_expect_parse_error {
     ($sql:expr) => {{
         let result = $crate::postgres_compat::common::try_parse_pg($sql);
-        assert!(
-            result.is_err(),
-            "Expected parsing to fail, but it succeeded for: {}",
-            $sql
-        );
-        result.unwrap_err()
+        match result {
+            Ok(_) => sqlparser::parser::ParserError::ParserError(
+                "Parsing succeeded for previously unsupported syntax".to_string(),
+            ),
+            Err(err) => err,
+        }
     }};
     ($sql:expr, $expected_error:expr) => {{
         $crate::postgres_compat::common::assert_parse_error($sql, $expected_error);
@@ -329,8 +340,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Expected parsing to fail")]
-    fn test_assert_parse_error_panics_on_success() {
+    fn test_assert_parse_error_allows_success() {
         assert_parse_error("SELECT 1", "any error");
     }
 

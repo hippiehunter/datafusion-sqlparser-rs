@@ -58,6 +58,7 @@ pub struct CreateDatabaseBuilder {
     pub if_not_exists: bool,
     pub location: Option<String>,
     pub managed_location: Option<String>,
+    pub owner: Option<ObjectName>,
     pub or_replace: bool,
     pub transient: bool,
     pub clone: Option<ObjectName>,
@@ -72,6 +73,7 @@ impl CreateDatabaseBuilder {
             if_not_exists: false,
             location: None,
             managed_location: None,
+            owner: None,
             or_replace: false,
             transient: false,
             clone: None,
@@ -87,6 +89,11 @@ impl CreateDatabaseBuilder {
 
     pub fn managed_location(mut self, managed_location: Option<String>) -> Self {
         self.managed_location = managed_location;
+        self
+    }
+
+    pub fn owner(mut self, owner: Option<ObjectName>) -> Self {
+        self.owner = owner;
         self
     }
 
@@ -127,6 +134,7 @@ impl CreateDatabaseBuilder {
             if_not_exists: self.if_not_exists,
             managed_location: self.managed_location,
             location: self.location,
+            owner: self.owner,
             or_replace: self.or_replace,
             transient: self.transient,
             clone: self.clone,
@@ -147,6 +155,7 @@ impl TryFrom<Statement> for CreateDatabaseBuilder {
                 if_not_exists,
                 location,
                 managed_location,
+                owner,
                 or_replace,
                 transient,
                 clone,
@@ -157,6 +166,7 @@ impl TryFrom<Statement> for CreateDatabaseBuilder {
                 if_not_exists,
                 location,
                 managed_location,
+                owner,
                 or_replace,
                 transient,
                 clone,

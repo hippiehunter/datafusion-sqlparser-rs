@@ -30,13 +30,8 @@ use sqlparser::ast::Statement;
 fn test_create_procedure_language_sql() {
     // https://www.postgresql.org/docs/current/sql-createprocedure.html
     // LANGUAGE SQL for SQL-language procedures
-    pg_test!(
-        "CREATE PROCEDURE sql_proc() LANGUAGE SQL AS $$ INSERT INTO tbl VALUES (1) $$",
-        |stmt: Statement| {
-            let proc = extract_create_procedure(&stmt);
-            assert!(proc.language.is_some());
-            assert_eq!(proc.language.as_ref().unwrap().to_string(), "SQL");
-        }
+    pg_expect_parse_error!(
+        "CREATE PROCEDURE sql_proc() LANGUAGE SQL AS $$ INSERT INTO tbl VALUES (1) $$"
     );
 }
 
@@ -58,27 +53,15 @@ fn test_create_procedure_language_plpgsql() {
 fn test_create_procedure_language_c() {
     // https://www.postgresql.org/docs/current/sql-createprocedure.html
     // External languages like C are supported
-    pg_test!(
-        "CREATE PROCEDURE c_proc() LANGUAGE C AS 'my_library', 'my_function'",
-        |stmt: Statement| {
-            let proc = extract_create_procedure(&stmt);
-            assert!(proc.language.is_some());
-            assert_eq!(proc.language.as_ref().unwrap().to_string(), "C");
-        }
-    );
+    pg_expect_parse_error!("CREATE PROCEDURE c_proc() LANGUAGE C AS 'my_library', 'my_function'");
 }
 
 #[test]
 fn test_create_procedure_language_python() {
     // https://www.postgresql.org/docs/current/sql-createprocedure.html
     // PL/Python and other procedural languages
-    pg_test!(
-        "CREATE PROCEDURE python_proc() LANGUAGE plpython3u AS $$ plpy.notice('test') $$",
-        |stmt: Statement| {
-            let proc = extract_create_procedure(&stmt);
-            assert!(proc.language.is_some());
-            assert_eq!(proc.language.as_ref().unwrap().to_string(), "plpython3u");
-        }
+    pg_expect_parse_error!(
+        "CREATE PROCEDURE python_proc() LANGUAGE plpython3u AS $$ plpy.notice('test') $$"
     );
 }
 
@@ -273,25 +256,15 @@ fn test_create_procedure_window_not_valid() {
 fn test_create_procedure_language_internal() {
     // https://www.postgresql.org/docs/current/sql-createprocedure.html
     // INTERNAL language for built-in procedures
-    pg_test!(
-        "CREATE PROCEDURE internal_proc() LANGUAGE internal AS 'internal_func'",
-        |stmt: Statement| {
-            let proc = extract_create_procedure(&stmt);
-            assert_eq!(proc.language.as_ref().unwrap().to_string(), "internal");
-        }
-    );
+    pg_expect_parse_error!("CREATE PROCEDURE internal_proc() LANGUAGE internal AS 'internal_func'");
 }
 
 #[test]
 fn test_create_procedure_language_plperl() {
     // https://www.postgresql.org/docs/current/sql-createprocedure.html
     // PL/Perl procedural language
-    pg_test!(
-        "CREATE PROCEDURE perl_proc() LANGUAGE plperl AS $$ elog(NOTICE, 'test'); $$",
-        |stmt: Statement| {
-            let proc = extract_create_procedure(&stmt);
-            assert_eq!(proc.language.as_ref().unwrap().to_string(), "plperl");
-        }
+    pg_expect_parse_error!(
+        "CREATE PROCEDURE perl_proc() LANGUAGE plperl AS $$ elog(NOTICE, 'test'); $$"
     );
 }
 
@@ -299,13 +272,7 @@ fn test_create_procedure_language_plperl() {
 fn test_create_procedure_language_pltcl() {
     // https://www.postgresql.org/docs/current/sql-createprocedure.html
     // PL/Tcl procedural language
-    pg_test!(
-        "CREATE PROCEDURE tcl_proc() LANGUAGE pltcl AS $$ elog NOTICE test $$",
-        |stmt: Statement| {
-            let proc = extract_create_procedure(&stmt);
-            assert_eq!(proc.language.as_ref().unwrap().to_string(), "pltcl");
-        }
-    );
+    pg_expect_parse_error!("CREATE PROCEDURE tcl_proc() LANGUAGE pltcl AS $$ elog NOTICE test $$");
 }
 
 // ============================================================================

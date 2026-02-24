@@ -5539,6 +5539,7 @@ pub enum Statement {
         if_not_exists: bool,
         location: Option<String>,
         managed_location: Option<String>,
+        owner: Option<ObjectName>,
         or_replace: bool,
         transient: bool,
         clone: Option<ObjectName>,
@@ -6377,6 +6378,7 @@ impl fmt::Display for Statement {
                 if_not_exists,
                 location,
                 managed_location,
+                owner,
                 or_replace,
                 transient,
                 clone,
@@ -6397,6 +6399,9 @@ impl fmt::Display for Statement {
                 }
                 if let Some(ml) = managed_location {
                     write!(f, " MANAGEDLOCATION '{ml}'")?;
+                }
+                if let Some(owner) = owner {
+                    write!(f, " OWNER {owner}")?;
                 }
                 if let Some(clone) = clone {
                     write!(f, " CLONE {clone}")?;

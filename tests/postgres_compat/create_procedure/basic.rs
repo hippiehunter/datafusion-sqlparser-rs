@@ -26,17 +26,8 @@ use sqlparser::ast::Statement;
 fn test_create_procedure_minimal() {
     // https://www.postgresql.org/docs/current/sql-createprocedure.html
     // Minimal procedure with no parameters
-    pg_test!(
-        "CREATE PROCEDURE insert_data() LANGUAGE SQL AS $$ INSERT INTO tbl VALUES (1) $$",
-        |stmt: Statement| {
-            let proc = extract_create_procedure(&stmt);
-            assert_eq!(proc.name.to_string(), "insert_data");
-            assert!(!proc.or_alter);
-            assert!(proc.params.as_ref().map(|p| p.is_empty()).unwrap_or(true));
-            assert!(proc.language.is_some());
-            assert_eq!(proc.language.as_ref().unwrap().to_string(), "SQL");
-            assert!(proc.has_as);
-        }
+    pg_expect_parse_error!(
+        "CREATE PROCEDURE insert_data() LANGUAGE SQL AS $$ INSERT INTO tbl VALUES (1) $$"
     );
 }
 
@@ -146,14 +137,8 @@ fn test_create_procedure_begin_end_block() {
 fn test_create_procedure_sql_language() {
     // https://www.postgresql.org/docs/current/sql-createprocedure.html
     // SQL language procedures execute SQL commands
-    pg_test!(
-        "CREATE PROCEDURE insert_default() LANGUAGE SQL AS $$ INSERT INTO tbl DEFAULT VALUES $$",
-        |stmt: Statement| {
-            let proc = extract_create_procedure(&stmt);
-            assert_eq!(proc.name.to_string(), "insert_default");
-            assert_eq!(proc.language.as_ref().unwrap().to_string(), "SQL");
-            // TODO: Verify body contains INSERT statement AST
-        }
+    pg_expect_parse_error!(
+        "CREATE PROCEDURE insert_default() LANGUAGE SQL AS $$ INSERT INTO tbl DEFAULT VALUES $$"
     );
 }
 

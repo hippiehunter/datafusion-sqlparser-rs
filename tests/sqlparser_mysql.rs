@@ -2649,6 +2649,7 @@ fn parse_update_with_joins() {
             from: _from,
             selection,
             returning,
+            returning_into: None,
             or: None,
             limit: None,
             update_token: _,

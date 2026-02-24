@@ -2176,6 +2176,39 @@ fn parse_pg_returning() {
 }
 
 #[test]
+fn parse_pg_update_returning_into() {
+    let stmt = pg_and_generic().verified_stmt(
+        "UPDATE warehouse SET w_ytd = w_ytd + p_h_amount WHERE w_id = p_w_id \
+         RETURNING w_street_1, w_street_2, w_city INTO p_w_street_1, p_w_street_2, p_w_city",
+    );
+    match stmt {
+        Statement::Update(Update {
+            returning,
+            returning_into,
+            ..
+        }) => {
+            assert_eq!(
+                returning,
+                Some(vec![
+                    SelectItem::UnnamedExpr(Expr::Identifier("w_street_1".into())),
+                    SelectItem::UnnamedExpr(Expr::Identifier("w_street_2".into())),
+                    SelectItem::UnnamedExpr(Expr::Identifier("w_city".into())),
+                ])
+            );
+            assert_eq!(
+                returning_into,
+                Some(vec![
+                    ObjectName::from(vec![Ident::new("p_w_street_1")]),
+                    ObjectName::from(vec![Ident::new("p_w_street_2")]),
+                    ObjectName::from(vec![Ident::new("p_w_city")]),
+                ])
+            );
+        }
+        other => panic!("expected update statement, got: {other:?}"),
+    }
+}
+
+#[test]
 fn parse_pg_for_no_key_update() {
     let sql = "SELECT * FROM student WHERE id = '1' FOR NO KEY UPDATE";
     let mut ast = pg().verified_query(sql);
@@ -2839,12 +2872,16 @@ fn parse_create_indices_with_operator_classes() {
         for expected_operator_class in &operator_classes {
             let single_column_sql_statement = format!(
                 "CREATE INDEX the_index_name ON users USING {expected_index_type} (concat_users_name(first_name, last_name){})",
-                expected_operator_class.as_ref().map(|oc| format!(" {oc}"))
+                expected_operator_class
+                    .as_ref()
+                    .map(|oc| format!(" {oc}"))
                     .unwrap_or_default()
             );
             let multi_column_sql_statement = format!(
                 "CREATE INDEX the_index_name ON users USING {expected_index_type} (column_name, concat_users_name(first_name, last_name){})",
-                expected_operator_class.as_ref().map(|oc| format!(" {oc}"))
+                expected_operator_class
+                    .as_ref()
+                    .map(|oc| format!(" {oc}"))
                     .unwrap_or_default()
             );
 
@@ -2972,8 +3009,7 @@ fn parse_create_indices_with_operator_classes() {
 
 #[test]
 fn parse_create_bloom() {
-    let sql =
-        "CREATE INDEX bloomidx ON tbloom USING BLOOM (i1, i2, i3) WITH (length = 80, col1 = 2, col2 = 2, col3 = 4)";
+    let sql = "CREATE INDEX bloomidx ON tbloom USING BLOOM (i1, i2, i3) WITH (length = 80, col1 = 2, col2 = 2, col3 = 4)";
     match pg().verified_stmt(sql) {
         Statement::CreateIndex(CreateIndex {
             name: Some(ObjectName(name)),
@@ -3640,13 +3676,24 @@ fn json_object_colon_syntax() {
 #[test]
 fn json_object_value_syntax() {
     match pg().verified_expr("JSON_OBJECT('name' VALUE 'value')") {
-        Expr::Function(Function { args: FunctionArguments::List(FunctionArgumentList { args, .. }), .. }) => {
-            assert!(matches!(
-                &args[..],
-                &[FunctionArg::ExprNamed { operator: FunctionArgOperator::Value, .. }]
-            ), "Invalid function argument: {args:?}");
+        Expr::Function(Function {
+            args: FunctionArguments::List(FunctionArgumentList { args, .. }),
+            ..
+        }) => {
+            assert!(
+                matches!(
+                    &args[..],
+                    &[FunctionArg::ExprNamed {
+                        operator: FunctionArgOperator::Value,
+                        ..
+                    }]
+                ),
+                "Invalid function argument: {args:?}"
+            );
         }
-        other => panic!("Expected: JSON_OBJECT('name' VALUE 'value') to be parsed as a function, but got {other:?}"),
+        other => panic!(
+            "Expected: JSON_OBJECT('name' VALUE 'value') to be parsed as a function, but got {other:?}"
+        ),
     }
 }
 
@@ -4185,7 +4232,9 @@ fn parse_create_role() {
     for negatable_kw in negatables.iter() {
         let sql = format!("CREATE ROLE abc {negatable_kw} NO{negatable_kw}");
         if pg().parse_sql_statements(&sql).is_ok() {
-            panic!("Should not be able to parse CREATE ROLE containing both negated and non-negated versions of the same keyword: {negatable_kw}")
+            panic!(
+                "Should not be able to parse CREATE ROLE containing both negated and non-negated versions of the same keyword: {negatable_kw}"
+            )
         }
     }
 }
@@ -5990,16 +6039,16 @@ fn parse_create_trigger_invalid_cases() {
     let invalid_cases = vec![
         (
             "CREATE TRIGGER check_update BEFORE UPDATE ON accounts FUNCTION check_account_update",
-            "Expected: an SQL statement, found: FUNCTION"
+            "Expected: an SQL statement, found: FUNCTION",
         ),
         (
             "CREATE TRIGGER check_update TOMORROW UPDATE ON accounts EXECUTE FUNCTION check_account_update",
-            "Expected: one of INSERT or UPDATE or DELETE or TRUNCATE, found: TOMORROW"
+            "Expected: one of INSERT or UPDATE or DELETE or TRUNCATE, found: TOMORROW",
         ),
         (
             "CREATE TRIGGER check_update BEFORE SAVE ON accounts EXECUTE FUNCTION check_account_update",
-            "Expected: one of INSERT or UPDATE or DELETE or TRUNCATE, found: SAVE"
-        )
+            "Expected: one of INSERT or UPDATE or DELETE or TRUNCATE, found: SAVE",
+        ),
     ];
 
     for (sql, expected_error) in invalid_cases {
@@ -6420,22 +6469,22 @@ fn parse_create_server() {
         (
             "CREATE SERVER IF NOT EXISTS myserver TYPE 'server_type' VERSION 'server_version' FOREIGN DATA WRAPPER postgres_fdw",
             CreateServerStatement {
-            token: AttachedToken::empty(),
-            name: ObjectName::from(vec!["myserver".into()]),
-            if_not_exists: true,
-            server_type: Some(Ident {
-                value: "server_type".to_string(),
-                quote_style: Some('\''),
-                span: Span::empty(),
-            }),
-            version: Some(Ident {
-                value: "server_version".to_string(),
-                quote_style: Some('\''),
-                span: Span::empty(),
-            }),
-            foreign_data_wrapper: ObjectName::from(vec!["postgres_fdw".into()]),
-            options: None,
-        }
+                token: AttachedToken::empty(),
+                name: ObjectName::from(vec!["myserver".into()]),
+                if_not_exists: true,
+                server_type: Some(Ident {
+                    value: "server_type".to_string(),
+                    quote_style: Some('\''),
+                    span: Span::empty(),
+                }),
+                version: Some(Ident {
+                    value: "server_version".to_string(),
+                    quote_style: Some('\''),
+                    span: Span::empty(),
+                }),
+                foreign_data_wrapper: ObjectName::from(vec!["postgres_fdw".into()]),
+                options: None,
+            },
         ),
         (
             "CREATE SERVER myserver2 FOREIGN DATA WRAPPER postgres_fdw OPTIONS (host 'foo', dbname 'foodb', port '5432')",
@@ -6472,8 +6521,8 @@ fn parse_create_server() {
                         },
                     },
                 ]),
-            }
-        )
+            },
+        ),
     ];
 
     for (sql, expected) in test_cases {

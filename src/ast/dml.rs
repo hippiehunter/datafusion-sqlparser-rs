@@ -322,6 +322,8 @@ pub struct Update {
     pub selection: Option<Expr>,
     /// RETURNING
     pub returning: Option<Vec<SelectItem>>,
+    /// PL/pgSQL INTO targets for `UPDATE ... RETURNING ... INTO ...`.
+    pub returning_into: Option<Vec<ObjectName>>,
     /// SQLite-specific conflict resolution clause
     pub or: Option<SqliteOnConflict>,
     /// LIMIT
@@ -365,6 +367,11 @@ impl Display for Update {
             SpaceOrNewline.fmt(f)?;
             f.write_str("RETURNING")?;
             indented_list(f, returning)?;
+        }
+        if let Some(returning_into) = &self.returning_into {
+            SpaceOrNewline.fmt(f)?;
+            f.write_str("INTO")?;
+            indented_list(f, returning_into)?;
         }
         if let Some(limit) = &self.limit {
             SpaceOrNewline.fmt(f)?;
