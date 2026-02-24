@@ -7380,6 +7380,13 @@ impl<'a> Parser<'a> {
             function_body: Option<CreateFunctionBody>,
             called_on_null: Option<FunctionCalledOnNull>,
             parallel: Option<FunctionParallel>,
+            security: Option<ProcedureSecurity>,
+            leakproof: Option<bool>,
+            cost: Option<Expr>,
+            rows: Option<Expr>,
+            window: bool,
+            support: Option<ObjectName>,
+            set_options: Vec<ProcedureSetConfig>,
             sql_data_access: Option<SqlDataAccess>,
             polymorphic: bool,
         }
@@ -7466,6 +7473,64 @@ impl<'a> Parser<'a> {
                 } else {
                     return self.expected("one of UNSAFE | RESTRICTED | SAFE", self.peek_token());
                 }
+            } else if self.parse_keywords(&[Keyword::EXTERNAL, Keyword::SECURITY]) {
+                ensure_not_set(&body.security, "SECURITY")?;
+                body.security = if self.parse_keyword(Keyword::INVOKER) {
+                    Some(ProcedureSecurity::Invoker)
+                } else if self.parse_keyword(Keyword::DEFINER) {
+                    Some(ProcedureSecurity::Definer)
+                } else {
+                    return self.expected("INVOKER or DEFINER after SECURITY", self.peek_token());
+                };
+            } else if self.parse_keyword(Keyword::SECURITY) {
+                ensure_not_set(&body.security, "SECURITY")?;
+                body.security = if self.parse_keyword(Keyword::INVOKER) {
+                    Some(ProcedureSecurity::Invoker)
+                } else if self.parse_keyword(Keyword::DEFINER) {
+                    Some(ProcedureSecurity::Definer)
+                } else {
+                    return self.expected("INVOKER or DEFINER after SECURITY", self.peek_token());
+                };
+            } else if self.parse_keywords(&[Keyword::NOT, Keyword::LEAKPROOF]) {
+                ensure_not_set(&body.leakproof, "LEAKPROOF | NOT LEAKPROOF")?;
+                body.leakproof = Some(false);
+            } else if self.parse_keyword(Keyword::LEAKPROOF) {
+                ensure_not_set(&body.leakproof, "LEAKPROOF | NOT LEAKPROOF")?;
+                body.leakproof = Some(true);
+            } else if self.parse_keyword(Keyword::COST) {
+                ensure_not_set(&body.cost, "COST")?;
+                body.cost = Some(self.parse_expr()?);
+            } else if self.parse_keyword(Keyword::ROWS) {
+                ensure_not_set(&body.rows, "ROWS")?;
+                body.rows = Some(self.parse_expr()?);
+            } else if self.parse_keyword(Keyword::WINDOW) {
+                if body.window {
+                    return Err(ParserError::ParserError(
+                        "WINDOW specified more than once".to_string(),
+                    ));
+                }
+                body.window = true;
+            } else if self.parse_keyword(Keyword::SUPPORT) {
+                ensure_not_set(&body.support, "SUPPORT")?;
+                body.support = Some(self.parse_object_name(false)?);
+            } else if self.parse_keyword(Keyword::SET) {
+                let config_name = self.parse_object_name(false)?;
+                let config_value = if self.parse_keywords(&[Keyword::FROM, Keyword::CURRENT]) {
+                    SetConfigValue::FromCurrent
+                } else if self.parse_keyword(Keyword::TO) || self.consume_token(&BorrowedToken::Eq)
+                {
+                    if self.parse_keyword(Keyword::DEFAULT) {
+                        SetConfigValue::Default
+                    } else {
+                        SetConfigValue::Value(self.parse_expr()?)
+                    }
+                } else {
+                    return self.expected("TO, =, or FROM CURRENT", self.peek_token());
+                };
+                body.set_options.push(ProcedureSetConfig {
+                    config_name,
+                    config_value,
+                });
             } else if self.parse_keywords(&[Keyword::READS, Keyword::SQL, Keyword::DATA]) {
                 ensure_not_set(&body.sql_data_access, "SQL data access")?;
                 body.sql_data_access = Some(SqlDataAccess::ReadsSqlData);
@@ -7531,6 +7596,13 @@ impl<'a> Parser<'a> {
             behavior: body.behavior,
             called_on_null: body.called_on_null,
             parallel: body.parallel,
+            security: body.security,
+            leakproof: body.leakproof,
+            cost: body.cost,
+            rows: body.rows,
+            window: body.window,
+            support: body.support,
+            set_options: body.set_options,
             language: body.language,
             function_body: body.function_body,
             if_not_exists: false,
@@ -7635,6 +7707,13 @@ impl<'a> Parser<'a> {
             behavior: None,
             called_on_null: None,
             parallel: None,
+            security: None,
+            leakproof: None,
+            cost: None,
+            rows: None,
+            window: false,
+            support: None,
+            set_options: vec![],
             sql_data_access: None,
             polymorphic: false,
         }))

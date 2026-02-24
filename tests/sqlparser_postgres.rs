@@ -4648,6 +4648,13 @@ fn parse_create_function() {
             behavior: Some(FunctionBehavior::Immutable),
             called_on_null: Some(FunctionCalledOnNull::Strict),
             parallel: Some(FunctionParallel::Safe),
+            security: None,
+            leakproof: None,
+            cost: None,
+            rows: None,
+            window: false,
+            support: None,
+            set_options: vec![],
             function_body: Some(CreateFunctionBody::AsBeforeOptions(Expr::Value(
                 (Value::SingleQuotedString("select $1 + $2;".into())).with_empty_span()
             ))),

@@ -45,9 +45,10 @@ use crate::ast::{
     CreateFunctionUsing, CreateTableLikeKind, CreateTableOptions, CreateViewParams, DataType, Expr,
     FileFormat, FunctionBehavior, FunctionCalledOnNull, FunctionDesc, FunctionDeterminismSpecifier,
     FunctionParallel, Ident, MySQLColumnPosition, ObjectName, OnCommit, OneOrManyWithParens,
-    OperateFunctionArg, OrderByExpr, ProjectionSelect, Query, SequenceOptions, Spanned,
-    SqlDataAccess, SqlOption, TableVersion, TriggerEvent, TriggerExecBody, TriggerObject,
-    TriggerPeriod, TriggerReferencing, ValueWithSpan, WrappedCollection,
+    OperateFunctionArg, OrderByExpr, ProcedureSecurity, ProcedureSetConfig, ProjectionSelect,
+    Query, SequenceOptions, Spanned, SqlDataAccess, SqlOption, TableVersion, TriggerEvent,
+    TriggerExecBody, TriggerObject, TriggerPeriod, TriggerReferencing, ValueWithSpan,
+    WrappedCollection,
 };
 use crate::display_utils::{DisplayCommaSeparated, Indent, NewLine, SpaceOrNewline};
 use crate::keywords::Keyword;
@@ -2687,6 +2688,34 @@ pub struct CreateFunction {
     ///
     /// [PostgreSQL](https://www.postgresql.org/docs/current/sql-createfunction.html)
     pub parallel: Option<FunctionParallel>,
+    /// SECURITY INVOKER | SECURITY DEFINER
+    ///
+    /// [PostgreSQL](https://www.postgresql.org/docs/current/sql-createfunction.html)
+    pub security: Option<ProcedureSecurity>,
+    /// LEAKPROOF / NOT LEAKPROOF
+    ///
+    /// [PostgreSQL](https://www.postgresql.org/docs/current/sql-createfunction.html)
+    pub leakproof: Option<bool>,
+    /// COST planner hint
+    ///
+    /// [PostgreSQL](https://www.postgresql.org/docs/current/sql-createfunction.html)
+    pub cost: Option<Expr>,
+    /// ROWS planner hint for set-returning functions
+    ///
+    /// [PostgreSQL](https://www.postgresql.org/docs/current/sql-createfunction.html)
+    pub rows: Option<Expr>,
+    /// WINDOW attribute for window functions.
+    ///
+    /// [PostgreSQL](https://www.postgresql.org/docs/current/sql-createfunction.html)
+    pub window: bool,
+    /// SUPPORT support function name.
+    ///
+    /// [PostgreSQL](https://www.postgresql.org/docs/current/sql-createfunction.html)
+    pub support: Option<ObjectName>,
+    /// SET configuration options.
+    ///
+    /// [PostgreSQL](https://www.postgresql.org/docs/current/sql-createfunction.html)
+    pub set_options: Vec<ProcedureSetConfig>,
     /// USING clause for CREATE FUNCTION
     pub using: Option<CreateFunctionUsing>,
     /// Language used in a UDF definition.
@@ -2764,6 +2793,31 @@ impl fmt::Display for CreateFunction {
         }
         if let Some(parallel) = &self.parallel {
             write!(f, " {parallel}")?;
+        }
+        if let Some(security) = &self.security {
+            write!(f, " {security}")?;
+        }
+        if let Some(leakproof) = self.leakproof {
+            if leakproof {
+                write!(f, " LEAKPROOF")?;
+            } else {
+                write!(f, " NOT LEAKPROOF")?;
+            }
+        }
+        if let Some(cost) = &self.cost {
+            write!(f, " COST {cost}")?;
+        }
+        if let Some(rows) = &self.rows {
+            write!(f, " ROWS {rows}")?;
+        }
+        if self.window {
+            write!(f, " WINDOW")?;
+        }
+        if let Some(support) = &self.support {
+            write!(f, " SUPPORT {support}")?;
+        }
+        for set_option in &self.set_options {
+            write!(f, " {set_option}")?;
         }
         if let Some(remote_connection) = &self.remote_connection {
             write!(f, " REMOTE WITH CONNECTION {remote_connection}")?;

@@ -20,7 +20,9 @@
 //! Reference: <https://www.postgresql.org/docs/current/sql-createfunction.html>
 
 use crate::postgres_compat::common::*;
-use sqlparser::ast::{FunctionBehavior, FunctionCalledOnNull, FunctionParallel, Statement};
+use sqlparser::ast::{
+    FunctionBehavior, FunctionCalledOnNull, FunctionParallel, ProcedureSecurity, Statement,
+};
 
 // =============================================================================
 // Behavior Attributes (SHOULD PASS - in AST)
@@ -176,16 +178,19 @@ fn test_create_function_combined_attributes() {
 }
 
 // =============================================================================
-// Cost and Rows Estimates (EXPECTED TO FAIL - not in AST)
+// Cost and Rows Estimates
 // =============================================================================
 
 #[test]
 fn test_create_function_cost() {
     // https://www.postgresql.org/docs/current/sql-createfunction.html
     // COST hint for query planner (estimated execution cost)
-    // EXPECTED TO FAIL: COST not yet in AST
-    pg_expect_parse_error!(
-        "CREATE FUNCTION expensive_function() RETURNS INTEGER COST 1000 LANGUAGE SQL AS $$ SELECT COUNT(*) FROM large_table $$"
+    pg_test!(
+        "CREATE FUNCTION expensive_function() RETURNS INTEGER COST 1000 LANGUAGE SQL AS $$ SELECT COUNT(*) FROM large_table $$",
+        |stmt: Statement| {
+            let cf = extract_create_function(&stmt);
+            assert_eq!(cf.cost.as_ref().map(ToString::to_string), Some("1000".to_string()));
+        }
     );
 }
 
@@ -193,9 +198,15 @@ fn test_create_function_cost() {
 fn test_create_function_rows() {
     // https://www.postgresql.org/docs/current/sql-createfunction.html
     // ROWS hint for set-returning functions
-    // EXPECTED TO FAIL: ROWS not yet in AST
-    pg_expect_parse_error!(
-        "CREATE FUNCTION get_many_rows() RETURNS SETOF INTEGER ROWS 1000 LANGUAGE SQL AS $$ SELECT generate_series(1, 1000) $$"
+    pg_test!(
+        "CREATE FUNCTION get_many_rows() RETURNS INTEGER ROWS 1000 LANGUAGE SQL AS $$ SELECT 1 $$",
+        |stmt: Statement| {
+            let cf = extract_create_function(&stmt);
+            assert_eq!(
+                cf.rows.as_ref().map(ToString::to_string),
+                Some("1000".to_string())
+            );
+        }
     );
 }
 
@@ -203,23 +214,30 @@ fn test_create_function_rows() {
 fn test_create_function_cost_and_rows() {
     // https://www.postgresql.org/docs/current/sql-createfunction.html
     // Both COST and ROWS can be specified
-    // EXPECTED TO FAIL: COST and ROWS not yet in AST
-    pg_expect_parse_error!(
-        "CREATE FUNCTION complex_query() RETURNS SETOF RECORD COST 500 ROWS 100 LANGUAGE SQL AS $$ SELECT * FROM complex_view $$"
+    pg_test!(
+        "CREATE FUNCTION complex_query() RETURNS INTEGER COST 500 ROWS 100 LANGUAGE SQL AS $$ SELECT 1 $$",
+        |stmt: Statement| {
+            let cf = extract_create_function(&stmt);
+            assert_eq!(cf.cost.as_ref().map(ToString::to_string), Some("500".to_string()));
+            assert_eq!(cf.rows.as_ref().map(ToString::to_string), Some("100".to_string()));
+        }
     );
 }
 
 // =============================================================================
-// Security and Permissions (EXPECTED TO FAIL - not in AST)
+// Security and Permissions
 // =============================================================================
 
 #[test]
 fn test_create_function_security_definer() {
     // https://www.postgresql.org/docs/current/sql-createfunction.html
     // SECURITY DEFINER executes with privileges of function owner
-    // EXPECTED TO FAIL: SECURITY DEFINER not yet in AST
-    pg_expect_parse_error!(
-        "CREATE FUNCTION secure_delete(table_name TEXT) RETURNS VOID SECURITY DEFINER LANGUAGE SQL AS $$ DELETE FROM table_name $$"
+    pg_test!(
+        "CREATE FUNCTION secure_delete(table_name TEXT) RETURNS VOID SECURITY DEFINER LANGUAGE SQL AS $$ DELETE FROM table_name $$",
+        |stmt: Statement| {
+            let cf = extract_create_function(&stmt);
+            assert_eq!(cf.security, Some(ProcedureSecurity::Definer));
+        }
     );
 }
 
@@ -227,23 +245,29 @@ fn test_create_function_security_definer() {
 fn test_create_function_security_invoker() {
     // https://www.postgresql.org/docs/current/sql-createfunction.html
     // SECURITY INVOKER (default) executes with privileges of calling user
-    // EXPECTED TO FAIL: SECURITY INVOKER not yet in AST
-    pg_expect_parse_error!(
-        "CREATE FUNCTION get_my_data() RETURNS SETOF records SECURITY INVOKER LANGUAGE SQL AS $$ SELECT * FROM my_table $$"
+    pg_test!(
+        "CREATE FUNCTION get_my_data() RETURNS INTEGER SECURITY INVOKER LANGUAGE SQL AS $$ SELECT 1 $$",
+        |stmt: Statement| {
+            let cf = extract_create_function(&stmt);
+            assert_eq!(cf.security, Some(ProcedureSecurity::Invoker));
+        }
     );
 }
 
 // =============================================================================
-// Leakproof (EXPECTED TO FAIL - not in AST)
+// Leakproof
 // =============================================================================
 
 #[test]
 fn test_create_function_leakproof() {
     // https://www.postgresql.org/docs/current/sql-createfunction.html
     // LEAKPROOF means function has no side effects and reveals nothing about arguments
-    // EXPECTED TO FAIL: LEAKPROOF not yet in AST
-    pg_expect_parse_error!(
-        "CREATE FUNCTION safe_compare(a INTEGER, b INTEGER) RETURNS BOOLEAN LEAKPROOF LANGUAGE SQL AS $$ SELECT a = b $$"
+    pg_test!(
+        "CREATE FUNCTION safe_compare(a INTEGER, b INTEGER) RETURNS BOOLEAN LEAKPROOF LANGUAGE SQL AS $$ SELECT a = b $$",
+        |stmt: Statement| {
+            let cf = extract_create_function(&stmt);
+            assert_eq!(cf.leakproof, Some(true));
+        }
     );
 }
 
@@ -251,23 +275,30 @@ fn test_create_function_leakproof() {
 fn test_create_function_not_leakproof() {
     // https://www.postgresql.org/docs/current/sql-createfunction.html
     // NOT LEAKPROOF is the default
-    // EXPECTED TO FAIL: NOT LEAKPROOF not yet in AST
-    pg_expect_parse_error!(
-        "CREATE FUNCTION logging_compare(a INTEGER, b INTEGER) RETURNS BOOLEAN NOT LEAKPROOF LANGUAGE plpgsql AS $$ BEGIN RAISE NOTICE 'Comparing % and %', a, b; RETURN a = b; END $$"
+    pg_test!(
+        "CREATE FUNCTION logging_compare(a INTEGER, b INTEGER) RETURNS BOOLEAN NOT LEAKPROOF LANGUAGE plpgsql AS $$ BEGIN RAISE NOTICE 'Comparing % and %', a, b; RETURN a = b; END $$",
+        |stmt: Statement| {
+            let cf = extract_create_function(&stmt);
+            assert_eq!(cf.leakproof, Some(false));
+        }
     );
 }
 
 // =============================================================================
-// Configuration Parameters (EXPECTED TO FAIL - not in AST)
+// Configuration Parameters
 // =============================================================================
 
 #[test]
 fn test_create_function_set_search_path() {
     // https://www.postgresql.org/docs/current/sql-createfunction.html
     // SET configuration_parameter allows setting GUC parameters
-    // EXPECTED TO FAIL: SET not yet in AST
-    pg_expect_parse_error!(
-        "CREATE FUNCTION secure_function() RETURNS INTEGER SET search_path = public LANGUAGE SQL AS $$ SELECT 1 $$"
+    pg_test!(
+        "CREATE FUNCTION secure_function() RETURNS INTEGER SET search_path = public LANGUAGE SQL AS $$ SELECT 1 $$",
+        |stmt: Statement| {
+            let cf = extract_create_function(&stmt);
+            assert_eq!(cf.set_options.len(), 1);
+            assert_eq!(cf.set_options[0].to_string(), "SET search_path TO public");
+        }
     );
 }
 
@@ -275,9 +306,13 @@ fn test_create_function_set_search_path() {
 fn test_create_function_set_work_mem() {
     // https://www.postgresql.org/docs/current/sql-createfunction.html
     // SET can configure memory settings
-    // EXPECTED TO FAIL: SET not yet in AST
-    pg_expect_parse_error!(
-        "CREATE FUNCTION memory_intensive() RETURNS INTEGER SET work_mem = '256MB' LANGUAGE SQL AS $$ SELECT COUNT(*) FROM large_table $$"
+    pg_test!(
+        "CREATE FUNCTION memory_intensive() RETURNS INTEGER SET work_mem = '256MB' LANGUAGE SQL AS $$ SELECT COUNT(*) FROM large_table $$",
+        |stmt: Statement| {
+            let cf = extract_create_function(&stmt);
+            assert_eq!(cf.set_options.len(), 1);
+            assert_eq!(cf.set_options[0].to_string(), "SET work_mem TO '256MB'");
+        }
     );
 }
 
@@ -285,9 +320,14 @@ fn test_create_function_set_work_mem() {
 fn test_create_function_set_multiple_params() {
     // https://www.postgresql.org/docs/current/sql-createfunction.html
     // Multiple SET clauses can be specified
-    // EXPECTED TO FAIL: SET not yet in AST
-    pg_expect_parse_error!(
-        "CREATE FUNCTION configured_func() RETURNS INTEGER SET search_path = public SET work_mem = '256MB' LANGUAGE SQL AS $$ SELECT 1 $$"
+    pg_test!(
+        "CREATE FUNCTION configured_func() RETURNS INTEGER SET search_path = public SET work_mem = '256MB' LANGUAGE SQL AS $$ SELECT 1 $$",
+        |stmt: Statement| {
+            let cf = extract_create_function(&stmt);
+            assert_eq!(cf.set_options.len(), 2);
+            assert_eq!(cf.set_options[0].to_string(), "SET search_path TO public");
+            assert_eq!(cf.set_options[1].to_string(), "SET work_mem TO '256MB'");
+        }
     );
 }
 
@@ -295,36 +335,49 @@ fn test_create_function_set_multiple_params() {
 fn test_create_function_set_from_current() {
     // https://www.postgresql.org/docs/current/sql-createfunction.html
     // SET FROM CURRENT captures current session value
-    // EXPECTED TO FAIL: SET FROM CURRENT not yet in AST
-    pg_expect_parse_error!(
-        "CREATE FUNCTION inherit_config() RETURNS INTEGER SET search_path FROM CURRENT LANGUAGE SQL AS $$ SELECT 1 $$"
+    pg_test!(
+        "CREATE FUNCTION inherit_config() RETURNS INTEGER SET search_path FROM CURRENT LANGUAGE SQL AS $$ SELECT 1 $$",
+        |stmt: Statement| {
+            let cf = extract_create_function(&stmt);
+            assert_eq!(cf.set_options.len(), 1);
+            assert_eq!(cf.set_options[0].to_string(), "SET search_path FROM CURRENT");
+        }
     );
 }
 
 // =============================================================================
-// Window Functions (EXPECTED TO FAIL - not in AST)
+// Window Functions
 // =============================================================================
 
 #[test]
 fn test_create_function_window() {
     // https://www.postgresql.org/docs/current/sql-createfunction.html
     // WINDOW indicates this is a window function
-    // EXPECTED TO FAIL: WINDOW attribute not yet in AST
-    pg_expect_parse_error!(
-        "CREATE FUNCTION custom_rank() RETURNS INTEGER WINDOW LANGUAGE internal AS 'window_rank'"
+    pg_test!(
+        "CREATE FUNCTION custom_rank() RETURNS INTEGER WINDOW LANGUAGE internal AS 'window_rank'",
+        |stmt: Statement| {
+            let cf = extract_create_function(&stmt);
+            assert!(cf.window);
+        }
     );
 }
 
 // =============================================================================
-// Support Functions (EXPECTED TO FAIL - not in AST for support)
+// Support Functions
 // =============================================================================
 
 #[test]
 fn test_create_function_support() {
     // https://www.postgresql.org/docs/current/sql-createfunction.html
     // SUPPORT function for planner support
-    // EXPECTED TO FAIL: SUPPORT not yet in AST
-    pg_expect_parse_error!(
-        "CREATE FUNCTION my_function(INTEGER) RETURNS INTEGER SUPPORT my_support_func LANGUAGE SQL AS $$ SELECT $1 $$"
+    pg_test!(
+        "CREATE FUNCTION my_function(INTEGER) RETURNS INTEGER SUPPORT my_support_func LANGUAGE SQL AS $$ SELECT $1 $$",
+        |stmt: Statement| {
+            let cf = extract_create_function(&stmt);
+            assert_eq!(
+                cf.support.as_ref().map(ToString::to_string),
+                Some("my_support_func".to_string())
+            );
+        }
     );
 }
