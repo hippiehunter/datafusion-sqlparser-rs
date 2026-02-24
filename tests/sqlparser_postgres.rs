@@ -2712,6 +2712,37 @@ fn parse_array_multi_subscript() {
 }
 
 #[test]
+fn parse_update_subscript_assignment() {
+    pg().one_statement_parses_to(
+        "UPDATE foo SET bar[2] = 5 WHERE id = 7",
+        "UPDATE foo SET bar = array_set(bar, 2, 5) WHERE id = 7",
+    );
+    pg().one_statement_parses_to(
+        "UPDATE foo AS f SET f.bar[warehouse_id] = f.bar[warehouse_id] + 1",
+        "UPDATE foo AS f SET f.bar = array_set(f.bar, warehouse_id, f.bar[warehouse_id] + 1)",
+    );
+}
+
+#[test]
+fn parse_update_subscript_assignment_rejects_non_index_targets() {
+    let err = pg()
+        .parse_sql_statements("UPDATE foo SET bar[1:2] = 5")
+        .unwrap_err();
+    assert_eq!(
+        "sql parser error: UPDATE assignment subscript targets only support index form [expr]",
+        err.to_string()
+    );
+
+    let err = pg()
+        .parse_sql_statements("UPDATE foo SET bar[1][2] = 5")
+        .unwrap_err();
+    assert_eq!(
+        "sql parser error: UPDATE assignment subscript targets currently support exactly one index dimension",
+        err.to_string()
+    );
+}
+
+#[test]
 fn parse_create_index() {
     let sql = "CREATE INDEX IF NOT EXISTS my_index ON my_table(col1, col2)";
     match pg().verified_stmt(sql) {
@@ -5285,6 +5316,7 @@ fn test_simple_postgres_insert_with_alias() {
                     span: Span::empty(),
                 }
             ],
+            overriding: None,
             overwrite: false,
             source: Some(Box::new(Query {
                 with: None,
@@ -5355,6 +5387,7 @@ fn test_simple_postgres_insert_with_alias() {
                     span: Span::empty(),
                 }
             ],
+            overriding: None,
             overwrite: false,
             source: Some(Box::new(Query {
                 with: None,
@@ -5427,6 +5460,7 @@ fn test_simple_insert_with_quoted_alias() {
                     span: Span::empty(),
                 }
             ],
+            overriding: None,
             overwrite: false,
             source: Some(Box::new(Query {
                 with: None,
