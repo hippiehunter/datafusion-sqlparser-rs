@@ -426,6 +426,7 @@ impl Spanned for Statement {
                 .0
                 .span
                 .union_opt(&savepoint.as_ref().map(|i| i.span)),
+            Statement::Checkpoint { checkpoint_token } => checkpoint_token.0.span,
             Statement::CreateSchema {
                 create_token,
                 schema_name,

@@ -356,6 +356,23 @@ fn parse_postgres_user_aliases() {
 }
 
 #[test]
+fn parse_postgres_create_user_quoted_name_strips_wrapper_quotes() {
+    let create = pg().one_statement_parses_to(
+        r#"CREATE USER "tpcc" PASSWORD 'secret'"#,
+        r#"CREATE ROLE "tpcc" PASSWORD 'secret'"#,
+    );
+    let Statement::CreateRole(role) = create else {
+        panic!("CREATE USER should parse as CREATE ROLE");
+    };
+    assert_eq!(role.names.len(), 1);
+    let Some(ObjectNamePart::Identifier(ident)) = role.names[0].0.first() else {
+        panic!("expected CREATE ROLE name identifier");
+    };
+    assert_eq!(ident.value, "tpcc");
+    assert_eq!(ident.quote_style, Some('"'));
+}
+
+#[test]
 fn parse_begin_isolation_level_as_transaction() {
     let stmt = pg().verified_stmt("BEGIN ISOLATION LEVEL REPEATABLE READ");
     assert_eq!(

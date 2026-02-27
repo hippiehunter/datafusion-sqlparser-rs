@@ -5486,6 +5486,15 @@ pub enum Statement {
         savepoint: Option<Ident>,
     },
     /// ```sql
+    /// CHECKPOINT
+    /// ```
+    ///
+    /// Note: this is a PostgreSQL-specific statement.
+    Checkpoint {
+        /// The `CHECKPOINT` token
+        checkpoint_token: AttachedToken,
+    },
+    /// ```sql
     /// CREATE SCHEMA
     /// ```
     CreateSchema {
@@ -6982,6 +6991,7 @@ impl fmt::Display for Statement {
 
                 Ok(())
             }
+            Statement::Checkpoint { .. } => write!(f, "CHECKPOINT"),
             Statement::CreateSchema {
                 create_token: _,
                 schema_name,

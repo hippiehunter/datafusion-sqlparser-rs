@@ -9066,6 +9066,16 @@ fn parse_commit() {
 }
 
 #[test]
+fn parse_checkpoint() {
+    match verified_stmt("CHECKPOINT") {
+        Statement::Checkpoint { .. } => {}
+        _ => unreachable!(),
+    }
+
+    one_statement_parses_to("checkpoint", "CHECKPOINT");
+}
+
+#[test]
 fn parse_end() {
     one_statement_parses_to("END AND NO CHAIN", "END");
     one_statement_parses_to("END WORK AND NO CHAIN", "END");

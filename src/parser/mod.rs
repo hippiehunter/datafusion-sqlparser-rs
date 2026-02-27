@@ -1008,6 +1008,7 @@ impl<'a> Parser<'a> {
                 Keyword::SAVEPOINT => self.parse_savepoint(),
                 Keyword::RELEASE => self.parse_release(),
                 Keyword::COMMIT => self.parse_commit(),
+                Keyword::CHECKPOINT => self.parse_checkpoint(),
                 Keyword::RAISERROR => Ok(self.parse_raiserror()?),
                 Keyword::ROLLBACK => self.parse_rollback(),
                 Keyword::ASSERT => self.parse_assert(),
@@ -20540,6 +20541,11 @@ impl<'a> Parser<'a> {
             end: false,
             modifier: None,
         })
+    }
+
+    pub fn parse_checkpoint(&self) -> Result<Statement, ParserError> {
+        let checkpoint_token = AttachedToken(self.get_current_token().clone().to_static());
+        Ok(Statement::Checkpoint { checkpoint_token })
     }
 
     pub fn parse_rollback(&self) -> Result<Statement, ParserError> {

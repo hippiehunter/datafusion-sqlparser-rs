@@ -195,6 +195,7 @@ define_keywords!(
     CHAR_LENGTH,
     CHEAPEST,
     CHECK,
+    CHECKPOINT,
     CHECKSUM,
     CIRCLE,
     CLASS,
