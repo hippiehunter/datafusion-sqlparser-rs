@@ -60,6 +60,14 @@ impl Dialect for PostgreSqlDialect {
         Some('"')
     }
 
+    fn canonicalize_identifier(&self, identifier: &str, quote_style: Option<char>) -> String {
+        if quote_style.is_none() {
+            identifier.to_lowercase()
+        } else {
+            identifier.to_owned()
+        }
+    }
+
     fn is_delimited_identifier_start(&self, ch: char) -> bool {
         ch == '"' // Postgres does not support backticks to quote identifiers
     }

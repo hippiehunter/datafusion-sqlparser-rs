@@ -158,6 +158,14 @@ pub trait Dialect: Debug + Any {
         None
     }
 
+    /// Canonicalize an identifier's textual form when constructing the AST.
+    ///
+    /// The default keeps the identifier unchanged. Dialects that define
+    /// case-folding for unquoted identifiers can override this hook.
+    fn canonicalize_identifier(&self, identifier: &str, _quote_style: Option<char>) -> String {
+        identifier.to_owned()
+    }
+
     /// Determine if a character is a valid start character for an unquoted identifier
     fn is_identifier_start(&self, ch: char) -> bool;
 

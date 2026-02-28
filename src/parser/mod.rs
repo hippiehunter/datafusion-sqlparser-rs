@@ -1058,7 +1058,7 @@ impl<'a> Parser<'a> {
                     // Check for labeled statement: identifier COLON (LOOP | REPEAT | WHILE | BEGIN)
                     // Note: Even keywords can be used as labels (e.g., "outer: LOOP" where OUTER is a keyword)
                     if self.consume_token(&BorrowedToken::Colon) {
-                        let label = w.clone().into_ident(next_token.span);
+                        let label = self.word_to_ident(w.clone(), next_token.span);
                         let next_keyword = self.peek_token();
                         match &next_keyword.token {
                             BorrowedToken::Word(w2) if w2.keyword == Keyword::LOOP => {
@@ -2439,7 +2439,7 @@ impl<'a> Parser<'a> {
             t @ (BorrowedToken::Word(_) | BorrowedToken::SingleQuotedString(_)) => {
                 if self.peek_token().token == BorrowedToken::Period {
                     let mut id_parts: Vec<Ident> = vec![match t {
-                        BorrowedToken::Word(w) => w.into_ident(next_token.span),
+                        BorrowedToken::Word(w) => self.word_to_ident(w, next_token.span),
                         BorrowedToken::SingleQuotedString(s) => Ident::with_quote('\'', s),
                         _ => unreachable!(), // We matched above
                     }];
@@ -2447,7 +2447,9 @@ impl<'a> Parser<'a> {
                     while self.consume_token(&BorrowedToken::Period) {
                         let next_token = self.next_token();
                         match next_token.token {
-                            BorrowedToken::Word(w) => id_parts.push(w.into_ident(next_token.span)),
+                            BorrowedToken::Word(w) => {
+                                id_parts.push(self.word_to_ident(w, next_token.span))
+                            }
                             BorrowedToken::SingleQuotedString(s) => {
                                 // SQLite has single-quoted identifiers
                                 id_parts.push(Ident::with_quote('\'', s))
@@ -2654,7 +2656,7 @@ impl<'a> Parser<'a> {
                 if dialect_of!(self is PostgreSqlDialect | GenericDialect) =>
             {
                 Ok(Some(Expr::Function(Function {
-                    name: ObjectName::from(vec![w.clone().into_ident(w_span)]),
+                    name: ObjectName::from(vec![self.word_to_ident(w.clone(), w_span)]),
                     uses_odbc_syntax: false,
                     parameters: FunctionArguments::None,
                     args: FunctionArguments::None,
@@ -2671,7 +2673,7 @@ impl<'a> Parser<'a> {
             | Keyword::LOCALTIME
             | Keyword::LOCALTIMESTAMP => {
                 Ok(Some(self.parse_time_functions(ObjectName::from(vec![
-                    w.clone().into_ident(w_span),
+                    self.word_to_ident(w.clone(), w_span),
                 ]))?))
             }
             Keyword::CASE => Ok(Some(self.parse_case_expr()?)),
@@ -2748,7 +2750,7 @@ impl<'a> Parser<'a> {
             Keyword::CEIL => Ok(Some(self.parse_ceil_floor_expr(true)?)),
             Keyword::FLOOR => Ok(Some(self.parse_ceil_floor_expr(false)?)),
             Keyword::POSITION if self.peek_token_ref().token == BorrowedToken::LParen => Ok(Some(
-                self.parse_position_expr(w.clone().into_ident(w_span))?,
+                self.parse_position_expr(self.word_to_ident(w.clone(), w_span))?,
             )),
             Keyword::SUBSTR | Keyword::SUBSTRING => {
                 self.prev_token();
@@ -2772,7 +2774,7 @@ impl<'a> Parser<'a> {
                 let query = self.parse_query()?;
                 self.expect_token(&BorrowedToken::RParen)?;
                 Ok(Some(Expr::Function(Function {
-                    name: ObjectName::from(vec![w.clone().into_ident(w_span)]),
+                    name: ObjectName::from(vec![self.word_to_ident(w.clone(), w_span)]),
                     uses_odbc_syntax: false,
                     parameters: FunctionArguments::None,
                     args: FunctionArguments::Subquery(query),
@@ -2839,7 +2841,7 @@ impl<'a> Parser<'a> {
     ) -> Result<Expr, ParserError> {
         match self.peek_token().token {
             BorrowedToken::LParen if !self.peek_outer_join_operator() => {
-                let id_parts = vec![w.clone().into_ident(w_span)];
+                let id_parts = vec![self.word_to_ident(w.clone(), w_span)];
                 self.parse_function(ObjectName::from(id_parts))
             }
             // string introducer https://dev.mysql.com/doc/refman/8.0/en/charset-introducer.html
@@ -2849,7 +2851,7 @@ impl<'a> Parser<'a> {
                 if w.value.starts_with('_') =>
             {
                 Ok(Expr::Prefixed {
-                    prefix: w.clone().into_ident(w_span),
+                    prefix: self.word_to_ident(w.clone(), w_span),
                     value: self.parse_introduced_string_expr()?.into(),
                 })
             }
@@ -2860,18 +2862,18 @@ impl<'a> Parser<'a> {
                 if w.value.starts_with('_') =>
             {
                 Ok(Expr::Prefixed {
-                    prefix: w.clone().into_ident(w_span),
+                    prefix: self.word_to_ident(w.clone(), w_span),
                     value: self.parse_introduced_string_expr()?.into(),
                 })
             }
             BorrowedToken::Arrow if self.dialect.supports_lambda_functions() => {
                 self.expect_token(&BorrowedToken::Arrow)?;
                 Ok(Expr::Lambda(LambdaFunction {
-                    params: OneOrManyWithParens::One(w.clone().into_ident(w_span)),
+                    params: OneOrManyWithParens::One(self.word_to_ident(w.clone(), w_span)),
                     body: Box::new(self.parse_expr()?),
                 }))
             }
-            _ => Ok(Expr::Identifier(w.clone().into_ident(w_span))),
+            _ => Ok(Expr::Identifier(self.word_to_ident(w.clone(), w_span))),
         }
     }
 
@@ -12915,7 +12917,7 @@ impl<'a> Parser<'a> {
                 //    without any whitespace in between
                 let next_token = self.next_token_no_skip().unwrap_or(&EOF_TOKEN).clone();
                 let ident = match next_token.token {
-                    BorrowedToken::Word(w) => Ok(w.into_ident(next_token.span)),
+                    BorrowedToken::Word(w) => Ok(self.word_to_ident(w, next_token.span)),
                     BorrowedToken::Number(w, false) => Ok(Ident::with_span(next_token.span, w)),
                     _ => self.expected("placeholder", next_token),
                 }?;
@@ -13732,13 +13734,13 @@ impl<'a> Parser<'a> {
             BorrowedToken::Word(w)
                 if after_as || reserved_kwds.is_some_and(|x| !x.contains(&w.keyword)) =>
             {
-                Ok(Some((w.into_ident(next_token.span), after_as)))
+                Ok(Some((self.word_to_ident(w, next_token.span), after_as)))
             }
             // This pattern allows for customizing the acceptance of words as aliases based on the caller's
             // context, such as to what SQL element this word is a potential alias of (select item alias, table name
             // alias, etc.) or dialect-specific logic that goes beyond a simple list of reserved keywords.
             BorrowedToken::Word(w) if validator(after_as, &w.keyword, self) => {
-                Ok(Some((w.into_ident(next_token.span), after_as)))
+                Ok(Some((self.word_to_ident(w, next_token.span), after_as)))
             }
             // For backwards-compatibility, we accept quoted strings as aliases regardless of the context.
             BorrowedToken::SingleQuotedString(s) => {
@@ -13975,7 +13977,7 @@ impl<'a> Parser<'a> {
         loop {
             match &self.peek_token_ref().token {
                 BorrowedToken::Word(w) => {
-                    idents.push(w.clone().into_ident(self.peek_token_ref().span));
+                    idents.push(self.word_to_ident(w.clone(), self.peek_token_ref().span));
                 }
                 BorrowedToken::EOF | BorrowedToken::Eq => break,
                 _ => {}
@@ -14030,7 +14032,7 @@ impl<'a> Parser<'a> {
         // expecting at least one word for identifier
         let next_token = self.next_token();
         match next_token.token {
-            BorrowedToken::Word(w) => idents.push(w.into_ident(next_token.span)),
+            BorrowedToken::Word(w) => idents.push(self.word_to_ident(w, next_token.span)),
             BorrowedToken::EOF => {
                 return Err(ParserError::ParserError(
                     "Empty input when parsing identifier".to_string(),
@@ -14050,7 +14052,9 @@ impl<'a> Parser<'a> {
                 BorrowedToken::Period => {
                     let next_token = self.next_token();
                     match next_token.token {
-                        BorrowedToken::Word(w) => idents.push(w.into_ident(next_token.span)),
+                        BorrowedToken::Word(w) => {
+                            idents.push(self.word_to_ident(w, next_token.span))
+                        }
                         BorrowedToken::EOF => {
                             return Err(ParserError::ParserError(
                                 "Trailing period in identifier".to_string(),
@@ -14075,11 +14079,19 @@ impl<'a> Parser<'a> {
         Ok(idents)
     }
 
+    fn word_to_ident(&self, word: Word<'a>, span: Span) -> Ident {
+        let mut ident = word.into_ident(span);
+        ident.value = self
+            .dialect
+            .canonicalize_identifier(&ident.value, ident.quote_style);
+        ident
+    }
+
     /// Parse a simple one-word identifier (possibly quoted, possibly a keyword)
     pub fn parse_identifier(&self) -> Result<Ident, ParserError> {
         let next_token = self.next_token();
         match next_token.token {
-            BorrowedToken::Word(w) => Ok(w.into_ident(next_token.span)),
+            BorrowedToken::Word(w) => Ok(self.word_to_ident(w, next_token.span)),
             BorrowedToken::SingleQuotedString(s) => Ok(Ident::with_quote('\'', s)),
             BorrowedToken::DoubleQuotedString(s) => Ok(Ident::with_quote('\"', s)),
             _ => self.expected("identifier", next_token),
@@ -23419,6 +23431,46 @@ mod tests {
             let actual = parser.parse_multipart_identifier().unwrap();
             assert_eq!(expected, actual);
         });
+    }
+
+    #[test]
+    fn test_postgres_unquoted_identifiers_are_canonicalized_lowercase() {
+        let ast = Parser::parse_sql(
+            &PostgreSqlDialect {},
+            "UPDATE usertable SET FIELD1 = 1 WHERE YCSB_KEY = 2",
+        )
+        .unwrap();
+
+        let Statement::Update(update) = &ast[0] else {
+            panic!("expected UPDATE statement");
+        };
+
+        assert_eq!(update.table.relation.to_string(), "usertable");
+        assert_eq!(update.assignments[0].to_string(), "field1 = 1");
+        assert_eq!(
+            update.selection.as_ref().map(ToString::to_string),
+            Some("ycsb_key = 2".to_string())
+        );
+    }
+
+    #[test]
+    fn test_postgres_quoted_identifiers_preserve_case() {
+        let ast = Parser::parse_sql(
+            &PostgreSqlDialect {},
+            r#"UPDATE "UserTable" SET "FIELD1" = 1 WHERE "YCSB_KEY" = 2"#,
+        )
+        .unwrap();
+
+        let Statement::Update(update) = &ast[0] else {
+            panic!("expected UPDATE statement");
+        };
+
+        assert_eq!(update.table.relation.to_string(), "\"UserTable\"");
+        assert_eq!(update.assignments[0].to_string(), "\"FIELD1\" = 1");
+        assert_eq!(
+            update.selection.as_ref().map(ToString::to_string),
+            Some("\"YCSB_KEY\" = 2".to_string())
+        );
     }
 
     #[test]
