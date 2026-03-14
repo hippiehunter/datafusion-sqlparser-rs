@@ -43,7 +43,7 @@ use serde::{Deserialize, Serialize};
 use sqlparser_derive::{Visit, VisitMut};
 
 use crate::ast::DollarQuotedString;
-use crate::dialect::Dialect;
+use crate::dialect::{Dialect, DialectFeatures};
 use crate::dialect::{MySqlDialect, PostgreSqlDialect};
 use crate::keywords::Keyword;
 
@@ -938,6 +938,8 @@ struct TokenizeQuotedStringSettings {
 /// SQL Tokenizer
 pub struct Tokenizer<'a> {
     dialect: &'a dyn Dialect,
+    /// Cached boolean dialect capabilities for fast field access.
+    features: DialectFeatures,
     query: &'a str,
     /// If true (the default), the tokenizer will un-escape literal
     /// SQL strings See [`Tokenizer::with_unescape`] for more details.
@@ -962,8 +964,10 @@ impl<'a> Tokenizer<'a> {
     ///   Token::SingleQuotedString("foo".to_string().into()),
     /// ]);
     pub fn new(dialect: &'a dyn Dialect, query: &'a str) -> Self {
+        let features = dialect.features();
         Self {
             dialect,
+            features,
             query,
             unescape: true,
         }
@@ -1128,7 +1132,7 @@ impl<'a> Tokenizer<'a> {
                         Some('\'') => {
                             // N'...' - a <national character string literal>
                             let backslash_escape =
-                                self.dialect.supports_string_literal_backslash_escape();
+                                self.features.supports_string_literal_backslash_escape;
                             let s =
                                 self.tokenize_single_quoted_string(chars, '\'', backslash_escape)?;
                             Ok(Some(Token::NationalStringLiteral(s)))
@@ -1142,7 +1146,7 @@ impl<'a> Tokenizer<'a> {
                     }
                 }
                 // PostgreSQL accepts "escape" string constants, which are an extension to the SQL standard.
-                x @ 'e' | x @ 'E' if self.dialect.supports_string_escape_constant() => {
+                x @ 'e' | x @ 'E' if self.features.supports_string_escape_constant => {
                     let starting_loc = chars.location();
                     chars.next(); // consume, to check the next char
                     match chars.peek() {
@@ -1160,7 +1164,7 @@ impl<'a> Tokenizer<'a> {
                     }
                 }
                 // Unicode string literals like U&'first \000A second' are supported in some dialects, including PostgreSQL
-                x @ 'u' | x @ 'U' if self.dialect.supports_unicode_string_literal() => {
+                x @ 'u' | x @ 'U' if self.features.supports_unicode_string_literal => {
                     chars.next(); // consume, to check the next char
                     if chars.peek() == Some(&'&') {
                         // we cannot advance the iterator here, as we need to consume the '&' later if the 'u' was an identifier
@@ -1200,7 +1204,7 @@ impl<'a> Tokenizer<'a> {
                     let s = self.tokenize_single_quoted_string_borrowed(
                         chars,
                         '\'',
-                        self.dialect.supports_string_literal_backslash_escape(),
+                        self.features.supports_string_literal_backslash_escape,
                     )?;
 
                     Ok(Some(BorrowedToken::SingleQuotedString(s)))
@@ -1212,7 +1216,7 @@ impl<'a> Tokenizer<'a> {
                     let s = self.tokenize_single_quoted_string(
                         chars,
                         '"',
-                        self.dialect.supports_string_literal_backslash_escape(),
+                        self.features.supports_string_literal_backslash_escape,
                     )?;
 
                     Ok(Some(Token::DoubleQuotedString(s)))
@@ -1295,7 +1299,7 @@ impl<'a> Tokenizer<'a> {
                     // Some dialects support underscore as number separator
                     // There can only be one at a time and it must be followed by another digit
                     let is_number_separator = |ch: char, next_char: Option<char>| {
-                        self.dialect.supports_numeric_literal_underscores()
+                        self.features.supports_numeric_literal_underscores
                             && ch == '_'
                             && next_char.is_some_and(|next_ch| next_ch.is_ascii_hexdigit())
                     };
@@ -1324,7 +1328,7 @@ impl<'a> Tokenizer<'a> {
                     // If so, what follows is definitely not part of a decimal number and
                     // we should yield the dot as a dedicated token so compound identifiers
                     // starting with digits can be parsed correctly.
-                    if s == "." && self.dialect.supports_numeric_prefix() {
+                    if s == "." && self.features.supports_numeric_prefix {
                         if let Some(&BorrowedToken::Word(_)) = prev_token {
                             return Ok(Some(Token::Period));
                         }
@@ -1373,7 +1377,7 @@ impl<'a> Tokenizer<'a> {
                     // If the dialect supports identifiers that start with a numeric prefix,
                     // we need to check if the value is in fact an identifier and must thus
                     // be tokenized as a word.
-                    if self.dialect.supports_numeric_prefix() {
+                    if self.features.supports_numeric_prefix {
                         if exponent_part.is_empty() {
                             // If it is not a number with an exponent, it may be
                             // an identifier starting with digits.
@@ -1410,7 +1414,7 @@ impl<'a> Tokenizer<'a> {
                     match chars.peek() {
                         Some('-') => {
                             let is_comment =
-                                if self.dialect.requires_single_line_comment_whitespace() {
+                                if self.features.requires_single_line_comment_whitespace {
                                     Some(' ') == chars.peekable.clone().nth(1)
                                 } else {
                                     // Don't treat --> as a comment (used in SQL/PGQ graph patterns)
@@ -1488,7 +1492,7 @@ impl<'a> Tokenizer<'a> {
                                 _ => self.start_binop(chars, "||", Token::StringConcat),
                             }
                         }
-                        Some('&') if self.dialect.supports_geometric_types() => {
+                        Some('&') if self.features.supports_geometric_types => {
                             chars.next(); // consume
                             match chars.peek() {
                                 Some('>') => self.consume_for_binop(
@@ -1499,7 +1503,7 @@ impl<'a> Tokenizer<'a> {
                                 _ => self.start_binop_opt(chars, "|&", None),
                             }
                         }
-                        Some('>') if self.dialect.supports_geometric_types() => {
+                        Some('>') if self.features.supports_geometric_types => {
                             chars.next(); // consume
                             match chars.peek() {
                                 Some('>') => self.consume_for_binop(
@@ -1558,11 +1562,11 @@ impl<'a> Tokenizer<'a> {
                                 _ => self.start_binop(chars, "<=", Token::LtEq),
                             }
                         }
-                        Some('|') if self.dialect.supports_geometric_types() => {
+                        Some('|') if self.features.supports_geometric_types => {
                             self.consume_for_binop(chars, "<<|", Token::ShiftLeftVerticalBar)
                         }
                         Some('>') => self.consume_for_binop(chars, "<>", Token::Neq),
-                        Some('<') if self.dialect.supports_geometric_types() => {
+                        Some('<') if self.features.supports_geometric_types => {
                             chars.next(); // consume
                             match chars.peek() {
                                 Some('|') => self.consume_for_binop(
@@ -1574,7 +1578,7 @@ impl<'a> Tokenizer<'a> {
                             }
                         }
                         Some('<') => self.consume_for_binop(chars, "<<", Token::ShiftLeft),
-                        Some('-') if self.dialect.supports_geometric_types() => {
+                        Some('-') if self.features.supports_geometric_types => {
                             chars.next(); // consume
                             match chars.peek() {
                                 Some('>') => {
@@ -1583,7 +1587,7 @@ impl<'a> Tokenizer<'a> {
                                 _ => self.start_binop_opt(chars, "<-", None),
                             }
                         }
-                        Some('^') if self.dialect.supports_geometric_types() => {
+                        Some('^') if self.features.supports_geometric_types => {
                             self.consume_for_binop(chars, "<^", Token::LeftAngleBracketCaret)
                         }
                         Some('@') => self.consume_for_binop(chars, "<@", Token::ArrowAt),
@@ -1595,7 +1599,7 @@ impl<'a> Tokenizer<'a> {
                     match chars.peek() {
                         Some('=') => self.consume_for_binop(chars, ">=", Token::GtEq),
                         Some('>') => self.consume_for_binop(chars, ">>", Token::ShiftRight),
-                        Some('^') if self.dialect.supports_geometric_types() => {
+                        Some('^') if self.features.supports_geometric_types => {
                             self.consume_for_binop(chars, ">^", Token::RightAngleBracketCaret)
                         }
                         _ => self.start_binop(chars, ">", Token::Gt),
@@ -1616,11 +1620,11 @@ impl<'a> Tokenizer<'a> {
                 '&' => {
                     chars.next(); // consume the '&'
                     match chars.peek() {
-                        Some('>') if self.dialect.supports_geometric_types() => {
+                        Some('>') if self.features.supports_geometric_types => {
                             chars.next();
                             self.consume_and_return(chars, Token::AmpersandRightAngleBracket)
                         }
-                        Some('<') if self.dialect.supports_geometric_types() => {
+                        Some('<') if self.features.supports_geometric_types => {
                             chars.next(); // consume
                             match chars.peek() {
                                 Some('|') => self.consume_and_return(
@@ -1663,7 +1667,7 @@ impl<'a> Tokenizer<'a> {
                     chars.next(); // consume
                     match chars.peek() {
                         Some('*') => self.consume_for_binop(chars, "~*", Token::TildeAsterisk),
-                        Some('=') if self.dialect.supports_geometric_types() => {
+                        Some('=') if self.features.supports_geometric_types => {
                             self.consume_for_binop(chars, "~=", Token::TildeEqual)
                         }
                         Some('~') => {
@@ -1692,7 +1696,7 @@ impl<'a> Tokenizer<'a> {
                             }
                         }
                         Some(' ') => Ok(Some(Token::Sharp)),
-                        Some('#') if self.dialect.supports_geometric_types() => {
+                        Some('#') if self.features.supports_geometric_types => {
                             self.consume_for_binop(chars, "##", Token::DoubleSharp)
                         }
                         Some(sch) if self.dialect.is_identifier_start('#') => {
@@ -1705,10 +1709,10 @@ impl<'a> Tokenizer<'a> {
                 '@' => {
                     chars.next();
                     match chars.peek() {
-                        Some('@') if self.dialect.supports_geometric_types() => {
+                        Some('@') if self.features.supports_geometric_types => {
                             self.consume_and_return(chars, Token::AtAt)
                         }
-                        Some('-') if self.dialect.supports_geometric_types() => {
+                        Some('-') if self.features.supports_geometric_types => {
                             chars.next();
                             match chars.peek() {
                                 Some('@') => self.consume_and_return(chars, Token::AtDashAt),
@@ -1750,7 +1754,7 @@ impl<'a> Tokenizer<'a> {
                     }
                 }
                 // Postgres uses ? for jsonb operators, not prepared statements
-                '?' if self.dialect.supports_geometric_types() => {
+                '?' if self.features.supports_geometric_types => {
                     chars.next(); // consume
                     match chars.peek() {
                         Some('|') => {
@@ -1861,7 +1865,7 @@ impl<'a> Tokenizer<'a> {
         chars.next(); // consume first $
 
         // Case 1: $$text$$ (untagged dollar-quoted string)
-        if matches!(chars.peek(), Some('$')) && !self.dialect.supports_dollar_placeholder() {
+        if matches!(chars.peek(), Some('$')) && !self.features.supports_dollar_placeholder {
             let (value, tag) = self.tokenize_dollar_quoted_string_borrowed(chars, None)?;
             return Ok(Token::DollarQuotedString(DollarQuotedString {
                 value: value.into_owned(),
@@ -1876,12 +1880,12 @@ impl<'a> Tokenizer<'a> {
         let _tag_slice = peeking_take_while_ref(chars, |ch| {
             ch.is_alphanumeric()
                 || ch == '_'
-                || matches!(ch, '$' if self.dialect.supports_dollar_placeholder())
+                || matches!(ch, '$' if self.features.supports_dollar_placeholder)
         });
         let tag_end = chars.byte_pos;
 
         // Case 2: $tag$text$tag$ (tagged dollar-quoted string)
-        if matches!(chars.peek(), Some('$')) && !self.dialect.supports_dollar_placeholder() {
+        if matches!(chars.peek(), Some('$')) && !self.features.supports_dollar_placeholder {
             let tag_value = self.safe_slice(chars.source, tag_start, tag_end, starting_loc)?;
             let (value, tag) =
                 self.tokenize_dollar_quoted_string_borrowed(chars, Some(tag_value))?;
@@ -2220,7 +2224,7 @@ impl<'a> Tokenizer<'a> {
 
                     if let Some(next) = chars.peek() {
                         if !self.unescape
-                            || (self.dialect.ignores_wildcard_escapes()
+                            || (self.features.ignores_wildcard_escapes
                                 && (*next == '%' || *next == '_'))
                         {
                             // In no-escape mode, the given query has to be saved completely
@@ -2273,7 +2277,7 @@ impl<'a> Tokenizer<'a> {
     ) -> Result<&'a str, TokenizerError> {
         let start_pos = chars.byte_pos;
         let mut nested = 1;
-        let supports_nested_comments = self.dialect.supports_nested_comments();
+        let supports_nested_comments = self.features.supports_nested_comments;
 
         loop {
             match chars.next() {

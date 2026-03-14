@@ -346,6 +346,38 @@ pub enum DataType {
     ///
     /// [PostgreSQL]: https://www.postgresql.org/docs/current/datatype-bit.html
     Bytea,
+    /// Serial type (auto-incrementing 4-byte integer), see [PostgreSQL].
+    ///
+    /// [PostgreSQL]: https://www.postgresql.org/docs/current/datatype-numeric.html#DATATYPE-SERIAL
+    Serial,
+    /// SmallSerial type (auto-incrementing 2-byte integer), see [PostgreSQL].
+    ///
+    /// [PostgreSQL]: https://www.postgresql.org/docs/current/datatype-numeric.html#DATATYPE-SERIAL
+    SmallSerial,
+    /// BigSerial type (auto-incrementing 8-byte integer), see [PostgreSQL].
+    ///
+    /// [PostgreSQL]: https://www.postgresql.org/docs/current/datatype-numeric.html#DATATYPE-SERIAL
+    BigSerial,
+    /// Money type, see [PostgreSQL].
+    ///
+    /// [PostgreSQL]: https://www.postgresql.org/docs/current/datatype-money.html
+    Money,
+    /// Inet type (IPv4/IPv6 host address), see [PostgreSQL].
+    ///
+    /// [PostgreSQL]: https://www.postgresql.org/docs/current/datatype-net-types.html
+    Inet,
+    /// Cidr type (IPv4/IPv6 network address), see [PostgreSQL].
+    ///
+    /// [PostgreSQL]: https://www.postgresql.org/docs/current/datatype-net-types.html
+    Cidr,
+    /// MacAddr type (MAC address), see [PostgreSQL].
+    ///
+    /// [PostgreSQL]: https://www.postgresql.org/docs/current/datatype-net-types.html
+    MacAddr,
+    /// MacAddr8 type (MAC address in EUI-64 format), see [PostgreSQL].
+    ///
+    /// [PostgreSQL]: https://www.postgresql.org/docs/current/datatype-net-types.html
+    MacAddr8,
     /// Bit string, see [PostgreSQL], [MySQL], or [MSSQL].
     ///
     /// [PostgreSQL]: https://www.postgresql.org/docs/current/datatype-bit.html
@@ -577,6 +609,14 @@ impl fmt::Display for DataType {
             DataType::LongText => write!(f, "LONGTEXT"),
             DataType::String(size) => format_type_with_optional_length(f, "STRING", size, false),
             DataType::Bytea => write!(f, "BYTEA"),
+            DataType::Serial => write!(f, "SERIAL"),
+            DataType::SmallSerial => write!(f, "SMALLSERIAL"),
+            DataType::BigSerial => write!(f, "BIGSERIAL"),
+            DataType::Money => write!(f, "MONEY"),
+            DataType::Inet => write!(f, "INET"),
+            DataType::Cidr => write!(f, "CIDR"),
+            DataType::MacAddr => write!(f, "MACADDR"),
+            DataType::MacAddr8 => write!(f, "MACADDR8"),
             DataType::Bit(size) => format_type_with_optional_length(f, "BIT", size, false),
             DataType::BitVarying(size) => {
                 format_type_with_optional_length(f, "BIT VARYING", size, false)
