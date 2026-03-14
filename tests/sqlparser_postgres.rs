@@ -1437,20 +1437,12 @@ fn parse_copy_to() {
                             },
                         }
                     ],
-                    exclude: None,
                     into: None,
                     from: vec![],
-                    lateral_views: vec![],
-                    prewhere: None,
                     selection: None,
                     group_by: GroupByExpr::Expressions(vec![], vec![]),
                     having: None,
                     named_window: vec![],
-                    window_before_qualify: false,
-                    cluster_by: vec![],
-                    distribute_by: vec![],
-                    sort_by: vec![],
-                    qualify: None,
                     connect_by: None,
                     flavor: SelectFlavor::Standard,
                 }))),
@@ -1459,8 +1451,6 @@ fn parse_copy_to() {
                 fetch: None,
                 locks: vec![],
                 for_clause: None,
-                settings: None,
-                format_clause: None,
             })),
             to: true,
             target: CopyTarget::File {
@@ -3366,20 +3356,12 @@ fn parse_array_subquery_expr() {
                         projection: vec![SelectItem::UnnamedExpr(Expr::Value(
                             (number("1")).with_empty_span()
                         ))],
-                        exclude: None,
                         into: None,
                         from: vec![],
-                        lateral_views: vec![],
-                        prewhere: None,
                         selection: None,
                         group_by: GroupByExpr::Expressions(vec![], vec![]),
-                        cluster_by: vec![],
-                        distribute_by: vec![],
-                        sort_by: vec![],
                         having: None,
                         named_window: vec![],
-                        qualify: None,
-                        window_before_qualify: false,
                         connect_by: None,
                         flavor: SelectFlavor::Standard,
                     }))),
@@ -3391,20 +3373,12 @@ fn parse_array_subquery_expr() {
                         projection: vec![SelectItem::UnnamedExpr(Expr::Value(
                             (number("2")).with_empty_span()
                         ))],
-                        exclude: None,
                         into: None,
                         from: vec![],
-                        lateral_views: vec![],
-                        prewhere: None,
                         selection: None,
                         group_by: GroupByExpr::Expressions(vec![], vec![]),
-                        cluster_by: vec![],
-                        distribute_by: vec![],
-                        sort_by: vec![],
                         having: None,
                         named_window: vec![],
-                        qualify: None,
-                        window_before_qualify: false,
                         connect_by: None,
                         flavor: SelectFlavor::Standard,
                     }))),
@@ -3414,8 +3388,6 @@ fn parse_array_subquery_expr() {
                 fetch: None,
                 locks: vec![],
                 for_clause: None,
-                settings: None,
-                format_clause: None,
             })),
             filter: None,
             null_treatment: None,
@@ -5402,7 +5374,6 @@ fn test_simple_postgres_insert_with_alias() {
         statement,
         Statement::Insert(Insert {
             insert_token: AttachedToken::empty(),
-            or: None,
             ignore: false,
             into: true,
             table: TableObject::TableName(ObjectName::from(vec![Ident {
@@ -5444,8 +5415,6 @@ fn test_simple_postgres_insert_with_alias() {
                 fetch: None,
                 locks: vec![],
                 for_clause: None,
-                settings: None,
-                format_clause: None,
             })),
             assignments: vec![],
             partitioned: None,
@@ -5456,8 +5425,6 @@ fn test_simple_postgres_insert_with_alias() {
             replace_into: false,
             priority: None,
             insert_alias: None,
-            settings: None,
-            format_clause: None,
         })
     )
 }
@@ -5474,7 +5441,6 @@ fn test_simple_postgres_insert_with_alias() {
         statement,
         Statement::Insert(Insert {
             insert_token: AttachedToken::empty(),
-            or: None,
             ignore: false,
             into: true,
             table: TableObject::TableName(ObjectName::from(vec![Ident {
@@ -5519,8 +5485,6 @@ fn test_simple_postgres_insert_with_alias() {
                 fetch: None,
                 locks: vec![],
                 for_clause: None,
-                settings: None,
-                format_clause: None,
             })),
             assignments: vec![],
             partitioned: None,
@@ -5531,8 +5495,6 @@ fn test_simple_postgres_insert_with_alias() {
             replace_into: false,
             priority: None,
             insert_alias: None,
-            settings: None,
-            format_clause: None,
         })
     )
 }
@@ -5548,7 +5510,6 @@ fn test_simple_insert_with_quoted_alias() {
         statement,
         Statement::Insert(Insert {
             insert_token: AttachedToken::empty(),
-            or: None,
             ignore: false,
             into: true,
             table: TableObject::TableName(ObjectName::from(vec![Ident {
@@ -5592,8 +5553,6 @@ fn test_simple_insert_with_quoted_alias() {
                 fetch: None,
                 locks: vec![],
                 for_clause: None,
-                settings: None,
-                format_clause: None,
             })),
             assignments: vec![],
             partitioned: None,
@@ -5604,8 +5563,6 @@ fn test_simple_insert_with_quoted_alias() {
             replace_into: false,
             priority: None,
             insert_alias: None,
-            settings: None,
-            format_clause: None,
         })
     )
 }

@@ -119,8 +119,6 @@ fn parse_create_procedure() {
                     locks: vec![],
                     for_clause: None,
                     order_by: None,
-                    settings: None,
-                    format_clause: None,
                     body: Box::new(SetExpr::Select(Box::new(Select {
                         select_token: AttachedToken::empty(),
                         distinct: None,
@@ -129,20 +127,12 @@ fn parse_create_procedure() {
                         projection: vec![SelectItem::UnnamedExpr(Expr::Value(
                             (number("1")).with_empty_span()
                         ))],
-                        exclude: None,
                         into: None,
                         from: vec![],
-                        lateral_views: vec![],
-                        prewhere: None,
                         selection: None,
                         group_by: GroupByExpr::Expressions(vec![], vec![]),
-                        cluster_by: vec![],
-                        distribute_by: vec![],
-                        sort_by: vec![],
                         having: None,
                         named_window: vec![],
-                        window_before_qualify: false,
-                        qualify: None,
                         connect_by: None,
                         flavor: SelectFlavor::Standard,
                     })))
@@ -257,7 +247,6 @@ fn parse_create_function() {
                 end_token: AttachedToken::empty(),
                 end_label: None,
             })),
-            behavior: None,
             called_on_null: None,
             parallel: None,
             security: None,
@@ -274,6 +263,7 @@ fn parse_create_function() {
             remote_connection: None,
             polymorphic: false,
             sql_data_access: None,
+            behavior: None,
         }),
     );
 
@@ -446,7 +436,6 @@ fn parse_create_function_parameter_default_values() {
                 end_token: AttachedToken::empty(),
                 end_label: None,
             })),
-            behavior: None,
             called_on_null: None,
             parallel: None,
             security: None,
@@ -463,6 +452,7 @@ fn parse_create_function_parameter_default_values() {
             remote_connection: None,
             polymorphic: false,
             sql_data_access: None,
+            behavior: None,
         }),
     );
 }
@@ -1425,7 +1415,6 @@ fn parse_substring_in_select() {
                             special: true,
                             shorthand: false,
                         })],
-                        exclude: None,
                         into: None,
                         from: vec![TableWithJoins {
                             relation: table_from_name(ObjectName::from(vec![Ident {
@@ -1435,17 +1424,10 @@ fn parse_substring_in_select() {
                             }])),
                             joins: vec![]
                         }],
-                        lateral_views: vec![],
-                        prewhere: None,
                         selection: None,
                         group_by: GroupByExpr::Expressions(vec![], vec![]),
-                        cluster_by: vec![],
-                        distribute_by: vec![],
-                        sort_by: vec![],
                         having: None,
                         named_window: vec![],
-                        qualify: None,
-                        window_before_qualify: false,
                         connect_by: None,
                         flavor: SelectFlavor::Standard,
                     }))),
@@ -1454,8 +1436,6 @@ fn parse_substring_in_select() {
                     fetch: None,
                     locks: vec![],
                     for_clause: None,
-                    settings: None,
-                    format_clause: None,
                 }),
                 query
             );
@@ -1564,8 +1544,6 @@ fn parse_mssql_declare() {
                 locks: vec![],
                 for_clause: None,
                 order_by: None,
-                settings: None,
-                format_clause: None,
 
                 body: Box::new(SetExpr::Select(Box::new(Select {
                     select_token: AttachedToken::empty(),
@@ -1579,20 +1557,12 @@ fn parse_mssql_declare() {
                             (Value::Number("4".parse().unwrap(), false)).with_empty_span()
                         )),
                     })],
-                    exclude: None,
                     into: None,
                     from: vec![],
-                    lateral_views: vec![],
-                    prewhere: None,
                     selection: None,
                     group_by: GroupByExpr::Expressions(vec![], vec![]),
-                    cluster_by: vec![],
-                    distribute_by: vec![],
-                    sort_by: vec![],
                     having: None,
                     named_window: vec![],
-                    window_before_qualify: false,
-                    qualify: None,
                     connect_by: None,
                     flavor: SelectFlavor::Standard,
                 })))

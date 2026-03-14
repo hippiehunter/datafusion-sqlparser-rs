@@ -45,7 +45,7 @@ use crate::ast::{
     CreateFunctionUsing, CreateTableLikeKind, CreateTableOptions, CreateViewParams, DataType, Expr,
     FileFormat, FunctionBehavior, FunctionCalledOnNull, FunctionDesc, FunctionDeterminismSpecifier,
     FunctionParallel, Ident, MySQLColumnPosition, ObjectName, OnCommit, OneOrManyWithParens,
-    OperateFunctionArg, OrderByExpr, ProcedureSecurity, ProcedureSetConfig, ProjectionSelect,
+    OperateFunctionArg, OrderByExpr, ProcedureSecurity, ProcedureSetConfig,
     Query, SequenceOptions, Spanned, SqlDataAccess, SqlOption, TableVersion, TriggerEvent,
     TriggerExecBody, TriggerObject, TriggerPeriod, TriggerReferencing, ValueWithSpan,
     WrappedCollection,
@@ -132,38 +132,6 @@ pub enum AlterTableOperation {
         column_def: ColumnDef,
         /// MySQL `ALTER TABLE` only  [FIRST | AFTER column_name]
         column_position: Option<MySQLColumnPosition>,
-    },
-    /// `ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY])`
-    ///
-    /// Note: this is a ClickHouse-specific operation.
-    /// Please refer to [ClickHouse](https://clickhouse.com/docs/en/sql-reference/statements/alter/projection#add-projection)
-    AddProjection {
-        if_not_exists: bool,
-        name: Ident,
-        select: ProjectionSelect,
-    },
-    /// `DROP PROJECTION [IF EXISTS] name`
-    ///
-    /// Note: this is a ClickHouse-specific operation.
-    /// Please refer to [ClickHouse](https://clickhouse.com/docs/en/sql-reference/statements/alter/projection#drop-projection)
-    DropProjection { if_exists: bool, name: Ident },
-    /// `MATERIALIZE PROJECTION [IF EXISTS] name [IN PARTITION partition_name]`
-    ///
-    ///  Note: this is a ClickHouse-specific operation.
-    /// Please refer to [ClickHouse](https://clickhouse.com/docs/en/sql-reference/statements/alter/projection#materialize-projection)
-    MaterializeProjection {
-        if_exists: bool,
-        name: Ident,
-        partition: Option<Ident>,
-    },
-    /// `CLEAR PROJECTION [IF EXISTS] name [IN PARTITION partition_name]`
-    ///
-    /// Note: this is a ClickHouse-specific operation.
-    /// Please refer to [ClickHouse](https://clickhouse.com/docs/en/sql-reference/statements/alter/projection#clear-projection)
-    ClearProjection {
-        if_exists: bool,
-        name: Ident,
-        partition: Option<Ident>,
     },
     /// `DISABLE ROW LEVEL SECURITY`
     ///
@@ -518,17 +486,6 @@ impl fmt::Display for AlterTableOperation {
 
                 Ok(())
             }
-            AlterTableOperation::AddProjection {
-                if_not_exists,
-                name,
-                select: query,
-            } => {
-                write!(f, "ADD PROJECTION")?;
-                if *if_not_exists {
-                    write!(f, " IF NOT EXISTS")?;
-                }
-                write!(f, " {name} ({query})")
-            }
             AlterTableOperation::Algorithm { equals, algorithm } => {
                 write!(
                     f,
@@ -536,43 +493,6 @@ impl fmt::Display for AlterTableOperation {
                     if *equals { "= " } else { "" },
                     algorithm
                 )
-            }
-            AlterTableOperation::DropProjection { if_exists, name } => {
-                write!(f, "DROP PROJECTION")?;
-                if *if_exists {
-                    write!(f, " IF EXISTS")?;
-                }
-                write!(f, " {name}")
-            }
-            AlterTableOperation::MaterializeProjection {
-                if_exists,
-                name,
-                partition,
-            } => {
-                write!(f, "MATERIALIZE PROJECTION")?;
-                if *if_exists {
-                    write!(f, " IF EXISTS")?;
-                }
-                write!(f, " {name}")?;
-                if let Some(partition) = partition {
-                    write!(f, " IN PARTITION {partition}")?;
-                }
-                Ok(())
-            }
-            AlterTableOperation::ClearProjection {
-                if_exists,
-                name,
-                partition,
-            } => {
-                write!(f, "CLEAR PROJECTION")?;
-                if *if_exists {
-                    write!(f, " IF EXISTS")?;
-                }
-                write!(f, " {name}")?;
-                if let Some(partition) = partition {
-                    write!(f, " IN PARTITION {partition}")?;
-                }
-                Ok(())
             }
             AlterTableOperation::AlterColumn { column_name, op } => {
                 write!(f, "ALTER COLUMN {column_name} {op}")
@@ -3816,196 +3736,3 @@ impl fmt::Display for OperatorPurpose {
     }
 }
 
-// SQL/PGQ (ISO/IEC 9075-16:2023) Property Graph structures
-
-/// Graph KEY clause: `KEY (column, ...)`
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct GraphKeyClause {
-    pub columns: Vec<Ident>,
-}
-
-impl fmt::Display for GraphKeyClause {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "KEY ({})", display_comma_separated(&self.columns))
-    }
-}
-
-/// Graph PROPERTIES clause: `PROPERTIES (column, ...)`
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct GraphPropertiesClause {
-    pub columns: Vec<Ident>,
-}
-
-impl fmt::Display for GraphPropertiesClause {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "PROPERTIES ({})", display_comma_separated(&self.columns))
-    }
-}
-
-/// Graph edge endpoint: `[KEY (column, ...)] REFERENCES table`
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct GraphEdgeEndpoint {
-    pub key: Option<GraphKeyClause>,
-    #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
-    pub references: ObjectName,
-}
-
-impl fmt::Display for GraphEdgeEndpoint {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if let Some(key) = &self.key {
-            write!(f, "{} ", key)?;
-        }
-        write!(f, "REFERENCES {}", self.references)
-    }
-}
-
-/// Vertex table definition in CREATE PROPERTY GRAPH
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct GraphVertexTableDefinition {
-    #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
-    pub table: ObjectName,
-    pub key: Option<GraphKeyClause>,
-    pub label: Option<Ident>,
-    pub properties: Option<GraphPropertiesClause>,
-}
-
-impl fmt::Display for GraphVertexTableDefinition {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.table)?;
-        if let Some(key) = &self.key {
-            write!(f, " {}", key)?;
-        }
-        if let Some(label) = &self.label {
-            write!(f, " LABEL {}", label)?;
-        }
-        if let Some(properties) = &self.properties {
-            write!(f, " {}", properties)?;
-        }
-        Ok(())
-    }
-}
-
-/// Edge table definition in CREATE PROPERTY GRAPH
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct GraphEdgeTableDefinition {
-    #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
-    pub table: ObjectName,
-    pub source: GraphEdgeEndpoint,
-    pub destination: GraphEdgeEndpoint,
-    pub label: Option<Ident>,
-    pub properties: Option<GraphPropertiesClause>,
-}
-
-impl fmt::Display for GraphEdgeTableDefinition {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{} SOURCE {} DESTINATION {}",
-            self.table, self.source, self.destination
-        )?;
-        if let Some(label) = &self.label {
-            write!(f, " LABEL {}", label)?;
-        }
-        if let Some(properties) = &self.properties {
-            write!(f, " {}", properties)?;
-        }
-        Ok(())
-    }
-}
-
-/// CREATE PROPERTY GRAPH statement (SQL/PGQ)
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct CreatePropertyGraph {
-    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
-    pub token: AttachedToken,
-    pub or_replace: bool,
-    pub if_not_exists: bool,
-    #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
-    pub name: ObjectName,
-    pub vertex_tables: Vec<GraphVertexTableDefinition>,
-    pub edge_tables: Vec<GraphEdgeTableDefinition>,
-}
-
-impl fmt::Display for CreatePropertyGraph {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let CreatePropertyGraph {
-            token: _,
-            or_replace,
-            if_not_exists,
-            name,
-            vertex_tables,
-            edge_tables,
-        } = self;
-        write!(f, "CREATE ")?;
-        if *or_replace {
-            write!(f, "OR REPLACE ")?;
-        }
-        write!(f, "PROPERTY GRAPH ")?;
-        if *if_not_exists {
-            write!(f, "IF NOT EXISTS ")?;
-        }
-        write!(f, "{} ", name)?;
-
-        if !vertex_tables.is_empty() {
-            write!(
-                f,
-                "VERTEX TABLES ({})",
-                display_comma_separated(vertex_tables)
-            )?;
-            if !edge_tables.is_empty() {
-                write!(f, " ")?;
-            }
-        }
-
-        if !edge_tables.is_empty() {
-            write!(f, "EDGE TABLES ({})", display_comma_separated(edge_tables))?;
-        }
-
-        Ok(())
-    }
-}
-
-/// DROP PROPERTY GRAPH statement (SQL/PGQ)
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct DropPropertyGraph {
-    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
-    pub token: AttachedToken,
-    pub if_exists: bool,
-    #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
-    pub name: ObjectName,
-    pub drop_behavior: Option<DropBehavior>,
-}
-
-impl fmt::Display for DropPropertyGraph {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let DropPropertyGraph {
-            token: _,
-            if_exists,
-            name,
-            drop_behavior,
-        } = self;
-        write!(f, "DROP PROPERTY GRAPH ")?;
-        if *if_exists {
-            write!(f, "IF EXISTS ")?;
-        }
-        write!(f, "{}", name)?;
-        if let Some(drop_behavior) = drop_behavior {
-            write!(f, " {}", drop_behavior)?;
-        }
-        Ok(())
-    }
-}

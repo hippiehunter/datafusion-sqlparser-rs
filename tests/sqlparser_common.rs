@@ -431,26 +431,18 @@ fn parse_update_set_from() {
                                 SelectItem::UnnamedExpr(Expr::Identifier(Ident::new("name"))),
                                 SelectItem::UnnamedExpr(Expr::Identifier(Ident::new("id"))),
                             ],
-                            exclude: None,
                             into: None,
                             from: vec![TableWithJoins {
                                 relation: table_from_name(ObjectName::from(vec![Ident::new("t1")])),
                                 joins: vec![],
                             }],
-                            lateral_views: vec![],
-                            prewhere: None,
                             selection: None,
                             group_by: GroupByExpr::Expressions(
                                 vec![Expr::Identifier(Ident::new("id"))],
                                 vec![]
                             ),
-                            cluster_by: vec![],
-                            distribute_by: vec![],
-                            sort_by: vec![],
                             having: None,
                             named_window: vec![],
-                            qualify: None,
-                            window_before_qualify: false,
                             connect_by: None,
                             flavor: SelectFlavor::Standard,
                         }))),
@@ -459,8 +451,6 @@ fn parse_update_set_from() {
                         fetch: None,
                         locks: vec![],
                         for_clause: None,
-                        settings: None,
-                        format_clause: None,
                     }),
                     alias: Some(TableAlias {
                         name: Ident::new("t2"),
@@ -483,7 +473,6 @@ fn parse_update_set_from() {
             }),
             returning: None,
             returning_into: None,
-            or: None,
             limit: None,
             for_portion_of: None,
         })
@@ -504,7 +493,6 @@ fn parse_update_with_table_alias() {
             selection,
             returning,
             returning_into: None,
-            or: None,
             limit: None,
             update_token: _,
             for_portion_of: None,
@@ -2748,57 +2736,6 @@ fn parse_select_having() {
 }
 
 #[test]
-fn parse_select_qualify() {
-    let sql = "SELECT i, p, o FROM qt QUALIFY ROW_NUMBER() OVER (PARTITION BY p ORDER BY o) = 1";
-    let select = verified_only_select(sql);
-    assert_eq!(
-        Some(Expr::BinaryOp {
-            left: Box::new(Expr::Function(Function {
-                name: ObjectName::from(vec![Ident::new("ROW_NUMBER")]),
-                uses_odbc_syntax: false,
-                parameters: FunctionArguments::None,
-                args: FunctionArguments::List(FunctionArgumentList {
-                    duplicate_treatment: None,
-                    args: vec![],
-                    clauses: vec![],
-                }),
-                null_treatment: None,
-                nth_value_order: None,
-                filter: None,
-                over: Some(WindowType::WindowSpec(WindowSpec {
-                    window_name: None,
-                    partition_by: vec![Expr::Identifier(Ident::new("p"))],
-                    order_by: vec![OrderByExpr {
-                        expr: Expr::Identifier(Ident::new("o")),
-                        options: OrderByOptions {
-                            asc: None,
-                            nulls_first: None,
-                        },
-                        with_fill: None,
-                    }],
-                    window_frame: None,
-                })),
-                within_group: vec![]
-            })),
-            op: BinaryOperator::Eq,
-            right: Box::new(Expr::value(number("1"))),
-        }),
-        select.qualify
-    );
-
-    let sql = "SELECT i, p, o, ROW_NUMBER() OVER (PARTITION BY p ORDER BY o) AS row_num FROM qt QUALIFY row_num = 1";
-    let select = verified_only_select(sql);
-    assert_eq!(
-        Some(Expr::BinaryOp {
-            left: Box::new(Expr::Identifier(Ident::new("row_num"))),
-            op: BinaryOperator::Eq,
-            right: Box::new(Expr::value(number("1"))),
-        }),
-        select.qualify
-    );
-}
-
-#[test]
 fn parse_limit_accepts_all() {
     one_statement_parses_to(
         "SELECT id, fname, lname FROM customer WHERE id = 1 LIMIT ALL",
@@ -4239,8 +4176,6 @@ fn parse_create_table_as_table() {
         fetch: None,
         locks: vec![],
         for_clause: None,
-        settings: None,
-        format_clause: None,
     });
 
     match verified_stmt(sql1) {
@@ -4264,8 +4199,6 @@ fn parse_create_table_as_table() {
         fetch: None,
         locks: vec![],
         for_clause: None,
-        settings: None,
-        format_clause: None,
     });
 
     match verified_stmt(sql2) {
@@ -5541,7 +5474,6 @@ fn test_parse_named_window() {
                 },
             },
         ],
-        exclude: None,
         into: None,
         from: vec![TableWithJoins {
             relation: table_from_name(ObjectName::from(vec![Ident {
@@ -5551,13 +5483,8 @@ fn test_parse_named_window() {
             }])),
             joins: vec![],
         }],
-        lateral_views: vec![],
-        prewhere: None,
         selection: None,
         group_by: GroupByExpr::Expressions(vec![], vec![]),
-        cluster_by: vec![],
-        distribute_by: vec![],
-        sort_by: vec![],
         having: None,
         named_window: vec![
             NamedWindowDefinition(
@@ -5602,38 +5529,13 @@ fn test_parse_named_window() {
                 }),
             ),
         ],
-        qualify: None,
-        window_before_qualify: true,
         connect_by: None,
         flavor: SelectFlavor::Standard,
     };
     assert_eq!(actual_select_only, expected);
 }
 
-#[test]
-fn parse_window_and_qualify_clause() {
-    let dialects = all_dialects_except(|d| {
-        d.is_table_alias(&Keyword::WINDOW, &Parser::new(d))
-            || d.is_table_alias(&Keyword::QUALIFY, &Parser::new(d))
-    });
-    let sql = "SELECT \
-    MIN(c12) OVER window1 AS min1 \
-    FROM aggregate_test_100 \
-    QUALIFY ROW_NUMBER() OVER my_window \
-    WINDOW window1 AS (ORDER BY C12), \
-    window2 AS (PARTITION BY C11) \
-    ORDER BY C3";
-    dialects.verified_only_select(sql);
-
-    let sql = "SELECT \
-    MIN(c12) OVER window1 AS min1 \
-    FROM aggregate_test_100 \
-    WINDOW window1 AS (ORDER BY C12), \
-    window2 AS (PARTITION BY C11) \
-    QUALIFY ROW_NUMBER() OVER my_window \
-    ORDER BY C3";
-    dialects.verified_only_select(sql);
-}
+// parse_window_and_qualify_clause: removed (QUALIFY support removed)
 
 // parse_window_clause_named_window: removed (no remaining dialects support supports_window_clause_named_window_reference)
 
@@ -6189,7 +6091,6 @@ fn parse_interval_and_or_xor() {
                 quote_style: None,
                 span: Span::empty(),
             }))],
-            exclude: None,
             into: None,
             from: vec![TableWithJoins {
                 relation: table_from_name(ObjectName::from(vec![Ident {
@@ -6199,8 +6100,6 @@ fn parse_interval_and_or_xor() {
                 }])),
                 joins: vec![],
             }],
-            lateral_views: vec![],
-            prewhere: None,
             selection: Some(Expr::BinaryOp {
                 left: Box::new(Expr::BinaryOp {
                     left: Box::new(Expr::Identifier(Ident {
@@ -6255,13 +6154,8 @@ fn parse_interval_and_or_xor() {
                 }),
             }),
             group_by: GroupByExpr::Expressions(vec![], vec![]),
-            cluster_by: vec![],
-            distribute_by: vec![],
-            sort_by: vec![],
             having: None,
             named_window: vec![],
-            qualify: None,
-            window_before_qualify: false,
             connect_by: None,
             flavor: SelectFlavor::Standard,
         }))),
@@ -6270,8 +6164,6 @@ fn parse_interval_and_or_xor() {
         fetch: None,
         locks: vec![],
         for_clause: None,
-        settings: None,
-        format_clause: None,
     }))];
 
     assert_eq!(actual_ast, expected_ast);
@@ -8493,7 +8385,6 @@ fn lateral_function() {
         distinct: None,
         top: None,
         projection: vec![SelectItem::Wildcard(WildcardAdditionalOptions::default())],
-        exclude: None,
         top_before_distinct: false,
         into: None,
         from: vec![TableWithJoins {
@@ -8520,17 +8411,10 @@ fn lateral_function() {
                 join_operator: JoinOperator::Left(JoinConstraint::None),
             }],
         }],
-        lateral_views: vec![],
-        prewhere: None,
         selection: None,
         group_by: GroupByExpr::Expressions(vec![], vec![]),
-        cluster_by: vec![],
-        distribute_by: vec![],
-        sort_by: vec![],
         having: None,
         named_window: vec![],
-        qualify: None,
-        window_before_qualify: false,
         connect_by: None,
         flavor: SelectFlavor::Standard,
     };
@@ -9457,7 +9341,6 @@ fn parse_merge() {
                             projection: vec![SelectItem::Wildcard(
                                 WildcardAdditionalOptions::default()
                             )],
-                            exclude: None,
                             into: None,
                             from: vec![TableWithJoins {
                                 relation: table_from_name(ObjectName::from(vec![
@@ -9466,17 +9349,10 @@ fn parse_merge() {
                                 ])),
                                 joins: vec![],
                             }],
-                            lateral_views: vec![],
-                            prewhere: None,
                             selection: None,
                             group_by: GroupByExpr::Expressions(vec![], vec![]),
-                            cluster_by: vec![],
-                            distribute_by: vec![],
-                            sort_by: vec![],
                             having: None,
                             named_window: vec![],
-                            window_before_qualify: false,
-                            qualify: None,
                             connect_by: None,
                             flavor: SelectFlavor::Standard,
                         }))),
@@ -9485,8 +9361,6 @@ fn parse_merge() {
                         fetch: None,
                         locks: vec![],
                         for_clause: None,
-                        settings: None,
-                        format_clause: None,
                     }),
                     alias: Some(TableAlias {
                         name: Ident {
@@ -10161,7 +10035,7 @@ fn parse_is_boolean() {
     let res = parse_sql_statements(sql);
     assert_eq!(
         ParserError::ParserError(
-            "Expected: [NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED | JSON | DOCUMENT | CONTENT | LABELED | SOURCE OF | DESTINATION OF | SAME AS after IS, found: 0"
+            "Expected: [NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED | JSON | DOCUMENT | CONTENT after IS, found: 0"
                 .to_string()
         ),
         res.unwrap_err()
@@ -10171,7 +10045,7 @@ fn parse_is_boolean() {
     let res = parse_sql_statements(sql);
     assert_eq!(
         ParserError::ParserError(
-            "Expected: [NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED | JSON | DOCUMENT | CONTENT | LABELED | SOURCE OF | DESTINATION OF | SAME AS after IS, found: XYZ"
+            "Expected: [NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED | JSON | DOCUMENT | CONTENT after IS, found: XYZ"
                 .to_string()
         ),
         res.unwrap_err()
@@ -10181,7 +10055,7 @@ fn parse_is_boolean() {
     let res = parse_sql_statements(sql);
     assert_eq!(
         ParserError::ParserError(
-            "Expected: [NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED | JSON | DOCUMENT | CONTENT | LABELED | SOURCE OF | DESTINATION OF | SAME AS after IS, found: FROM"
+            "Expected: [NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED | JSON | DOCUMENT | CONTENT after IS, found: FROM"
                 .to_string()
         ),
         res.unwrap_err()
@@ -10191,7 +10065,7 @@ fn parse_is_boolean() {
     let res = parse_sql_statements(sql);
     assert_eq!(
         ParserError::ParserError(
-            "Expected: [NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED | JSON | DOCUMENT | CONTENT | LABELED | SOURCE OF | DESTINATION OF | SAME AS after IS, found: TRIM"
+            "Expected: [NOT] NULL | TRUE | FALSE | DISTINCT | [form] NORMALIZED | JSON | DOCUMENT | CONTENT after IS, found: TRIM"
                 .to_string()
         ),
         res.unwrap_err()
@@ -11690,23 +11564,15 @@ fn parse_unload() {
                     top: None,
                     top_before_distinct: false,
                     projection: vec![UnnamedExpr(Expr::Identifier(Ident::new("cola"))),],
-                    exclude: None,
                     into: None,
                     from: vec![TableWithJoins {
                         relation: table_from_name(ObjectName::from(vec![Ident::new("tab")])),
                         joins: vec![],
                     }],
-                    lateral_views: vec![],
-                    prewhere: None,
                     selection: None,
                     group_by: GroupByExpr::Expressions(vec![], vec![]),
-                    cluster_by: vec![],
-                    distribute_by: vec![],
-                    sort_by: vec![],
                     having: None,
                     named_window: vec![],
-                    window_before_qualify: false,
-                    qualify: None,
                     connect_by: None,
                     flavor: SelectFlavor::Standard,
                 }))),
@@ -11716,8 +11582,6 @@ fn parse_unload() {
                 locks: vec![],
                 for_clause: None,
                 order_by: None,
-                settings: None,
-                format_clause: None,
             })),
             to: Ident {
                 value: "s3://...".to_string(),
@@ -11943,23 +11807,15 @@ fn parse_connect_by() {
             SelectItem::UnnamedExpr(Expr::Identifier(Ident::new("manager_id"))),
             SelectItem::UnnamedExpr(Expr::Identifier(Ident::new("title"))),
         ],
-        exclude: None,
         from: vec![TableWithJoins {
             relation: table_from_name(ObjectName::from(vec![Ident::new("employees")])),
             joins: vec![],
         }],
         into: None,
-        lateral_views: vec![],
-        prewhere: None,
         selection: None,
         group_by: GroupByExpr::Expressions(vec![], vec![]),
-        cluster_by: vec![],
-        distribute_by: vec![],
-        sort_by: vec![],
         having: None,
         named_window: vec![],
-        qualify: None,
-        window_before_qualify: false,
         connect_by: Some(ConnectBy {
             condition: Expr::BinaryOp {
                 left: Box::new(Expr::Identifier(Ident::new("title"))),
@@ -12024,27 +11880,19 @@ fn parse_connect_by() {
                 SelectItem::UnnamedExpr(Expr::Identifier(Ident::new("manager_id"))),
                 SelectItem::UnnamedExpr(Expr::Identifier(Ident::new("title"))),
             ],
-            exclude: None,
             from: vec![TableWithJoins {
                 relation: table_from_name(ObjectName::from(vec![Ident::new("employees")])),
                 joins: vec![],
             }],
             into: None,
-            lateral_views: vec![],
-            prewhere: None,
             selection: Some(Expr::BinaryOp {
                 left: Box::new(Expr::Identifier(Ident::new("employee_id"))),
                 op: BinaryOperator::NotEq,
                 right: Box::new(Expr::value(number("42"))),
             }),
             group_by: GroupByExpr::Expressions(vec![], vec![]),
-            cluster_by: vec![],
-            distribute_by: vec![],
-            sort_by: vec![],
             having: None,
             named_window: vec![],
-            qualify: None,
-            window_before_qualify: false,
             connect_by: Some(ConnectBy {
                 condition: Expr::BinaryOp {
                     left: Box::new(Expr::Identifier(Ident::new("title"))),
@@ -12369,20 +12217,12 @@ fn test_extract_seconds_ok() {
                     format: None,
                 }),
             })],
-            exclude: None,
             into: None,
             from: vec![],
-            lateral_views: vec![],
-            prewhere: None,
             selection: None,
             group_by: GroupByExpr::Expressions(vec![], vec![]),
-            cluster_by: vec![],
-            distribute_by: vec![],
-            sort_by: vec![],
             having: None,
             named_window: vec![],
-            qualify: None,
-            window_before_qualify: false,
             connect_by: None,
             flavor: SelectFlavor::Standard,
         }))),
@@ -12391,8 +12231,6 @@ fn test_extract_seconds_ok() {
         fetch: None,
         locks: vec![],
         for_clause: None,
-        settings: None,
-        format_clause: None,
     }))];
 
     assert_eq!(actual_ast, expected_ast);

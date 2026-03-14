@@ -211,16 +211,6 @@ pub enum DataType {
     /// [BigQuery]: https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#integer_types
     /// [ClickHouse]: https://clickhouse.com/docs/en/sql-reference/data-types/int-uint
     Int64,
-    /// Integer type in [ClickHouse].
-    /// Note: Int128 means 128 bits in [ClickHouse].
-    ///
-    /// [ClickHouse]: https://clickhouse.com/docs/en/sql-reference/data-types/int-uint
-    Int128,
-    /// Integer type in [ClickHouse].
-    /// Note: Int256 means 256 bits in [ClickHouse].
-    ///
-    /// [ClickHouse]: https://clickhouse.com/docs/en/sql-reference/data-types/int-uint
-    Int256,
     /// Integer with optional display width, e.g. INTEGER or INTEGER(11).
     Integer(Option<u64>),
     /// Unsigned int with optional display width, e.g. INT UNSIGNED or INT(11) UNSIGNED.
@@ -233,36 +223,6 @@ pub enum DataType {
     HugeInt,
     /// Unsigned 128-bit integer type, e.g. UHUGEINT.
     UHugeInt,
-    /// Unsigned integer type in [ClickHouse].
-    /// Note: UInt8 means 8 bits in [ClickHouse].
-    ///
-    /// [ClickHouse]: https://clickhouse.com/docs/en/sql-reference/data-types/int-uint
-    UInt8,
-    /// Unsigned integer type in [ClickHouse].
-    /// Note: UInt16 means 16 bits in [ClickHouse].
-    ///
-    /// [ClickHouse]: https://clickhouse.com/docs/en/sql-reference/data-types/int-uint
-    UInt16,
-    /// Unsigned integer type in [ClickHouse].
-    /// Note: UInt32 means 32 bits in [ClickHouse].
-    ///
-    /// [ClickHouse]: https://clickhouse.com/docs/en/sql-reference/data-types/int-uint
-    UInt32,
-    /// Unsigned integer type in [ClickHouse].
-    /// Note: UInt64 means 64 bits in [ClickHouse].
-    ///
-    /// [ClickHouse]: https://clickhouse.com/docs/en/sql-reference/data-types/int-uint
-    UInt64,
-    /// Unsigned integer type in [ClickHouse].
-    /// Note: UInt128 means 128 bits in [ClickHouse].
-    ///
-    /// [ClickHouse]: https://clickhouse.com/docs/en/sql-reference/data-types/int-uint
-    UInt128,
-    /// Unsigned integer type in [ClickHouse].
-    /// Note: UInt256 means 256 bits in [ClickHouse].
-    ///
-    /// [ClickHouse]: https://clickhouse.com/docs/en/sql-reference/data-types/int-uint
-    UInt256,
     /// Big integer with optional display width, e.g. BIGINT or BIGINT(20).
     BigInt(Option<u64>),
     /// Unsigned big integer with optional display width, e.g. BIGINT UNSIGNED or BIGINT(20) UNSIGNED.
@@ -295,15 +255,6 @@ pub enum DataType {
     ///
     /// [PostgreSQL]: https://www.postgresql.org/docs/current/datatype.html
     Float4,
-    /// Floating point in [ClickHouse].
-    ///
-    /// [ClickHouse]: https://clickhouse.com/docs/en/sql-reference/data-types/float
-    Float32,
-    /// Floating point in [BigQuery].
-    ///
-    /// [BigQuery]: https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#floating_point_types
-    /// [ClickHouse]: https://clickhouse.com/docs/en/sql-reference/data-types/float
-    Float64,
     /// Floating point, e.g. REAL.
     Real,
     /// [MySQL] unsigned real, e.g. REAL UNSIGNED.
@@ -340,10 +291,6 @@ pub enum DataType {
     Boolean,
     /// Date type.
     Date,
-    /// Date32 with the same range as Datetime64.
-    ///
-    /// [1]: https://clickhouse.com/docs/en/sql-reference/data-types/date32
-    Date32,
     /// Time with optional time precision and time zone information, see [SQL Standard][1].
     ///
     /// [1]: https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#datetime-type
@@ -352,10 +299,6 @@ pub enum DataType {
     ///
     /// [1]: https://dev.mysql.com/doc/refman/8.0/en/datetime.html
     Datetime(Option<u64>),
-    /// Datetime with time precision and optional timezone, see [ClickHouse][1].
-    ///
-    /// [1]: https://clickhouse.com/docs/en/sql-reference/data-types/datetime64
-    Datetime64(u64, Option<String>),
     /// Timestamp with optional time precision and time zone information, see [SQL Standard][1].
     ///
     /// [1]: https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#datetime-type
@@ -399,10 +342,6 @@ pub enum DataType {
     LongText,
     /// String with optional length.
     String(Option<u64>),
-    /// A fixed-length string e.g [ClickHouse][1].
-    ///
-    /// [1]: https://clickhouse.com/docs/en/sql-reference/data-types/fixedstring
-    FixedString(u64),
     /// Bytea type, see [PostgreSQL].
     ///
     /// [PostgreSQL]: https://www.postgresql.org/docs/current/datatype-bit.html
@@ -434,18 +373,6 @@ pub enum DataType {
     ///
     /// Reference: [SQL/MDA Standard](https://www.iso.org/standard/84807.html)
     MdArray(MdArrayTypeDef),
-    /// Map, see [ClickHouse].
-    ///
-    /// [ClickHouse]: https://clickhouse.com/docs/en/sql-reference/data-types/map
-    Map(Box<DataType>, Box<DataType>),
-    /// Tuple, see [ClickHouse].
-    ///
-    /// [ClickHouse]: https://clickhouse.com/docs/en/sql-reference/data-types/tuple
-    Tuple(Vec<StructField>),
-    /// Nested type, see [ClickHouse].
-    ///
-    /// [ClickHouse]: https://clickhouse.com/docs/en/sql-reference/data-types/nested-data-structures/nested
-    Nested(Vec<ColumnDef>),
     /// Enum type.
     Enum(Vec<EnumMember>, Option<u8>),
     /// Set type.
@@ -456,10 +383,6 @@ pub enum DataType {
     ///
     /// [ClickHouse]: https://clickhouse.com/docs/en/sql-reference/data-types/nullable
     Nullable(Box<DataType>),
-    /// LowCardinality - changes the internal representation of other data types to be dictionary-encoded.
-    ///
-    /// [ClickHouse]: https://clickhouse.com/docs/en/sql-reference/data-types/lowcardinality
-    LowCardinality(Box<DataType>),
     /// No type specified - only used with
     /// [`SQLiteDialect`](crate::dialect::SQLiteDialect), from statements such
     /// as `CREATE TABLE t1 (a)`.
@@ -567,12 +490,6 @@ impl fmt::Display for DataType {
             DataType::Int64 => {
                 write!(f, "INT64")
             }
-            DataType::Int128 => {
-                write!(f, "Int128")
-            }
-            DataType::Int256 => {
-                write!(f, "Int256")
-            }
             DataType::HugeInt => {
                 write!(f, "HUGEINT")
             }
@@ -606,24 +523,6 @@ impl fmt::Display for DataType {
             DataType::UHugeInt => {
                 write!(f, "UHUGEINT")
             }
-            DataType::UInt8 => {
-                write!(f, "UInt8")
-            }
-            DataType::UInt16 => {
-                write!(f, "UInt16")
-            }
-            DataType::UInt32 => {
-                write!(f, "UInt32")
-            }
-            DataType::UInt64 => {
-                write!(f, "UInt64")
-            }
-            DataType::UInt128 => {
-                write!(f, "UInt128")
-            }
-            DataType::UInt256 => {
-                write!(f, "UInt256")
-            }
             DataType::Signed => {
                 write!(f, "SIGNED")
             }
@@ -639,8 +538,6 @@ impl fmt::Display for DataType {
             DataType::Real => write!(f, "REAL"),
             DataType::RealUnsigned => write!(f, "REAL UNSIGNED"),
             DataType::Float4 => write!(f, "FLOAT4"),
-            DataType::Float32 => write!(f, "Float32"),
-            DataType::Float64 => write!(f, "FLOAT64"),
             DataType::Double(info) => write!(f, "DOUBLE{info}"),
             DataType::DoubleUnsigned(info) => write!(f, "DOUBLE{info} UNSIGNED"),
             DataType::Float8 => write!(f, "FLOAT8"),
@@ -649,7 +546,6 @@ impl fmt::Display for DataType {
             DataType::Bool => write!(f, "BOOL"),
             DataType::Boolean => write!(f, "BOOLEAN"),
             DataType::Date => write!(f, "DATE"),
-            DataType::Date32 => write!(f, "Date32"),
             DataType::Time(precision, timezone_info) => {
                 format_datetime_precision_and_tz(f, "TIME", precision, timezone_info)
             }
@@ -661,14 +557,6 @@ impl fmt::Display for DataType {
             }
             DataType::TimestampNtz(precision) => {
                 format_type_with_optional_length(f, "TIMESTAMP_NTZ", precision, false)
-            }
-            DataType::Datetime64(precision, timezone) => {
-                format_clickhouse_datetime_precision_and_timezone(
-                    f,
-                    "DateTime64",
-                    precision,
-                    timezone,
-                )
             }
             DataType::Interval { fields, precision } => {
                 write!(f, "INTERVAL")?;
@@ -758,21 +646,6 @@ impl fmt::Display for DataType {
             DataType::Nullable(data_type) => {
                 write!(f, "Nullable({data_type})")
             }
-            DataType::FixedString(character_length) => {
-                write!(f, "FixedString({character_length})")
-            }
-            DataType::LowCardinality(data_type) => {
-                write!(f, "LowCardinality({data_type})")
-            }
-            DataType::Map(key_data_type, value_data_type) => {
-                write!(f, "Map({key_data_type}, {value_data_type})")
-            }
-            DataType::Tuple(fields) => {
-                write!(f, "Tuple({})", display_comma_separated(fields))
-            }
-            DataType::Nested(fields) => {
-                write!(f, "Nested({})", display_comma_separated(fields))
-            }
             DataType::Unspecified => Ok(()),
             DataType::Trigger => write!(f, "TRIGGER"),
             DataType::Table(fields) => match fields {
@@ -850,23 +723,6 @@ fn format_datetime_precision_and_tz(
             write!(f, "{len_fmt}{time_zone}")?;
         }
     }
-
-    Ok(())
-}
-
-fn format_clickhouse_datetime_precision_and_timezone(
-    f: &mut fmt::Formatter,
-    sql_type: &'static str,
-    len: &u64,
-    time_zone: &Option<String>,
-) -> fmt::Result {
-    write!(f, "{sql_type}({len}")?;
-
-    if let Some(time_zone) = time_zone {
-        write!(f, ", '{time_zone}'")?;
-    }
-
-    write!(f, ")")?;
 
     Ok(())
 }

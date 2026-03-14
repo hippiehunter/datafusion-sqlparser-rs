@@ -27,10 +27,9 @@ use sqlparser_derive::{Visit, VisitMut};
 use crate::display_utils::{indented_list, Indent, SpaceOrNewline};
 
 use super::{
-    display_comma_separated, helpers::attached_token::AttachedToken, query::InputFormatClause,
-    Assignment, Expr, FromTable, Ident, InsertAliases, MysqlInsertPriority, ObjectName, OnInsert,
-    OrderByExpr, Query, SelectItem, Setting, SqliteOnConflict, TableObject, TableWithJoins,
-    UpdateTableFromKind,
+    display_comma_separated, helpers::attached_token::AttachedToken, Assignment, Expr, FromTable,
+    Ident, InsertAliases, MysqlInsertPriority, ObjectName, OnInsert, OrderByExpr, Query,
+    SelectItem, TableObject, TableWithJoins, UpdateTableFromKind,
 };
 
 /// FOR PORTION OF clause used in UPDATE and DELETE statements for temporal tables.
@@ -85,8 +84,6 @@ impl Display for OverridingKind {
 pub struct Insert {
     /// Token for the `INSERT` keyword (or its substitutes)
     pub insert_token: AttachedToken,
-    /// Only for Sqlite
-    pub or: Option<SqliteOnConflict>,
     /// Only for mysql
     pub ignore: bool,
     /// INTO - optional keyword
@@ -121,19 +118,6 @@ pub struct Insert {
     pub priority: Option<MysqlInsertPriority>,
     /// Only for mysql
     pub insert_alias: Option<InsertAliases>,
-    /// Settings used for ClickHouse.
-    ///
-    /// ClickHouse syntax: `INSERT INTO tbl SETTINGS format_template_resultset = '/some/path/resultset.format'`
-    ///
-    /// [ClickHouse `INSERT INTO`](https://clickhouse.com/docs/en/sql-reference/statements/insert-into)
-    pub settings: Option<Vec<Setting>>,
-    /// Format for `INSERT` statement when not using standard SQL format. Can be e.g. `CSV`,
-    /// `JSON`, `JSONAsString`, `LineAsString` and more.
-    ///
-    /// ClickHouse syntax: `INSERT INTO tbl FORMAT JSONEachRow {"foo": 1, "bar": 2}, {"foo": 3}`
-    ///
-    /// [ClickHouse formats JSON insert](https://clickhouse.com/docs/en/interfaces/formats#json-inserting-data)
-    pub format_clause: Option<InputFormatClause>,
 }
 
 impl Display for Insert {
@@ -144,32 +128,28 @@ impl Display for Insert {
             self.table.to_string()
         };
 
-        if let Some(on_conflict) = self.or {
-            write!(f, "INSERT {on_conflict} INTO {table_name} ")?;
-        } else {
-            write!(
-                f,
-                "{start}",
-                start = if self.replace_into {
-                    "REPLACE"
-                } else {
-                    "INSERT"
-                },
-            )?;
-            if let Some(priority) = self.priority {
-                write!(f, " {priority}",)?;
-            }
-
-            write!(
-                f,
-                "{ignore}{over}{int}{tbl} {table_name} ",
-                table_name = table_name,
-                ignore = if self.ignore { " IGNORE" } else { "" },
-                over = if self.overwrite { " OVERWRITE" } else { "" },
-                int = if self.into { " INTO" } else { "" },
-                tbl = if self.has_table_keyword { " TABLE" } else { "" },
-            )?;
+        write!(
+            f,
+            "{start}",
+            start = if self.replace_into {
+                "REPLACE"
+            } else {
+                "INSERT"
+            },
+        )?;
+        if let Some(priority) = self.priority {
+            write!(f, " {priority}",)?;
         }
+
+        write!(
+            f,
+            "{ignore}{over}{int}{tbl} {table_name} ",
+            table_name = table_name,
+            ignore = if self.ignore { " IGNORE" } else { "" },
+            over = if self.overwrite { " OVERWRITE" } else { "" },
+            int = if self.into { " INTO" } else { "" },
+            tbl = if self.has_table_keyword { " TABLE" } else { "" },
+        )?;
         if !self.columns.is_empty() {
             write!(f, "({})", display_comma_separated(&self.columns))?;
             SpaceOrNewline.fmt(f)?;
@@ -189,18 +169,11 @@ impl Display for Insert {
             SpaceOrNewline.fmt(f)?;
         }
 
-        if let Some(settings) = &self.settings {
-            write!(f, "SETTINGS {}", display_comma_separated(settings))?;
-            SpaceOrNewline.fmt(f)?;
-        }
-
         if let Some(source) = &self.source {
             source.fmt(f)?;
         } else if !self.assignments.is_empty() {
             write!(f, "SET")?;
             indented_list(f, &self.assignments)?;
-        } else if let Some(format_clause) = &self.format_clause {
-            format_clause.fmt(f)?;
         } else if self.columns.is_empty() {
             write!(f, "DEFAULT VALUES")?;
         }
@@ -324,8 +297,6 @@ pub struct Update {
     pub returning: Option<Vec<SelectItem>>,
     /// PL/pgSQL INTO targets for `UPDATE ... RETURNING ... INTO ...`.
     pub returning_into: Option<Vec<ObjectName>>,
-    /// SQLite-specific conflict resolution clause
-    pub or: Option<SqliteOnConflict>,
     /// LIMIT
     pub limit: Option<Expr>,
 }
@@ -333,10 +304,6 @@ pub struct Update {
 impl Display for Update {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str("UPDATE ")?;
-        if let Some(or) = &self.or {
-            or.fmt(f)?;
-            f.write_str(" ")?;
-        }
         self.table.fmt(f)?;
         if let Some(for_portion_of) = &self.for_portion_of {
             SpaceOrNewline.fmt(f)?;

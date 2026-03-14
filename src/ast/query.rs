@@ -54,15 +54,6 @@ pub struct Query {
     /// `FOR JSON { AUTO | PATH } [ , INCLUDE_NULL_VALUES ]`
     /// (MSSQL-specific)
     pub for_clause: Option<ForClause>,
-    /// ClickHouse syntax: `SELECT * FROM t SETTINGS key1 = value1, key2 = value2`
-    ///
-    /// [ClickHouse](https://clickhouse.com/docs/en/sql-reference/statements/select#settings-in-select-query)
-    pub settings: Option<Vec<Setting>>,
-    /// `SELECT * FROM t FORMAT JSONCompact`
-    ///
-    /// [ClickHouse](https://clickhouse.com/docs/en/sql-reference/statements/select/format)
-    /// (ClickHouse-specific)
-    pub format_clause: Option<FormatClause>,
 }
 
 impl fmt::Display for Query {
@@ -80,10 +71,6 @@ impl fmt::Display for Query {
         if let Some(ref limit_clause) = self.limit_clause {
             limit_clause.fmt(f)?;
         }
-        if let Some(ref settings) = self.settings {
-            f.write_str(" SETTINGS ")?;
-            display_comma_separated(settings).fmt(f)?;
-        }
         if let Some(ref fetch) = self.fetch {
             f.write_str(" ")?;
             fetch.fmt(f)?;
@@ -95,37 +82,6 @@ impl fmt::Display for Query {
         if let Some(ref for_clause) = self.for_clause {
             f.write_str(" ")?;
             for_clause.fmt(f)?;
-        }
-        if let Some(ref format) = self.format_clause {
-            f.write_str(" ")?;
-            format.fmt(f)?;
-        }
-        Ok(())
-    }
-}
-
-/// Query syntax for ClickHouse ADD PROJECTION statement.
-/// Its syntax is similar to SELECT statement, but it is used to add a new projection to a table.
-/// Syntax is `SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY]`
-///
-/// [ClickHouse](https://clickhouse.com/docs/en/sql-reference/statements/alter/projection#add-projection)
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct ProjectionSelect {
-    pub projection: Vec<SelectItem>,
-    pub order_by: Option<OrderBy>,
-    pub group_by: Option<GroupByExpr>,
-}
-
-impl fmt::Display for ProjectionSelect {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "SELECT {}", display_comma_separated(&self.projection))?;
-        if let Some(ref group_by) = self.group_by {
-            write!(f, " {group_by}")?;
-        }
-        if let Some(ref order_by) = self.order_by {
-            write!(f, " {order_by}")?;
         }
         Ok(())
     }
@@ -316,43 +272,18 @@ pub struct Select {
     pub top_before_distinct: bool,
     /// projection expressions
     pub projection: Vec<SelectItem>,
-    /// Excluded columns from the projection expression which are not specified
-    /// directly after a wildcard.
-    ///
-    /// [Redshift](https://docs.aws.amazon.com/redshift/latest/dg/r_EXCLUDE_list.html)
-    pub exclude: Option<ExcludeSelectItem>,
     /// INTO
     pub into: Option<SelectInto>,
     /// FROM
     pub from: Vec<TableWithJoins>,
-    /// LATERAL VIEWs
-    pub lateral_views: Vec<LateralView>,
-    /// ClickHouse syntax: `PREWHERE a = 1 WHERE b = 2`,
-    /// and it can be used together with WHERE selection.
-    ///
-    /// [ClickHouse](https://clickhouse.com/docs/en/sql-reference/statements/select/prewhere)
-    pub prewhere: Option<Expr>,
     /// WHERE
     pub selection: Option<Expr>,
     /// GROUP BY
     pub group_by: GroupByExpr,
-    /// CLUSTER BY clause
-    pub cluster_by: Vec<Expr>,
-    /// DISTRIBUTE BY clause
-    pub distribute_by: Vec<Expr>,
-    /// SORT BY clause
-    pub sort_by: Vec<OrderByExpr>,
     /// HAVING
     pub having: Option<Expr>,
     /// WINDOW AS
     pub named_window: Vec<NamedWindowDefinition>,
-    /// QUALIFY (Snowflake)
-    pub qualify: Option<Expr>,
-    /// The positioning of QUALIFY and WINDOW clauses differ between dialects.
-    /// e.g. BigQuery requires that WINDOW comes after QUALIFY, while DUCKDB accepts
-    /// WINDOW before QUALIFY.
-    /// We accept either positioning and flag the accepted variant.
-    pub window_before_qualify: bool,
     /// STARTING WITH .. CONNECT BY
     pub connect_by: Option<ConnectBy>,
     /// Was this a FROM-first query?
@@ -394,10 +325,6 @@ impl fmt::Display for Select {
             indented_list(f, &self.projection)?;
         }
 
-        if let Some(exclude) = &self.exclude {
-            write!(f, " {exclude}")?;
-        }
-
         if let Some(ref into) = self.into {
             f.write_str(" ")?;
             into.fmt(f)?;
@@ -407,15 +334,6 @@ impl fmt::Display for Select {
             SpaceOrNewline.fmt(f)?;
             f.write_str("FROM")?;
             indented_list(f, &self.from)?;
-        }
-        if !self.lateral_views.is_empty() {
-            for lv in &self.lateral_views {
-                lv.fmt(f)?;
-            }
-        }
-        if let Some(ref prewhere) = self.prewhere {
-            f.write_str(" PREWHERE ")?;
-            prewhere.fmt(f)?;
         }
         if let Some(ref selection) = self.selection {
             SpaceOrNewline.fmt(f)?;
@@ -435,95 +353,21 @@ impl fmt::Display for Select {
                 }
             }
         }
-        if !self.cluster_by.is_empty() {
-            SpaceOrNewline.fmt(f)?;
-            f.write_str("CLUSTER BY")?;
-            SpaceOrNewline.fmt(f)?;
-            Indent(display_comma_separated(&self.cluster_by)).fmt(f)?;
-        }
-        if !self.distribute_by.is_empty() {
-            SpaceOrNewline.fmt(f)?;
-            f.write_str("DISTRIBUTE BY")?;
-            SpaceOrNewline.fmt(f)?;
-            display_comma_separated(&self.distribute_by).fmt(f)?;
-        }
-        if !self.sort_by.is_empty() {
-            SpaceOrNewline.fmt(f)?;
-            f.write_str("SORT BY")?;
-            SpaceOrNewline.fmt(f)?;
-            Indent(display_comma_separated(&self.sort_by)).fmt(f)?;
-        }
         if let Some(ref having) = self.having {
             SpaceOrNewline.fmt(f)?;
             f.write_str("HAVING")?;
             SpaceOrNewline.fmt(f)?;
             Indent(having).fmt(f)?;
         }
-        if self.window_before_qualify {
-            if !self.named_window.is_empty() {
-                SpaceOrNewline.fmt(f)?;
-                f.write_str("WINDOW")?;
-                SpaceOrNewline.fmt(f)?;
-                display_comma_separated(&self.named_window).fmt(f)?;
-            }
-            if let Some(ref qualify) = self.qualify {
-                SpaceOrNewline.fmt(f)?;
-                f.write_str("QUALIFY")?;
-                SpaceOrNewline.fmt(f)?;
-                qualify.fmt(f)?;
-            }
-        } else {
-            if let Some(ref qualify) = self.qualify {
-                SpaceOrNewline.fmt(f)?;
-                f.write_str("QUALIFY")?;
-                SpaceOrNewline.fmt(f)?;
-                qualify.fmt(f)?;
-            }
-            if !self.named_window.is_empty() {
-                SpaceOrNewline.fmt(f)?;
-                f.write_str("WINDOW")?;
-                SpaceOrNewline.fmt(f)?;
-                display_comma_separated(&self.named_window).fmt(f)?;
-            }
+        if !self.named_window.is_empty() {
+            SpaceOrNewline.fmt(f)?;
+            f.write_str("WINDOW")?;
+            SpaceOrNewline.fmt(f)?;
+            display_comma_separated(&self.named_window).fmt(f)?;
         }
         if let Some(ref connect_by) = self.connect_by {
             SpaceOrNewline.fmt(f)?;
             connect_by.fmt(f)?;
-        }
-        Ok(())
-    }
-}
-
-/// A LATERAL VIEW with potential column aliases
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct LateralView {
-    /// LATERAL VIEW
-    pub lateral_view: Expr,
-    /// LATERAL VIEW table name
-    pub lateral_view_name: ObjectName,
-    /// LATERAL VIEW optional column aliases
-    pub lateral_col_alias: Vec<Ident>,
-    /// LATERAL VIEW OUTER
-    pub outer: bool,
-}
-
-impl fmt::Display for LateralView {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            " LATERAL VIEW{outer} {} {}",
-            self.lateral_view,
-            self.lateral_view_name,
-            outer = if self.outer { " OUTER" } else { "" }
-        )?;
-        if !self.lateral_col_alias.is_empty() {
-            write!(
-                f,
-                " AS {}",
-                display_comma_separated(&self.lateral_col_alias)
-            )?;
         }
         Ok(())
     }
@@ -832,10 +676,7 @@ pub struct WildcardAdditionalOptions {
     /// `[ILIKE...]`.
     ///  Snowflake syntax: <https://docs.snowflake.com/en/sql-reference/sql/select#parameters>
     pub opt_ilike: Option<IlikeSelectItem>,
-    /// `[EXCLUDE...]`.
-    pub opt_exclude: Option<ExcludeSelectItem>,
     /// `[EXCEPT...]`.
-    ///  Clickhouse syntax: <https://clickhouse.com/docs/en/sql-reference/statements/select#except>
     pub opt_except: Option<ExceptSelectItem>,
     /// `[REPLACE]`
     ///  BigQuery syntax: <https://cloud.google.com/bigquery/docs/reference/standard-sql/query-syntax#select_replace>
@@ -851,7 +692,6 @@ impl Default for WildcardAdditionalOptions {
         Self {
             wildcard_token: TokenWithSpan::wrap(Token::Mul).into(),
             opt_ilike: None,
-            opt_exclude: None,
             opt_except: None,
             opt_replace: None,
             opt_rename: None,
@@ -863,9 +703,6 @@ impl fmt::Display for WildcardAdditionalOptions {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if let Some(ilike) = &self.opt_ilike {
             write!(f, " {ilike}")?;
-        }
-        if let Some(exclude) = &self.opt_exclude {
-            write!(f, " {exclude}")?;
         }
         if let Some(except) = &self.opt_except {
             write!(f, " {except}")?;
@@ -903,47 +740,6 @@ impl fmt::Display for IlikeSelectItem {
         Ok(())
     }
 }
-/// Snowflake `EXCLUDE` information.
-///
-/// # Syntax
-/// ```plaintext
-/// <col_name>
-/// | (<col_name>, <col_name>, ...)
-/// ```
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum ExcludeSelectItem {
-    /// Single column name without parenthesis.
-    ///
-    /// # Syntax
-    /// ```plaintext
-    /// <col_name>
-    /// ```
-    Single(Ident),
-    /// Multiple column names inside parenthesis.
-    /// # Syntax
-    /// ```plaintext
-    /// (<col_name>, <col_name>, ...)
-    /// ```
-    Multiple(Vec<Ident>),
-}
-
-impl fmt::Display for ExcludeSelectItem {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "EXCLUDE")?;
-        match self {
-            Self::Single(column) => {
-                write!(f, " {column}")?;
-            }
-            Self::Multiple(columns) => {
-                write!(f, " ({})", display_comma_separated(columns))?;
-            }
-        }
-        Ok(())
-    }
-}
-
 /// Snowflake `RENAME` information.
 ///
 /// # Syntax
@@ -1128,20 +924,6 @@ impl fmt::Display for ConnectBy {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct Setting {
-    pub key: Ident,
-    pub value: Expr,
-}
-
-impl fmt::Display for Setting {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} = {}", self.key, self.value)
-    }
-}
-
 /// An expression optionally followed by an alias.
 ///
 /// Example:
@@ -1193,11 +975,6 @@ impl fmt::Display for ExprWithAliasAndOrderBy {
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct TableFunctionArgs {
     pub args: Vec<FunctionArg>,
-    /// ClickHouse-specific SETTINGS clause.
-    /// For example,
-    /// `SELECT * FROM executable('generate_random.py', TabSeparated, 'id UInt32, random String', SETTINGS send_chunk_header = false, pool_size = 16)`
-    /// [`executable` table function](https://clickhouse.com/docs/en/engines/table-functions/executable)
-    pub settings: Option<Vec<Setting>>,
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
@@ -1489,27 +1266,6 @@ pub enum TableFactor {
         /// The columns to be extracted from each generated row.
         columns: Vec<XmlTableColumn>,
         /// The alias for the table.
-        alias: Option<TableAlias>,
-    },
-    /// The `GRAPH_TABLE` table-valued function for graph pattern matching (SQL/PGQ).
-    /// Part of the SQL:2023 standard for Property Graph Queries.
-    ///
-    /// <https://www.iso.org/standard/76583.html>
-    ///
-    /// ```sql
-    /// SELECT * FROM GRAPH_TABLE (
-    ///     my_graph
-    ///     MATCH (a)-[e]->(b)
-    ///     WHERE a.age > 18
-    ///     COLUMNS (a.name, b.name, e.weight)
-    /// ) AS gt;
-    /// ```
-    GraphTable {
-        /// The name of the graph
-        graph_name: ObjectName,
-        /// The MATCH clause with patterns, optional WHERE, and COLUMNS
-        match_clause: GraphMatchClause,
-        /// The alias for the table
         alias: Option<TableAlias>,
     },
 }
@@ -1959,631 +1715,6 @@ impl fmt::Display for RepetitionQuantifier {
     }
 }
 
-// ==================== SQL/PGQ GRAPH_TABLE Support ====================
-
-/// Edge direction in a graph pattern (SQL/PGQ)
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum EdgeDirection {
-    /// `-[e]->`
-    Right,
-    /// `<-[e]-`
-    Left,
-    /// `-[e]-`
-    Undirected,
-    /// `<-[e]->`
-    Any,
-}
-
-impl fmt::Display for EdgeDirection {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            EdgeDirection::Right => write!(f, "->"),
-            EdgeDirection::Left => write!(f, "<-"),
-            EdgeDirection::Undirected => Ok(()),
-            EdgeDirection::Any => write!(f, "<->"),
-        }
-    }
-}
-
-/// Label expression in graph patterns (SQL/PGQ)
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum LabelExpression {
-    /// A single label name
-    Label(Ident),
-    /// Wildcard `%`
-    Wildcard,
-    /// Negation `!expr`
-    Not(Box<LabelExpression>),
-    /// Conjunction `expr & expr`
-    And(Box<LabelExpression>, Box<LabelExpression>),
-    /// Disjunction `expr | expr`
-    Or(Box<LabelExpression>, Box<LabelExpression>),
-    /// Grouped `(expr)`
-    Group(Box<LabelExpression>),
-}
-
-impl fmt::Display for LabelExpression {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            LabelExpression::Label(ident) => write!(f, "{ident}"),
-            LabelExpression::Wildcard => write!(f, "%"),
-            LabelExpression::Not(expr) => write!(f, "!{expr}"),
-            LabelExpression::And(left, right) => write!(f, "{left}&{right}"),
-            LabelExpression::Or(left, right) => write!(f, "{left}|{right}"),
-            LabelExpression::Group(expr) => write!(f, "({expr})"),
-        }
-    }
-}
-
-/// Property key-value pair in graph patterns
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct PropertyKeyValue {
-    pub key: Ident,
-    pub value: Expr,
-}
-
-impl fmt::Display for PropertyKeyValue {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}: {}", self.key, self.value)
-    }
-}
-
-/// Node pattern in a graph query (SQL/PGQ)
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct NodePattern {
-    /// Optional variable name
-    pub variable: Option<Ident>,
-    /// Optional label expression(s) - multiple labels are conjunction
-    pub labels: Vec<LabelExpression>,
-    /// Optional property constraints
-    pub properties: Vec<PropertyKeyValue>,
-    /// Optional WHERE clause
-    pub where_clause: Option<Expr>,
-}
-
-impl fmt::Display for NodePattern {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "(")?;
-        if let Some(var) = &self.variable {
-            write!(f, "{var}")?;
-        }
-        for label in &self.labels {
-            write!(f, ":{label}")?;
-        }
-        if !self.properties.is_empty() {
-            write!(f, " {{")?;
-            for (i, prop) in self.properties.iter().enumerate() {
-                if i > 0 {
-                    write!(f, ", ")?;
-                }
-                write!(f, "{prop}")?;
-            }
-            write!(f, "}}")?;
-        }
-        if let Some(where_clause) = &self.where_clause {
-            write!(f, " WHERE {where_clause}")?;
-        }
-        write!(f, ")")
-    }
-}
-
-/// Edge pattern in a graph query (SQL/PGQ)
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct EdgePattern {
-    /// Optional variable name
-    pub variable: Option<Ident>,
-    /// Optional label expression(s)
-    pub labels: Vec<LabelExpression>,
-    /// Optional property constraints
-    pub properties: Vec<PropertyKeyValue>,
-    /// Optional WHERE clause
-    pub where_clause: Option<Expr>,
-    /// Edge direction
-    pub direction: EdgeDirection,
-    /// Optional quantifier for path patterns
-    pub quantifier: Option<RepetitionQuantifier>,
-    /// Whether this edge was parsed without brackets (-->  vs -[]->)
-    /// When true, display as --> instead of -[]->
-    pub anonymous: bool,
-}
-
-impl fmt::Display for EdgePattern {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Left arrow
-        match self.direction {
-            EdgeDirection::Left | EdgeDirection::Any => write!(f, "<")?,
-            _ => {}
-        }
-
-        // Use the anonymous field to determine whether to use brackets or not
-        // anonymous=true: --> (no brackets)
-        // anonymous=false: -[]-> (with brackets, even if empty)
-        if self.anonymous {
-            // Anonymous edge: use -- syntax without brackets
-            write!(f, "--")?;
-        } else {
-            // Edge with details: use -[...] syntax
-            write!(f, "-[")?;
-
-            if let Some(var) = &self.variable {
-                write!(f, "{var}")?;
-            }
-            for label in &self.labels {
-                write!(f, ":{label}")?;
-            }
-            if !self.properties.is_empty() {
-                write!(f, " {{")?;
-                for (i, prop) in self.properties.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    write!(f, "{prop}")?;
-                }
-                write!(f, "}}")?;
-            }
-            // Quantifier comes BEFORE WHERE clause: [e* WHERE ...]
-            if let Some(quantifier) = &self.quantifier {
-                // For Range and AtMost quantifiers, use *n..m syntax (star-range form)
-                // Other quantifiers (*, +, ?, {n}, {n,}) use their default Display
-                match quantifier {
-                    RepetitionQuantifier::Range(0, m) => write!(f, "*..{m}")?, // *..5 means 0 to 5
-                    RepetitionQuantifier::Range(n, m) => write!(f, "*{n}..{m}")?,
-                    RepetitionQuantifier::AtMost(m) => write!(f, "*..{m}")?,
-                    _ => write!(f, "{quantifier}")?,
-                }
-            }
-            if let Some(where_clause) = &self.where_clause {
-                write!(f, " WHERE {where_clause}")?;
-            }
-
-            write!(f, "]-")?;
-        }
-
-        // Right arrow
-        match self.direction {
-            EdgeDirection::Right | EdgeDirection::Any => write!(f, ">")?,
-            _ => {}
-        }
-
-        Ok(())
-    }
-}
-
-/// Graph pattern element (node or edge)
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum GraphPatternElement {
-    Node(NodePattern),
-    Edge(EdgePattern),
-    /// Subpattern (grouped or alternation) used as a path element
-    Subpattern(GraphPatternExpr),
-}
-
-impl fmt::Display for GraphPatternElement {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            GraphPatternElement::Node(node) => write!(f, "{node}"),
-            GraphPatternElement::Edge(edge) => write!(f, "{edge}"),
-            GraphPatternElement::Subpattern(expr) => write!(f, "{expr}"),
-        }
-    }
-}
-
-/// Graph pattern expression (SQL/PGQ)
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum GraphPatternExpr {
-    /// Chain of nodes and edges: (a)-[e]->(b)
-    Chain(Vec<GraphPatternElement>),
-    /// Alternation of patterns: pattern1 | pattern2 | pattern3
-    Alternation(Vec<GraphPatternExpr>),
-    /// Parenthesized pattern with optional quantifier: ((pattern)){n,m}
-    Group {
-        pattern: Box<GraphPatternExpr>,
-        quantifier: Option<RepetitionQuantifier>,
-    },
-}
-
-impl fmt::Display for GraphPatternExpr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            GraphPatternExpr::Chain(elements) => {
-                for elem in elements {
-                    write!(f, "{elem}")?;
-                }
-                Ok(())
-            }
-            GraphPatternExpr::Alternation(patterns) => {
-                write!(f, "(")?;
-                for (i, pattern) in patterns.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, " | ")?;
-                    }
-                    write!(f, "{pattern}")?;
-                }
-                write!(f, ")")
-            }
-            GraphPatternExpr::Group {
-                pattern,
-                quantifier,
-            } => {
-                write!(f, "({pattern})")?;
-                if let Some(q) = quantifier {
-                    write!(f, "{q}")?;
-                }
-                Ok(())
-            }
-        }
-    }
-}
-
-/// Graph pattern (SQL/PGQ)
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct GraphPattern {
-    /// Optional path variable binding (e.g., `p` in `p = (a)-[]->(b)`)
-    pub path_variable: Option<Ident>,
-    pub expr: GraphPatternExpr,
-}
-
-impl fmt::Display for GraphPattern {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(var) = &self.path_variable {
-            write!(f, "{var} = ")?;
-        }
-        write!(f, "{}", self.expr)
-    }
-}
-
-/// Column specification in GRAPH_TABLE COLUMNS clause
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct GraphColumn {
-    pub expr: Expr,
-    pub alias: Option<Ident>,
-}
-
-impl fmt::Display for GraphColumn {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.expr)?;
-        if let Some(alias) = &self.alias {
-            write!(f, " AS {alias}")?;
-        }
-        Ok(())
-    }
-}
-
-/// COLUMNS clause in GRAPH_TABLE
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct GraphColumnsClause {
-    pub columns: Vec<GraphColumn>,
-}
-
-impl fmt::Display for GraphColumnsClause {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "COLUMNS (")?;
-        for (i, col) in self.columns.iter().enumerate() {
-            if i > 0 {
-                write!(f, ", ")?;
-            }
-            write!(f, "{col}")?;
-        }
-        write!(f, ")")
-    }
-}
-
-/// Path finding algorithm for MATCH clause (SQL/PGQ)
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum PathFinding {
-    /// ANY - any path
-    Any,
-    /// ANY SHORTEST - any shortest path
-    AnyShortest,
-    /// ALL SHORTEST - all shortest paths
-    AllShortest,
-    /// SHORTEST k [PATHS|PATH GROUPS]
-    Shortest {
-        k: u64,
-        variant: Option<PathVariant>,
-    },
-    /// ANY CHEAPEST - any cheapest path
-    AnyCheapest,
-    /// ALL CHEAPEST - all cheapest paths
-    AllCheapest,
-    /// CHEAPEST k [PATHS|PATH GROUPS]
-    Cheapest {
-        k: u64,
-        variant: Option<PathVariant>,
-    },
-    /// ALL - all paths
-    All,
-}
-
-impl fmt::Display for PathFinding {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PathFinding::Any => write!(f, "ANY"),
-            PathFinding::AnyShortest => write!(f, "ANY SHORTEST"),
-            PathFinding::AllShortest => write!(f, "ALL SHORTEST"),
-            PathFinding::Shortest { k, variant } => {
-                write!(f, "SHORTEST {k}")?;
-                if let Some(v) = variant {
-                    write!(f, " {v}")?;
-                }
-                Ok(())
-            }
-            PathFinding::AnyCheapest => write!(f, "ANY CHEAPEST"),
-            PathFinding::AllCheapest => write!(f, "ALL CHEAPEST"),
-            PathFinding::Cheapest { k, variant } => {
-                write!(f, "CHEAPEST {k}")?;
-                if let Some(v) = variant {
-                    write!(f, " {v}")?;
-                }
-                Ok(())
-            }
-            PathFinding::All => write!(f, "ALL"),
-        }
-    }
-}
-
-/// Variant for SHORTEST/CHEAPEST k
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum PathVariant {
-    Paths,
-    PathGroups,
-}
-
-impl fmt::Display for PathVariant {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PathVariant::Paths => write!(f, "PATHS"),
-            PathVariant::PathGroups => write!(f, "PATH GROUPS"),
-        }
-    }
-}
-
-/// Path mode for MATCH clause (SQL/PGQ)
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum PathMode {
-    /// WALK - allows repeated vertices and edges
-    Walk,
-    /// TRAIL - no repeated edges
-    Trail,
-    /// ACYCLIC - no repeated vertices
-    Acyclic,
-    /// SIMPLE - no repeated vertices at all
-    Simple,
-}
-
-impl fmt::Display for PathMode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PathMode::Walk => write!(f, "WALK"),
-            PathMode::Trail => write!(f, "TRAIL"),
-            PathMode::Acyclic => write!(f, "ACYCLIC"),
-            PathMode::Simple => write!(f, "SIMPLE"),
-        }
-    }
-}
-
-/// KEEP clause for filtering paths
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum KeepClause {
-    /// KEEP SHORTEST
-    Shortest,
-    /// KEEP CHEAPEST COST expr
-    Cheapest { cost: Expr },
-    /// KEEP FIRST k
-    First { k: u64 },
-}
-
-impl fmt::Display for KeepClause {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            KeepClause::Shortest => write!(f, "KEEP SHORTEST"),
-            KeepClause::Cheapest { cost } => write!(f, "KEEP CHEAPEST COST {cost}"),
-            KeepClause::First { k } => write!(f, "KEEP FIRST {k}"),
-        }
-    }
-}
-
-/// Row limiting mode for graph pattern matching results
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum RowLimiting {
-    /// ONE ROW PER MATCH - return one row per complete match
-    OneRowPerMatch,
-    /// ONE ROW PER VERTEX - return one row per vertex in the path
-    OneRowPerVertex,
-    /// ONE ROW PER STEP - return one row per edge in the path
-    OneRowPerStep,
-}
-
-impl fmt::Display for RowLimiting {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            RowLimiting::OneRowPerMatch => write!(f, "ONE ROW PER MATCH"),
-            RowLimiting::OneRowPerVertex => write!(f, "ONE ROW PER VERTEX"),
-            RowLimiting::OneRowPerStep => write!(f, "ONE ROW PER STEP"),
-        }
-    }
-}
-
-/// MATCH clause in GRAPH_TABLE
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct GraphMatchClause {
-    pub path_finding: Option<PathFinding>,
-    pub path_mode: Option<PathMode>,
-    pub row_limiting: Option<RowLimiting>,
-    pub patterns: Vec<GraphPattern>,
-    pub cost_expr: Option<Expr>,
-    pub where_clause: Option<Expr>,
-    pub keep_clause: Option<KeepClause>,
-    pub columns: Option<GraphColumnsClause>,
-    /// Whether the MATCH keyword was explicitly present (used in graph EXISTS predicates)
-    pub match_keyword_present: bool,
-}
-
-impl fmt::Display for GraphMatchClause {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Write MATCH keyword if it was present in the original query
-        if self.match_keyword_present {
-            write!(f, "MATCH ")?;
-        }
-
-        // Path finding algorithm
-        if let Some(path_finding) = &self.path_finding {
-            write!(f, "{path_finding} ")?;
-        }
-
-        // Path mode
-        if let Some(path_mode) = &self.path_mode {
-            write!(f, "{path_mode} ")?;
-        }
-
-        // Row limiting
-        if let Some(row_limiting) = &self.row_limiting {
-            write!(f, "{row_limiting} ")?;
-        }
-
-        // Patterns
-        for (i, pattern) in self.patterns.iter().enumerate() {
-            if i > 0 {
-                write!(f, ", ")?;
-            }
-            write!(f, "{pattern}")?;
-        }
-
-        // COST clause
-        if let Some(cost_expr) = &self.cost_expr {
-            write!(f, " COST {cost_expr}")?;
-        }
-
-        // WHERE clause
-        if let Some(where_clause) = &self.where_clause {
-            write!(f, " WHERE {where_clause}")?;
-        }
-
-        // KEEP clause
-        if let Some(keep_clause) = &self.keep_clause {
-            write!(f, " {keep_clause}")?;
-        }
-
-        // COLUMNS clause
-        if let Some(columns) = &self.columns {
-            write!(f, " {columns}")?;
-        }
-
-        Ok(())
-    }
-}
-
-/// Graph subquery with optional RETURN clause
-///
-/// See ISO/IEC 9075-16:2023 (SQL/PGQ) - Graph element subqueries.
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct GraphSubquery {
-    /// Whether DISTINCT is used (for COUNT { DISTINCT ... })
-    pub distinct: bool,
-    /// Whether the MATCH keyword was explicitly present
-    pub match_keyword_present: bool,
-    /// Path finding algorithm (e.g., ANY SHORTEST)
-    pub path_finding: Option<PathFinding>,
-    /// Path mode
-    pub path_mode: Option<PathMode>,
-    /// Graph patterns to match
-    pub patterns: Vec<GraphPattern>,
-    /// WHERE clause
-    pub where_clause: Option<Expr>,
-    /// RETURN clause expression
-    pub return_expr: Option<Expr>,
-    /// ORDER BY clause
-    pub order_by: Vec<OrderByExpr>,
-    /// LIMIT clause
-    pub limit: Option<Expr>,
-}
-
-impl fmt::Display for GraphSubquery {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.distinct {
-            write!(f, "DISTINCT ")?;
-        }
-
-        // Write MATCH keyword if it was present
-        if self.match_keyword_present {
-            write!(f, "MATCH ")?;
-        }
-
-        // Path finding algorithm
-        if let Some(path_finding) = &self.path_finding {
-            write!(f, "{path_finding} ")?;
-        }
-
-        // Path mode
-        if let Some(path_mode) = &self.path_mode {
-            write!(f, "{path_mode} ")?;
-        }
-
-        // Patterns
-        for (i, pattern) in self.patterns.iter().enumerate() {
-            if i > 0 {
-                write!(f, ", ")?;
-            }
-            write!(f, "{pattern}")?;
-        }
-
-        // WHERE clause
-        if let Some(where_clause) = &self.where_clause {
-            write!(f, " WHERE {where_clause}")?;
-        }
-
-        // RETURN clause
-        if let Some(return_expr) = &self.return_expr {
-            write!(f, " RETURN {return_expr}")?;
-        }
-
-        // ORDER BY clause
-        if !self.order_by.is_empty() {
-            write!(f, " ORDER BY {}", display_comma_separated(&self.order_by))?;
-        }
-
-        // LIMIT clause
-        if let Some(limit) = &self.limit {
-            write!(f, " LIMIT {limit}")?;
-        }
-
-        Ok(())
-    }
-}
 
 impl fmt::Display for TableFactor {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -2610,12 +1741,6 @@ impl fmt::Display for TableFactor {
                 if let Some(args) = args {
                     write!(f, "(")?;
                     write!(f, "{}", display_comma_separated(&args.args))?;
-                    if let Some(ref settings) = args.settings {
-                        if !args.args.is_empty() {
-                            write!(f, ", ")?;
-                        }
-                        write!(f, "SETTINGS {}", display_comma_separated(settings))?;
-                    }
                     write!(f, ")")?;
                 }
                 if *with_ordinality {
@@ -2890,19 +2015,6 @@ impl fmt::Display for TableFactor {
                 if let Some(alias) = alias {
                     write!(f, " AS {alias}")?;
                 }
-                Ok(())
-            }
-            TableFactor::GraphTable {
-                graph_name,
-                match_clause,
-                alias,
-            } => {
-                write!(f, "GRAPH_TABLE ({graph_name} {match_clause})")?;
-
-                if let Some(alias) = alias {
-                    write!(f, " AS {alias}")?;
-                }
-
                 Ok(())
             }
         }
@@ -3761,49 +2873,6 @@ impl fmt::Display for GroupByExpr {
                 Ok(())
             }
         }
-    }
-}
-
-/// FORMAT identifier or FORMAT NULL clause, specific to ClickHouse.
-///
-/// [ClickHouse]: <https://clickhouse.com/docs/en/sql-reference/statements/select/format>
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum FormatClause {
-    Identifier(Ident),
-    Null,
-}
-
-impl fmt::Display for FormatClause {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            FormatClause::Identifier(ident) => write!(f, "FORMAT {ident}"),
-            FormatClause::Null => write!(f, "FORMAT NULL"),
-        }
-    }
-}
-
-/// FORMAT identifier in input context, specific to ClickHouse.
-///
-/// [ClickHouse]: <https://clickhouse.com/docs/en/interfaces/formats>
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct InputFormatClause {
-    pub ident: Ident,
-    pub values: Vec<Expr>,
-}
-
-impl fmt::Display for InputFormatClause {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "FORMAT {}", self.ident)?;
-
-        if !self.values.is_empty() {
-            write!(f, " {}", display_comma_separated(self.values.as_slice()))?;
-        }
-
-        Ok(())
     }
 }
 

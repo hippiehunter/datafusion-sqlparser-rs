@@ -30,15 +30,15 @@ use super::{
     BeginEndStatements, CaseStatement, CloseCursor, ClusteredIndex, ColumnDef, ColumnOption,
     ColumnOptionDef, ConditionalStatementBlock, ConditionalStatements, ConflictTarget, ConnectBy,
     ConstraintCharacteristics, CopySource, CreateIndex, CreateTable, CreateTableOptions, Cte,
-    Delete, DoBody, DoStatement, DoUpdate, ExceptSelectItem, ExcludeSelectItem, Expr,
+    Delete, DoBody, DoStatement, DoUpdate, ExceptSelectItem, Expr,
     ExprWithAlias, Fetch, ForPortionOf, FromTable, Function, FunctionArg, FunctionArgExpr,
     FunctionArgumentClause, FunctionArgumentList, FunctionArguments, GroupByExpr, HavingBound,
     IfStatement, IlikeSelectItem, IndexColumn, Insert, Interpolate, InterpolateExpr,
     IterateStatement, Join, JoinConstraint, JoinOperator, JsonOnBehavior, JsonPath, JsonPathElem,
-    LateralView, LeaveStatement, LimitClause, LoopStatement, MatchRecognizePattern, MdArray,
+    LeaveStatement, LimitClause, LoopStatement, MatchRecognizePattern, MdArray,
     MdArrayDimension, Measure, NamedParenthesizedList, NamedWindowDefinition, ObjectName,
     ObjectNamePart, Offset, OnConflict, OnConflictAction, OnInsert, OpenStatement, OrderBy,
-    OrderByExpr, OrderByKind, Partition, PerformStatement, PivotValueSource, ProjectionSelect,
+    OrderByExpr, OrderByKind, Partition, PerformStatement, PivotValueSource,
     Query, RaiseMessage, RaiseStatement, RaiseUsingItem, ReferentialAction, RenameSelectItem,
     RepeatStatement, ReplaceSelectElement, ReplaceSelectItem, Select, SelectInto, SelectItem,
     SetExpr, SqlOption, SqlPsmAssignment, SqlPsmDataType, SqlPsmDeclaration, Statement, Subscript,
@@ -105,10 +105,8 @@ impl Spanned for Query {
             order_by,
             limit_clause,
             fetch,
-            locks: _,         // todo
-            for_clause: _,    // todo, mssql specific
-            settings: _,      // todo, clickhouse specific
-            format_clause: _, // todo, clickhouse specific
+            locks: _,      // todo
+            for_clause: _, // todo, mssql specific
         } = self;
 
         union_spans(
@@ -318,16 +316,6 @@ impl Spanned for Statement {
             Statement::Delete(delete) => delete.span(),
             Statement::CreateView(create_view) => create_view.span(),
             Statement::CreateTable(create_table) => create_table.span(),
-            Statement::CreateVirtualTable {
-                name,
-                if_not_exists: _,
-                module_name,
-                module_args,
-            } => union_spans(
-                core::iter::once(name.span())
-                    .chain(core::iter::once(module_name.span))
-                    .chain(module_args.iter().map(|i| i.span)),
-            ),
             Statement::CreateIndex(create_index) => create_index.span(),
             Statement::CreateRole(create_role) => create_role.span(),
             Statement::CreateExtension(create_extension) => create_extension.span(),
@@ -351,9 +339,6 @@ impl Spanned for Statement {
             }
             Statement::CreateOperatorClass(create_operator_class) => create_operator_class.span(),
             Statement::CreateAssertion(create_assertion) => create_assertion.token.0.span,
-            Statement::CreatePropertyGraph(create_property_graph) => {
-                create_property_graph.token.0.span
-            }
             Statement::AlterTable(alter_table) => alter_table.span(),
             Statement::AlterIndex { name, operation } => name.span().union(&operation.span()),
             Statement::AlterView {
@@ -372,14 +357,11 @@ impl Spanned for Statement {
             Statement::AlterRole { token, .. } => token.0.span,
             Statement::AlterSystem { token, .. } => token.0.span,
             Statement::AlterDatabase { token, .. } => token.0.span,
-            Statement::AlterSession { token, .. } => token.0.span,
             Statement::AlterSequence { token, .. } => token.0.span,
-            Statement::AttachDatabase { token, .. } => token.0.span,
             Statement::Drop { drop_token, .. } => drop_token.0.span,
             Statement::DropFunction(drop_function) => drop_function.span(),
             Statement::DropDomain(drop_domain) => drop_domain.token.0.span,
             Statement::DropAssertion(drop_assertion) => drop_assertion.token.0.span,
-            Statement::DropPropertyGraph(drop_property_graph) => drop_property_graph.token.0.span,
             Statement::DropProcedure { token, .. } => token.0.span,
             Statement::Declare { declare_token, .. } => declare_token.0.span,
             Statement::Fetch { fetch_token, .. } => fetch_token.0.span,
@@ -1049,7 +1031,6 @@ impl Spanned for Update {
             selection,
             returning,
             returning_into,
-            or: _,
             limit,
         } = self;
 
@@ -1196,22 +1177,6 @@ impl Spanned for AlterTableOperation {
                 column_def,
                 column_position: _,
             } => column_def.span(),
-            AlterTableOperation::AddProjection {
-                if_not_exists: _,
-                name,
-                select,
-            } => name.span.union(&select.span()),
-            AlterTableOperation::DropProjection { if_exists: _, name } => name.span,
-            AlterTableOperation::MaterializeProjection {
-                if_exists: _,
-                name,
-                partition,
-            } => name.span.union_opt(&partition.as_ref().map(|i| i.span)),
-            AlterTableOperation::ClearProjection {
-                if_exists: _,
-                name,
-                partition,
-            } => name.span.union_opt(&partition.as_ref().map(|i| i.span)),
             AlterTableOperation::DisableRowLevelSecurity => Span::empty(),
             AlterTableOperation::DisableRule { name } => name.span,
             AlterTableOperation::DisableTrigger { name } => name.span,
@@ -1324,23 +1289,7 @@ impl Spanned for Partition {
     }
 }
 
-impl Spanned for ProjectionSelect {
-    fn span(&self) -> Span {
-        let ProjectionSelect {
-            projection,
-            order_by,
-            group_by,
-        } = self;
 
-        union_spans(
-            projection
-                .iter()
-                .map(|i| i.span())
-                .chain(order_by.iter().map(|i| i.span()))
-                .chain(group_by.iter().map(|i| i.span())),
-        )
-    }
-}
 
 /// # partial span
 ///
@@ -1407,7 +1356,6 @@ impl Spanned for Insert {
     fn span(&self) -> Span {
         let Insert {
             insert_token,
-            or: _,     // enum, sqlite specific
             ignore: _, // bool
             into: _,   // bool
             table,
@@ -1425,8 +1373,6 @@ impl Spanned for Insert {
             priority: _,     // todo, mysql specific
             insert_alias: _, // todo, mysql specific
             assignments,
-            settings: _,      // todo, clickhouse specific
-            format_clause: _, // todo, clickhouse specific
         } = self;
 
         union_spans(
@@ -1603,25 +1549,6 @@ impl Spanned for Expr {
             } => expr.span(),
             Expr::IsDocument { expr, negated: _ } => expr.span(),
             Expr::IsContent { expr, negated: _ } => expr.span(),
-            Expr::IsLabeled {
-                expr,
-                negated: _,
-                label,
-            } => expr.span().union(&label.span),
-            Expr::IsSourceOf { node, edge } => node.span().union(&edge.span()),
-            Expr::IsDestinationOf { node, edge } => node.span().union(&edge.span()),
-            Expr::IsSameAs { left, right } => left.span().union(&right.span()),
-            Expr::GraphExists {
-                negated: _,
-                pattern: _,
-            } => Span::empty(),
-            Expr::GraphCount { subquery: _ } => Span::empty(),
-            Expr::GraphValue { subquery: _ } => Span::empty(),
-            Expr::GraphCollect { subquery: _ } => Span::empty(),
-            Expr::GraphSum { subquery: _ } => Span::empty(),
-            Expr::GraphAvg { subquery: _ } => Span::empty(),
-            Expr::GraphMin { subquery: _ } => Span::empty(),
-            Expr::GraphMax { subquery: _ } => Span::empty(),
             Expr::SimilarTo {
                 negated: _,
                 expr,
@@ -2038,7 +1965,6 @@ impl Spanned for WildcardAdditionalOptions {
         let WildcardAdditionalOptions {
             wildcard_token,
             opt_ilike,
-            opt_exclude,
             opt_except,
             opt_replace,
             opt_rename,
@@ -2047,7 +1973,6 @@ impl Spanned for WildcardAdditionalOptions {
         union_spans(
             core::iter::once(wildcard_token.0.span)
                 .chain(opt_ilike.as_ref().map(|i| i.span()))
-                .chain(opt_exclude.as_ref().map(|i| i.span()))
                 .chain(opt_rename.as_ref().map(|i| i.span()))
                 .chain(opt_replace.as_ref().map(|i| i.span()))
                 .chain(opt_except.as_ref().map(|i| i.span())),
@@ -2059,15 +1984,6 @@ impl Spanned for WildcardAdditionalOptions {
 impl Spanned for IlikeSelectItem {
     fn span(&self) -> Span {
         Span::empty()
-    }
-}
-
-impl Spanned for ExcludeSelectItem {
-    fn span(&self) -> Span {
-        match self {
-            ExcludeSelectItem::Single(ident) => ident.span,
-            ExcludeSelectItem::Multiple(vec) => union_spans(vec.iter().map(|i| i.span)),
-        }
     }
 }
 
@@ -2238,17 +2154,6 @@ impl Spanned for TableFactor {
                     .chain(alias.as_ref().map(|i| i.span())),
             ),
             TableFactor::OpenJsonTable { .. } => Span::empty(),
-            TableFactor::GraphTable {
-                graph_name,
-                match_clause: _,
-                alias,
-            } => union_spans(
-                graph_name
-                    .0
-                    .iter()
-                    .map(|i| i.span())
-                    .chain(alias.as_ref().map(|a| a.span())),
-            ),
         }
     }
 }
@@ -2475,20 +2380,12 @@ impl Spanned for Select {
             distinct: _, // todo
             top: _,      // todo, mysql specific
             projection,
-            exclude: _,
             into,
             from,
-            lateral_views,
-            prewhere,
             selection,
             group_by,
-            cluster_by,
-            distribute_by,
-            sort_by,
             having,
             named_window,
-            qualify,
-            window_before_qualify: _, // bool
             connect_by,
             top_before_distinct: _,
             flavor: _,
@@ -2499,16 +2396,10 @@ impl Spanned for Select {
                 .chain(projection.iter().map(|item| item.span()))
                 .chain(into.iter().map(|item| item.span()))
                 .chain(from.iter().map(|item| item.span()))
-                .chain(lateral_views.iter().map(|item| item.span()))
-                .chain(prewhere.iter().map(|item| item.span()))
                 .chain(selection.iter().map(|item| item.span()))
                 .chain(core::iter::once(group_by.span()))
-                .chain(cluster_by.iter().map(|item| item.span()))
-                .chain(distribute_by.iter().map(|item| item.span()))
-                .chain(sort_by.iter().map(|item| item.span()))
                 .chain(having.iter().map(|item| item.span()))
                 .chain(named_window.iter().map(|item| item.span()))
-                .chain(qualify.iter().map(|item| item.span()))
                 .chain(connect_by.iter().map(|item| item.span())),
         )
     }
@@ -2535,23 +2426,6 @@ impl Spanned for NamedWindowDefinition {
         ) = self;
 
         ident.span
-    }
-}
-
-impl Spanned for LateralView {
-    fn span(&self) -> Span {
-        let LateralView {
-            lateral_view,
-            lateral_view_name,
-            lateral_col_alias,
-            outer: _, // bool
-        } = self;
-
-        union_spans(
-            core::iter::once(lateral_view.span())
-                .chain(core::iter::once(lateral_view_name.span()))
-                .chain(lateral_col_alias.iter().map(|i| i.span)),
-        )
     }
 }
 
