@@ -37,9 +37,7 @@ fn pg() -> TestedDialects {
 }
 
 fn pg_and_generic() -> TestedDialects {
-    TestedDialects::new(vec![
-        Box::new(PostgreSqlDialect {}),
-    ])
+    TestedDialects::new(vec![Box::new(PostgreSqlDialect {})])
 }
 
 // ============================================================================

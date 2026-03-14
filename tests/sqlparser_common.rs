@@ -1493,9 +1493,7 @@ fn parse_mod() {
 }
 
 fn pg_and_generic() -> TestedDialects {
-    TestedDialects::new(vec![
-        Box::new(PostgreSqlDialect {}),
-    ])
+    TestedDialects::new(vec![Box::new(PostgreSqlDialect {})])
 }
 
 fn ms_and_generic() -> TestedDialects {
@@ -3948,9 +3946,7 @@ fn parse_array_type_postfix_syntax() {
     // SQL standard ARRAY type suffix: "INTEGER ARRAY"
     // Note: The display output normalizes to "INTEGER[]" format
     // Use dialects that support [] array syntax in display
-    let dialects = TestedDialects::new(vec![
-        Box::new(PostgreSqlDialect {}),
-    ]);
+    let dialects = TestedDialects::new(vec![Box::new(PostgreSqlDialect {})]);
 
     let sql = "CREATE TABLE t (arr INTEGER ARRAY)";
     let expected = "CREATE TABLE t (arr INTEGER[])";
@@ -4724,9 +4720,7 @@ fn parse_alter_table_add_column() {
 
 #[test]
 fn parse_alter_table_add_column_if_not_exists() {
-    let dialects = TestedDialects::new(vec![
-        Box::new(PostgreSqlDialect {}),
-    ]);
+    let dialects = TestedDialects::new(vec![Box::new(PostgreSqlDialect {})]);
 
     match alter_table_op(dialects.verified_stmt("ALTER TABLE tab ADD IF NOT EXISTS foo TEXT")) {
         AlterTableOperation::AddColumn { if_not_exists, .. } => {
@@ -5339,9 +5333,7 @@ fn parse_window_clause() {
     dialects.verified_only_select(sql);
 
     let sql = "SELECT * from mytable WINDOW window1 AS window2";
-    let dialects = all_dialects_except(|d| {
-        d.is_table_alias(&Keyword::WINDOW, &Parser::new(d))
-    });
+    let dialects = all_dialects_except(|d| d.is_table_alias(&Keyword::WINDOW, &Parser::new(d)));
     let res = dialects.parse_sql_statements(sql);
     assert_eq!(
         ParserError::ParserError("Expected: (, found: window2".to_string()),
@@ -11082,8 +11074,7 @@ fn parse_non_latin_identifiers() {
     supported_dialects.verified_stmt("SELECT a.説明 FROM inter01 AS a, inter01_transactions AS b WHERE a.説明 = b.取引 GROUP BY a.説明");
     supported_dialects.verified_stmt("SELECT 説明, hühnervögel, garçon, Москва, 東京 FROM inter01");
 
-    let supported_dialects =
-        TestedDialects::new(vec![Box::new(MsSqlDialect {})]);
+    let supported_dialects = TestedDialects::new(vec![Box::new(MsSqlDialect {})]);
     assert!(supported_dialects
         .parse_sql_statements("SELECT 💝 FROM table1")
         .is_err());
@@ -11941,8 +11932,7 @@ fn test_selective_aggregation() {
     // Only PostgreSQL supports FILTER during aggregation.
     // PG canonicalizes unquoted identifiers to lowercase.
     let testing_dialects = all_dialects_where(|d| d.supports_filter_during_aggregation());
-    let expected_dialects: Vec<Box<dyn Dialect>> =
-        vec![Box::new(PostgreSqlDialect {})];
+    let expected_dialects: Vec<Box<dyn Dialect>> = vec![Box::new(PostgreSqlDialect {})];
     assert_eq!(testing_dialects.dialects.len(), expected_dialects.len());
     expected_dialects
         .into_iter()
@@ -12078,9 +12068,7 @@ fn test_xmltable() {
 
 #[test]
 fn parse_sized_list() {
-    let dialects = TestedDialects::new(vec![
-        Box::new(PostgreSqlDialect {}),
-    ]);
+    let dialects = TestedDialects::new(vec![Box::new(PostgreSqlDialect {})]);
     let sql = r#"CREATE TABLE embeddings (data FLOAT[1536])"#;
     dialects.verified_stmt(sql);
     let sql = r#"CREATE TABLE embeddings (data FLOAT[1536][3])"#;
@@ -13392,7 +13380,9 @@ fn parse_case_statement() {
 #[test]
 fn test_case_statement_span() {
     let sql = "CASE 1 WHEN 2 THEN SELECT 1; SELECT 2; ELSE SELECT 3; END CASE";
-    let parser = Parser::new(&PostgreSqlDialect {}).try_with_sql(sql).unwrap();
+    let parser = Parser::new(&PostgreSqlDialect {})
+        .try_with_sql(sql)
+        .unwrap();
     assert_eq!(
         parser.parse_statement().unwrap().span(),
         Span::new(Location::new(1, 1), Location::new(1, sql.len() as u64 + 1))
@@ -13473,7 +13463,9 @@ fn parse_if_statement() {
 #[test]
 fn test_if_statement_span() {
     let sql = "IF 1=1 THEN SELECT 1; ELSEIF 1=2 THEN SELECT 2; ELSE SELECT 3; END IF";
-    let parser = Parser::new(&PostgreSqlDialect {}).try_with_sql(sql).unwrap();
+    let parser = Parser::new(&PostgreSqlDialect {})
+        .try_with_sql(sql)
+        .unwrap();
     assert_eq!(
         parser.parse_statement().unwrap().span(),
         Span::new(Location::new(1, 1), Location::new(1, sql.len() as u64 + 1))
@@ -13487,7 +13479,9 @@ fn test_if_statement_multiline_span() {
     let sql_line3 = "ELSE SELECT 3;";
     let sql_line4 = "END IF";
     let sql = [sql_line1, sql_line2, sql_line3, sql_line4].join("\n");
-    let parser = Parser::new(&PostgreSqlDialect {}).try_with_sql(&sql).unwrap();
+    let parser = Parser::new(&PostgreSqlDialect {})
+        .try_with_sql(&sql)
+        .unwrap();
     assert_eq!(
         parser.parse_statement().unwrap().span(),
         Span::new(
@@ -13500,7 +13494,9 @@ fn test_if_statement_multiline_span() {
 #[test]
 fn test_conditional_statement_span() {
     let sql = "IF 1=1 THEN SELECT 1; ELSEIF 1=2 THEN SELECT 2; ELSE SELECT 3; END IF";
-    let parser = Parser::new(&PostgreSqlDialect {}).try_with_sql(sql).unwrap();
+    let parser = Parser::new(&PostgreSqlDialect {})
+        .try_with_sql(sql)
+        .unwrap();
     match parser.parse_statement().unwrap() {
         Statement::If(IfStatement {
             if_block,
@@ -15041,9 +15037,7 @@ fn test_parse_set_session_authorization() {
 #[test]
 fn parse_create_function_psm_begin_end() {
     // SQL:2016 PSM BEGIN...END block without AS prefix
-    let dialects = TestedDialects::new(vec![
-        Box::new(PostgreSqlDialect {}),
-    ]);
+    let dialects = TestedDialects::new(vec![Box::new(PostgreSqlDialect {})]);
 
     // Simple function with BEGIN...END block (no AS prefix, SQL:2016 style)
     // Note: The Display impl normalizes to "AS BEGIN...END" for compatibility with MSSQL

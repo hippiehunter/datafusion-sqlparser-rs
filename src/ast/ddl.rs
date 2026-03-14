@@ -45,10 +45,9 @@ use crate::ast::{
     CreateFunctionUsing, CreateTableLikeKind, CreateTableOptions, CreateViewParams, DataType, Expr,
     FileFormat, FunctionBehavior, FunctionCalledOnNull, FunctionDesc, FunctionDeterminismSpecifier,
     FunctionParallel, Ident, MySQLColumnPosition, ObjectName, OnCommit, OneOrManyWithParens,
-    OperateFunctionArg, OrderByExpr, ProcedureSecurity, ProcedureSetConfig,
-    Query, SequenceOptions, Spanned, SqlDataAccess, SqlOption, TableVersion, TriggerEvent,
-    TriggerExecBody, TriggerObject, TriggerPeriod, TriggerReferencing, ValueWithSpan,
-    WrappedCollection,
+    OperateFunctionArg, OrderByExpr, ProcedureSecurity, ProcedureSetConfig, Query, SequenceOptions,
+    Spanned, SqlDataAccess, SqlOption, TableVersion, TriggerEvent, TriggerExecBody, TriggerObject,
+    TriggerPeriod, TriggerReferencing, ValueWithSpan, WrappedCollection,
 };
 use crate::display_utils::{DisplayCommaSeparated, Indent, NewLine, SpaceOrNewline};
 use crate::keywords::Keyword;
@@ -2768,7 +2767,18 @@ impl fmt::Display for CreateFunction {
             write!(f, " AS {function_body}")?;
         }
         if let Some(CreateFunctionBody::AsBeginEnd(bes)) = &self.function_body {
-            write!(f, " AS {bes}")?;
+            // PL/pgSQL bodies with DECLARE, labels, or EXCEPTION need dollar-quoting
+            // to round-trip correctly, since `AS DECLARE ... BEGIN ... END` is not
+            // valid syntax (the parser expects a string literal after AS when DECLARE
+            // precedes BEGIN).
+            let needs_dollar_quoting = !bes.declarations.is_empty()
+                || bes.label.is_some()
+                || bes.exception_handlers.is_some();
+            if needs_dollar_quoting {
+                write!(f, " AS $$ {bes} $$")?;
+            } else {
+                write!(f, " AS {bes}")?;
+            }
         }
         Ok(())
     }
@@ -3735,4 +3745,3 @@ impl fmt::Display for OperatorPurpose {
         }
     }
 }
-

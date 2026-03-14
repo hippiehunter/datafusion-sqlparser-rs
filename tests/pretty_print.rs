@@ -258,7 +258,6 @@ RETURNING
 "#
         .trim()
     );
-
 }
 
 #[test]

@@ -749,8 +749,14 @@ fn parse_alter_table_disable() {
 
 #[test]
 fn parse_alter_table_disable_trigger() {
-    pg_and_generic().one_statement_parses_to("ALTER TABLE tab DISABLE TRIGGER ALL", "ALTER TABLE tab DISABLE TRIGGER all");
-    pg_and_generic().one_statement_parses_to("ALTER TABLE tab DISABLE TRIGGER USER", "ALTER TABLE tab DISABLE TRIGGER user");
+    pg_and_generic().one_statement_parses_to(
+        "ALTER TABLE tab DISABLE TRIGGER ALL",
+        "ALTER TABLE tab DISABLE TRIGGER all",
+    );
+    pg_and_generic().one_statement_parses_to(
+        "ALTER TABLE tab DISABLE TRIGGER USER",
+        "ALTER TABLE tab DISABLE TRIGGER user",
+    );
     pg_and_generic().verified_stmt("ALTER TABLE tab DISABLE TRIGGER trigger_name");
 }
 
@@ -762,8 +768,14 @@ fn parse_alter_table_enable() {
     pg_and_generic().verified_stmt("ALTER TABLE tab ENABLE REPLICA RULE rule_name");
     pg_and_generic().verified_stmt("ALTER TABLE tab ENABLE ROW LEVEL SECURITY");
     pg_and_generic().verified_stmt("ALTER TABLE tab ENABLE RULE rule_name");
-    pg_and_generic().one_statement_parses_to("ALTER TABLE tab ENABLE TRIGGER ALL", "ALTER TABLE tab ENABLE TRIGGER all");
-    pg_and_generic().one_statement_parses_to("ALTER TABLE tab ENABLE TRIGGER USER", "ALTER TABLE tab ENABLE TRIGGER user");
+    pg_and_generic().one_statement_parses_to(
+        "ALTER TABLE tab ENABLE TRIGGER ALL",
+        "ALTER TABLE tab ENABLE TRIGGER all",
+    );
+    pg_and_generic().one_statement_parses_to(
+        "ALTER TABLE tab ENABLE TRIGGER USER",
+        "ALTER TABLE tab ENABLE TRIGGER user",
+    );
     pg_and_generic().verified_stmt("ALTER TABLE tab ENABLE TRIGGER trigger_name");
 }
 
@@ -1793,7 +1805,8 @@ fn parse_deallocate() {
         }
     );
 
-    let stmt = pg_and_generic().one_statement_parses_to("DEALLOCATE PREPARE ALL", "DEALLOCATE PREPARE all");
+    let stmt = pg_and_generic()
+        .one_statement_parses_to("DEALLOCATE PREPARE ALL", "DEALLOCATE PREPARE all");
     assert_eq!(
         stmt,
         Statement::Deallocate {
@@ -3337,7 +3350,8 @@ fn parse_create_index_with_nulls_distinct() {
 #[test]
 fn parse_array_subquery_expr() {
     let sql = "SELECT ARRAY(SELECT 1 UNION SELECT 2)";
-    let select = pg().verified_only_select_with_canonical(sql, "SELECT array(SELECT 1 UNION SELECT 2)");
+    let select =
+        pg().verified_only_select_with_canonical(sql, "SELECT array(SELECT 1 UNION SELECT 2)");
     assert_eq!(
         &Expr::Function(Function {
             name: ObjectName::from(vec![Ident::new("array")]),
@@ -3663,7 +3677,10 @@ fn test_json() {
 
 #[test]
 fn json_object_colon_syntax() {
-    match pg().expr_parses_to("JSON_OBJECT('name' : 'value')", "json_object('name' : 'value')") {
+    match pg().expr_parses_to(
+        "JSON_OBJECT('name' : 'value')",
+        "json_object('name' : 'value')",
+    ) {
         Expr::Function(Function {
             args: FunctionArguments::List(FunctionArgumentList { args, .. }),
             ..
@@ -3770,7 +3787,10 @@ fn parse_json_object() {
 fn parse_json_table_is_not_reserved() {
     // JSON_TABLE is not a reserved keyword in PostgreSQL, even though it is in SQL:2023
     // see: https://en.wikipedia.org/wiki/List_of_SQL_reserved_words
-    let Select { from, .. } = pg_and_generic().verified_only_select_with_canonical("SELECT * FROM JSON_TABLE", "SELECT * FROM json_table");
+    let Select { from, .. } = pg_and_generic().verified_only_select_with_canonical(
+        "SELECT * FROM JSON_TABLE",
+        "SELECT * FROM json_table",
+    );
     assert_eq!(1, from.len());
     match &from[0].relation {
         TableFactor::Table {
@@ -3903,9 +3923,7 @@ fn pg() -> TestedDialects {
 }
 
 fn pg_and_generic() -> TestedDialects {
-    TestedDialects::new(vec![
-        Box::new(PostgreSqlDialect {}),
-    ])
+    TestedDialects::new(vec![Box::new(PostgreSqlDialect {})])
 }
 
 #[test]
@@ -5286,7 +5304,9 @@ fn parse_create_table_with_alias() {
 #[test]
 fn parse_create_table_with_partition_by() {
     let sql = "CREATE TABLE t1 (a INT, b TEXT) PARTITION BY RANGE(a)";
-    match pg_and_generic().one_statement_parses_to(sql, "CREATE TABLE t1 (a INT, b TEXT) PARTITION BY range(a)") {
+    match pg_and_generic()
+        .one_statement_parses_to(sql, "CREATE TABLE t1 (a INT, b TEXT) PARTITION BY range(a)")
+    {
         Statement::CreateTable(create_table) => {
             assert_eq!("t1", create_table.name.to_string());
             assert_eq!(
@@ -5605,8 +5625,14 @@ fn parse_mat_cte() {
 
 #[test]
 fn parse_at_time_zone() {
-    pg_and_generic().expr_parses_to("CURRENT_TIMESTAMP AT TIME ZONE tz", "current_timestamp AT TIME ZONE tz");
-    pg_and_generic().expr_parses_to("CURRENT_TIMESTAMP AT TIME ZONE ('America/' || 'Los_Angeles')", "current_timestamp AT TIME ZONE ('America/' || 'Los_Angeles')");
+    pg_and_generic().expr_parses_to(
+        "CURRENT_TIMESTAMP AT TIME ZONE tz",
+        "current_timestamp AT TIME ZONE tz",
+    );
+    pg_and_generic().expr_parses_to(
+        "CURRENT_TIMESTAMP AT TIME ZONE ('America/' || 'Los_Angeles')",
+        "current_timestamp AT TIME ZONE ('America/' || 'Los_Angeles')",
+    );
 
     // check precedence
     let expr = Expr::BinaryOp {
@@ -5829,7 +5855,8 @@ fn parse_create_domain() {
     assert_eq!(pg().one_statement_parses_to(sql3, canonical3), expected);
 
     let sql4 = "CREATE DOMAIN my_domain AS INTEGER COLLATE \"en_US\" DEFAULT 1 CHECK (VALUE > 0)";
-    let canonical4 = "CREATE DOMAIN my_domain AS INTEGER COLLATE \"en_US\" DEFAULT 1 CHECK (value > 0)";
+    let canonical4 =
+        "CREATE DOMAIN my_domain AS INTEGER COLLATE \"en_US\" DEFAULT 1 CHECK (value > 0)";
     let expected = Statement::CreateDomain(CreateDomain {
         token: AttachedToken::empty(),
         name: ObjectName::from(vec![Ident::new("my_domain")]),
@@ -5851,7 +5878,8 @@ fn parse_create_domain() {
     assert_eq!(pg().one_statement_parses_to(sql4, canonical4), expected);
 
     let sql5 = "CREATE DOMAIN my_domain AS INTEGER CONSTRAINT my_constraint CHECK (VALUE > 0)";
-    let canonical5 = "CREATE DOMAIN my_domain AS INTEGER CONSTRAINT my_constraint CHECK (value > 0)";
+    let canonical5 =
+        "CREATE DOMAIN my_domain AS INTEGER CONSTRAINT my_constraint CHECK (value > 0)";
     let expected = Statement::CreateDomain(CreateDomain {
         token: AttachedToken::empty(),
         name: ObjectName::from(vec![Ident::new("my_domain")]),
@@ -7243,4 +7271,216 @@ fn parse_drop_subscription() {
 
     // RESTRICT
     pg_and_generic().verified_stmt("DROP SUBSCRIPTION my_sub RESTRICT");
+}
+
+#[test]
+fn parse_create_rule() {
+    // Basic rule with NOTHING
+    let sql = "CREATE RULE notify_me AS ON INSERT TO mytable DO NOTHING";
+    let stmt = pg_and_generic().verified_stmt(sql);
+    match stmt {
+        Statement::CreateRule {
+            or_replace,
+            name,
+            event,
+            table_name,
+            condition,
+            action,
+        } => {
+            assert!(!or_replace);
+            assert_eq!(name, Ident::new("notify_me"));
+            assert!(matches!(event, RuleEvent::Insert));
+            assert_eq!(table_name.to_string(), "mytable");
+            assert!(condition.is_none());
+            assert!(matches!(action, RuleAction::Do(RuleCommands::Nothing)));
+        }
+        _ => panic!("Expected CreateRule statement"),
+    }
+
+    // OR REPLACE with INSTEAD NOTHING
+    let sql = "CREATE OR REPLACE RULE notify_me AS ON UPDATE TO mytable DO INSTEAD NOTHING";
+    let stmt = pg_and_generic().verified_stmt(sql);
+    match stmt {
+        Statement::CreateRule {
+            or_replace,
+            event,
+            action,
+            ..
+        } => {
+            assert!(or_replace);
+            assert!(matches!(event, RuleEvent::Update));
+            assert!(matches!(action, RuleAction::Instead(RuleCommands::Nothing)));
+        }
+        _ => panic!("Expected CreateRule statement"),
+    }
+
+    // Rule with ALSO and a command
+    let sql =
+        "CREATE RULE log_delete AS ON DELETE TO mytable DO ALSO INSERT INTO log_table VALUES (1)";
+    pg_and_generic().verified_stmt(sql);
+
+    // Rule with SELECT event
+    let sql = "CREATE RULE \"_RETURN\" AS ON SELECT TO myview DO INSTEAD SELECT * FROM mytable";
+    pg_and_generic().verified_stmt(sql);
+
+    // Rule with WHERE condition
+    let sql = "CREATE RULE protect AS ON DELETE TO mytable WHERE id > 100 DO INSTEAD NOTHING";
+    pg_and_generic().verified_stmt(sql);
+
+    // Rule with multiple commands in parentheses
+    let sql = "CREATE RULE multi AS ON INSERT TO mytable DO ALSO (INSERT INTO log1 VALUES (1); INSERT INTO log2 VALUES (2))";
+    let stmt = pg_and_generic().verified_stmt(sql);
+    match stmt {
+        Statement::CreateRule {
+            action: RuleAction::Also(RuleCommands::Commands(cmds)),
+            ..
+        } => {
+            assert_eq!(cmds.len(), 2);
+        }
+        _ => panic!("Expected CreateRule with multiple commands"),
+    }
+}
+
+#[test]
+fn parse_drop_rule() {
+    let sql = "DROP RULE notify_me ON mytable";
+    let stmt = pg_and_generic().verified_stmt(sql);
+    match stmt {
+        Statement::DropRule {
+            if_exists,
+            name,
+            table_name,
+            drop_behavior,
+        } => {
+            assert!(!if_exists);
+            assert_eq!(name, Ident::new("notify_me"));
+            assert_eq!(table_name.to_string(), "mytable");
+            assert!(drop_behavior.is_none());
+        }
+        _ => panic!("Expected DropRule statement"),
+    }
+
+    // IF EXISTS with CASCADE
+    let sql = "DROP RULE IF EXISTS notify_me ON mytable CASCADE";
+    let stmt = pg_and_generic().verified_stmt(sql);
+    match stmt {
+        Statement::DropRule {
+            if_exists,
+            name,
+            table_name,
+            drop_behavior,
+        } => {
+            assert!(if_exists);
+            assert_eq!(name, Ident::new("notify_me"));
+            assert_eq!(table_name.to_string(), "mytable");
+            assert!(matches!(drop_behavior, Some(DropBehavior::Cascade)));
+        }
+        _ => panic!("Expected DropRule statement"),
+    }
+
+    // RESTRICT
+    pg_and_generic().verified_stmt("DROP RULE notify_me ON mytable RESTRICT");
+}
+
+#[test]
+fn parse_create_text_search_configuration() {
+    let sql = "CREATE TEXT SEARCH CONFIGURATION my_config (PARSER = my_parser)";
+    let stmt = pg_and_generic().verified_stmt(sql);
+    match stmt {
+        Statement::CreateTextSearch {
+            object_type,
+            name,
+            options,
+        } => {
+            assert!(matches!(object_type, TextSearchObjectType::Configuration));
+            assert_eq!(name.to_string(), "my_config");
+            assert_eq!(options.len(), 1);
+        }
+        _ => panic!("Expected CreateTextSearch statement"),
+    }
+
+    // With COPY option
+    let sql = "CREATE TEXT SEARCH CONFIGURATION my_config (COPY = pg_catalog.english)";
+    pg_and_generic().verified_stmt(sql);
+
+    // Schema-qualified name
+    let sql = "CREATE TEXT SEARCH CONFIGURATION public.my_config (PARSER = default)";
+    pg_and_generic().verified_stmt(sql);
+}
+
+#[test]
+fn parse_create_text_search_dictionary() {
+    let sql = "CREATE TEXT SEARCH DICTIONARY my_dict (TEMPLATE = simple, stopwords = 'english')";
+    pg_and_generic().verified_stmt(sql);
+
+    let sql = "CREATE TEXT SEARCH DICTIONARY my_dict (TEMPLATE = pg_catalog.simple)";
+    pg_and_generic().verified_stmt(sql);
+}
+
+#[test]
+fn parse_create_text_search_parser() {
+    let sql = "CREATE TEXT SEARCH PARSER my_parser (START = my_start, GETTOKEN = my_gettoken, END = my_end, LEXTYPES = my_lextypes)";
+    pg_and_generic().verified_stmt(sql);
+
+    // With HEADLINE
+    let sql = "CREATE TEXT SEARCH PARSER my_parser (START = my_start, GETTOKEN = my_gettoken, END = my_end, LEXTYPES = my_lextypes, HEADLINE = my_headline)";
+    pg_and_generic().verified_stmt(sql);
+}
+
+#[test]
+fn parse_create_text_search_template() {
+    let sql = "CREATE TEXT SEARCH TEMPLATE my_template (LEXIZE = my_lexize)";
+    pg_and_generic().verified_stmt(sql);
+
+    // With INIT
+    let sql = "CREATE TEXT SEARCH TEMPLATE my_template (INIT = my_init, LEXIZE = my_lexize)";
+    pg_and_generic().verified_stmt(sql);
+}
+
+#[test]
+fn parse_drop_text_search() {
+    // DROP CONFIGURATION
+    let sql = "DROP TEXT SEARCH CONFIGURATION my_config";
+    let stmt = pg_and_generic().verified_stmt(sql);
+    match stmt {
+        Statement::DropTextSearch {
+            object_type,
+            if_exists,
+            name,
+            drop_behavior,
+        } => {
+            assert!(matches!(object_type, TextSearchObjectType::Configuration));
+            assert!(!if_exists);
+            assert_eq!(name.to_string(), "my_config");
+            assert!(drop_behavior.is_none());
+        }
+        _ => panic!("Expected DropTextSearch statement"),
+    }
+
+    // IF EXISTS with CASCADE
+    let sql = "DROP TEXT SEARCH CONFIGURATION IF EXISTS my_config CASCADE";
+    let stmt = pg_and_generic().verified_stmt(sql);
+    match stmt {
+        Statement::DropTextSearch {
+            if_exists,
+            drop_behavior,
+            ..
+        } => {
+            assert!(if_exists);
+            assert!(matches!(drop_behavior, Some(DropBehavior::Cascade)));
+        }
+        _ => panic!("Expected DropTextSearch statement"),
+    }
+
+    // DROP DICTIONARY
+    pg_and_generic().verified_stmt("DROP TEXT SEARCH DICTIONARY my_dict");
+    pg_and_generic().verified_stmt("DROP TEXT SEARCH DICTIONARY IF EXISTS my_dict RESTRICT");
+
+    // DROP PARSER
+    pg_and_generic().verified_stmt("DROP TEXT SEARCH PARSER my_parser");
+    pg_and_generic().verified_stmt("DROP TEXT SEARCH PARSER IF EXISTS my_parser CASCADE");
+
+    // DROP TEMPLATE
+    pg_and_generic().verified_stmt("DROP TEXT SEARCH TEMPLATE my_template");
+    pg_and_generic().verified_stmt("DROP TEXT SEARCH TEMPLATE IF EXISTS my_template RESTRICT");
 }

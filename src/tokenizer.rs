@@ -1109,8 +1109,7 @@ impl<'a> Tokenizer<'a> {
                     Ok(Some(Token::Whitespace(Whitespace::Newline)))
                 }
                 // MySQL and Postgres use b or B for bit string literals (e.g., B'10101')
-                b @ 'B' | b @ 'b' if dialect_of!(self is PostgreSqlDialect | MySqlDialect) =>
-                {
+                b @ 'B' | b @ 'b' if dialect_of!(self is PostgreSqlDialect | MySqlDialect) => {
                     chars.next(); // consume
                     match chars.peek() {
                         Some('\'') => {

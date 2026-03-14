@@ -63,34 +63,31 @@ pub use self::ddl::{
     AlterTypeRename, AlterTypeRenameValue, ColumnDef, ColumnOption, ColumnOptionDef, ColumnOptions,
     ColumnPolicy, ColumnPolicyProperty, ConstraintCharacteristics, CreateAssertion, CreateDomain,
     CreateExtension, CreateFunction, CreateIndex, CreateOperator, CreateOperatorClass,
-    CreateOperatorFamily, CreateTable, CreateTableSystemVersioning,
-    CreateTrigger, CreateView, Deduplicate, DeferrableInitial, DropBehavior, DropExtension,
-    DropFunction, DropTrigger, GeneratedAs, GeneratedExpressionMode,
-    IdentityParameters, IdentityProperty, IdentityPropertyFormatKind,
-    IdentityPropertyKind, IdentityPropertyOrder, IndexColumn, IndexOption, IndexType,
-    KeyOrIndexDisplay, NullsDistinctOption, OperatorArgTypes, OperatorClassItem, OperatorPurpose,
-    Owner, Partition, ProcedureParam, ReferentialAction, RenameTableNameKind, ReplicaIdentity,
-    TriggerObjectKind, Truncate, UserDefinedTypeCompositeAttributeDef,
-    UserDefinedTypeInternalLength, UserDefinedTypeRangeOption, UserDefinedTypeRepresentation,
-    UserDefinedTypeSqlDefinitionOption, UserDefinedTypeStorage, ViewColumnDef,
+    CreateOperatorFamily, CreateTable, CreateTableSystemVersioning, CreateTrigger, CreateView,
+    Deduplicate, DeferrableInitial, DropBehavior, DropExtension, DropFunction, DropTrigger,
+    GeneratedAs, GeneratedExpressionMode, IdentityParameters, IdentityProperty,
+    IdentityPropertyFormatKind, IdentityPropertyKind, IdentityPropertyOrder, IndexColumn,
+    IndexOption, IndexType, KeyOrIndexDisplay, NullsDistinctOption, OperatorArgTypes,
+    OperatorClassItem, OperatorPurpose, Owner, Partition, ProcedureParam, ReferentialAction,
+    RenameTableNameKind, ReplicaIdentity, TriggerObjectKind, Truncate,
+    UserDefinedTypeCompositeAttributeDef, UserDefinedTypeInternalLength,
+    UserDefinedTypeRangeOption, UserDefinedTypeRepresentation, UserDefinedTypeSqlDefinitionOption,
+    UserDefinedTypeStorage, ViewColumnDef,
 };
 pub use self::dml::{Delete, ForPortionOf, Insert, OverridingKind, Update};
 pub use self::operator::{BinaryOperator, UnaryOperator};
 pub use self::query::{
-    AfterMatchSkip, ConnectBy, Cte, CteAsMaterialized, CycleClause, Distinct,
-    EmptyMatchesMode, ExceptSelectItem, ExprWithAlias,
-    ExprWithAliasAndOrderBy, Fetch, ForClause, ForJson, ForXml,
-    GroupByExpr, GroupByWithModifier, IdentWithAlias, IlikeSelectItem,
-    Interpolate, InterpolateExpr, Join, JoinConstraint, JoinOperator,
-    JsonTableColumn, JsonTableColumnErrorHandling, JsonTableNamedColumn, JsonTableNestedColumn,
-    LimitClause, LockClause, LockType,
-    MatchRecognizePattern, MatchRecognizeSymbol, Measure, NamedWindowDefinition, NamedWindowExpr,
-    NonBlock, Offset, OffsetRows, OpenJsonTableColumn, OrderBy, OrderByExpr,
-    OrderByKind, OrderByOptions, PivotValueSource,
-    Query, RenameSelectItem, RepetitionQuantifier,
-    ReplaceSelectElement, ReplaceSelectItem, RowsPerMatch, SearchClause, SearchOrder,
-    Select, SelectFlavor, SelectInto, SelectItem, SelectItemQualifiedWildcardKind, SetExpr,
-    SetOperator, SetQuantifier, SubsetDefinition, SymbolDefinition, Table, TableAlias,
+    AfterMatchSkip, ConnectBy, Cte, CteAsMaterialized, CycleClause, Distinct, EmptyMatchesMode,
+    ExceptSelectItem, ExprWithAlias, ExprWithAliasAndOrderBy, Fetch, ForClause, ForJson, ForXml,
+    GroupByExpr, GroupByWithModifier, IdentWithAlias, IlikeSelectItem, Interpolate,
+    InterpolateExpr, Join, JoinConstraint, JoinOperator, JsonTableColumn,
+    JsonTableColumnErrorHandling, JsonTableNamedColumn, JsonTableNestedColumn, LimitClause,
+    LockClause, LockType, MatchRecognizePattern, MatchRecognizeSymbol, Measure,
+    NamedWindowDefinition, NamedWindowExpr, NonBlock, Offset, OffsetRows, OpenJsonTableColumn,
+    OrderBy, OrderByExpr, OrderByKind, OrderByOptions, PivotValueSource, Query, RenameSelectItem,
+    RepetitionQuantifier, ReplaceSelectElement, ReplaceSelectItem, RowsPerMatch, SearchClause,
+    SearchOrder, Select, SelectFlavor, SelectInto, SelectItem, SelectItemQualifiedWildcardKind,
+    SetExpr, SetOperator, SetQuantifier, SubsetDefinition, SymbolDefinition, Table, TableAlias,
     TableAliasColumnDef, TableFactor, TableFunctionArgs, TableIndexHintForClause,
     TableIndexHintType, TableIndexHints, TableIndexType, TableSample, TableSampleBucket,
     TableSampleKind, TableSampleMethod, TableSampleModifier, TableSampleQuantity, TableSampleSeed,
@@ -4405,6 +4402,107 @@ pub enum PublicationForObject {
     TablesInSchema(Vec<Ident>),
 }
 
+/// The event type for a PostgreSQL `CREATE RULE` statement.
+///
+/// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-createrule.html)
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum RuleEvent {
+    Select,
+    Insert,
+    Update,
+    Delete,
+}
+
+impl fmt::Display for RuleEvent {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            RuleEvent::Select => write!(f, "SELECT"),
+            RuleEvent::Insert => write!(f, "INSERT"),
+            RuleEvent::Update => write!(f, "UPDATE"),
+            RuleEvent::Delete => write!(f, "DELETE"),
+        }
+    }
+}
+
+/// The commands for a PostgreSQL `CREATE RULE` action.
+///
+/// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-createrule.html)
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum RuleCommands {
+    /// `NOTHING`
+    Nothing,
+    /// One or more SQL commands
+    Commands(Vec<Statement>),
+}
+
+impl fmt::Display for RuleCommands {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            RuleCommands::Nothing => write!(f, "NOTHING"),
+            RuleCommands::Commands(cmds) => {
+                if cmds.len() == 1 {
+                    write!(f, "{}", cmds[0])
+                } else {
+                    write!(f, "({})", display_separated(cmds, "; "))
+                }
+            }
+        }
+    }
+}
+
+/// The action type for a PostgreSQL `CREATE RULE` statement.
+///
+/// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-createrule.html)
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum RuleAction {
+    /// `DO ALSO ...`
+    Also(RuleCommands),
+    /// `DO INSTEAD ...`
+    Instead(RuleCommands),
+    /// `DO ...` (no ALSO or INSTEAD keyword)
+    Do(RuleCommands),
+}
+
+impl fmt::Display for RuleAction {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            RuleAction::Also(cmds) => write!(f, "DO ALSO {cmds}"),
+            RuleAction::Instead(cmds) => write!(f, "DO INSTEAD {cmds}"),
+            RuleAction::Do(cmds) => write!(f, "DO {cmds}"),
+        }
+    }
+}
+
+/// The type of a PostgreSQL text search object.
+///
+/// See [PostgreSQL](https://www.postgresql.org/docs/current/textsearch.html)
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum TextSearchObjectType {
+    Configuration,
+    Dictionary,
+    Parser,
+    Template,
+}
+
+impl fmt::Display for TextSearchObjectType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            TextSearchObjectType::Configuration => write!(f, "CONFIGURATION"),
+            TextSearchObjectType::Dictionary => write!(f, "DICTIONARY"),
+            TextSearchObjectType::Parser => write!(f, "PARSER"),
+            TextSearchObjectType::Template => write!(f, "TEMPLATE"),
+        }
+    }
+}
+
 /// Wrapper for SET statement with token tracking
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -5112,6 +5210,55 @@ pub enum Statement {
     DropSubscription {
         if_exists: bool,
         name: Ident,
+        drop_behavior: Option<DropBehavior>,
+    },
+    /// ```sql
+    /// CREATE [ OR REPLACE ] RULE name AS ON event TO table_name
+    ///   [ WHERE condition ] DO [ ALSO | INSTEAD ] { NOTHING | command | ( command ; ... ) }
+    /// ```
+    ///
+    /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-createrule.html)
+    CreateRule {
+        or_replace: bool,
+        name: Ident,
+        event: RuleEvent,
+        table_name: ObjectName,
+        condition: Option<Expr>,
+        action: RuleAction,
+    },
+    /// ```sql
+    /// DROP RULE [ IF EXISTS ] name ON table_name [ CASCADE | RESTRICT ]
+    /// ```
+    ///
+    /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-droprule.html)
+    DropRule {
+        if_exists: bool,
+        name: Ident,
+        table_name: ObjectName,
+        drop_behavior: Option<DropBehavior>,
+    },
+    /// ```sql
+    /// CREATE TEXT SEARCH CONFIGURATION name ( option = value [, ...] )
+    /// CREATE TEXT SEARCH DICTIONARY name ( option = value [, ...] )
+    /// CREATE TEXT SEARCH PARSER name ( option = value [, ...] )
+    /// CREATE TEXT SEARCH TEMPLATE name ( option = value [, ...] )
+    /// ```
+    ///
+    /// See [PostgreSQL](https://www.postgresql.org/docs/current/textsearch.html)
+    CreateTextSearch {
+        object_type: TextSearchObjectType,
+        name: ObjectName,
+        options: Vec<SqlOption>,
+    },
+    /// ```sql
+    /// DROP TEXT SEARCH { CONFIGURATION | DICTIONARY | PARSER | TEMPLATE } [ IF EXISTS ] name [ CASCADE | RESTRICT ]
+    /// ```
+    ///
+    /// See [PostgreSQL](https://www.postgresql.org/docs/current/textsearch.html)
+    DropTextSearch {
+        object_type: TextSearchObjectType,
+        if_exists: bool,
+        name: ObjectName,
         drop_behavior: Option<DropBehavior>,
     },
     /// ```sql
@@ -6639,11 +6786,7 @@ impl fmt::Display for Statement {
                     }
                 }
                 if !with_options.is_empty() {
-                    write!(
-                        f,
-                        " WITH ({})",
-                        display_comma_separated(with_options)
-                    )?;
+                    write!(f, " WITH ({})", display_comma_separated(with_options))?;
                 }
                 Ok(())
             }
@@ -6674,11 +6817,7 @@ impl fmt::Display for Statement {
                     display_comma_separated(publications)
                 )?;
                 if !with_options.is_empty() {
-                    write!(
-                        f,
-                        " WITH ({})",
-                        display_comma_separated(with_options)
-                    )?;
+                    write!(f, " WITH ({})", display_comma_separated(with_options))?;
                 }
                 Ok(())
             }
@@ -6688,6 +6827,68 @@ impl fmt::Display for Statement {
                 drop_behavior,
             } => {
                 write!(f, "DROP SUBSCRIPTION")?;
+                if *if_exists {
+                    write!(f, " IF EXISTS")?;
+                }
+                write!(f, " {name}")?;
+                if let Some(drop_behavior) = drop_behavior {
+                    write!(f, " {drop_behavior}")?;
+                }
+                Ok(())
+            }
+            Statement::CreateRule {
+                or_replace,
+                name,
+                event,
+                table_name,
+                condition,
+                action,
+            } => {
+                write!(f, "CREATE")?;
+                if *or_replace {
+                    write!(f, " OR REPLACE")?;
+                }
+                write!(f, " RULE {name} AS ON {event} TO {table_name}")?;
+                if let Some(condition) = condition {
+                    write!(f, " WHERE {condition}")?;
+                }
+                write!(f, " {action}")?;
+                Ok(())
+            }
+            Statement::DropRule {
+                if_exists,
+                name,
+                table_name,
+                drop_behavior,
+            } => {
+                write!(f, "DROP RULE")?;
+                if *if_exists {
+                    write!(f, " IF EXISTS")?;
+                }
+                write!(f, " {name} ON {table_name}")?;
+                if let Some(drop_behavior) = drop_behavior {
+                    write!(f, " {drop_behavior}")?;
+                }
+                Ok(())
+            }
+            Statement::CreateTextSearch {
+                object_type,
+                name,
+                options,
+            } => {
+                write!(f, "CREATE TEXT SEARCH {object_type} {name}")?;
+                if !options.is_empty() {
+                    write!(f, " ({})", display_comma_separated(options))?;
+                }
+                Ok(())
+            }
+            Statement::DropTextSearch {
+                object_type,
+                if_exists,
+                name,
+                drop_behavior,
+            } => {
+                write!(f, "DROP TEXT SEARCH {object_type}")?;
                 if *if_exists {
                     write!(f, " IF EXISTS")?;
                 }

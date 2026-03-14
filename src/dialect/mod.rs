@@ -1160,8 +1160,7 @@ pub trait Dialect: Debug + Any {
     fn features(&self) -> DialectFeatures {
         DialectFeatures {
             supports_filter_during_aggregation: self.supports_filter_during_aggregation(),
-            supports_within_after_array_aggregation: self
-                .supports_within_after_array_aggregation(),
+            supports_within_after_array_aggregation: self.supports_within_after_array_aggregation(),
             supports_group_by_expr: self.supports_group_by_expr(),
             supports_group_by_with_modifier: self.supports_group_by_with_modifier(),
             supports_left_associative_joins_without_parens: self
@@ -1174,8 +1173,7 @@ pub trait Dialect: Debug + Any {
             supports_in_empty_list: self.supports_in_empty_list(),
             supports_start_transaction_modifier: self.supports_start_transaction_modifier(),
             supports_end_transaction_modifier: self.supports_end_transaction_modifier(),
-            supports_named_fn_args_with_eq_operator: self
-                .supports_named_fn_args_with_eq_operator(),
+            supports_named_fn_args_with_eq_operator: self.supports_named_fn_args_with_eq_operator(),
             supports_named_fn_args_with_colon_operator: self
                 .supports_named_fn_args_with_colon_operator(),
             supports_named_fn_args_with_assignment_operator: self
@@ -1219,8 +1217,7 @@ pub trait Dialect: Debug + Any {
             supports_create_index_with_clause: self.supports_create_index_with_clause(),
             require_interval_qualifier: self.require_interval_qualifier(),
             supports_explain_with_utility_options: self.supports_explain_with_utility_options(),
-            supports_asc_desc_in_column_definition: self
-                .supports_asc_desc_in_column_definition(),
+            supports_asc_desc_in_column_definition: self.supports_asc_desc_in_column_definition(),
             supports_factorial_operator: self.supports_factorial_operator(),
             supports_nested_comments: self.supports_nested_comments(),
             supports_eq_alias_assignment: self.supports_eq_alias_assignment(),
@@ -1242,14 +1239,12 @@ pub trait Dialect: Debug + Any {
             supports_timestamp_versioning: self.supports_timestamp_versioning(),
             supports_string_escape_constant: self.supports_string_escape_constant(),
             supports_table_hints: self.supports_table_hints(),
-            requires_single_line_comment_whitespace: self
-                .requires_single_line_comment_whitespace(),
+            requires_single_line_comment_whitespace: self.requires_single_line_comment_whitespace(),
             supports_array_typedef_with_brackets: self.supports_array_typedef_with_brackets(),
             supports_geometric_types: self.supports_geometric_types(),
             supports_order_by_all: self.supports_order_by_all(),
             supports_set_names: self.supports_set_names(),
-            supports_space_separated_column_options: self
-                .supports_space_separated_column_options(),
+            supports_space_separated_column_options: self.supports_space_separated_column_options(),
             supports_alter_column_type_using: self.supports_alter_column_type_using(),
             supports_comma_separated_drop_column_list: self
                 .supports_comma_separated_drop_column_list(),

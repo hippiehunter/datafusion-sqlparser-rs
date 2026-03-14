@@ -1715,7 +1715,6 @@ impl fmt::Display for RepetitionQuantifier {
     }
 }
 
-
 impl fmt::Display for TableFactor {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {

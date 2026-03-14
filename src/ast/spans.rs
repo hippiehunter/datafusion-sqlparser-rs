@@ -30,21 +30,21 @@ use super::{
     BeginEndStatements, CaseStatement, CloseCursor, ClusteredIndex, ColumnDef, ColumnOption,
     ColumnOptionDef, ConditionalStatementBlock, ConditionalStatements, ConflictTarget, ConnectBy,
     ConstraintCharacteristics, CopySource, CreateIndex, CreateTable, CreateTableOptions, Cte,
-    Delete, DoBody, DoStatement, DoUpdate, ExceptSelectItem, Expr,
-    ExprWithAlias, Fetch, ForPortionOf, FromTable, Function, FunctionArg, FunctionArgExpr,
-    FunctionArgumentClause, FunctionArgumentList, FunctionArguments, GroupByExpr, HavingBound,
-    IfStatement, IlikeSelectItem, IndexColumn, Insert, Interpolate, InterpolateExpr,
-    IterateStatement, Join, JoinConstraint, JoinOperator, JsonOnBehavior, JsonPath, JsonPathElem,
-    LeaveStatement, LimitClause, LoopStatement, MatchRecognizePattern, MdArray,
-    MdArrayDimension, Measure, NamedParenthesizedList, NamedWindowDefinition, ObjectName,
-    ObjectNamePart, Offset, OnConflict, OnConflictAction, OnInsert, OpenStatement, OrderBy,
-    OrderByExpr, OrderByKind, Partition, PerformStatement, PivotValueSource,
-    Query, RaiseMessage, RaiseStatement, RaiseUsingItem, ReferentialAction, RenameSelectItem,
-    RepeatStatement, ReplaceSelectElement, ReplaceSelectItem, Select, SelectInto, SelectItem,
-    SetExpr, SqlOption, SqlPsmAssignment, SqlPsmDataType, SqlPsmDeclaration, Statement, Subscript,
-    SubsetDefinition, SymbolDefinition, TableAlias, TableAliasColumnDef, TableConstraint,
-    TableFactor, TableObject, TableOptionsClustered, TableWithJoins, Update, UpdateTableFromKind,
-    Use, Value, Values, ViewColumnDef, WhileStatement, WildcardAdditionalOptions, With, WithFill,
+    Delete, DoBody, DoStatement, DoUpdate, ExceptSelectItem, Expr, ExprWithAlias, Fetch,
+    ForPortionOf, FromTable, Function, FunctionArg, FunctionArgExpr, FunctionArgumentClause,
+    FunctionArgumentList, FunctionArguments, GroupByExpr, HavingBound, IfStatement,
+    IlikeSelectItem, IndexColumn, Insert, Interpolate, InterpolateExpr, IterateStatement, Join,
+    JoinConstraint, JoinOperator, JsonOnBehavior, JsonPath, JsonPathElem, LeaveStatement,
+    LimitClause, LoopStatement, MatchRecognizePattern, MdArray, MdArrayDimension, Measure,
+    NamedParenthesizedList, NamedWindowDefinition, ObjectName, ObjectNamePart, Offset, OnConflict,
+    OnConflictAction, OnInsert, OpenStatement, OrderBy, OrderByExpr, OrderByKind, Partition,
+    PerformStatement, PivotValueSource, Query, RaiseMessage, RaiseStatement, RaiseUsingItem,
+    ReferentialAction, RenameSelectItem, RepeatStatement, ReplaceSelectElement, ReplaceSelectItem,
+    Select, SelectInto, SelectItem, SetExpr, SqlOption, SqlPsmAssignment, SqlPsmDataType,
+    SqlPsmDeclaration, Statement, Subscript, SubsetDefinition, SymbolDefinition, TableAlias,
+    TableAliasColumnDef, TableConstraint, TableFactor, TableObject, TableOptionsClustered,
+    TableWithJoins, Update, UpdateTableFromKind, Use, Value, Values, ViewColumnDef, WhileStatement,
+    WildcardAdditionalOptions, With, WithFill,
 };
 
 /// Given an iterator of spans, return the [Span::union] of all spans.
@@ -555,6 +555,10 @@ impl Spanned for Statement {
             Statement::DropPublication { .. } => Span::empty(),
             Statement::CreateSubscription { .. } => Span::empty(),
             Statement::DropSubscription { .. } => Span::empty(),
+            Statement::CreateRule { .. } => Span::empty(),
+            Statement::DropRule { .. } => Span::empty(),
+            Statement::CreateTextSearch { .. } => Span::empty(),
+            Statement::DropTextSearch { .. } => Span::empty(),
         }
     }
 }
@@ -1292,8 +1296,6 @@ impl Spanned for Partition {
         }
     }
 }
-
-
 
 /// # partial span
 ///
