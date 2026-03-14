@@ -3611,7 +3611,6 @@ impl fmt::Display for BeginEndStatements {
             write!(f, " EXCEPTION")?;
             for handler in exception_handlers {
                 write!(f, " {}", handler)?;
-                format_statement_list(f, &handler.statements)?;
             }
         }
         if end_token.token != Token::EOF {

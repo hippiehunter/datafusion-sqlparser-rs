@@ -29,7 +29,7 @@ use crate::postgres_compat::common::*;
 fn test_return_simple_value() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-RETURNING
     // Basic RETURN with scalar value
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS INTEGER AS $$
 BEGIN
     RETURN 42;
@@ -41,7 +41,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_return_expression() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-RETURNING
     // RETURN with expression
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test(x INTEGER, y INTEGER) RETURNS INTEGER AS $$
 BEGIN
     RETURN x + y;
@@ -53,7 +53,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_return_null() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-RETURNING
     // RETURN NULL
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS INTEGER AS $$
 BEGIN
     RETURN NULL;
@@ -65,7 +65,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_return_from_variable() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-RETURNING
     // RETURN value from variable
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS INTEGER AS $$
 DECLARE
     result INTEGER := 100;
@@ -79,7 +79,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_return_from_subquery() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-RETURNING
     // RETURN value from subquery
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS INTEGER AS $$
 BEGIN
     RETURN (SELECT COUNT(*) FROM users);
@@ -95,6 +95,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_return_next_simple() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-RETURNING
     // RETURN NEXT to build result set one row at a time
+    // TODO: RETURNS SETOF type parsing fails
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS SETOF INTEGER AS $$
 BEGIN
@@ -110,6 +111,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_return_next_in_loop() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-RETURNING
     // RETURN NEXT in a loop
+    // TODO: RETURNS SETOF type parsing fails
     pg_expect_parse_error!(
         r#"CREATE FUNCTION generate_series_plpgsql(start INTEGER, stop INTEGER) RETURNS SETOF INTEGER AS $$
 DECLARE
@@ -127,6 +129,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_return_next_record() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-RETURNING
     // RETURN NEXT with record type
+    // TODO: RETURNS SETOF type parsing fails
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS SETOF users AS $$
 DECLARE
@@ -144,6 +147,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_return_next_with_modification() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-RETURNING
     // RETURN NEXT with modified row
+    // TODO: RETURNS SETOF type parsing fails
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS SETOF users AS $$
 DECLARE
@@ -166,6 +170,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_return_query_simple() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-RETURNING
     // RETURN QUERY to return entire query result
+    // TODO: RETURNS SETOF type parsing fails
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS SETOF users AS $$
 BEGIN
@@ -178,6 +183,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_return_query_with_parameters() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-RETURNING
     // RETURN QUERY with function parameters
+    // TODO: RETURNS SETOF type parsing fails
     pg_expect_parse_error!(
         r#"CREATE FUNCTION get_active_users(min_age INTEGER) RETURNS SETOF users AS $$
 BEGIN
@@ -190,6 +196,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_return_query_multiple_times() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-RETURNING
     // Multiple RETURN QUERY statements (results are concatenated)
+    // TODO: RETURNS SETOF type parsing fails
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS SETOF users AS $$
 BEGIN
@@ -203,6 +210,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_return_query_with_ordering() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-RETURNING
     // RETURN QUERY with ORDER BY
+    // TODO: RETURNS SETOF type parsing fails
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS SETOF users AS $$
 BEGIN
@@ -219,6 +227,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_return_query_execute() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-RETURNING
     // RETURN QUERY EXECUTE for dynamic SQL
+    // TODO: RETURNS SETOF RECORD parsing fails
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test(table_name TEXT) RETURNS SETOF RECORD AS $$
 BEGIN
@@ -231,6 +240,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_return_query_execute_with_parameters() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-RETURNING
     // RETURN QUERY EXECUTE with USING parameters
+    // TODO: RETURNS SETOF type parsing fails
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test(min_age INTEGER) RETURNS SETOF users AS $$
 BEGIN
@@ -243,6 +253,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_return_query_execute_dynamic_condition() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-RETURNING
     // RETURN QUERY EXECUTE with dynamically built query
+    // TODO: RETURNS SETOF RECORD parsing fails
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test(table_name TEXT, column_name TEXT, threshold INTEGER) RETURNS SETOF RECORD AS $$
 DECLARE
@@ -262,6 +273,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_return_next_and_return_query() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-RETURNING
     // Mixing RETURN NEXT and RETURN QUERY
+    // TODO: RETURNS SETOF type parsing fails
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS SETOF INTEGER AS $$
 BEGIN
@@ -277,7 +289,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_return_in_conditional() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-RETURNING
     // RETURN in conditional branches
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test(x INTEGER) RETURNS TEXT AS $$
 BEGIN
     IF x < 0 THEN
@@ -299,7 +311,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_return_table_function() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-RETURNING
     // Function with RETURNS TABLE
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS TABLE(id INTEGER, name TEXT) AS $$
 BEGIN
     RETURN QUERY SELECT user_id, user_name FROM users;
@@ -311,7 +323,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_return_table_with_computation() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-RETURNING
     // RETURNS TABLE with computed columns
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS TABLE(name TEXT, age_years INTEGER, age_days INTEGER) AS $$
 BEGIN
     RETURN QUERY SELECT user_name, user_age, user_age * 365 FROM users;
@@ -327,11 +339,11 @@ END $$ LANGUAGE plpgsql"#
 fn test_return_early_exit() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-RETURNING
     // Early RETURN to exit function
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test(x INTEGER) RETURNS INTEGER AS $$
 BEGIN
     IF x = 0 THEN
-        RETURN 0;  -- Early exit
+        RETURN 0;
     END IF;
 
     RETURN 100 / x;
@@ -343,7 +355,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_return_from_exception_handler() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-RETURNING
     // RETURN from exception handler
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test(x INTEGER, y INTEGER) RETURNS INTEGER AS $$
 BEGIN
     RETURN x / y;
@@ -362,7 +374,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_return_void() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-RETURNING
     // RETURN in void function (just exits)
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     RAISE NOTICE 'Starting';
@@ -376,6 +388,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_return_setof_final() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-RETURNING
     // Final RETURN in SETOF function (ends iteration)
+    // TODO: RETURNS SETOF type parsing fails
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS SETOF INTEGER AS $$
 DECLARE
@@ -384,7 +397,7 @@ BEGIN
     FOR i IN 1..10 LOOP
         RETURN NEXT i * i;
     END LOOP;
-    RETURN;  -- End of result set
+    RETURN;
 END $$ LANGUAGE plpgsql"#
     );
 }

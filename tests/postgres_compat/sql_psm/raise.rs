@@ -29,7 +29,7 @@ use crate::postgres_compat::common::*;
 fn test_raise_debug() {
     // https://www.postgresql.org/docs/current/plpgsql-errors-and-messages.html
     // RAISE DEBUG - lowest priority, only logged if log_min_messages is DEBUG
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     RAISE DEBUG 'Debug information';
@@ -41,7 +41,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_raise_log() {
     // https://www.postgresql.org/docs/current/plpgsql-errors-and-messages.html
     // RAISE LOG - written to server log only
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     RAISE LOG 'Log message';
@@ -53,7 +53,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_raise_info() {
     // https://www.postgresql.org/docs/current/plpgsql-errors-and-messages.html
     // RAISE INFO - informational message sent to client
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     RAISE INFO 'Informational message';
@@ -65,7 +65,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_raise_notice() {
     // https://www.postgresql.org/docs/current/plpgsql-errors-and-messages.html
     // RAISE NOTICE - notice sent to client (default)
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     RAISE NOTICE 'This is a notice';
@@ -77,7 +77,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_raise_warning() {
     // https://www.postgresql.org/docs/current/plpgsql-errors-and-messages.html
     // RAISE WARNING - warning message sent to client
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     RAISE WARNING 'This is a warning';
@@ -89,7 +89,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_raise_exception() {
     // https://www.postgresql.org/docs/current/plpgsql-errors-and-messages.html
     // RAISE EXCEPTION - error that aborts the transaction
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     RAISE EXCEPTION 'This is an error';
@@ -105,7 +105,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_raise_with_format_string() {
     // https://www.postgresql.org/docs/current/plpgsql-errors-and-messages.html
     // RAISE with % format placeholders
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     RAISE NOTICE 'User % has % items', 'Alice', 42;
@@ -117,7 +117,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_raise_with_multiple_placeholders() {
     // https://www.postgresql.org/docs/current/plpgsql-errors-and-messages.html
     // Multiple % placeholders
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
     username TEXT := 'Bob';
@@ -133,7 +133,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_raise_literal_percent() {
     // https://www.postgresql.org/docs/current/plpgsql-errors-and-messages.html
     // Use %% to include a literal %
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     RAISE NOTICE 'Progress: 50%%';
@@ -149,7 +149,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_raise_with_using_message() {
     // https://www.postgresql.org/docs/current/plpgsql-errors-and-messages.html
     // RAISE with USING MESSAGE option
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     RAISE EXCEPTION 'error_code' USING MESSAGE = 'Custom error message';
@@ -161,7 +161,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_raise_with_using_detail() {
     // https://www.postgresql.org/docs/current/plpgsql-errors-and-messages.html
     // RAISE with USING DETAIL option
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     RAISE EXCEPTION 'Something went wrong'
@@ -174,7 +174,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_raise_with_using_hint() {
     // https://www.postgresql.org/docs/current/plpgsql-errors-and-messages.html
     // RAISE with USING HINT option
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     RAISE EXCEPTION 'Invalid input'
@@ -187,7 +187,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_raise_with_using_errcode() {
     // https://www.postgresql.org/docs/current/plpgsql-errors-and-messages.html
     // RAISE with USING ERRCODE option (SQLSTATE code)
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     RAISE EXCEPTION 'Custom error'
@@ -200,7 +200,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_raise_with_using_errcode_name() {
     // https://www.postgresql.org/docs/current/plpgsql-errors-and-messages.html
     // RAISE with USING ERRCODE symbolic name
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     RAISE EXCEPTION 'Division by zero detected'
@@ -213,7 +213,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_raise_with_multiple_using_options() {
     // https://www.postgresql.org/docs/current/plpgsql-errors-and-messages.html
     // RAISE with multiple USING options
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     RAISE EXCEPTION 'Operation failed'
@@ -229,7 +229,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_raise_with_using_column() {
     // https://www.postgresql.org/docs/current/plpgsql-errors-and-messages.html
     // RAISE with USING COLUMN option (for constraint violations)
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     RAISE EXCEPTION 'Invalid column value'
@@ -242,7 +242,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_raise_with_using_constraint() {
     // https://www.postgresql.org/docs/current/plpgsql-errors-and-messages.html
     // RAISE with USING CONSTRAINT option
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     RAISE EXCEPTION 'Constraint violation'
@@ -255,7 +255,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_raise_with_using_table() {
     // https://www.postgresql.org/docs/current/plpgsql-errors-and-messages.html
     // RAISE with USING TABLE option
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     RAISE EXCEPTION 'Table error'
@@ -268,7 +268,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_raise_with_using_schema() {
     // https://www.postgresql.org/docs/current/plpgsql-errors-and-messages.html
     // RAISE with USING SCHEMA option
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     RAISE EXCEPTION 'Schema error'
@@ -281,7 +281,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_raise_with_using_datatype() {
     // https://www.postgresql.org/docs/current/plpgsql-errors-and-messages.html
     // RAISE with USING DATATYPE option
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     RAISE EXCEPTION 'Datatype error'
@@ -298,14 +298,14 @@ END $$ LANGUAGE plpgsql"#
 fn test_raise_without_message() {
     // https://www.postgresql.org/docs/current/plpgsql-errors-and-messages.html
     // RAISE without message re-raises the current exception
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     BEGIN
         RAISE EXCEPTION 'Original error';
     EXCEPTION
         WHEN OTHERS THEN
-            RAISE;  -- Re-raise the caught exception
+            RAISE;
     END;
 END $$ LANGUAGE plpgsql"#
     );
@@ -315,7 +315,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_raise_with_sqlstate() {
     // https://www.postgresql.org/docs/current/plpgsql-errors-and-messages.html
     // RAISE SQLSTATE for custom error codes
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     RAISE SQLSTATE '12345';
@@ -327,7 +327,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_raise_sqlstate_with_using() {
     // https://www.postgresql.org/docs/current/plpgsql-errors-and-messages.html
     // RAISE SQLSTATE with USING options
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     RAISE SQLSTATE '12345'
@@ -345,7 +345,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_raise_in_if_statement() {
     // https://www.postgresql.org/docs/current/plpgsql-errors-and-messages.html
     // RAISE in conditional logic
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test(value INTEGER) RETURNS void AS $$
 BEGIN
     IF value < 0 THEN
@@ -367,7 +367,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_assert_basic() {
     // https://www.postgresql.org/docs/current/plpgsql-errors-and-messages.html#PLPGSQL-STATEMENTS-ASSERT
     // ASSERT statement (raises error if condition is false)
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test(x INTEGER) RETURNS void AS $$
 BEGIN
     ASSERT x > 0;
@@ -379,6 +379,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_assert_with_message() {
     // https://www.postgresql.org/docs/current/plpgsql-errors-and-messages.html#PLPGSQL-STATEMENTS-ASSERT
     // ASSERT with custom error message
+    // TODO: ASSERT with comma-separated message not yet supported
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test(x INTEGER) RETURNS void AS $$
 BEGIN
@@ -391,6 +392,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_assert_with_formatted_message() {
     // https://www.postgresql.org/docs/current/plpgsql-errors-and-messages.html#PLPGSQL-STATEMENTS-ASSERT
     // ASSERT with formatted message
+    // TODO: ASSERT with comma-separated message not yet supported
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test(x INTEGER) RETURNS void AS $$
 BEGIN
@@ -403,6 +405,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_assert_disabled_by_config() {
     // https://www.postgresql.org/docs/current/plpgsql-errors-and-messages.html#PLPGSQL-STATEMENTS-ASSERT
     // ASSERT can be disabled with plpgsql.check_asserts = off
+    // TODO: ASSERT with comma-separated message not yet supported
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test(x INTEGER) RETURNS void AS $$
 BEGIN

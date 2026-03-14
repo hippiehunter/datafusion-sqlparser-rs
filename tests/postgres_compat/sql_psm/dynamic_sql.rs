@@ -29,7 +29,7 @@ use crate::postgres_compat::common::*;
 fn test_execute_simple() {
     // https://www.postgresql.org/docs/current/plpgsql-statements.html#PLPGSQL-STATEMENTS-EXECUTING-DYN
     // Basic EXECUTE with string literal
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     EXECUTE 'SELECT 1';
@@ -41,7 +41,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_execute_with_variable() {
     // https://www.postgresql.org/docs/current/plpgsql-statements.html#PLPGSQL-STATEMENTS-EXECUTING-DYN
     // EXECUTE with SQL from variable
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
     query TEXT := 'SELECT * FROM users';
@@ -55,6 +55,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_execute_concatenated_query() {
     // https://www.postgresql.org/docs/current/plpgsql-statements.html#PLPGSQL-STATEMENTS-EXECUTING-DYN
     // EXECUTE with dynamically built query
+    // TODO: String concatenation with || operator in EXECUTE fails to parse
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test(table_name TEXT) RETURNS void AS $$
 BEGIN
@@ -71,7 +72,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_execute_into_variable() {
     // https://www.postgresql.org/docs/current/plpgsql-statements.html#PLPGSQL-STATEMENTS-EXECUTING-DYN
     // EXECUTE with INTO to capture results
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS INTEGER AS $$
 DECLARE
     result INTEGER;
@@ -86,7 +87,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_execute_into_record() {
     // https://www.postgresql.org/docs/current/plpgsql-statements.html#PLPGSQL-STATEMENTS-EXECUTING-DYN
     // EXECUTE INTO record type
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
     rec RECORD;
@@ -101,7 +102,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_execute_into_multiple_variables() {
     // https://www.postgresql.org/docs/current/plpgsql-statements.html#PLPGSQL-STATEMENTS-EXECUTING-DYN
     // EXECUTE INTO multiple variables
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
     user_id INTEGER;
@@ -117,7 +118,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_execute_into_strict() {
     // https://www.postgresql.org/docs/current/plpgsql-statements.html#PLPGSQL-STATEMENTS-EXECUTING-DYN
     // EXECUTE INTO STRICT (raises error if not exactly one row)
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS INTEGER AS $$
 DECLARE
     result INTEGER;
@@ -136,7 +137,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_execute_using_simple() {
     // https://www.postgresql.org/docs/current/plpgsql-statements.html#PLPGSQL-STATEMENTS-EXECUTING-DYN
     // EXECUTE with USING for parameters
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test(user_id INTEGER) RETURNS void AS $$
 BEGIN
     EXECUTE 'SELECT * FROM users WHERE id = $1' USING user_id;
@@ -148,7 +149,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_execute_using_multiple_params() {
     // https://www.postgresql.org/docs/current/plpgsql-statements.html#PLPGSQL-STATEMENTS-EXECUTING-DYN
     // EXECUTE with multiple parameters
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test(min_age INTEGER, max_age INTEGER) RETURNS void AS $$
 BEGIN
     EXECUTE 'SELECT * FROM users WHERE age BETWEEN $1 AND $2' USING min_age, max_age;
@@ -160,7 +161,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_execute_into_using() {
     // https://www.postgresql.org/docs/current/plpgsql-statements.html#PLPGSQL-STATEMENTS-EXECUTING-DYN
     // EXECUTE with both INTO and USING
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test(user_id INTEGER) RETURNS TEXT AS $$
 DECLARE
     user_name TEXT;
@@ -179,6 +180,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_execute_create_table() {
     // https://www.postgresql.org/docs/current/plpgsql-statements.html#PLPGSQL-STATEMENTS-EXECUTING-DYN
     // EXECUTE for CREATE TABLE
+    // TODO: String concatenation with || operator in EXECUTE fails to parse
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test(table_name TEXT) RETURNS void AS $$
 BEGIN
@@ -191,6 +193,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_execute_drop_table() {
     // https://www.postgresql.org/docs/current/plpgsql-statements.html#PLPGSQL-STATEMENTS-EXECUTING-DYN
     // EXECUTE for DROP TABLE
+    // TODO: String concatenation with || operator in EXECUTE fails to parse
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test(table_name TEXT) RETURNS void AS $$
 BEGIN
@@ -203,7 +206,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_execute_alter_table() {
     // https://www.postgresql.org/docs/current/plpgsql-statements.html#PLPGSQL-STATEMENTS-EXECUTING-DYN
     // EXECUTE for ALTER TABLE
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test(table_name TEXT, column_name TEXT) RETURNS void AS $$
 BEGIN
     EXECUTE FORMAT('ALTER TABLE %I ADD COLUMN %I INTEGER', table_name, column_name);
@@ -219,7 +222,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_execute_insert() {
     // https://www.postgresql.org/docs/current/plpgsql-statements.html#PLPGSQL-STATEMENTS-EXECUTING-DYN
     // EXECUTE for INSERT
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test(table_name TEXT, user_name TEXT) RETURNS void AS $$
 BEGIN
     EXECUTE FORMAT('INSERT INTO %I (name) VALUES ($1)', table_name) USING user_name;
@@ -231,7 +234,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_execute_update() {
     // https://www.postgresql.org/docs/current/plpgsql-statements.html#PLPGSQL-STATEMENTS-EXECUTING-DYN
     // EXECUTE for UPDATE
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test(table_name TEXT, user_id INTEGER) RETURNS void AS $$
 BEGIN
     EXECUTE FORMAT('UPDATE %I SET active = true WHERE id = $1', table_name) USING user_id;
@@ -243,7 +246,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_execute_delete() {
     // https://www.postgresql.org/docs/current/plpgsql-statements.html#PLPGSQL-STATEMENTS-EXECUTING-DYN
     // EXECUTE for DELETE
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test(table_name TEXT, user_id INTEGER) RETURNS void AS $$
 BEGIN
     EXECUTE FORMAT('DELETE FROM %I WHERE id = $1', table_name) USING user_id;
@@ -259,7 +262,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_execute_with_format() {
     // https://www.postgresql.org/docs/current/plpgsql-statements.html#PLPGSQL-STATEMENTS-EXECUTING-DYN
     // EXECUTE with FORMAT function for safer query building
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test(table_name TEXT, column_name TEXT) RETURNS void AS $$
 BEGIN
     EXECUTE FORMAT('SELECT %I FROM %I', column_name, table_name);
@@ -271,7 +274,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_execute_format_with_literal() {
     // https://www.postgresql.org/docs/current/plpgsql-statements.html#PLPGSQL-STATEMENTS-EXECUTING-DYN
     // FORMAT with %L for literal values
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test(value TEXT) RETURNS void AS $$
 BEGIN
     EXECUTE FORMAT('SELECT * FROM users WHERE name = %L', value);
@@ -283,7 +286,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_execute_format_mixed() {
     // https://www.postgresql.org/docs/current/plpgsql-statements.html#PLPGSQL-STATEMENTS-EXECUTING-DYN
     // FORMAT with mixed %I (identifier) and %L (literal)
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test(table_name TEXT, status TEXT) RETURNS void AS $$
 BEGIN
     EXECUTE FORMAT('UPDATE %I SET status = %L', table_name, status);
@@ -299,7 +302,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_execute_in_loop() {
     // https://www.postgresql.org/docs/current/plpgsql-statements.html#PLPGSQL-STATEMENTS-EXECUTING-DYN
     // EXECUTE in a loop for batch operations
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
     table_name TEXT;
@@ -320,7 +323,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_execute_get_diagnostics_row_count() {
     // https://www.postgresql.org/docs/current/plpgsql-statements.html#PLPGSQL-STATEMENTS-DIAGNOSTICS
     // GET DIAGNOSTICS ROW_COUNT after EXECUTE
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS INTEGER AS $$
 DECLARE
     rows_affected INTEGER;
@@ -336,7 +339,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_execute_found_variable() {
     // https://www.postgresql.org/docs/current/plpgsql-statements.html#PLPGSQL-STATEMENTS-DIAGNOSTICS
     // FOUND variable after EXECUTE
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     EXECUTE 'UPDATE users SET active = true WHERE id = 999';
@@ -357,7 +360,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_execute_insert_returning() {
     // https://www.postgresql.org/docs/current/plpgsql-statements.html#PLPGSQL-STATEMENTS-EXECUTING-DYN
     // EXECUTE INSERT with RETURNING clause
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test(user_name TEXT) RETURNS INTEGER AS $$
 DECLARE
     new_id INTEGER;
@@ -372,12 +375,12 @@ END $$ LANGUAGE plpgsql"#
 fn test_execute_update_returning() {
     // https://www.postgresql.org/docs/current/plpgsql-statements.html#PLPGSQL-STATEMENTS-EXECUTING-DYN
     // EXECUTE UPDATE with RETURNING clause
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test(user_id INTEGER) RETURNS TEXT AS $$
 DECLARE
     old_name TEXT;
 BEGIN
-    EXECUTE 'UPDATE users SET active = false WHERE id = $1 RETURNING name' 
+    EXECUTE 'UPDATE users SET active = false WHERE id = $1 RETURNING name'
         INTO old_name USING user_id;
     RETURN old_name;
 END $$ LANGUAGE plpgsql"#
@@ -392,6 +395,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_execute_with_quote_ident() {
     // https://www.postgresql.org/docs/current/plpgsql-statements.html#PLPGSQL-STATEMENTS-EXECUTING-DYN
     // Using quote_ident to prevent SQL injection
+    // TODO: String concatenation with || operator in EXECUTE fails to parse
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test(table_name TEXT, column_name TEXT) RETURNS void AS $$
 BEGIN
@@ -404,6 +408,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_execute_with_quote_literal() {
     // https://www.postgresql.org/docs/current/plpgsql-statements.html#PLPGSQL-STATEMENTS-EXECUTING-DYN
     // Using quote_literal to safely embed literals
+    // TODO: String concatenation with || operator in EXECUTE fails to parse
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test(search_value TEXT) RETURNS void AS $$
 BEGIN
@@ -416,6 +421,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_execute_with_quote_nullable() {
     // https://www.postgresql.org/docs/current/plpgsql-statements.html#PLPGSQL-STATEMENTS-EXECUTING-DYN
     // Using quote_nullable (handles NULL values)
+    // TODO: String concatenation with || operator in EXECUTE fails to parse
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test(search_value TEXT) RETURNS void AS $$
 BEGIN

@@ -29,7 +29,7 @@ use crate::postgres_compat::common::*;
 fn test_exception_when_others() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-ERROR-TRAPPING
     // Basic EXCEPTION WHEN OTHERS handler (catches all errors)
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     RAISE EXCEPTION 'test error';
@@ -44,7 +44,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_exception_specific_condition() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-ERROR-TRAPPING
     // Catching a specific error condition by name
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     PERFORM 1 / 0;
@@ -59,10 +59,9 @@ END $$ LANGUAGE plpgsql"#
 fn test_exception_multiple_conditions() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-ERROR-TRAPPING
     // Multiple WHEN clauses for different error types
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
-    -- Some operation
     PERFORM operation();
 EXCEPTION
     WHEN division_by_zero THEN
@@ -79,10 +78,9 @@ END $$ LANGUAGE plpgsql"#
 fn test_exception_or_conditions() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-ERROR-TRAPPING
     // Multiple conditions in a single WHEN clause (OR)
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
-    -- Some operation
     PERFORM operation();
 EXCEPTION
     WHEN division_by_zero OR numeric_value_out_of_range THEN
@@ -99,7 +97,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_exception_sqlerrm() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-ERROR-TRAPPING
     // Using SQLERRM to get error message
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     RAISE EXCEPTION 'test error';
@@ -114,7 +112,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_exception_sqlstate() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-ERROR-TRAPPING
     // Using SQLSTATE to get error code
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     RAISE EXCEPTION 'test error';
@@ -129,7 +127,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_exception_both_sqlerrm_and_sqlstate() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-ERROR-TRAPPING
     // Using both SQLERRM and SQLSTATE
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     RAISE EXCEPTION 'test error';
@@ -148,7 +146,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_get_diagnostics_returned_sqlstate() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-DIAGNOSTICS
     // GET DIAGNOSTICS for detailed error information
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
     error_code TEXT;
@@ -166,7 +164,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_get_diagnostics_message_text() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-DIAGNOSTICS
     // GET DIAGNOSTICS MESSAGE_TEXT
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
     error_msg TEXT;
@@ -184,6 +182,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_get_diagnostics_multiple_items() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-DIAGNOSTICS
     // GET DIAGNOSTICS with multiple items
+    // TODO: PG_EXCEPTION_DETAIL/PG_EXCEPTION_HINT not recognized as diagnostics items
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
@@ -209,6 +208,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_get_diagnostics_pg_exception_context() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-DIAGNOSTICS
     // GET DIAGNOSTICS PG_EXCEPTION_CONTEXT (stack trace)
+    // TODO: PG_EXCEPTION_CONTEXT not recognized as diagnostics item
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
@@ -227,6 +227,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_get_diagnostics_column_name() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-DIAGNOSTICS
     // GET DIAGNOSTICS COLUMN_NAME (for constraint violations)
+    // TODO: COLUMN_NAME not recognized as diagnostics item
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
@@ -245,6 +246,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_get_diagnostics_constraint_name() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-DIAGNOSTICS
     // GET DIAGNOSTICS CONSTRAINT_NAME
+    // TODO: CONSTRAINT_NAME not recognized as diagnostics item
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
@@ -263,6 +265,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_get_diagnostics_table_name() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-DIAGNOSTICS
     // GET DIAGNOSTICS TABLE_NAME
+    // TODO: TABLE_NAME not recognized as diagnostics item
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
@@ -281,6 +284,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_get_diagnostics_schema_name() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-DIAGNOSTICS
     // GET DIAGNOSTICS SCHEMA_NAME
+    // TODO: SCHEMA_NAME not recognized as diagnostics item
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
@@ -299,6 +303,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_get_diagnostics_datatype_name() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-DIAGNOSTICS
     // GET DIAGNOSTICS DATATYPE_NAME
+    // TODO: DATATYPE_NAME not recognized as diagnostics item
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
@@ -321,7 +326,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_nested_exception_blocks() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-ERROR-TRAPPING
     // Nested BEGIN/EXCEPTION blocks
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     BEGIN
@@ -342,14 +347,14 @@ END $$ LANGUAGE plpgsql"#
 fn test_re_raising_exception() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-ERROR-TRAPPING
     // Re-raising an exception with RAISE
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     RAISE EXCEPTION 'original error';
 EXCEPTION
     WHEN OTHERS THEN
         RAISE NOTICE 'Logging error: %', SQLERRM;
-        RAISE;  -- Re-raise the same exception
+        RAISE;
 END $$ LANGUAGE plpgsql"#
     );
 }
@@ -362,7 +367,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_exception_unique_violation() {
     // https://www.postgresql.org/docs/current/errcodes-appendix.html
     // unique_violation (23505)
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     INSERT INTO users (id, email) VALUES (1, 'test@example.com');
@@ -377,7 +382,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_exception_foreign_key_violation() {
     // https://www.postgresql.org/docs/current/errcodes-appendix.html
     // foreign_key_violation (23503)
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     INSERT INTO orders (user_id) VALUES (99999);
@@ -392,7 +397,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_exception_not_null_violation() {
     // https://www.postgresql.org/docs/current/errcodes-appendix.html
     // not_null_violation (23502)
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     INSERT INTO users (name) VALUES (NULL);
@@ -407,7 +412,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_exception_check_violation() {
     // https://www.postgresql.org/docs/current/errcodes-appendix.html
     // check_violation (23514)
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     INSERT INTO users (age) VALUES (-5);
@@ -422,6 +427,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_exception_no_data_found() {
     // https://www.postgresql.org/docs/current/errcodes-appendix.html
     // no_data_found (P0002) - raised by SELECT INTO with no rows
+    // TODO: SELECT INTO STRICT parsing fails
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
@@ -439,6 +445,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_exception_too_many_rows() {
     // https://www.postgresql.org/docs/current/errcodes-appendix.html
     // too_many_rows (P0003) - raised by SELECT INTO STRICT with multiple rows
+    // TODO: SELECT INTO STRICT parsing fails
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
@@ -456,7 +463,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_exception_undefined_table() {
     // https://www.postgresql.org/docs/current/errcodes-appendix.html
     // undefined_table (42P01)
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     EXECUTE 'SELECT * FROM nonexistent_table';
@@ -471,7 +478,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_exception_undefined_column() {
     // https://www.postgresql.org/docs/current/errcodes-appendix.html
     // undefined_column (42703)
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     EXECUTE 'SELECT nonexistent_column FROM users';

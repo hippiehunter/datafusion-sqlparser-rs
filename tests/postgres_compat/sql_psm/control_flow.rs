@@ -29,7 +29,7 @@ use crate::postgres_compat::common::*;
 fn test_if_then() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-CONDITIONALS
     // Basic IF-THEN statement
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     IF TRUE THEN
@@ -43,7 +43,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_if_then_else() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-CONDITIONALS
     // IF-THEN-ELSE statement
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
     IF 1 > 2 THEN
@@ -59,7 +59,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_if_then_elsif() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-CONDITIONALS
     // IF-THEN-ELSIF statement
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test(x INTEGER) RETURNS TEXT AS $$
 BEGIN
     IF x > 0 THEN
@@ -77,7 +77,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_if_with_multiple_elsif() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-CONDITIONALS
     // Multiple ELSIF branches
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION grade(score INTEGER) RETURNS CHAR AS $$
 BEGIN
     IF score >= 90 THEN
@@ -103,7 +103,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_case_simple() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-CONDITIONALS-CASE
     // Simple CASE statement
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test(x INTEGER) RETURNS TEXT AS $$
 BEGIN
     CASE x
@@ -122,7 +122,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_case_searched() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-CONDITIONALS-CASE
     // Searched CASE statement (with boolean conditions)
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test(x INTEGER) RETURNS TEXT AS $$
 BEGIN
     CASE
@@ -141,7 +141,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_case_without_else() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-CONDITIONALS-CASE
     // CASE without ELSE (raises error if no match)
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test(x INTEGER) RETURNS TEXT AS $$
 BEGIN
     CASE x
@@ -162,7 +162,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_loop_basic() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-CONTROL-STRUCTURES-LOOPS
     // Basic infinite LOOP with EXIT
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
     i INTEGER := 0;
@@ -179,6 +179,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_loop_with_label() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-CONTROL-STRUCTURES-LOOPS
     // LOOP with label for EXIT
+    // TODO: <<label>> before statements inside BEGIN block not yet supported
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
@@ -197,7 +198,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_loop_with_continue() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-CONTROL-STRUCTURES-LOOPS
     // LOOP with CONTINUE statement
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
     i INTEGER := 0;
@@ -220,6 +221,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_while_basic() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-CONTROL-STRUCTURES-LOOPS-WHILE
     // Basic WHILE loop
+    // TODO: Round-trip fails due to WHILE LOOP serialization producing double semicolons
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
@@ -236,6 +238,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_while_with_exit() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-CONTROL-STRUCTURES-LOOPS-WHILE
     // WHILE loop with EXIT
+    // TODO: Round-trip fails due to WHILE LOOP serialization producing double semicolons
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
@@ -257,6 +260,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_for_integer_range() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-INTEGER-FOR-LOOPS
     // FOR loop over integer range
+    // TODO: Round-trip fails because FOR range `..` operator tokenization issue
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
@@ -273,6 +277,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_for_integer_range_reverse() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-INTEGER-FOR-LOOPS
     // FOR loop in reverse order
+    // TODO: Round-trip fails because FOR range `..` operator tokenization issue
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
@@ -289,6 +294,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_for_integer_range_by_step() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-INTEGER-FOR-LOOPS
     // FOR loop with BY step
+    // TODO: Round-trip fails because FOR range `..` operator tokenization issue
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
@@ -305,6 +311,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_for_integer_dynamic_bounds() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-INTEGER-FOR-LOOPS
     // FOR loop with dynamic bounds from expressions
+    // TODO: Round-trip fails because FOR range `..` operator tokenization issue
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test(start_val INTEGER, end_val INTEGER) RETURNS void AS $$
 DECLARE
@@ -325,6 +332,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_for_query_loop() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-RECORDS-ITERATING
     // FOR loop over query results
+    // TODO: FOR r IN SELECT...LOOP parsing not yet supported
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
@@ -341,7 +349,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_for_query_with_parameters() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-RECORDS-ITERATING
     // FOR loop with parameterized query
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test(min_age INTEGER) RETURNS void AS $$
 DECLARE
     r RECORD;
@@ -357,7 +365,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_for_dynamic_query() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-RECORDS-ITERATING
     // FOR loop with EXECUTE for dynamic query
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test(table_name TEXT) RETURNS void AS $$
 DECLARE
     r RECORD;
@@ -377,7 +385,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_foreach_array() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-FOREACH-ARRAY
     // FOREACH loop over array elements
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
     arr INTEGER[] := ARRAY[1, 2, 3, 4, 5];
@@ -394,7 +402,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_foreach_slice() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-FOREACH-ARRAY
     // FOREACH with SLICE for multi-dimensional arrays
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
     arr INTEGER[][] := ARRAY[[1,2],[3,4],[5,6]];
@@ -415,6 +423,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_nested_loops() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-CONTROL-STRUCTURES-LOOPS
     // Nested FOR loops
+    // TODO: Round-trip fails because FOR range `..` operator tokenization issue
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
@@ -434,6 +443,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_nested_loops_with_labels() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-CONTROL-STRUCTURES-LOOPS
     // Nested loops with labels for EXIT/CONTINUE
+    // TODO: <<label>> before statements inside BEGIN block not yet supported
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
@@ -460,7 +470,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_exit_when() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-EXIT
     // EXIT WHEN condition
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
     i INTEGER := 0;
@@ -477,6 +487,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_exit_with_label() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-EXIT
     // EXIT specific loop by label
+    // TODO: <<label>> before statements inside BEGIN block not yet supported
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN
@@ -495,6 +506,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_continue_when() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-CONTINUE
     // CONTINUE WHEN condition
+    // TODO: Round-trip fails because FOR range `..` operator tokenization issue
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
@@ -512,6 +524,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_continue_with_label() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-CONTINUE
     // CONTINUE to specific loop by label
+    // TODO: <<label>> before statements inside BEGIN block not yet supported
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 BEGIN

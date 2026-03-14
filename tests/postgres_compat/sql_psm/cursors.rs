@@ -29,7 +29,7 @@ use crate::postgres_compat::common::*;
 fn test_declare_cursor_simple() {
     // https://www.postgresql.org/docs/current/plpgsql-cursors.html#PLPGSQL-CURSOR-DECLARATIONS
     // Simple cursor declaration in DECLARE block
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
     curs CURSOR FOR SELECT * FROM users;
@@ -43,7 +43,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_declare_cursor_with_parameters() {
     // https://www.postgresql.org/docs/current/plpgsql-cursors.html#PLPGSQL-CURSOR-DECLARATIONS
     // Cursor with parameters
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
     curs CURSOR (min_age INTEGER) FOR SELECT * FROM users WHERE age >= min_age;
@@ -57,6 +57,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_declare_cursor_no_scroll() {
     // https://www.postgresql.org/docs/current/plpgsql-cursors.html#PLPGSQL-CURSOR-DECLARATIONS
     // NO SCROLL cursor (forward-only)
+    // TODO: NO SCROLL CURSOR display round-trip fails
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
@@ -71,6 +72,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_declare_cursor_scroll() {
     // https://www.postgresql.org/docs/current/plpgsql-cursors.html#PLPGSQL-CURSOR-DECLARATIONS
     // SCROLL cursor (allows backward movement)
+    // TODO: SCROLL CURSOR display round-trip fails
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
@@ -89,7 +91,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_open_cursor_simple() {
     // https://www.postgresql.org/docs/current/plpgsql-cursors.html#PLPGSQL-CURSOR-OPENING
     // Opening a cursor
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
     curs CURSOR FOR SELECT * FROM users;
@@ -104,7 +106,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_open_cursor_with_parameters() {
     // https://www.postgresql.org/docs/current/plpgsql-cursors.html#PLPGSQL-CURSOR-OPENING
     // Opening cursor with parameters
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
     curs CURSOR (min_age INTEGER) FOR SELECT * FROM users WHERE age >= min_age;
@@ -119,7 +121,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_open_cursor_for_query() {
     // https://www.postgresql.org/docs/current/plpgsql-cursors.html#PLPGSQL-CURSOR-OPENING
     // OPEN FOR query (unbound cursor variable)
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
     curs refcursor;
@@ -134,7 +136,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_open_cursor_for_execute() {
     // https://www.postgresql.org/docs/current/plpgsql-cursors.html#PLPGSQL-CURSOR-OPENING
     // OPEN FOR EXECUTE (dynamic query)
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test(table_name TEXT) RETURNS void AS $$
 DECLARE
     curs refcursor;
@@ -153,7 +155,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_fetch_cursor() {
     // https://www.postgresql.org/docs/current/plpgsql-cursors.html#PLPGSQL-CURSOR-USING
     // FETCH next row from cursor
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
     curs CURSOR FOR SELECT * FROM users;
@@ -170,7 +172,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_fetch_cursor_next() {
     // https://www.postgresql.org/docs/current/plpgsql-cursors.html#PLPGSQL-CURSOR-USING
     // FETCH NEXT from cursor (explicit)
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
     curs CURSOR FOR SELECT * FROM users;
@@ -187,6 +189,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_fetch_cursor_prior() {
     // https://www.postgresql.org/docs/current/plpgsql-cursors.html#PLPGSQL-CURSOR-USING
     // FETCH PRIOR (previous row) - requires SCROLL cursor
+    // TODO: SCROLL CURSOR display round-trip fails
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
@@ -205,6 +208,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_fetch_cursor_first() {
     // https://www.postgresql.org/docs/current/plpgsql-cursors.html#PLPGSQL-CURSOR-USING
     // FETCH FIRST row
+    // TODO: SCROLL CURSOR display round-trip fails
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
@@ -222,6 +226,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_fetch_cursor_last() {
     // https://www.postgresql.org/docs/current/plpgsql-cursors.html#PLPGSQL-CURSOR-USING
     // FETCH LAST row
+    // TODO: SCROLL CURSOR display round-trip fails
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
@@ -239,6 +244,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_fetch_cursor_absolute() {
     // https://www.postgresql.org/docs/current/plpgsql-cursors.html#PLPGSQL-CURSOR-USING
     // FETCH ABSOLUTE position
+    // TODO: SCROLL CURSOR display round-trip fails
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
@@ -256,6 +262,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_fetch_cursor_relative() {
     // https://www.postgresql.org/docs/current/plpgsql-cursors.html#PLPGSQL-CURSOR-USING
     // FETCH RELATIVE offset
+    // TODO: SCROLL CURSOR display round-trip fails
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
@@ -273,7 +280,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_fetch_cursor_forward() {
     // https://www.postgresql.org/docs/current/plpgsql-cursors.html#PLPGSQL-CURSOR-USING
     // FETCH FORWARD count
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
     curs CURSOR FOR SELECT * FROM users;
@@ -290,6 +297,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_fetch_cursor_backward() {
     // https://www.postgresql.org/docs/current/plpgsql-cursors.html#PLPGSQL-CURSOR-USING
     // FETCH BACKWARD count
+    // TODO: SCROLL CURSOR display round-trip fails
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
@@ -312,6 +320,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_move_cursor() {
     // https://www.postgresql.org/docs/current/plpgsql-cursors.html#PLPGSQL-CURSOR-USING
     // MOVE cursor position without retrieving row
+    // TODO: MOVE FORWARD display round-trip fails
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
@@ -332,13 +341,12 @@ END $$ LANGUAGE plpgsql"#
 fn test_close_cursor() {
     // https://www.postgresql.org/docs/current/plpgsql-cursors.html#PLPGSQL-CURSOR-USING
     // Closing a cursor
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
     curs CURSOR FOR SELECT * FROM users;
 BEGIN
     OPEN curs;
-    -- Use cursor
     CLOSE curs;
 END $$ LANGUAGE plpgsql"#
     );
@@ -352,6 +360,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_cursor_loop() {
     // https://www.postgresql.org/docs/current/plpgsql-cursors.html#PLPGSQL-CURSOR-FOR-LOOP
     // FOR loop with cursor
+    // TODO: FOR rec IN curs LOOP parsing fails
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
@@ -369,6 +378,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_cursor_loop_with_exit() {
     // https://www.postgresql.org/docs/current/plpgsql-cursors.html#PLPGSQL-CURSOR-FOR-LOOP
     // Cursor loop with early exit
+    // TODO: FOR rec IN curs LOOP parsing fails
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
@@ -393,7 +403,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_refcursor_variable() {
     // https://www.postgresql.org/docs/current/plpgsql-cursors.html#PLPGSQL-CURSOR-RETURNING
     // refcursor variable for returning cursor to caller
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS refcursor AS $$
 DECLARE
     curs refcursor;
@@ -408,7 +418,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_refcursor_with_name() {
     // https://www.postgresql.org/docs/current/plpgsql-cursors.html#PLPGSQL-CURSOR-RETURNING
     // Named refcursor
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS refcursor AS $$
 DECLARE
     curs refcursor := 'my_cursor';
@@ -427,7 +437,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_cursor_found() {
     // https://www.postgresql.org/docs/current/plpgsql-cursors.html#PLPGSQL-CURSOR-USING
     // FOUND variable after FETCH
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
     curs CURSOR FOR SELECT * FROM users;
@@ -449,7 +459,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_cursor_loop_with_found() {
     // https://www.postgresql.org/docs/current/plpgsql-cursors.html#PLPGSQL-CURSOR-USING
     // Manual cursor loop using FOUND
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
     curs CURSOR FOR SELECT * FROM users;
