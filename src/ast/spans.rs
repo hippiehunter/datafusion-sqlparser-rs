@@ -551,6 +551,10 @@ impl Spanned for Statement {
             Statement::Foreach(stmt) => stmt.token.0.span,
             Statement::Exit(_) => Span::empty(),
             Statement::Continue(_) => Span::empty(),
+            Statement::CreatePublication { .. } => Span::empty(),
+            Statement::DropPublication { .. } => Span::empty(),
+            Statement::CreateSubscription { .. } => Span::empty(),
+            Statement::DropSubscription { .. } => Span::empty(),
         }
     }
 }
@@ -1716,6 +1720,7 @@ impl Spanned for Expr {
                 collection,
                 predicate,
             } => collection.span().union(&predicate.span()),
+            Expr::CurrentOf { cursor_name } => cursor_name.span,
         }
     }
 }

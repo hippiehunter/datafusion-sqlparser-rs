@@ -7040,3 +7040,207 @@ fn parse_create_operator_class() {
         )
         .is_err());
 }
+
+#[test]
+fn parse_where_current_of() {
+    // UPDATE ... WHERE CURRENT OF cursor_name
+    let sql = "UPDATE t SET col = 1 WHERE CURRENT OF my_cursor";
+    let stmt = pg_and_generic().verified_stmt(sql);
+    match stmt {
+        Statement::Update(update) => {
+            assert_eq!(
+                update.selection,
+                Some(Expr::CurrentOf {
+                    cursor_name: Ident::new("my_cursor"),
+                })
+            );
+        }
+        _ => panic!("Expected UPDATE statement"),
+    }
+
+    // DELETE ... WHERE CURRENT OF cursor_name
+    let sql = "DELETE FROM t WHERE CURRENT OF my_cursor";
+    let stmt = pg_and_generic().verified_stmt(sql);
+    match stmt {
+        Statement::Delete(delete) => {
+            assert_eq!(
+                delete.selection,
+                Some(Expr::CurrentOf {
+                    cursor_name: Ident::new("my_cursor"),
+                })
+            );
+        }
+        _ => panic!("Expected DELETE statement"),
+    }
+}
+
+#[test]
+fn parse_create_publication() {
+    // FOR ALL TABLES
+    let sql = "CREATE PUBLICATION my_pub FOR ALL TABLES";
+    let stmt = pg_and_generic().verified_stmt(sql);
+    match stmt {
+        Statement::CreatePublication {
+            name,
+            for_object,
+            with_options,
+        } => {
+            assert_eq!(name, Ident::new("my_pub"));
+            assert!(matches!(for_object, PublicationForObject::AllTables));
+            assert!(with_options.is_empty());
+        }
+        _ => panic!("Expected CreatePublication statement"),
+    }
+
+    // FOR TABLE t1, t2
+    let sql = "CREATE PUBLICATION my_pub FOR TABLE t1, t2";
+    let stmt = pg_and_generic().verified_stmt(sql);
+    match stmt {
+        Statement::CreatePublication {
+            for_object: PublicationForObject::Tables(tables),
+            ..
+        } => {
+            assert_eq!(tables.len(), 2);
+            assert_eq!(tables[0].name.to_string(), "t1");
+            assert!(tables[0].columns.is_none());
+            assert_eq!(tables[1].name.to_string(), "t2");
+            assert!(tables[1].columns.is_none());
+        }
+        _ => panic!("Expected CreatePublication with Tables"),
+    }
+
+    // FOR TABLES IN SCHEMA s1, s2
+    let sql = "CREATE PUBLICATION my_pub FOR TABLES IN SCHEMA s1, s2";
+    let stmt = pg_and_generic().verified_stmt(sql);
+    match stmt {
+        Statement::CreatePublication {
+            for_object: PublicationForObject::TablesInSchema(schemas),
+            ..
+        } => {
+            assert_eq!(schemas.len(), 2);
+            assert_eq!(schemas[0], Ident::new("s1"));
+            assert_eq!(schemas[1], Ident::new("s2"));
+        }
+        _ => panic!("Expected CreatePublication with TablesInSchema"),
+    }
+
+    // FOR TABLE with column list
+    let sql = "CREATE PUBLICATION my_pub FOR TABLE t1 (col1, col2), t2";
+    let stmt = pg_and_generic().verified_stmt(sql);
+    match stmt {
+        Statement::CreatePublication {
+            for_object: PublicationForObject::Tables(tables),
+            ..
+        } => {
+            assert_eq!(tables.len(), 2);
+            assert_eq!(tables[0].name.to_string(), "t1");
+            assert_eq!(
+                tables[0].columns,
+                Some(vec![Ident::new("col1"), Ident::new("col2")])
+            );
+            assert_eq!(tables[1].name.to_string(), "t2");
+            assert!(tables[1].columns.is_none());
+        }
+        _ => panic!("Expected CreatePublication with Tables and columns"),
+    }
+
+    // WITH options
+    let sql = "CREATE PUBLICATION my_pub FOR ALL TABLES WITH (publish = 'insert, update')";
+    pg_and_generic().verified_stmt(sql);
+}
+
+#[test]
+fn parse_drop_publication() {
+    let sql = "DROP PUBLICATION my_pub";
+    let stmt = pg_and_generic().verified_stmt(sql);
+    match stmt {
+        Statement::DropPublication {
+            if_exists,
+            name,
+            drop_behavior,
+        } => {
+            assert!(!if_exists);
+            assert_eq!(name, Ident::new("my_pub"));
+            assert!(drop_behavior.is_none());
+        }
+        _ => panic!("Expected DropPublication statement"),
+    }
+
+    let sql = "DROP PUBLICATION IF EXISTS my_pub CASCADE";
+    let stmt = pg_and_generic().verified_stmt(sql);
+    match stmt {
+        Statement::DropPublication {
+            if_exists,
+            name,
+            drop_behavior,
+        } => {
+            assert!(if_exists);
+            assert_eq!(name, Ident::new("my_pub"));
+            assert!(matches!(drop_behavior, Some(DropBehavior::Cascade)));
+        }
+        _ => panic!("Expected DropPublication statement"),
+    }
+}
+
+#[test]
+fn parse_create_subscription() {
+    let sql =
+        "CREATE SUBSCRIPTION my_sub CONNECTION 'host=localhost dbname=mydb' PUBLICATION pub1, pub2";
+    let stmt = pg_and_generic().verified_stmt(sql);
+    match stmt {
+        Statement::CreateSubscription {
+            name,
+            connection_string,
+            publications,
+            with_options,
+        } => {
+            assert_eq!(name, Ident::new("my_sub"));
+            assert_eq!(connection_string, "host=localhost dbname=mydb");
+            assert_eq!(publications.len(), 2);
+            assert_eq!(publications[0], Ident::new("pub1"));
+            assert_eq!(publications[1], Ident::new("pub2"));
+            assert!(with_options.is_empty());
+        }
+        _ => panic!("Expected CreateSubscription statement"),
+    }
+
+    // WITH options
+    let sql = "CREATE SUBSCRIPTION my_sub CONNECTION 'host=localhost' PUBLICATION pub1 WITH (copy_data = false)";
+    pg_and_generic().verified_stmt(sql);
+}
+
+#[test]
+fn parse_drop_subscription() {
+    let sql = "DROP SUBSCRIPTION my_sub";
+    let stmt = pg_and_generic().verified_stmt(sql);
+    match stmt {
+        Statement::DropSubscription {
+            if_exists,
+            name,
+            drop_behavior,
+        } => {
+            assert!(!if_exists);
+            assert_eq!(name, Ident::new("my_sub"));
+            assert!(drop_behavior.is_none());
+        }
+        _ => panic!("Expected DropSubscription statement"),
+    }
+
+    let sql = "DROP SUBSCRIPTION IF EXISTS my_sub CASCADE";
+    let stmt = pg_and_generic().verified_stmt(sql);
+    match stmt {
+        Statement::DropSubscription {
+            if_exists,
+            name,
+            drop_behavior,
+        } => {
+            assert!(if_exists);
+            assert_eq!(name, Ident::new("my_sub"));
+            assert!(matches!(drop_behavior, Some(DropBehavior::Cascade)));
+        }
+        _ => panic!("Expected DropSubscription statement"),
+    }
+
+    // RESTRICT
+    pg_and_generic().verified_stmt("DROP SUBSCRIPTION my_sub RESTRICT");
+}

@@ -1111,7 +1111,7 @@ impl<'a> Parser<'a> {
                     }) {
                         return Ok(assignment);
                     }
-                    self.next_token(); // Re-consume the token for error message
+                    self.advance_token(); // Re-consume the token for error message
                     self.expected("an SQL statement", next_token)
                 }
             },
@@ -1367,7 +1367,7 @@ impl<'a> Parser<'a> {
     ///
     /// See [Statement::For]
     fn parse_for(&self, label: Option<Ident>) -> Result<Statement, ParserError> {
-        let token = AttachedToken(self.get_current_token().clone().to_static());
+        let token = self.attached_token_from_current();
         self.expect_keyword_is(Keyword::FOR)?;
 
         // Parse loop_name (the variable that will hold the row/value)
@@ -1539,7 +1539,7 @@ impl<'a> Parser<'a> {
     ///
     /// See [Statement::Foreach]
     fn parse_foreach(&self, label: Option<Ident>) -> Result<Statement, ParserError> {
-        let token = AttachedToken(self.get_current_token().clone().to_static());
+        let token = self.attached_token_from_current();
         self.expect_keyword_is(Keyword::FOREACH)?;
 
         // Parse loop variable name
@@ -1669,7 +1669,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_get_diagnostics(&self) -> Result<Statement, ParserError> {
-        let token = AttachedToken(self.get_current_token().clone().to_static());
+        let token = self.attached_token_from_current();
         self.expect_keyword_is(Keyword::GET)?;
 
         // Check for optional STACKED keyword
@@ -2012,7 +2012,7 @@ impl<'a> Parser<'a> {
     ///
     /// See [Statement::Do]
     pub fn parse_do(&self) -> Result<Statement, ParserError> {
-        let token = AttachedToken(self.get_current_token().clone().to_static());
+        let token = self.attached_token_from_current();
         self.expect_keyword_is(Keyword::DO)?;
 
         // Check for LANGUAGE before body
@@ -2074,7 +2074,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_signal(&self) -> Result<Statement, ParserError> {
-        let token = AttachedToken(self.get_current_token().clone().to_static());
+        let token = self.attached_token_from_current();
         self.expect_keyword_is(Keyword::SIGNAL)?;
         self.expect_keyword_is(Keyword::SQLSTATE)?;
 
@@ -2099,7 +2099,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_resignal(&self) -> Result<Statement, ParserError> {
-        let token = AttachedToken(self.get_current_token().clone().to_static());
+        let token = self.attached_token_from_current();
         self.expect_keyword_is(Keyword::RESIGNAL)?;
 
         let sqlstate = if self.parse_keyword(Keyword::SQLSTATE) {
@@ -2127,7 +2127,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_comment(&self) -> Result<Statement, ParserError> {
-        let comment_token = AttachedToken(self.get_current_token().clone().to_static());
+        let comment_token = self.attached_token_from_current();
         let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
 
         self.expect_keyword_is(Keyword::ON)?;
@@ -2174,7 +2174,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_flush(&self) -> Result<Statement, ParserError> {
-        let flush_token = AttachedToken(self.get_current_token().clone().to_static());
+        let flush_token = self.attached_token_from_current();
         let mut channel = None;
         let mut tables: Vec<ObjectName> = vec![];
         let mut read_lock = false;
@@ -2497,7 +2497,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_assert(&self) -> Result<Statement, ParserError> {
-        let assert_token = AttachedToken(self.get_current_token().clone().to_static());
+        let assert_token = self.attached_token_from_current();
         let condition = self.parse_expr()?;
         let message = if self.parse_keyword(Keyword::AS) {
             Some(self.parse_expr()?)
@@ -2513,7 +2513,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_savepoint(&self) -> Result<Statement, ParserError> {
-        let savepoint_token = AttachedToken(self.get_current_token().clone().to_static());
+        let savepoint_token = self.attached_token_from_current();
         let name = self.parse_identifier()?;
         Ok(Statement::Savepoint {
             savepoint_token,
@@ -2522,7 +2522,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_release(&self) -> Result<Statement, ParserError> {
-        let release_token = AttachedToken(self.get_current_token().clone().to_static());
+        let release_token = self.attached_token_from_current();
         let _ = self.parse_keyword(Keyword::SAVEPOINT);
         let name = self.parse_identifier()?;
 
@@ -2533,7 +2533,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_listen(&self) -> Result<Statement, ParserError> {
-        let listen_token = AttachedToken(self.get_current_token().clone().to_static());
+        let listen_token = self.attached_token_from_current();
         let channel = self.parse_identifier()?;
         Ok(Statement::LISTEN {
             listen_token,
@@ -2542,7 +2542,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_unlisten(&self) -> Result<Statement, ParserError> {
-        let unlisten_token = AttachedToken(self.get_current_token().clone().to_static());
+        let unlisten_token = self.attached_token_from_current();
         let channel = if self.consume_token(&BorrowedToken::Mul) {
             Ident::new(Expr::Wildcard(AttachedToken::empty()).to_string())
         } else {
@@ -2561,7 +2561,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_notify(&self) -> Result<Statement, ParserError> {
-        let notify_token = AttachedToken(self.get_current_token().clone().to_static());
+        let notify_token = self.attached_token_from_current();
         let channel = self.parse_identifier()?;
         let payload = if self.consume_token(&BorrowedToken::Comma) {
             Some(self.parse_literal_string()?)
@@ -2577,7 +2577,7 @@ impl<'a> Parser<'a> {
 
     /// Parses a `RENAME TABLE` statement. See [Statement::RenameTable]
     pub fn parse_rename(&self) -> Result<Statement, ParserError> {
-        let token = AttachedToken(self.get_current_token().clone().to_static());
+        let token = self.attached_token_from_current();
         if self.peek_keyword(Keyword::TABLE) {
             self.expect_keyword(Keyword::TABLE)?;
             let rename_tables = self.parse_comma_separated(|parser| {
@@ -2612,6 +2612,11 @@ impl<'a> Parser<'a> {
             Keyword::NULL => {
                 self.prev_token();
                 Ok(Some(Expr::Value(self.parse_value()?)))
+            }
+            Keyword::CURRENT if self.peek_keyword(Keyword::OF) => {
+                self.expect_keyword(Keyword::OF)?;
+                let cursor_name = self.parse_identifier()?;
+                Ok(Some(Expr::CurrentOf { cursor_name }))
             }
             Keyword::CURRENT_CATALOG
             | Keyword::CURRENT_USER
@@ -2850,6 +2855,11 @@ impl<'a> Parser<'a> {
                 //
                 // We first try to parse the word and following tokens as a special expression, and if that fails,
                 // we rollback and try to parse it as an identifier.
+                //
+                // Extract keyword (Copy) before cloning the full Word to release the
+                // borrow on self. This lets the common keyword-only paths benefit
+                // from the cheap Copy instead of cloning the Word's Cow<str>.
+                let keyword = w.keyword;
                 let w = w.clone();
                 match self.try_parse(|parser| parser.parse_expr_prefix_by_reserved_word(&w, span)) {
                     // This word indicated an expression prefix and parsing was successful
@@ -2865,7 +2875,7 @@ impl<'a> Parser<'a> {
                     // we rollback and return the parsing error we got from trying to parse a
                     // special expression (to maintain backwards compatibility of parsing errors).
                     Err(e) => {
-                        if !self.dialect.is_reserved_for_identifier(w.keyword) {
+                        if !self.dialect.is_reserved_for_identifier(keyword) {
                             if let Ok(Some(expr)) = self.maybe_parse(|parser| {
                                 parser.parse_expr_prefix_by_unreserved_word(&w, span)
                             }) {
@@ -3790,7 +3800,7 @@ impl<'a> Parser<'a> {
         let result = self.consume_token(&BorrowedToken::LParen)
             && matches!(self.peek_token_ref().token, BorrowedToken::Word(_))
             && {
-                self.next_token();
+                self.advance_token();
                 self.parse_keyword(Keyword::IN)
             };
         self.index.set(checkpoint);
@@ -4702,7 +4712,7 @@ impl<'a> Parser<'a> {
         if BorrowedToken::Lt != self.peek_token() {
             return Ok((Default::default(), false.into()));
         }
-        self.next_token();
+        self.advance_token();
 
         let mut field_defs = vec![];
         let trailing_bracket = loop {
@@ -4769,11 +4779,11 @@ impl<'a> Parser<'a> {
         let trailing_bracket = if !trailing_bracket.0 {
             match self.peek_token().token {
                 BorrowedToken::Gt => {
-                    self.next_token();
+                    self.advance_token();
                     false.into()
                 }
                 BorrowedToken::ShiftRight => {
-                    self.next_token();
+                    self.advance_token();
                     true.into()
                 }
                 _ => return self.expected(">", self.peek_token()),
@@ -5023,56 +5033,56 @@ impl<'a> Parser<'a> {
                 Keyword::IS => {
                     if self.parse_keyword(Keyword::NULL) {
                         let suffix_token =
-                            AttachedToken(self.get_current_token().clone().to_static());
+                            self.attached_token_from_current();
                         Ok(Expr::IsNull {
                             expr: Box::new(expr),
                             suffix_token,
                         })
                     } else if self.parse_keywords(&[Keyword::NOT, Keyword::NULL]) {
                         let suffix_token =
-                            AttachedToken(self.get_current_token().clone().to_static());
+                            self.attached_token_from_current();
                         Ok(Expr::IsNotNull {
                             expr: Box::new(expr),
                             suffix_token,
                         })
                     } else if self.parse_keywords(&[Keyword::TRUE]) {
                         let suffix_token =
-                            AttachedToken(self.get_current_token().clone().to_static());
+                            self.attached_token_from_current();
                         Ok(Expr::IsTrue {
                             expr: Box::new(expr),
                             suffix_token,
                         })
                     } else if self.parse_keywords(&[Keyword::NOT, Keyword::TRUE]) {
                         let suffix_token =
-                            AttachedToken(self.get_current_token().clone().to_static());
+                            self.attached_token_from_current();
                         Ok(Expr::IsNotTrue {
                             expr: Box::new(expr),
                             suffix_token,
                         })
                     } else if self.parse_keywords(&[Keyword::FALSE]) {
                         let suffix_token =
-                            AttachedToken(self.get_current_token().clone().to_static());
+                            self.attached_token_from_current();
                         Ok(Expr::IsFalse {
                             expr: Box::new(expr),
                             suffix_token,
                         })
                     } else if self.parse_keywords(&[Keyword::NOT, Keyword::FALSE]) {
                         let suffix_token =
-                            AttachedToken(self.get_current_token().clone().to_static());
+                            self.attached_token_from_current();
                         Ok(Expr::IsNotFalse {
                             expr: Box::new(expr),
                             suffix_token,
                         })
                     } else if self.parse_keywords(&[Keyword::UNKNOWN]) {
                         let suffix_token =
-                            AttachedToken(self.get_current_token().clone().to_static());
+                            self.attached_token_from_current();
                         Ok(Expr::IsUnknown {
                             expr: Box::new(expr),
                             suffix_token,
                         })
                     } else if self.parse_keywords(&[Keyword::NOT, Keyword::UNKNOWN]) {
                         let suffix_token =
-                            AttachedToken(self.get_current_token().clone().to_static());
+                            self.attached_token_from_current();
                         Ok(Expr::IsNotUnknown {
                             expr: Box::new(expr),
                             suffix_token,
@@ -5143,7 +5153,7 @@ impl<'a> Parser<'a> {
                     };
                     // Capture the NULL token if we just parsed it
                     let null_token = if null {
-                        Some(AttachedToken(self.get_current_token().clone().to_static()))
+                        Some(self.attached_token_from_current())
                     } else {
                         None
                     };
@@ -5199,7 +5209,7 @@ impl<'a> Parser<'a> {
                     }
                 }
                 Keyword::NOTNULL if self.features.supports_notnull_operator => {
-                    let suffix_token = AttachedToken(self.get_current_token().clone().to_static());
+                    let suffix_token = self.attached_token_from_current();
                     Ok(Expr::IsNotNull {
                         expr: Box::new(expr),
                         suffix_token,
@@ -5445,7 +5455,8 @@ impl<'a> Parser<'a> {
     fn parse_json_path(&self) -> Result<JsonPath, ParserError> {
         let mut path = Vec::new();
         loop {
-            match self.next_token().token {
+            self.advance_token();
+            match self.get_current_token().token {
                 BorrowedToken::Colon if path.is_empty() => {
                     path.push(self.parse_json_path_object_key()?);
                 }
@@ -5729,6 +5740,14 @@ impl<'a> Parser<'a> {
     /// Does not advance the current token.
     pub fn get_current_token(&self) -> &TokenWithSpan<'_> {
         self.token_at(self.index.get().saturating_sub(1))
+    }
+
+    /// Creates an [`AttachedToken`] from the current token.
+    ///
+    /// This is a convenience method that clones and converts the current
+    /// token to a `'static` lifetime, wrapping it in an `AttachedToken`.
+    fn attached_token_from_current(&self) -> AttachedToken {
+        AttachedToken(self.get_current_token().clone().to_static())
     }
 
     /// Returns a reference to the previous token
@@ -6308,7 +6327,7 @@ impl<'a> Parser<'a> {
 
     /// Parse a SQL CREATE statement
     pub fn parse_create(&self) -> Result<Statement, ParserError> {
-        let create_token = AttachedToken(self.get_current_token().clone().to_static());
+        let create_token = self.attached_token_from_current();
         let or_replace = self.parse_keywords(&[Keyword::OR, Keyword::REPLACE]);
         let or_alter = self.parse_keywords(&[Keyword::OR, Keyword::ALTER]);
         let local = self.parse_one_of_keywords(&[Keyword::LOCAL]).is_some();
@@ -6403,13 +6422,17 @@ impl<'a> Parser<'a> {
                     self.peek_token(),
                 )
             }
+        } else if self.parse_keyword(Keyword::PUBLICATION) {
+            self.parse_create_publication()
+        } else if self.parse_keyword(Keyword::SUBSCRIPTION) {
+            self.parse_create_subscription()
         } else {
             self.expected("an object type after CREATE", self.peek_token())
         }
     }
 
     fn parse_create_user(&self, or_replace: bool) -> Result<Statement, ParserError> {
-        let token = AttachedToken(self.get_current_token().clone().to_static());
+        let token = self.attached_token_from_current();
         let if_not_exists = self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
         let name = self.parse_identifier()?;
         let options = self
@@ -6440,7 +6463,7 @@ impl<'a> Parser<'a> {
 
     /// Parse a CACHE TABLE statement
     pub fn parse_cache_table(&self) -> Result<Statement, ParserError> {
-        let cache_token = AttachedToken(self.get_current_token().clone().to_static());
+        let cache_token = self.attached_token_from_current();
         let (mut table_flag, mut options, mut has_as, mut query) = (None, vec![], false, None);
         if self.parse_keyword(Keyword::TABLE) {
             let table_name = self.parse_object_name(false)?;
@@ -6524,7 +6547,7 @@ impl<'a> Parser<'a> {
         match self.peek_token().token {
             BorrowedToken::Word(word) => match word.keyword {
                 Keyword::AS => {
-                    self.next_token();
+                    self.advance_token();
                     Ok((true, self.parse_query()?))
                 }
                 _ => Ok((false, self.parse_query()?)),
@@ -6535,7 +6558,7 @@ impl<'a> Parser<'a> {
 
     /// Parse a UNCACHE TABLE statement
     pub fn parse_uncache_table(&self) -> Result<Statement, ParserError> {
-        let uncache_token = AttachedToken(self.get_current_token().clone().to_static());
+        let uncache_token = self.attached_token_from_current();
         self.expect_keyword_is(Keyword::TABLE)?;
         let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
         let table_name = self.parse_object_name(false)?;
@@ -8200,7 +8223,7 @@ impl<'a> Parser<'a> {
     /// CREATE ASSERTION name CHECK (expression)
     /// ```
     fn parse_create_assertion(&self) -> Result<Statement, ParserError> {
-        let token = AttachedToken(self.get_current_token().clone().to_static());
+        let token = self.attached_token_from_current();
         let name = self.parse_object_name(false)?;
         self.expect_keyword(Keyword::CHECK)?;
         self.expect_token(&Token::LParen)?;
@@ -8231,10 +8254,10 @@ impl<'a> Parser<'a> {
             let current_pos = self.index();
             self.prev_token();
             self.prev_token();
-            let t = AttachedToken(self.get_current_token().clone().to_static());
+            let t = self.attached_token_from_current();
             // Restore position
             while self.index() < current_pos {
-                self.next_token();
+                self.advance_token();
             }
             t
         };
@@ -8543,7 +8566,7 @@ impl<'a> Parser<'a> {
                         if w.keyword == Keyword::NoKeyword
                             && w.value.eq_ignore_ascii_case("RECHECK")
                 ) {
-                    self.next_token();
+                    self.advance_token();
                 }
 
                 items.push(OperatorClassItem::Operator {
@@ -8646,7 +8669,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_drop(&self) -> Result<Statement, ParserError> {
-        let drop_token = AttachedToken(self.get_current_token().clone().to_static());
+        let drop_token = self.attached_token_from_current();
         // MySQL dialect supports `TEMPORARY`
         let temporary = dialect_of!(self is MySqlDialect | PostgreSqlDialect)
             && self.parse_keyword(Keyword::TEMPORARY);
@@ -8710,9 +8733,13 @@ impl<'a> Parser<'a> {
             return self.parse_drop_trigger(drop_token);
         } else if self.parse_keyword(Keyword::EXTENSION) {
             return self.parse_drop_extension();
+        } else if self.parse_keyword(Keyword::PUBLICATION) {
+            return self.parse_drop_publication();
+        } else if self.parse_keyword(Keyword::SUBSCRIPTION) {
+            return self.parse_drop_subscription();
         } else {
             return self.expected(
-                "DATABASE, EXTENSION, FUNCTION, INDEX, POLICY, PROCEDURE, ROLE, SCHEMA, SEQUENCE, TABLE, TRIGGER, TYPE, VIEW, MATERIALIZED VIEW or USER after DROP",
+                "DATABASE, EXTENSION, FUNCTION, INDEX, POLICY, PROCEDURE, PUBLICATION, ROLE, SCHEMA, SEQUENCE, SUBSCRIPTION, TABLE, TRIGGER, TYPE, VIEW, MATERIALIZED VIEW or USER after DROP",
                 self.peek_token(),
             );
         };
@@ -8787,10 +8814,10 @@ impl<'a> Parser<'a> {
             let current_pos = self.index();
             self.prev_token();
             self.prev_token();
-            let t = AttachedToken(self.get_current_token().clone().to_static());
+            let t = self.attached_token_from_current();
             // Restore position
             while self.index() < current_pos {
-                self.next_token();
+                self.advance_token();
             }
             t
         };
@@ -8808,6 +8835,106 @@ impl<'a> Parser<'a> {
             drop_behavior,
         })
     }
+
+    /// ```sql
+    /// CREATE PUBLICATION name FOR ALL TABLES
+    /// CREATE PUBLICATION name FOR TABLE t1, t2
+    /// CREATE PUBLICATION name FOR TABLES IN SCHEMA s1, s2
+    /// CREATE PUBLICATION name FOR TABLE t1 (col1, col2), t2
+    /// ```
+    ///
+    /// [PostgreSQL Documentation](https://www.postgresql.org/docs/current/sql-createpublication.html)
+    fn parse_create_publication(&self) -> Result<Statement, ParserError> {
+        let name = self.parse_identifier()?;
+        self.expect_keyword_is(Keyword::FOR)?;
+
+        let for_object = if self.parse_keywords(&[Keyword::ALL, Keyword::TABLES]) {
+            PublicationForObject::AllTables
+        } else if self.parse_keywords(&[Keyword::TABLES, Keyword::IN, Keyword::SCHEMA]) {
+            let schemas = self.parse_comma_separated(|p| p.parse_identifier())?;
+            PublicationForObject::TablesInSchema(schemas)
+        } else if self.parse_keyword(Keyword::TABLE) {
+            let tables = self.parse_comma_separated(|p| {
+                let name = p.parse_object_name(false)?;
+                let columns = if p.consume_token(&BorrowedToken::LParen) {
+                    let cols = p.parse_comma_separated(|p| p.parse_identifier())?;
+                    p.expect_token(&BorrowedToken::RParen)?;
+                    Some(cols)
+                } else {
+                    None
+                };
+                Ok(PublicationTable { name, columns })
+            })?;
+            PublicationForObject::Tables(tables)
+        } else {
+            return self.expected(
+                "ALL TABLES, TABLE, or TABLES IN SCHEMA after FOR",
+                self.peek_token(),
+            );
+        };
+
+        let with_options = self.parse_options(Keyword::WITH)?;
+
+        Ok(Statement::CreatePublication {
+            name,
+            for_object,
+            with_options,
+        })
+    }
+
+    /// ```sql
+    /// DROP PUBLICATION [ IF EXISTS ] name [ CASCADE | RESTRICT ]
+    /// ```
+    ///
+    /// [PostgreSQL Documentation](https://www.postgresql.org/docs/current/sql-droppublication.html)
+    fn parse_drop_publication(&self) -> Result<Statement, ParserError> {
+        let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
+        let name = self.parse_identifier()?;
+        let drop_behavior = self.parse_optional_drop_behavior();
+        Ok(Statement::DropPublication {
+            if_exists,
+            name,
+            drop_behavior,
+        })
+    }
+
+    /// ```sql
+    /// CREATE SUBSCRIPTION name CONNECTION 'conninfo' PUBLICATION pub1, pub2 [ WITH (param = value) ]
+    /// ```
+    ///
+    /// [PostgreSQL Documentation](https://www.postgresql.org/docs/current/sql-createsubscription.html)
+    fn parse_create_subscription(&self) -> Result<Statement, ParserError> {
+        let name = self.parse_identifier()?;
+        self.expect_keyword_is(Keyword::CONNECTION)?;
+        let connection_string = self.parse_literal_string()?;
+        self.expect_keyword_is(Keyword::PUBLICATION)?;
+        let publications = self.parse_comma_separated(|p| p.parse_identifier())?;
+        let with_options = self.parse_options(Keyword::WITH)?;
+
+        Ok(Statement::CreateSubscription {
+            name,
+            connection_string,
+            publications,
+            with_options,
+        })
+    }
+
+    /// ```sql
+    /// DROP SUBSCRIPTION [ IF EXISTS ] name [ CASCADE | RESTRICT ]
+    /// ```
+    ///
+    /// [PostgreSQL Documentation](https://www.postgresql.org/docs/current/sql-dropsubscription.html)
+    fn parse_drop_subscription(&self) -> Result<Statement, ParserError> {
+        let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
+        let name = self.parse_identifier()?;
+        let drop_behavior = self.parse_optional_drop_behavior();
+        Ok(Statement::DropSubscription {
+            if_exists,
+            name,
+            drop_behavior,
+        })
+    }
+
     /// ```sql
     /// DROP DOMAIN [ IF EXISTS ] name [ CASCADE | RESTRICT ]
     /// ```
@@ -8828,7 +8955,7 @@ impl<'a> Parser<'a> {
     /// DROP ASSERTION [ IF EXISTS ] name
     /// ```
     fn parse_drop_assertion(&self) -> Result<Statement, ParserError> {
-        let token = AttachedToken(self.get_current_token().clone().to_static());
+        let token = self.attached_token_from_current();
         let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
         let name = self.parse_object_name(false)?;
         Ok(Statement::DropAssertion(DropAssertion {
@@ -8882,7 +9009,7 @@ impl<'a> Parser<'a> {
     /// The syntax can vary significantly between warehouses. See the grammar
     /// on the warehouse specific function in such cases.
     pub fn parse_declare(&self) -> Result<Statement, ParserError> {
-        let declare_token = AttachedToken(self.get_current_token().clone().to_static());
+        let declare_token = self.attached_token_from_current();
         if dialect_of!(self is MsSqlDialect) {
             return self.parse_mssql_declare_with_token(declare_token);
         }
@@ -9106,7 +9233,7 @@ impl<'a> Parser<'a> {
     /// ```
     /// [BigQuery]: https://cloud.google.com/bigquery/docs/reference/standard-sql/procedural-language#declare
     pub fn parse_big_query_declare(&self) -> Result<Statement, ParserError> {
-        let declare_token = AttachedToken(self.get_current_token().clone().to_static());
+        let declare_token = self.attached_token_from_current();
         let names = self.parse_comma_separated(Parser::parse_identifier)?;
 
         let data_type = match self.peek_token().token {
@@ -9156,7 +9283,7 @@ impl<'a> Parser<'a> {
     /// ```
     /// [MsSql]: https://learn.microsoft.com/en-us/sql/t-sql/language-elements/declare-local-variable-transact-sql?view=sql-server-ver16
     pub fn parse_mssql_declare(&self) -> Result<Statement, ParserError> {
-        let declare_token = AttachedToken(self.get_current_token().clone().to_static());
+        let declare_token = self.attached_token_from_current();
         self.parse_mssql_declare_with_token(declare_token)
     }
 
@@ -9202,11 +9329,11 @@ impl<'a> Parser<'a> {
         let (declare_type, data_type) = match self.peek_token().token {
             BorrowedToken::Word(w) => match w.keyword {
                 Keyword::CURSOR => {
-                    self.next_token();
+                    self.advance_token();
                     (Some(DeclareType::Cursor), None)
                 }
                 Keyword::AS => {
-                    self.next_token();
+                    self.advance_token();
                     (None, Some(self.parse_data_type()?))
                 }
                 _ => (None, Some(self.parse_data_type()?)),
@@ -9215,7 +9342,7 @@ impl<'a> Parser<'a> {
         };
 
         let (for_query, assignment) = if self.peek_keyword(Keyword::FOR) {
-            self.next_token();
+            self.advance_token();
             let query = Some(self.parse_query()?);
             (query, None)
         } else {
@@ -9248,7 +9375,7 @@ impl<'a> Parser<'a> {
     ) -> Result<Option<DeclareAssignment>, ParserError> {
         Ok(match self.peek_token().token {
             BorrowedToken::Eq => {
-                self.next_token(); // Skip `=`
+                self.advance_token(); // Skip `=`
                 Some(DeclareAssignment::MsSqlAssignment(Box::new(
                     self.parse_expr()?,
                 )))
@@ -9259,7 +9386,7 @@ impl<'a> Parser<'a> {
 
     // FETCH [ direction { FROM | IN } ] cursor INTO target;
     pub fn parse_fetch_statement(&self) -> Result<Statement, ParserError> {
-        let fetch_token = AttachedToken(self.get_current_token().clone().to_static());
+        let fetch_token = self.attached_token_from_current();
         let direction = if self.parse_keyword(Keyword::NEXT) {
             FetchDirection::Next
         } else if self.parse_keyword(Keyword::PRIOR) {
@@ -9401,7 +9528,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_discard(&self) -> Result<Statement, ParserError> {
-        let discard_token = AttachedToken(self.get_current_token().clone().to_static());
+        let discard_token = self.attached_token_from_current();
         let object_type = if self.parse_keyword(Keyword::ALL) {
             DiscardObject::ALL
         } else if self.parse_keyword(Keyword::PLANS) {
@@ -11519,10 +11646,10 @@ impl<'a> Parser<'a> {
             let current_pos = self.index();
             self.prev_token();
             self.prev_token();
-            let t = AttachedToken(self.get_current_token().clone().to_static());
+            let t = self.attached_token_from_current();
             // Restore position
             while self.index() < current_pos {
-                self.next_token();
+                self.advance_token();
             }
             t
         };
@@ -11629,10 +11756,10 @@ impl<'a> Parser<'a> {
             let current_pos = self.index();
             self.prev_token();
             self.prev_token();
-            let t = AttachedToken(self.get_current_token().clone().to_static());
+            let t = self.attached_token_from_current();
             // Restore position
             while self.index() < current_pos {
-                self.next_token();
+                self.advance_token();
             }
             t
         };
@@ -12404,7 +12531,7 @@ impl<'a> Parser<'a> {
         match peek_token.token {
             BorrowedToken::DollarQuotedString(s) if dialect_of!(self is PostgreSqlDialect) =>
             {
-                self.next_token();
+                self.advance_token();
                 Ok(Expr::Value(Value::DollarQuotedString(s).with_span(span)))
             }
             _ => Ok(Expr::Value(
@@ -13419,7 +13546,7 @@ impl<'a> Parser<'a> {
     fn parse_view_columns(&self) -> Result<Vec<ViewColumnDef>, ParserError> {
         if self.consume_token(&BorrowedToken::LParen) {
             if self.peek_token().token == BorrowedToken::RParen {
-                self.next_token();
+                self.advance_token();
                 Ok(vec![])
             } else {
                 let cols = self.parse_comma_separated_with_trailing_commas(
@@ -13521,7 +13648,7 @@ impl<'a> Parser<'a> {
     {
         if self.consume_token(&BorrowedToken::LParen) {
             if allow_empty && self.peek_token().token == BorrowedToken::RParen {
-                self.next_token();
+                self.advance_token();
                 Ok(vec![])
             } else {
                 let cols = self.parse_comma_separated(|p| f(p))?;
@@ -13960,7 +14087,7 @@ impl<'a> Parser<'a> {
 
     // KILL [CONNECTION | QUERY | MUTATION] processlist_id
     pub fn parse_kill(&self) -> Result<Statement, ParserError> {
-        let kill_token = AttachedToken(self.get_current_token().clone().to_static());
+        let kill_token = self.attached_token_from_current();
         let modifier_keyword =
             self.parse_one_of_keywords(&[Keyword::CONNECTION, Keyword::QUERY, Keyword::MUTATION]);
 
@@ -13986,7 +14113,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_explain(&self, describe_alias: DescribeAlias) -> Result<Statement, ParserError> {
-        let explain_token = AttachedToken(self.get_current_token().clone().to_static());
+        let explain_token = self.attached_token_from_current();
         let mut analyze = false;
         let mut verbose = false;
         let mut query_plan = false;
@@ -14198,7 +14325,7 @@ impl<'a> Parser<'a> {
         let mut root = None;
         let mut r#type = false;
         while self.peek_token().token == BorrowedToken::Comma {
-            self.next_token();
+            self.advance_token();
             if self.parse_keyword(Keyword::ELEMENTS) {
                 elements = true;
             } else if self.parse_keyword(Keyword::BINARY) {
@@ -14236,7 +14363,7 @@ impl<'a> Parser<'a> {
         let mut include_null_values = false;
         let mut without_array_wrapper = false;
         while self.peek_token().token == BorrowedToken::Comma {
-            self.next_token();
+            self.advance_token();
             if self.parse_keyword(Keyword::ROOT) {
                 self.expect_token(&BorrowedToken::LParen)?;
                 root = Some(self.parse_literal_string()?);
@@ -14451,7 +14578,7 @@ impl<'a> Parser<'a> {
             if precedence >= next_precedence {
                 break;
             }
-            self.next_token(); // skip past the set operator
+            self.advance_token(); // skip past the set operator
             let set_quantifier = self.parse_set_quantifier(&op);
             expr = SetExpr::SetOperation {
                 left: Box::new(expr),
@@ -14713,7 +14840,7 @@ impl<'a> Parser<'a> {
 
     /// Parse a `SET ROLE` statement. Expects SET to be consumed already.
     fn parse_set_role(&self, modifier: Option<ContextModifier>) -> Result<Statement, ParserError> {
-        let token = AttachedToken(self.get_current_token().clone().to_static());
+        let token = self.attached_token_from_current();
         self.expect_keyword_is(Keyword::ROLE)?;
 
         let role_name = if self.parse_keyword(Keyword::NONE) {
@@ -14731,7 +14858,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_set_constraints(&self) -> Result<Statement, ParserError> {
-        let token = AttachedToken(self.get_current_token().clone().to_static());
+        let token = self.attached_token_from_current();
         self.expect_keyword_is(Keyword::CONSTRAINTS)?;
 
         // Parse ALL or list of constraint names
@@ -14822,7 +14949,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_set(&self) -> Result<Statement, ParserError> {
-        let token = AttachedToken(self.get_current_token().clone().to_static());
+        let token = self.attached_token_from_current();
         let scope = self.parse_context_modifier();
 
         if let Some(set_role_stmt) = self.maybe_parse(|parser| parser.parse_set_role(scope))? {
@@ -14978,7 +15105,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_set_session_params(&self) -> Result<Statement, ParserError> {
-        let token = AttachedToken(self.get_current_token().clone().to_static());
+        let token = self.attached_token_from_current();
         let wrap_set = |inner: Set| -> Statement {
             Statement::Set(SetStatement {
                 token: token.clone(),
@@ -15047,7 +15174,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_show(&self) -> Result<Statement, ParserError> {
-        let show_token = AttachedToken(self.get_current_token().clone().to_static());
+        let show_token = self.attached_token_from_current();
         let terse = self.parse_keyword(Keyword::TERSE);
         let extended = self.parse_keyword(Keyword::EXTENDED);
         let full = self.parse_keyword(Keyword::FULL);
@@ -15360,7 +15487,7 @@ impl<'a> Parser<'a> {
                         }
                     }
                     kw @ Keyword::LEFT | kw @ Keyword::RIGHT => {
-                        let _ = self.next_token(); // consume LEFT/RIGHT
+                        self.advance_token(); // consume LEFT/RIGHT
                         let is_left = kw == Keyword::LEFT;
                         let join_type = self.parse_one_of_keywords(&[
                             Keyword::OUTER,
@@ -15408,17 +15535,17 @@ impl<'a> Parser<'a> {
                         }
                     }
                     Keyword::ANTI => {
-                        let _ = self.next_token(); // consume ANTI
+                        self.advance_token(); // consume ANTI
                         self.expect_keyword_is(Keyword::JOIN)?;
                         JoinOperator::Anti
                     }
                     Keyword::SEMI => {
-                        let _ = self.next_token(); // consume SEMI
+                        self.advance_token(); // consume SEMI
                         self.expect_keyword_is(Keyword::JOIN)?;
                         JoinOperator::Semi
                     }
                     Keyword::FULL => {
-                        let _ = self.next_token(); // consume FULL
+                        self.advance_token(); // consume FULL
                         let _ = self.parse_keyword(Keyword::OUTER); // [ OUTER ]
                         self.expect_keyword_is(Keyword::JOIN)?;
                         JoinOperator::FullOuter
@@ -15427,7 +15554,7 @@ impl<'a> Parser<'a> {
                         return self.expected("LEFT, RIGHT, or FULL", self.peek_token());
                     }
                     Keyword::STRAIGHT_JOIN => {
-                        let _ = self.next_token(); // consume STRAIGHT_JOIN
+                        self.advance_token(); // consume STRAIGHT_JOIN
                         JoinOperator::StraightJoin
                     }
                     _ if natural => {
@@ -16329,7 +16456,7 @@ impl<'a> Parser<'a> {
         let name = self.parse_identifier()?;
         let r#type = self.parse_data_type()?;
         let path = if let BorrowedToken::SingleQuotedString(path) = self.peek_token().token {
-            self.next_token();
+            self.advance_token();
             Some(path.into_owned())
         } else {
             None
@@ -16526,7 +16653,7 @@ impl<'a> Parser<'a> {
 
     /// Parse a GRANT statement.
     pub fn parse_grant(&self) -> Result<Statement, ParserError> {
-        let grant_token = AttachedToken(self.get_current_token().clone().to_static());
+        let grant_token = self.attached_token_from_current();
         // Try to parse role grant first: GRANT role [, role ...] TO grantee [, grantee ...]
         // Role grants are distinguished by having identifiers followed by TO without ON
         if let Ok(Some(role_grant)) = self.maybe_parse(|p| p.parse_grant_role(grant_token.clone()))
@@ -17006,7 +17133,7 @@ impl<'a> Parser<'a> {
 
     /// Parse [`Statement::Deny`]
     pub fn parse_deny(&self) -> Result<Statement, ParserError> {
-        let token = AttachedToken(self.get_current_token().clone().to_static());
+        let token = self.attached_token_from_current();
         self.expect_keyword(Keyword::DENY)?;
 
         let (privileges, objects) = self.parse_grant_deny_revoke_privileges_objects()?;
@@ -17041,7 +17168,7 @@ impl<'a> Parser<'a> {
 
     /// Parse a REVOKE statement
     pub fn parse_revoke(&self) -> Result<Statement, ParserError> {
-        let revoke_token = AttachedToken(self.get_current_token().clone().to_static());
+        let revoke_token = self.attached_token_from_current();
         // Check for ADMIN OPTION FOR (role revocation)
         let admin_option_for =
             self.parse_keywords(&[Keyword::ADMIN, Keyword::OPTION, Keyword::FOR]);
@@ -17568,7 +17695,7 @@ impl<'a> Parser<'a> {
             // Look ahead to see what follows
             if self.peek_token() == BorrowedToken::LParen {
                 // Could be TABLE(SELECT...) or TABLE(function(...))
-                self.next_token(); // consume (
+                self.advance_token(); // consume (
                 let is_query = self.peek_keywords(&[Keyword::SELECT])
                     || self.peek_keywords(&[Keyword::VALUES])
                     || self.peek_keywords(&[Keyword::WITH]);
@@ -17665,7 +17792,7 @@ impl<'a> Parser<'a> {
             || self.peek_keywords(&[Keyword::VALUES])
             || self.peek_keywords(&[Keyword::WITH])
             || (self.peek_token() == BorrowedToken::LParen && {
-                self.next_token();
+                self.advance_token();
                 let is_query = self.peek_keywords(&[Keyword::SELECT])
                     || self.peek_keywords(&[Keyword::VALUES])
                     || self.peek_keywords(&[Keyword::WITH]);
@@ -18446,7 +18573,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_start_transaction(&self) -> Result<Statement, ParserError> {
-        let start_token = AttachedToken(self.get_current_token().clone().to_static());
+        let start_token = self.attached_token_from_current();
         self.expect_keyword_is(Keyword::TRANSACTION)?;
         Ok(Statement::StartTransaction {
             start_token,
@@ -18461,7 +18588,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_begin(&self) -> Result<Statement, ParserError> {
-        let start_token = AttachedToken(self.get_current_token().clone().to_static());
+        let start_token = self.attached_token_from_current();
         // Check if this is a procedural BEGIN...END block or a transaction BEGIN
         //
         // Transaction BEGIN patterns:
@@ -18597,7 +18724,7 @@ impl<'a> Parser<'a> {
         &self,
         label: Option<Ident>,
     ) -> Result<Statement, ParserError> {
-        let token = AttachedToken(self.get_current_token().clone().to_static());
+        let token = self.attached_token_from_current();
         self.expect_keyword_is(Keyword::BEGIN)?;
 
         let statements = self.parse_statement_list(&[Keyword::EXCEPTION, Keyword::END])?;
@@ -18649,7 +18776,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_end(&self) -> Result<Statement, ParserError> {
-        let commit_token = AttachedToken(self.get_current_token().clone().to_static());
+        let commit_token = self.attached_token_from_current();
         let modifier = if !self.features.supports_end_transaction_modifier {
             None
         } else if self.parse_keyword(Keyword::TRY) {
@@ -18706,7 +18833,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_commit(&self) -> Result<Statement, ParserError> {
-        let commit_token = AttachedToken(self.get_current_token().clone().to_static());
+        let commit_token = self.attached_token_from_current();
         Ok(Statement::Commit {
             commit_token,
             chain: self.parse_commit_rollback_chain()?,
@@ -18716,12 +18843,12 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_checkpoint(&self) -> Result<Statement, ParserError> {
-        let checkpoint_token = AttachedToken(self.get_current_token().clone().to_static());
+        let checkpoint_token = self.attached_token_from_current();
         Ok(Statement::Checkpoint { checkpoint_token })
     }
 
     pub fn parse_rollback(&self) -> Result<Statement, ParserError> {
-        let rollback_token = AttachedToken(self.get_current_token().clone().to_static());
+        let rollback_token = self.attached_token_from_current();
         let chain = self.parse_commit_rollback_chain()?;
         let savepoint = self.parse_rollback_savepoint()?;
 
@@ -18756,7 +18883,7 @@ impl<'a> Parser<'a> {
 
     /// Parse a 'RAISERROR' statement
     pub fn parse_raiserror(&self) -> Result<Statement, ParserError> {
-        let token = AttachedToken(self.get_current_token().clone().to_static());
+        let token = self.attached_token_from_current();
         self.expect_token(&BorrowedToken::LParen)?;
         let message = Box::new(self.parse_expr()?);
         self.expect_token(&BorrowedToken::Comma)?;
@@ -18797,7 +18924,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_deallocate(&self) -> Result<Statement, ParserError> {
-        let deallocate_token = AttachedToken(self.get_current_token().clone().to_static());
+        let deallocate_token = self.attached_token_from_current();
         let prepare = self.parse_keyword(Keyword::PREPARE);
         let name = self.parse_identifier()?;
         Ok(Statement::Deallocate {
@@ -18808,7 +18935,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_execute(&self) -> Result<Statement, ParserError> {
-        let execute_token = AttachedToken(self.get_current_token().clone().to_static());
+        let execute_token = self.attached_token_from_current();
 
         // Check for EXECUTE IMMEDIATE
         let is_immediate =
@@ -18919,7 +19046,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_prepare(&self) -> Result<Statement, ParserError> {
-        let prepare_token = AttachedToken(self.get_current_token().clone().to_static());
+        let prepare_token = self.attached_token_from_current();
         let name = self.parse_identifier()?;
 
         let mut data_types = vec![];
@@ -19114,7 +19241,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_merge(&self) -> Result<Statement, ParserError> {
-        let merge_token = AttachedToken(self.get_current_token().clone().to_static());
+        let merge_token = self.attached_token_from_current();
         let into = self.parse_keyword(Keyword::INTO);
 
         let table = self.parse_table_factor()?;
@@ -19155,7 +19282,7 @@ impl<'a> Parser<'a> {
 
     // PRAGMA [schema-name '.'] pragma-name [('=' pragma-value) | '(' pragma-value ')']
     pub fn parse_pragma(&self) -> Result<Statement, ParserError> {
-        let pragma_token = AttachedToken(self.get_current_token().clone().to_static());
+        let pragma_token = self.attached_token_from_current();
         let name = self.parse_object_name(false)?;
         if self.consume_token(&BorrowedToken::LParen) {
             let value = self.parse_pragma_value()?;
@@ -19185,7 +19312,7 @@ impl<'a> Parser<'a> {
 
     /// Parse a SQL LOAD DATA statement
     pub fn parse_load(&self) -> Result<Statement, ParserError> {
-        let load_token = AttachedToken(self.get_current_token().clone().to_static());
+        let load_token = self.attached_token_from_current();
         if self.parse_keyword(Keyword::DATA) && self.features.supports_load_data {
             let local = self.parse_one_of_keywords(&[Keyword::LOCAL]).is_some();
             self.expect_keyword_is(Keyword::INPATH)?;
@@ -19213,7 +19340,7 @@ impl<'a> Parser<'a> {
     /// ```
     /// [ClickHouse](https://clickhouse.com/docs/en/sql-reference/statements/optimize)
     pub fn parse_optimize_table(&self) -> Result<Statement, ParserError> {
-        let token = AttachedToken(self.get_current_token().clone().to_static());
+        let token = self.attached_token_from_current();
         self.expect_keyword_is(Keyword::TABLE)?;
         let name = self.parse_object_name(false)?;
         let on_cluster = self.parse_optional_on_cluster()?;
@@ -19902,10 +20029,10 @@ impl<'a> Parser<'a> {
                 break;
             }
         }
-        let token = AttachedToken(self.get_current_token().clone().to_static());
+        let token = self.attached_token_from_current();
         // Restore position
         while self.index() < current_pos {
-            self.next_token();
+            self.advance_token();
         }
         token
     }
@@ -19925,10 +20052,10 @@ impl<'a> Parser<'a> {
                 break;
             }
         }
-        let token = AttachedToken(self.get_current_token().clone().to_static());
+        let token = self.attached_token_from_current();
         // Restore position
         while self.index() < current_pos {
-            self.next_token();
+            self.advance_token();
         }
         token
     }
@@ -20523,7 +20650,7 @@ impl<'a> Parser<'a> {
 
     /// Parse [Statement::Print]
     fn parse_print(&self) -> Result<Statement, ParserError> {
-        let token = AttachedToken(self.get_current_token().clone().to_static());
+        let token = self.attached_token_from_current();
         Ok(Statement::Print(PrintStatement {
             token,
             message: Box::new(self.parse_expr()?),
@@ -20532,7 +20659,7 @@ impl<'a> Parser<'a> {
 
     /// Parse [Statement::Return]
     fn parse_return(&self) -> Result<Statement, ParserError> {
-        let token = AttachedToken(self.get_current_token().clone().to_static());
+        let token = self.attached_token_from_current();
 
         // Check for RETURN NEXT, RETURN QUERY, or RETURN QUERY EXECUTE
         let value = if self.parse_keyword(Keyword::NEXT) {
@@ -20566,7 +20693,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_vacuum(&self) -> Result<Statement, ParserError> {
-        let token = AttachedToken(self.get_current_token().clone().to_static());
+        let token = self.attached_token_from_current();
         self.expect_keyword(Keyword::VACUUM)?;
         let full = self.parse_keyword(Keyword::FULL);
         let sort_only = self.parse_keywords(&[Keyword::SORT, Keyword::ONLY]);
@@ -20805,7 +20932,7 @@ impl<'a> Parser<'a> {
                 option_value: KeyValueOptionKind::Single(self.parse_value()?.into()),
             }),
             BorrowedToken::Word(word) => {
-                self.next_token();
+                self.advance_token();
                 Ok(KeyValueOption {
                     option_name: key.value.to_string(),
                     option_value: KeyValueOptionKind::Single(Value::Placeholder(
@@ -20845,7 +20972,7 @@ impl<'a> Parser<'a> {
 
     /// Parses a RESET statement
     fn parse_reset(&self) -> Result<Statement, ParserError> {
-        let token = AttachedToken(self.get_current_token().clone().to_static());
+        let token = self.attached_token_from_current();
         if self.parse_keyword(Keyword::ALL) {
             return Ok(Statement::Reset(ResetStatement {
                 token,

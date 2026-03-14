@@ -15,7 +15,7 @@
 #[cfg(not(feature = "std"))]
 use alloc::{string::ToString, vec};
 
-use super::{AttachedToken, Parser, ParserError};
+use super::{Parser, ParserError};
 use crate::{
     ast::{
         helpers::key_value_options::{KeyValueOptions, KeyValueOptionsDelimiter},
@@ -41,10 +41,10 @@ impl Parser<'_> {
             let current_pos = self.index();
             self.prev_token();
             self.prev_token();
-            let t = AttachedToken(self.get_current_token().clone().to_static());
+            let t = self.attached_token_from_current();
             // Restore position
             while self.index() < current_pos {
-                self.next_token();
+                self.advance_token();
             }
             t
         };
@@ -67,10 +67,10 @@ impl Parser<'_> {
             let current_pos = self.index();
             self.prev_token();
             self.prev_token();
-            let t = AttachedToken(self.get_current_token().clone().to_static());
+            let t = self.attached_token_from_current();
             // Restore position
             while self.index() < current_pos {
-                self.next_token();
+                self.advance_token();
             }
             t
         };
@@ -115,10 +115,10 @@ impl Parser<'_> {
             let current_pos = self.index();
             self.prev_token();
             self.prev_token();
-            let t = AttachedToken(self.get_current_token().clone().to_static());
+            let t = self.attached_token_from_current();
             // Restore position
             while self.index() < current_pos {
-                self.next_token();
+                self.advance_token();
             }
             t
         };
@@ -178,7 +178,7 @@ impl Parser<'_> {
     /// ALTER USER [ IF EXISTS ] [ <name> ] [ OPTIONS ]
     /// ```
     pub fn parse_alter_user(&self) -> Result<Statement, ParserError> {
-        let token = AttachedToken(self.get_current_token().clone().to_static());
+        let token = self.attached_token_from_current();
         let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
         let name = self.parse_identifier()?;
         let rename_to = if self.parse_keywords(&[Keyword::RENAME, Keyword::TO]) {
@@ -222,10 +222,10 @@ impl Parser<'_> {
             let current_pos = self.index();
             self.prev_token();
             self.prev_token();
-            let t = AttachedToken(self.get_current_token().clone().to_static());
+            let t = self.attached_token_from_current();
             // Restore position
             while self.index() < current_pos {
-                self.next_token();
+                self.advance_token();
             }
             t
         };
@@ -263,10 +263,10 @@ impl Parser<'_> {
             let current_pos = self.index();
             self.prev_token();
             self.prev_token();
-            let t = AttachedToken(self.get_current_token().clone().to_static());
+            let t = self.attached_token_from_current();
             // Restore position
             while self.index() < current_pos {
-                self.next_token();
+                self.advance_token();
             }
             t
         };

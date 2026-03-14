@@ -1343,6 +1343,15 @@ pub enum Expr {
     NextValueFor {
         sequence_name: ObjectName,
     },
+    /// `CURRENT OF cursor_name`
+    ///
+    /// Used in `UPDATE ... WHERE CURRENT OF cursor_name`
+    /// and `DELETE ... WHERE CURRENT OF cursor_name`
+    ///
+    /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-update.html)
+    CurrentOf {
+        cursor_name: Ident,
+    },
 }
 
 impl Expr {
@@ -2234,6 +2243,9 @@ impl fmt::Display for Expr {
             Expr::Period { start, end } => write!(f, "PERIOD ({start}, {end})"),
             Expr::NextValueFor { sequence_name } => {
                 write!(f, "NEXT VALUE FOR {sequence_name}")
+            }
+            Expr::CurrentOf { cursor_name } => {
+                write!(f, "CURRENT OF {cursor_name}")
             }
         }
     }
@@ -4350,6 +4362,49 @@ pub enum CreatePolicyCommand {
     Delete,
 }
 
+/// A table specification in a `CREATE PUBLICATION` statement, optionally with column list.
+///
+/// Example:
+/// ```sql
+/// CREATE PUBLICATION pub FOR TABLE t1 (col1, col2), t2;
+/// ```
+///
+/// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-createpublication.html)
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct PublicationTable {
+    /// Table name
+    pub name: ObjectName,
+    /// Optional column list
+    pub columns: Option<Vec<Ident>>,
+}
+
+impl fmt::Display for PublicationTable {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.name)?;
+        if let Some(ref columns) = self.columns {
+            write!(f, " ({})", display_comma_separated(columns))?;
+        }
+        Ok(())
+    }
+}
+
+/// The object a `CREATE PUBLICATION` is FOR.
+///
+/// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-createpublication.html)
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum PublicationForObject {
+    /// `FOR ALL TABLES`
+    AllTables,
+    /// `FOR TABLE t1, t2, ...` (each optionally with a column list)
+    Tables(Vec<PublicationTable>),
+    /// `FOR TABLES IN SCHEMA s1, s2, ...`
+    TablesInSchema(Vec<Ident>),
+}
+
 /// Wrapper for SET statement with token tracking
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -5006,6 +5061,57 @@ pub enum Statement {
         if_exists: bool,
         name: Ident,
         table_name: ObjectName,
+        drop_behavior: Option<DropBehavior>,
+    },
+    /// ```sql
+    /// CREATE PUBLICATION name FOR ALL TABLES;
+    /// CREATE PUBLICATION name FOR TABLE t1, t2;
+    /// CREATE PUBLICATION name FOR TABLES IN SCHEMA s1, s2;
+    /// CREATE PUBLICATION name FOR TABLE t1 (col1, col2), t2;
+    /// ```
+    ///
+    /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-createpublication.html)
+    CreatePublication {
+        /// Publication name
+        name: Ident,
+        /// `FOR ALL TABLES`, `FOR TABLE ...`, or `FOR TABLES IN SCHEMA ...`
+        for_object: PublicationForObject,
+        /// `WITH ( param = value, ... )`
+        with_options: Vec<SqlOption>,
+    },
+    /// ```sql
+    /// DROP PUBLICATION [ IF EXISTS ] name [ CASCADE | RESTRICT ];
+    /// ```
+    ///
+    /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-droppublication.html)
+    DropPublication {
+        if_exists: bool,
+        name: Ident,
+        drop_behavior: Option<DropBehavior>,
+    },
+    /// ```sql
+    /// CREATE SUBSCRIPTION name CONNECTION 'conninfo' PUBLICATION pub1, pub2 [ WITH (param = value) ];
+    /// ```
+    ///
+    /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-createsubscription.html)
+    CreateSubscription {
+        /// Subscription name
+        name: Ident,
+        /// Connection string (single-quoted)
+        connection_string: String,
+        /// List of publication names
+        publications: Vec<Ident>,
+        /// `WITH ( param = value, ... )`
+        with_options: Vec<SqlOption>,
+    },
+    /// ```sql
+    /// DROP SUBSCRIPTION [ IF EXISTS ] name [ CASCADE | RESTRICT ];
+    /// ```
+    ///
+    /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-dropsubscription.html)
+    DropSubscription {
+        if_exists: bool,
+        name: Ident,
         drop_behavior: Option<DropBehavior>,
     },
     /// ```sql
@@ -6506,6 +6612,86 @@ impl fmt::Display for Statement {
                     write!(f, " IF EXISTS")?;
                 }
                 write!(f, " {name} ON {table_name}")?;
+                if let Some(drop_behavior) = drop_behavior {
+                    write!(f, " {drop_behavior}")?;
+                }
+                Ok(())
+            }
+            Statement::CreatePublication {
+                name,
+                for_object,
+                with_options,
+            } => {
+                write!(f, "CREATE PUBLICATION {name}")?;
+                match for_object {
+                    PublicationForObject::AllTables => {
+                        write!(f, " FOR ALL TABLES")?;
+                    }
+                    PublicationForObject::Tables(tables) => {
+                        write!(f, " FOR TABLE {}", display_comma_separated(tables))?;
+                    }
+                    PublicationForObject::TablesInSchema(schemas) => {
+                        write!(
+                            f,
+                            " FOR TABLES IN SCHEMA {}",
+                            display_comma_separated(schemas)
+                        )?;
+                    }
+                }
+                if !with_options.is_empty() {
+                    write!(
+                        f,
+                        " WITH ({})",
+                        display_comma_separated(with_options)
+                    )?;
+                }
+                Ok(())
+            }
+            Statement::DropPublication {
+                if_exists,
+                name,
+                drop_behavior,
+            } => {
+                write!(f, "DROP PUBLICATION")?;
+                if *if_exists {
+                    write!(f, " IF EXISTS")?;
+                }
+                write!(f, " {name}")?;
+                if let Some(drop_behavior) = drop_behavior {
+                    write!(f, " {drop_behavior}")?;
+                }
+                Ok(())
+            }
+            Statement::CreateSubscription {
+                name,
+                connection_string,
+                publications,
+                with_options,
+            } => {
+                write!(
+                    f,
+                    "CREATE SUBSCRIPTION {name} CONNECTION '{connection_string}' PUBLICATION {}",
+                    display_comma_separated(publications)
+                )?;
+                if !with_options.is_empty() {
+                    write!(
+                        f,
+                        " WITH ({})",
+                        display_comma_separated(with_options)
+                    )?;
+                }
+                Ok(())
+            }
+            Statement::DropSubscription {
+                if_exists,
+                name,
+                drop_behavior,
+            } => {
+                write!(f, "DROP SUBSCRIPTION")?;
+                if *if_exists {
+                    write!(f, " IF EXISTS")?;
+                }
+                write!(f, " {name}")?;
                 if let Some(drop_behavior) = drop_behavior {
                     write!(f, " {drop_behavior}")?;
                 }
