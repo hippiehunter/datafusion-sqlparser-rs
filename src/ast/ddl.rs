@@ -43,14 +43,13 @@ use crate::ast::{
     },
     ArgMode, AttachedToken, CommentDef, ConditionalStatements, CreateFunctionBody,
     CreateFunctionUsing, CreateTableLikeKind, CreateTableOptions, CreateViewParams, DataType, Expr,
-    FileFormat, FunctionBehavior, FunctionCalledOnNull, FunctionDesc, FunctionDeterminismSpecifier,
-    FunctionParallel, Ident, MySQLColumnPosition, ObjectName, OnCommit, OneOrManyWithParens,
-    OperateFunctionArg, OrderByExpr, ProcedureSecurity, ProcedureSetConfig, Query, SequenceOptions,
-    Spanned, SqlDataAccess, SqlOption, TableVersion, TriggerEvent, TriggerExecBody, TriggerObject,
-    TriggerPeriod, TriggerReferencing, ValueWithSpan, WrappedCollection,
+    FunctionBehavior, FunctionCalledOnNull, FunctionDesc, FunctionDeterminismSpecifier,
+    FunctionParallel, Ident, MySQLColumnPosition, ObjectName, OnCommit, OperateFunctionArg,
+    OrderByExpr, ProcedureSecurity, ProcedureSetConfig, Query, SequenceOptions, Spanned,
+    SqlDataAccess, SqlOption, TableVersion, TriggerEvent, TriggerExecBody, TriggerObject,
+    TriggerPeriod, TriggerReferencing, ValueWithSpan,
 };
 use crate::display_utils::{DisplayCommaSeparated, Indent, NewLine, SpaceOrNewline};
-use crate::keywords::Keyword;
 use crate::tokenizer::{Span, Token};
 
 /// Index column type.
@@ -156,35 +155,6 @@ pub enum AlterTableOperation {
         column_names: Vec<Ident>,
         if_exists: bool,
         drop_behavior: Option<DropBehavior>,
-    },
-    /// `ATTACH PART|PARTITION <partition_expr>`
-    /// Note: this is a ClickHouse-specific operation, please refer to
-    /// [ClickHouse](https://clickhouse.com/docs/en/sql-reference/statements/alter/partition#attach-partitionpart)
-    AttachPartition {
-        // PART is not a short form of PARTITION, it's a separate keyword
-        // which represents a physical file on disk and partition is a logical entity.
-        partition: Partition,
-    },
-    /// `DETACH PART|PARTITION <partition_expr>`
-    /// Note: this is a ClickHouse-specific operation, please refer to
-    /// [ClickHouse](https://clickhouse.com/docs/en/sql-reference/statements/alter/partition#detach-partitionpart)
-    DetachPartition {
-        // See `AttachPartition` for more details
-        partition: Partition,
-    },
-    /// `FREEZE PARTITION <partition_expr>`
-    /// Note: this is a ClickHouse-specific operation, please refer to
-    /// [ClickHouse](https://clickhouse.com/docs/en/sql-reference/statements/alter/partition#freeze-partition)
-    FreezePartition {
-        partition: Partition,
-        with_name: Option<Ident>,
-    },
-    /// `UNFREEZE PARTITION <partition_expr>`
-    /// Note: this is a ClickHouse-specific operation, please refer to
-    /// [ClickHouse](https://clickhouse.com/docs/en/sql-reference/statements/alter/partition#unfreeze-partition)
-    UnfreezePartition {
-        partition: Partition,
-        with_name: Option<Ident>,
     },
     /// `DROP PRIMARY KEY`
     ///
@@ -566,12 +536,6 @@ impl fmt::Display for AlterTableOperation {
                 }
                 Ok(())
             }
-            AlterTableOperation::AttachPartition { partition } => {
-                write!(f, "ATTACH {partition}")
-            }
-            AlterTableOperation::DetachPartition { partition } => {
-                write!(f, "DETACH {partition}")
-            }
             AlterTableOperation::EnableAlwaysRule { name } => {
                 write!(f, "ENABLE ALWAYS RULE {name}")
             }
@@ -654,26 +618,6 @@ impl fmt::Display for AlterTableOperation {
                     "SET TBLPROPERTIES({})",
                     display_comma_separated(table_properties)
                 )
-            }
-            AlterTableOperation::FreezePartition {
-                partition,
-                with_name,
-            } => {
-                write!(f, "FREEZE {partition}")?;
-                if let Some(name) = with_name {
-                    write!(f, " WITH NAME {name}")?;
-                }
-                Ok(())
-            }
-            AlterTableOperation::UnfreezePartition {
-                partition,
-                with_name,
-            } => {
-                write!(f, "UNFREEZE {partition}")?;
-                if let Some(name) = with_name {
-                    write!(f, " WITH NAME {name}")?;
-                }
-                Ok(())
             }
             AlterTableOperation::AutoIncrement { equals, value } => {
                 write!(
@@ -1057,11 +1001,7 @@ pub struct ColumnDef {
 
 impl fmt::Display for ColumnDef {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.data_type == DataType::Unspecified {
-            write!(f, "{}", self.name)?;
-        } else {
-            write!(f, "{} {}", self.name, self.data_type)?;
-        }
+        write!(f, "{} {}", self.name, self.data_type)?;
         for option in &self.options {
             write!(f, " {option}")?;
         }
@@ -1302,53 +1242,6 @@ impl fmt::Display for IdentityPropertyOrder {
     }
 }
 
-/// Column policy that identify a security policy of access to a column.
-/// Syntax
-/// ```sql
-/// [ WITH ] MASKING POLICY <policy_name> [ USING ( <col_name> , <cond_col1> , ... ) ]
-/// [ WITH ] PROJECTION POLICY <policy_name>
-/// ```
-/// [Snowflake]: https://docs.snowflake.com/en/sql-reference/sql/create-table
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum ColumnPolicy {
-    MaskingPolicy(ColumnPolicyProperty),
-    ProjectionPolicy(ColumnPolicyProperty),
-}
-
-impl fmt::Display for ColumnPolicy {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let (command, property) = match self {
-            ColumnPolicy::MaskingPolicy(property) => ("MASKING POLICY", property),
-            ColumnPolicy::ProjectionPolicy(property) => ("PROJECTION POLICY", property),
-        };
-        if property.with {
-            write!(f, "WITH ")?;
-        }
-        write!(f, "{command} {}", property.policy_name)?;
-        if let Some(using_columns) = &property.using_columns {
-            write!(f, " USING ({})", display_comma_separated(using_columns))?;
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct ColumnPolicyProperty {
-    /// This flag indicates that the column policy option is declared using the `WITH` prefix.
-    /// Example
-    /// ```sql
-    /// WITH PROJECTION POLICY sample_policy
-    /// ```
-    /// [Snowflake]: https://docs.snowflake.com/en/sql-reference/sql/create-table
-    pub with: bool,
-    pub policy_name: ObjectName,
-    pub using_columns: Option<Vec<Ident>>,
-}
-
 /// `ColumnOption`s are modifiers that follow a column definition in a `CREATE
 /// TABLE` statement.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
@@ -1361,20 +1254,6 @@ pub enum ColumnOption {
     NotNull,
     /// `DEFAULT <restricted-expr>`
     Default(Expr),
-
-    /// `MATERIALIZE <expr>`
-    /// Syntax: `b INT MATERIALIZE (a + 1)`
-    ///
-    /// [ClickHouse](https://clickhouse.com/docs/en/sql-reference/statements/create/table#default_values)
-    Materialized(Expr),
-    /// `EPHEMERAL [<expr>]`
-    ///
-    /// [ClickHouse](https://clickhouse.com/docs/en/sql-reference/statements/create/table#default_values)
-    Ephemeral(Option<Expr>),
-    /// `ALIAS <expr>`
-    ///
-    /// [ClickHouse](https://clickhouse.com/docs/en/sql-reference/statements/create/table#default_values)
-    Alias(Expr),
 
     /// `PRIMARY KEY [<constraint_characteristics>]`
     PrimaryKey(PrimaryKeyConstraint),
@@ -1424,17 +1303,6 @@ pub enum ColumnOption {
     /// [MS SQL Server]: https://learn.microsoft.com/en-us/sql/t-sql/statements/create-table-transact-sql-identity-property
     /// [Snowflake]: https://docs.snowflake.com/en/sql-reference/sql/create-table
     Identity(IdentityPropertyKind),
-    /// SQLite specific: ON CONFLICT option on column definition
-    /// <https://www.sqlite.org/lang_conflict.html>
-    OnConflict(Keyword),
-    /// Snowflake specific: an option of specifying security masking or projection policy to set on a column.
-    /// Syntax:
-    /// ```sql
-    /// [ WITH ] MASKING POLICY <policy_name> [ USING ( <col_name> , <cond_col1> , ... ) ]
-    /// [ WITH ] PROJECTION POLICY <policy_name>
-    /// ```
-    /// [Snowflake]: https://docs.snowflake.com/en/sql-reference/sql/create-table
-    Policy(ColumnPolicy),
     /// MySQL specific: Spatial reference identifier
     /// Syntax:
     /// ```sql
@@ -1481,15 +1349,6 @@ impl fmt::Display for ColumnOption {
             Null => write!(f, "NULL"),
             NotNull => write!(f, "NOT NULL"),
             Default(expr) => write!(f, "DEFAULT {expr}"),
-            Materialized(expr) => write!(f, "MATERIALIZED {expr}"),
-            Ephemeral(expr) => {
-                if let Some(e) = expr {
-                    write!(f, "EPHEMERAL {e}")
-                } else {
-                    write!(f, "EPHEMERAL")
-                }
-            }
-            Alias(expr) => write!(f, "ALIAS {expr}"),
             PrimaryKey(constraint) => {
                 write!(f, "PRIMARY KEY")?;
                 if let Some(characteristics) = &constraint.characteristics {
@@ -1590,13 +1449,6 @@ impl fmt::Display for ColumnOption {
                 write!(f, "OPTIONS({})", display_comma_separated(options))
             }
             Identity(parameters) => {
-                write!(f, "{parameters}")
-            }
-            OnConflict(keyword) => {
-                write!(f, "ON CONFLICT {keyword:?}")?;
-                Ok(())
-            }
-            Policy(parameters) => {
                 write!(f, "{parameters}")
             }
             Srid(srid) => {
@@ -2311,9 +2163,7 @@ pub struct CreateTable {
     pub dynamic: bool,
     pub global: Option<bool>,
     pub if_not_exists: bool,
-    pub transient: bool,
     pub volatile: bool,
-    pub iceberg: bool,
     /// Table name
     #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
     pub name: ObjectName,
@@ -2321,7 +2171,6 @@ pub struct CreateTable {
     pub columns: Vec<ColumnDef>,
     pub constraints: Vec<TableConstraint>,
     pub table_options: CreateTableOptions,
-    pub file_format: Option<FileFormat>,
     pub location: Option<String>,
     pub query: Option<Box<Query>>,
     pub without_rowid: bool,
@@ -2332,33 +2181,11 @@ pub struct CreateTable {
     // This field is optional and different than the comment field in the general options list.
     pub comment: Option<CommentDef>,
     pub on_commit: Option<OnCommit>,
-    /// ClickHouse "ON CLUSTER" clause:
-    /// <https://clickhouse.com/docs/en/sql-reference/distributed-ddl/>
-    pub on_cluster: Option<Ident>,
-    /// ClickHouse "PRIMARY KEY " clause.
-    /// <https://clickhouse.com/docs/en/sql-reference/statements/create/table/>
-    pub primary_key: Option<Box<Expr>>,
-    /// ClickHouse "ORDER BY " clause. Note that omitted ORDER BY is different
-    /// than empty (represented as ()), the latter meaning "no sorting".
-    /// <https://clickhouse.com/docs/en/sql-reference/statements/create/table/>
-    pub order_by: Option<OneOrManyWithParens<Expr>>,
-    /// BigQuery: A partition expression for the table.
-    /// <https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#partition_expression>
-    pub partition_by: Option<Box<Expr>>,
-    /// BigQuery: Table clustering column list.
-    /// <https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#table_option_list>
-    /// Snowflake: Table clustering list which contains base column, expressions on base columns.
-    /// <https://docs.snowflake.com/en/user-guide/tables-clustering-keys#defining-a-clustering-key-for-a-table>
-    pub cluster_by: Option<WrappedCollection<Vec<Expr>>>,
     /// Postgres `INHERITs` clause, which contains the list of tables from which
     /// the new table inherits.
     /// <https://www.postgresql.org/docs/current/ddl-inherit.html>
     /// <https://www.postgresql.org/docs/current/sql-createtable.html#SQL-CREATETABLE-PARMS-INHERITS>
     pub inherits: Option<Vec<ObjectName>>,
-    /// SQLite "STRICT" clause.
-    /// if the "STRICT" table-option keyword is added to the end, after the closing ")",
-    /// then strict typing rules apply to that table.
-    pub strict: bool,
     /// SQL:2016 temporal table system versioning
     /// `WITH SYSTEM VERSIONING [WITH HISTORY TABLE history_table_name]`
     pub system_versioning: Option<CreateTableSystemVersioning>,
@@ -2375,7 +2202,7 @@ impl fmt::Display for CreateTable {
         //   `CREATE TABLE t (a INT) AS SELECT a from t2`
         write!(
             f,
-            "CREATE {or_replace}{external}{global}{temporary}{transient}{volatile}{dynamic}{iceberg}TABLE {if_not_exists}{name}",
+            "CREATE {or_replace}{external}{global}{temporary}{volatile}{dynamic}TABLE {if_not_exists}{name}",
             or_replace = if self.or_replace { "OR REPLACE " } else { "" },
             external = if self.external { "EXTERNAL " } else { "" },
             global = self.global
@@ -2389,16 +2216,10 @@ impl fmt::Display for CreateTable {
                 .unwrap_or(""),
             if_not_exists = if self.if_not_exists { "IF NOT EXISTS " } else { "" },
             temporary = if self.temporary { "TEMPORARY " } else { "" },
-            transient = if self.transient { "TRANSIENT " } else { "" },
             volatile = if self.volatile { "VOLATILE " } else { "" },
-            // Only for Snowflake
-            iceberg = if self.iceberg { "ICEBERG " } else { "" },
             dynamic = if self.dynamic { "DYNAMIC " } else { "" },
             name = self.name,
         )?;
-        if let Some(on_cluster) = &self.on_cluster {
-            write!(f, " ON CLUSTER {on_cluster}")?;
-        }
         if !self.columns.is_empty() || !self.constraints.is_empty() {
             f.write_str(" (")?;
             NewLine.fmt(f)?;
@@ -2440,9 +2261,6 @@ impl fmt::Display for CreateTable {
         }
 
         if self.external {
-            if let Some(file_format) = self.file_format {
-                write!(f, " STORED AS {file_format}")?;
-            }
             write!(f, " LOCATION '{}'", self.location.as_ref().unwrap())?;
         }
 
@@ -2453,20 +2271,8 @@ impl fmt::Display for CreateTable {
             _ => (),
         }
 
-        if let Some(primary_key) = &self.primary_key {
-            write!(f, " PRIMARY KEY {primary_key}")?;
-        }
-        if let Some(order_by) = &self.order_by {
-            write!(f, " ORDER BY {order_by}")?;
-        }
         if let Some(inherits) = &self.inherits {
             write!(f, " INHERITS ({})", display_comma_separated(inherits))?;
-        }
-        if let Some(partition_by) = self.partition_by.as_ref() {
-            write!(f, " PARTITION BY {partition_by}")?;
-        }
-        if let Some(cluster_by) = self.cluster_by.as_ref() {
-            write!(f, " CLUSTER BY {cluster_by}")?;
         }
         if let options @ CreateTableOptions::Options(_) = &self.table_options {
             write!(f, " {options}")?;
@@ -2479,9 +2285,6 @@ impl fmt::Display for CreateTable {
                 None => "",
             };
             write!(f, " {on_commit}")?;
-        }
-        if self.strict {
-            write!(f, " STRICT")?;
         }
         if let Some(system_versioning) = &self.system_versioning {
             write!(f, "{}", system_versioning)?;
@@ -3175,9 +2978,6 @@ pub struct Truncate {
     pub identity: Option<super::TruncateIdentityOption>,
     /// Postgres-specific option: [ CASCADE | RESTRICT ]
     pub cascade: Option<super::CascadeOption>,
-    /// ClickHouse-specific option: [ ON CLUSTER cluster_name ]
-    /// [ClickHouse](https://clickhouse.com/docs/en/sql-reference/statements/truncate/)
-    pub on_cluster: Option<Ident>,
 }
 
 impl fmt::Display for Truncate {
@@ -3208,9 +3008,6 @@ impl fmt::Display for Truncate {
                 write!(f, " PARTITION ({})", display_comma_separated(parts))?;
             }
         }
-        if let Some(on_cluster) = &self.on_cluster {
-            write!(f, " ON CLUSTER {on_cluster}")?;
-        }
         Ok(())
     }
 }
@@ -3238,38 +3035,11 @@ pub struct CreateView {
     pub or_alter: bool,
     pub or_replace: bool,
     pub materialized: bool,
-    /// Snowflake: SECURE view modifier
-    /// <https://docs.snowflake.com/en/sql-reference/sql/create-view#syntax>
-    pub secure: bool,
     /// View name
     pub name: ObjectName,
-    /// If `if_not_exists` is true, this flag is set to true if the view name comes before the `IF NOT EXISTS` clause.
-    /// Example:
-    /// ```sql
-    /// CREATE VIEW myview IF NOT EXISTS AS SELECT 1`
-    ///  ```
-    /// Otherwise, the flag is set to false if the view name comes after the clause
-    /// Example:
-    /// ```sql
-    /// CREATE VIEW IF NOT EXISTS myview AS SELECT 1`
-    ///  ```
-    pub name_before_not_exists: bool,
     pub columns: Vec<ViewColumnDef>,
     pub query: Box<Query>,
     pub options: CreateTableOptions,
-    pub cluster_by: Vec<Ident>,
-    /// Snowflake: Views can have comments in Snowflake.
-    /// <https://docs.snowflake.com/en/sql-reference/sql/create-view#syntax>
-    pub comment: Option<String>,
-    /// if true, has RedShift [`WITH NO SCHEMA BINDING`] clause <https://docs.aws.amazon.com/redshift/latest/dg/r_CREATE_VIEW.html>
-    pub with_no_schema_binding: bool,
-    /// if true, has SQLite `IF NOT EXISTS` clause <https://www.sqlite.org/lang_createview.html>
-    pub if_not_exists: bool,
-    /// if true, has SQLite `TEMP` or `TEMPORARY` clause <https://www.sqlite.org/lang_createview.html>
-    pub temporary: bool,
-    /// if not None, has Clickhouse `TO` clause, specify the table into which to insert results
-    /// <https://clickhouse.com/docs/en/sql-reference/statements/create/view#materialized-view>
-    pub to: Option<ObjectName>,
     /// MySQL: Optional parameters for the view algorithm, definer, and security context
     pub params: Option<CreateViewParams>,
 }
@@ -3287,28 +3057,13 @@ impl fmt::Display for CreateView {
         }
         write!(
             f,
-            "{secure}{materialized}{temporary}VIEW {if_not_and_name}{to}",
-            if_not_and_name = if self.if_not_exists {
-                if self.name_before_not_exists {
-                    format!("{} IF NOT EXISTS", self.name)
-                } else {
-                    format!("IF NOT EXISTS {}", self.name)
-                }
-            } else {
-                format!("{}", self.name)
-            },
-            secure = if self.secure { "SECURE " } else { "" },
+            "{materialized}VIEW {name}",
             materialized = if self.materialized {
                 "MATERIALIZED "
             } else {
                 ""
             },
-            temporary = if self.temporary { "TEMPORARY " } else { "" },
-            to = self
-                .to
-                .as_ref()
-                .map(|to| format!(" TO {to}"))
-                .unwrap_or_default()
+            name = self.name,
         )?;
         if !self.columns.is_empty() {
             write!(f, " ({})", display_comma_separated(&self.columns))?;
@@ -3316,25 +3071,12 @@ impl fmt::Display for CreateView {
         if matches!(self.options, CreateTableOptions::With(_)) {
             write!(f, " {}", self.options)?;
         }
-        if let Some(ref comment) = self.comment {
-            write!(f, " COMMENT = '{}'", escape_single_quote_string(comment))?;
-        }
-        if !self.cluster_by.is_empty() {
-            write!(
-                f,
-                " CLUSTER BY ({})",
-                display_comma_separated(&self.cluster_by)
-            )?;
-        }
         if matches!(self.options, CreateTableOptions::Options(_)) {
             write!(f, " {}", self.options)?;
         }
         f.write_str(" AS")?;
         SpaceOrNewline.fmt(f)?;
         self.query.fmt(f)?;
-        if self.with_no_schema_binding {
-            write!(f, " WITH NO SCHEMA BINDING")?;
-        }
         Ok(())
     }
 }
@@ -3425,20 +3167,6 @@ impl Spanned for DropExtension {
     }
 }
 
-/// Table type for ALTER TABLE statements.
-/// Used to distinguish between regular tables, Iceberg tables, and Dynamic tables.
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum AlterTableType {
-    /// Iceberg table type
-    /// <https://docs.snowflake.com/en/sql-reference/sql/alter-iceberg-table>
-    Iceberg,
-    /// Dynamic table type
-    /// <https://docs.snowflake.com/en/sql-reference/sql/alter-table>
-    Dynamic,
-}
-
 /// ALTER TABLE statement
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -3450,23 +3178,13 @@ pub struct AlterTable {
     pub if_exists: bool,
     pub only: bool,
     pub operations: Vec<AlterTableOperation>,
-    /// ClickHouse dialect supports `ON CLUSTER` clause for ALTER TABLE
-    /// For example: `ALTER TABLE table_name ON CLUSTER cluster_name ADD COLUMN c UInt32`
-    /// [ClickHouse](https://clickhouse.com/docs/en/sql-reference/statements/alter/update)
-    pub on_cluster: Option<Ident>,
-    /// Table type: None for regular tables, Some(AlterTableType) for Iceberg or Dynamic tables
-    pub table_type: Option<AlterTableType>,
     /// Token that represents the end of the statement (semicolon or EOF)
     pub end_token: AttachedToken,
 }
 
 impl fmt::Display for AlterTable {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match &self.table_type {
-            Some(AlterTableType::Iceberg) => write!(f, "ALTER ICEBERG TABLE ")?,
-            Some(AlterTableType::Dynamic) => write!(f, "ALTER DYNAMIC TABLE ")?,
-            None => write!(f, "ALTER TABLE ")?,
-        }
+        write!(f, "ALTER TABLE ")?;
 
         if self.if_exists {
             write!(f, "IF EXISTS ")?;
@@ -3475,9 +3193,6 @@ impl fmt::Display for AlterTable {
             write!(f, "ONLY ")?;
         }
         write!(f, "{} ", &self.name)?;
-        if let Some(cluster) = &self.on_cluster {
-            write!(f, "ON CLUSTER {cluster} ")?;
-        }
         write!(f, "{}", display_comma_separated(&self.operations))?;
         Ok(())
     }

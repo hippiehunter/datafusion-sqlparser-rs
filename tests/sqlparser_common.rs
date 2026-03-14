@@ -3413,7 +3413,7 @@ fn parse_create_table() {
             table_options,
             if_not_exists: false,
             external: false,
-            file_format: None,
+
             location: None,
             ..
         }) => {
@@ -3631,7 +3631,7 @@ fn parse_create_table_with_constraint_characteristics() {
             table_options,
             if_not_exists: false,
             external: false,
-            file_format: None,
+
             location: None,
             ..
         }) => {
@@ -4291,7 +4291,7 @@ fn parse_create_external_table() {
          name VARCHAR(100) NOT NULL, \
          lat DOUBLE NULL, \
          lng DOUBLE) \
-         STORED AS TEXTFILE LOCATION '/tmp/example.csv'",
+         LOCATION '/tmp/example.csv'",
     );
     match ast {
         Statement::CreateTable(CreateTable {
@@ -4301,7 +4301,6 @@ fn parse_create_external_table() {
             table_options,
             if_not_exists,
             external,
-            file_format,
             location,
             ..
         }) => {
@@ -4338,7 +4337,6 @@ fn parse_create_external_table() {
             assert!(constraints.is_empty());
 
             assert!(external);
-            assert_eq!(FileFormat::TEXTFILE, file_format.unwrap());
             assert_eq!("/tmp/example.csv", location.unwrap());
 
             assert_eq!(table_options, CreateTableOptions::None);
@@ -4359,7 +4357,7 @@ fn parse_create_or_replace_external_table() {
         sql,
         "CREATE OR REPLACE EXTERNAL TABLE uk_cities (\
          name VARCHAR(100) NOT NULL) \
-         STORED AS TEXTFILE LOCATION '/tmp/example.csv'",
+         LOCATION '/tmp/example.csv'",
     );
     match ast {
         Statement::CreateTable(CreateTable {
@@ -4369,7 +4367,6 @@ fn parse_create_or_replace_external_table() {
             table_options,
             if_not_exists,
             external,
-            file_format,
             location,
             or_replace,
             ..
@@ -4392,7 +4389,6 @@ fn parse_create_or_replace_external_table() {
             assert!(constraints.is_empty());
 
             assert!(external);
-            assert_eq!(FileFormat::TEXTFILE, file_format.unwrap());
             assert_eq!("/tmp/example.csv", location.unwrap());
 
             assert_eq!(table_options, CreateTableOptions::None);
@@ -4416,7 +4412,7 @@ fn parse_create_external_table_lowercase() {
          name VARCHAR(100) NOT NULL, \
          lat DOUBLE NULL, \
          lng DOUBLE) \
-         STORED AS PARQUET LOCATION '/tmp/example.csv'",
+         LOCATION '/tmp/example.csv'",
     );
     assert_matches!(ast, Statement::CreateTable(CreateTable { .. }));
 }
@@ -4589,39 +4585,7 @@ fn parse_rename_table() {
     );
 }
 
-#[test]
-fn test_alter_table_with_on_cluster() {
-    match all_dialects()
-        .verified_stmt("ALTER TABLE t ON CLUSTER 'cluster' ADD CONSTRAINT bar PRIMARY KEY (baz)")
-    {
-        Statement::AlterTable(AlterTable {
-            name, on_cluster, ..
-        }) => {
-            assert_eq!(name.to_string(), "t");
-            assert_eq!(on_cluster, Some(Ident::with_quote('\'', "cluster")));
-        }
-        _ => unreachable!(),
-    }
-
-    match all_dialects()
-        .verified_stmt("ALTER TABLE t ON CLUSTER cluster_name ADD CONSTRAINT bar PRIMARY KEY (baz)")
-    {
-        Statement::AlterTable(AlterTable {
-            name, on_cluster, ..
-        }) => {
-            assert_eq!(name.to_string(), "t");
-            assert_eq!(on_cluster, Some(Ident::new("cluster_name")));
-        }
-        _ => unreachable!(),
-    }
-
-    let res = all_dialects()
-        .parse_sql_statements("ALTER TABLE t ON CLUSTER 123 ADD CONSTRAINT bar PRIMARY KEY (baz)");
-    assert_eq!(
-        res.unwrap_err(),
-        ParserError::ParserError("Expected: identifier, found: 123".to_string())
-    )
-}
+// test_alter_table_with_on_cluster removed (ClickHouse-specific ON CLUSTER)
 
 #[test]
 fn parse_alter_index() {
@@ -7708,15 +7672,7 @@ fn parse_create_view() {
             or_replace,
             materialized,
             options,
-            cluster_by,
-            comment,
-            with_no_schema_binding: late_binding,
-            if_not_exists,
-            temporary,
-            to,
             params,
-            name_before_not_exists: _,
-            secure: _,
         }) => {
             assert_eq!(or_alter, false);
             assert_eq!("myschema.myview", name.to_string());
@@ -7725,12 +7681,6 @@ fn parse_create_view() {
             assert!(!materialized);
             assert!(!or_replace);
             assert_eq!(options, CreateTableOptions::None);
-            assert_eq!(cluster_by, vec![]);
-            assert!(comment.is_none());
-            assert!(!late_binding);
-            assert!(!if_not_exists);
-            assert!(!temporary);
-            assert!(to.is_none());
             assert!(params.is_none());
         }
         _ => unreachable!(),
@@ -7769,24 +7719,10 @@ fn parse_create_view_with_columns() {
     let sql = "CREATE VIEW v (has, cols) AS SELECT 1, 2";
     match all_dialects().verified_stmt(sql) {
         Statement::CreateView(create_view) => {
-            let or_alter = create_view.or_alter;
-            let name = create_view.name;
-            let columns = create_view.columns;
-            let or_replace = create_view.or_replace;
-            let options = create_view.options;
-            let query = create_view.query;
-            let materialized = create_view.materialized;
-            let cluster_by = create_view.cluster_by;
-            let comment = create_view.comment;
-            let late_binding = create_view.with_no_schema_binding;
-            let if_not_exists = create_view.if_not_exists;
-            let temporary = create_view.temporary;
-            let to = create_view.to;
-            let params = create_view.params;
-            assert_eq!(or_alter, false);
-            assert_eq!("v", name.to_string());
+            assert_eq!(create_view.or_alter, false);
+            assert_eq!("v", create_view.name.to_string());
             assert_eq!(
-                columns,
+                create_view.columns,
                 vec![Ident::new("has"), Ident::new("cols"),]
                     .into_iter()
                     .map(|name| ViewColumnDef {
@@ -7796,58 +7732,11 @@ fn parse_create_view_with_columns() {
                     })
                     .collect::<Vec<_>>()
             );
-            assert_eq!(options, CreateTableOptions::None);
-            assert_eq!("SELECT 1, 2", query.to_string());
-            assert!(!materialized);
-            assert!(!or_replace);
-            assert_eq!(cluster_by, vec![]);
-            assert!(comment.is_none());
-            assert!(!late_binding);
-            assert!(!if_not_exists);
-            assert!(!temporary);
-            assert!(to.is_none());
-            assert!(params.is_none());
-        }
-        _ => unreachable!(),
-    }
-}
-
-#[test]
-fn parse_create_view_temporary() {
-    let sql = "CREATE TEMPORARY VIEW myschema.myview AS SELECT foo FROM bar";
-    match verified_stmt(sql) {
-        Statement::CreateView(CreateView {
-            or_alter,
-            name,
-            columns,
-            query,
-            or_replace,
-            materialized,
-            options,
-            cluster_by,
-            comment,
-            with_no_schema_binding: late_binding,
-            if_not_exists,
-            temporary,
-            to,
-            params,
-            name_before_not_exists: _,
-            secure: _,
-        }) => {
-            assert_eq!(or_alter, false);
-            assert_eq!("myschema.myview", name.to_string());
-            assert_eq!(Vec::<ViewColumnDef>::new(), columns);
-            assert_eq!("SELECT foo FROM bar", query.to_string());
-            assert!(!materialized);
-            assert!(!or_replace);
-            assert_eq!(options, CreateTableOptions::None);
-            assert_eq!(cluster_by, vec![]);
-            assert!(comment.is_none());
-            assert!(!late_binding);
-            assert!(!if_not_exists);
-            assert!(temporary);
-            assert!(to.is_none());
-            assert!(params.is_none());
+            assert_eq!(create_view.options, CreateTableOptions::None);
+            assert_eq!("SELECT 1, 2", create_view.query.to_string());
+            assert!(!create_view.materialized);
+            assert!(!create_view.or_replace);
+            assert!(create_view.params.is_none());
         }
         _ => unreachable!(),
     }
@@ -7865,15 +7754,7 @@ fn parse_create_or_replace_view() {
             options,
             query,
             materialized,
-            cluster_by,
-            comment,
-            with_no_schema_binding: late_binding,
-            if_not_exists,
-            temporary,
-            to,
             params,
-            name_before_not_exists: _,
-            secure: _,
         }) => {
             assert_eq!(or_alter, false);
             assert_eq!("v", name.to_string());
@@ -7882,12 +7763,6 @@ fn parse_create_or_replace_view() {
             assert_eq!("SELECT 1", query.to_string());
             assert!(!materialized);
             assert!(or_replace);
-            assert_eq!(cluster_by, vec![]);
-            assert!(comment.is_none());
-            assert!(!late_binding);
-            assert!(!if_not_exists);
-            assert!(!temporary);
-            assert!(to.is_none());
             assert!(params.is_none());
         }
         _ => unreachable!(),
@@ -7910,15 +7785,7 @@ fn parse_create_or_replace_materialized_view() {
             options,
             query,
             materialized,
-            cluster_by,
-            comment,
-            with_no_schema_binding: late_binding,
-            if_not_exists,
-            temporary,
-            to,
             params,
-            name_before_not_exists: _,
-            secure: _,
         }) => {
             assert_eq!(or_alter, false);
             assert_eq!("v", name.to_string());
@@ -7927,12 +7794,6 @@ fn parse_create_or_replace_materialized_view() {
             assert_eq!("SELECT 1", query.to_string());
             assert!(materialized);
             assert!(or_replace);
-            assert_eq!(cluster_by, vec![]);
-            assert!(comment.is_none());
-            assert!(!late_binding);
-            assert!(!if_not_exists);
-            assert!(!temporary);
-            assert!(to.is_none());
             assert!(params.is_none());
         }
         _ => unreachable!(),
@@ -7951,15 +7812,7 @@ fn parse_create_materialized_view() {
             query,
             materialized,
             options,
-            cluster_by,
-            comment,
-            with_no_schema_binding: late_binding,
-            if_not_exists,
-            temporary,
-            to,
             params,
-            name_before_not_exists: _,
-            secure: _,
         }) => {
             assert_eq!(or_alter, false);
             assert_eq!("myschema.myview", name.to_string());
@@ -7968,58 +7821,13 @@ fn parse_create_materialized_view() {
             assert!(materialized);
             assert_eq!(options, CreateTableOptions::None);
             assert!(!or_replace);
-            assert_eq!(cluster_by, vec![]);
-            assert!(comment.is_none());
-            assert!(!late_binding);
-            assert!(!if_not_exists);
-            assert!(!temporary);
-            assert!(to.is_none());
             assert!(params.is_none());
         }
         _ => unreachable!(),
     }
 }
 
-#[test]
-fn parse_create_materialized_view_with_cluster_by() {
-    let sql = "CREATE MATERIALIZED VIEW myschema.myview CLUSTER BY (foo) AS SELECT foo FROM bar";
-    match verified_stmt(sql) {
-        Statement::CreateView(CreateView {
-            or_alter,
-            name,
-            or_replace,
-            columns,
-            query,
-            materialized,
-            options,
-            cluster_by,
-            comment,
-            with_no_schema_binding: late_binding,
-            if_not_exists,
-            temporary,
-            to,
-            params,
-            name_before_not_exists: _,
-            secure: _,
-        }) => {
-            assert_eq!(or_alter, false);
-            assert_eq!("myschema.myview", name.to_string());
-            assert_eq!(Vec::<ViewColumnDef>::new(), columns);
-            assert_eq!("SELECT foo FROM bar", query.to_string());
-            assert!(materialized);
-            assert_eq!(options, CreateTableOptions::None);
-            assert!(!or_replace);
-            assert_eq!(cluster_by, vec![Ident::new("foo")]);
-            assert!(comment.is_none());
-            assert!(!late_binding);
-            assert!(!if_not_exists);
-            assert!(!temporary);
-            assert!(to.is_none());
-            assert!(params.is_none());
-        }
-        _ => unreachable!(),
-    }
-}
+// parse_create_materialized_view_with_cluster_by removed (cluster_by was Snowflake-specific)
 
 #[test]
 fn parse_drop_table() {
@@ -8041,7 +7849,6 @@ fn parse_drop_table() {
                 names.iter().map(ToString::to_string).collect::<Vec<_>>()
             );
             assert!(!cascade);
-            assert!(!temporary);
         }
         _ => unreachable!(),
     }
@@ -8064,7 +7871,6 @@ fn parse_drop_table() {
                 names.iter().map(ToString::to_string).collect::<Vec<_>>()
             );
             assert!(cascade);
-            assert!(!temporary);
         }
         _ => unreachable!(),
     }
@@ -12264,26 +12070,7 @@ fn test_extract_seconds_single_quote_err() {
     );
 }
 
-#[test]
-fn test_truncate_table_with_on_cluster() {
-    let sql = "TRUNCATE TABLE t ON CLUSTER cluster_name";
-    match all_dialects().verified_stmt(sql) {
-        Statement::Truncate(truncate) => {
-            assert_eq!(truncate.on_cluster, Some(Ident::new("cluster_name")));
-        }
-        _ => panic!("Expected: TRUNCATE TABLE statement"),
-    }
-
-    // Omit ON CLUSTER is allowed
-    all_dialects().verified_stmt("TRUNCATE TABLE t");
-
-    assert_eq!(
-        ParserError::ParserError("Expected: identifier, found: EOF".to_string()),
-        all_dialects()
-            .parse_sql_statements("TRUNCATE TABLE t ON CLUSTER")
-            .unwrap_err()
-    );
-}
+// test_truncate_table_with_on_cluster removed (ClickHouse-specific ON CLUSTER)
 
 #[test]
 fn parse_explain_with_option_list() {
@@ -13179,87 +12966,27 @@ fn parse_composite_access_expr() {
 
 #[test]
 fn parse_create_table_with_enum_types() {
-    let sql = "CREATE TABLE t0 (foo ENUM8('a' = 1, 'b' = 2), bar ENUM16('a' = 1, 'b' = 2), baz ENUM('a', 'b'))";
+    let sql = "CREATE TABLE t0 (baz ENUM('a', 'b'))";
     match all_dialects().verified_stmt(sql) {
         Statement::CreateTable(CreateTable { name, columns, .. }) => {
             assert_eq!(name.to_string(), "t0");
             assert_eq!(
-                vec![
-                    ColumnDef {
-                        name: Ident::new("foo"),
-                        data_type: DataType::Enum(
-                            vec![
-                                EnumMember::NamedValue(
-                                    "a".to_string(),
-                                    Expr::Value(
-                                        (Number("1".parse().unwrap(), false)).with_empty_span()
-                                    )
-                                ),
-                                EnumMember::NamedValue(
-                                    "b".to_string(),
-                                    Expr::Value(
-                                        (Number("2".parse().unwrap(), false)).with_empty_span()
-                                    )
-                                )
-                            ],
-                            Some(8)
-                        ),
-                        options: vec![],
-                    },
-                    ColumnDef {
-                        name: Ident::new("bar"),
-                        data_type: DataType::Enum(
-                            vec![
-                                EnumMember::NamedValue(
-                                    "a".to_string(),
-                                    Expr::Value(
-                                        (Number("1".parse().unwrap(), false)).with_empty_span()
-                                    )
-                                ),
-                                EnumMember::NamedValue(
-                                    "b".to_string(),
-                                    Expr::Value(
-                                        (Number("2".parse().unwrap(), false)).with_empty_span()
-                                    )
-                                )
-                            ],
-                            Some(16)
-                        ),
-                        options: vec![],
-                    },
-                    ColumnDef {
-                        name: Ident::new("baz"),
-                        data_type: DataType::Enum(
-                            vec![
-                                EnumMember::Name("a".to_string()),
-                                EnumMember::Name("b".to_string())
-                            ],
-                            None
-                        ),
-                        options: vec![],
-                    }
-                ],
+                vec![ColumnDef {
+                    name: Ident::new("baz"),
+                    data_type: DataType::Enum(
+                        vec![
+                            EnumMember::Name("a".to_string()),
+                            EnumMember::Name("b".to_string())
+                        ],
+                        None
+                    ),
+                    options: vec![],
+                }],
                 columns
             );
         }
         _ => unreachable!(),
     }
-
-    // invalid case missing value for enum pair
-    assert_eq!(
-        all_dialects()
-            .parse_sql_statements("CREATE TABLE t0 (foo ENUM8('a' = 1, 'b' = ))")
-            .unwrap_err(),
-        ParserError::ParserError("Expected: a value, found: )".to_string())
-    );
-
-    // invalid case that name is not a string
-    assert_eq!(
-        all_dialects()
-            .parse_sql_statements("CREATE TABLE t0 (foo ENUM8('a' = 1, 2))")
-            .unwrap_err(),
-        ParserError::ParserError("Expected: literal string, found: 2".to_string())
-    );
 }
 
 #[test]
@@ -13279,18 +13006,6 @@ fn parse_select_without_projection() {
     dialects.verified_stmt("SELECT FROM users");
 }
 
-#[test]
-fn parse_update_from_before_select() {
-    verified_stmt("UPDATE t1 FROM (SELECT name, id FROM t1 GROUP BY id) AS t2 SET name = t2.name WHERE t1.id = t2.id");
-    verified_stmt("UPDATE t1 FROM U, (SELECT id FROM V) AS W SET a = b WHERE 1 = 1");
-
-    let query =
-    "UPDATE t1 FROM (SELECT name, id FROM t1 GROUP BY id) AS t2 SET name = t2.name FROM (SELECT name from t2) AS t2";
-    assert_eq!(
-        ParserError::ParserError("Expected: end of statement, found: FROM".to_string()),
-        parse_sql_statements(query).unwrap_err()
-    );
-}
 #[test]
 fn parse_overlaps() {
     verified_stmt("SELECT (DATE '2016-01-10', DATE '2016-02-01') OVERLAPS (DATE '2016-01-20', DATE '2016-02-10')");
@@ -14189,7 +13904,6 @@ fn parse_truncate_only() {
             table: true,
             identity: None,
             cascade: None,
-            on_cluster: None,
         }),
         truncate
     );
@@ -14586,23 +14300,6 @@ fn parse_drop_stream() {
         _ => unreachable!(),
     }
     verified_stmt("DROP STREAM IF EXISTS s1");
-}
-
-#[test]
-fn parse_create_view_if_not_exists() {
-    // Name after IF NOT EXISTS
-    let sql: &'static str = "CREATE VIEW IF NOT EXISTS v AS SELECT 1";
-    let _ = all_dialects().verified_stmt(sql);
-    // Name before IF NOT EXISTS
-    let sql = "CREATE VIEW v IF NOT EXISTS AS SELECT 1";
-    let _ = all_dialects().verified_stmt(sql);
-    // Name missing from query
-    let sql = "CREATE VIEW IF NOT EXISTS AS SELECT 1";
-    let res = all_dialects().parse_sql_statements(sql);
-    assert_eq!(
-        ParserError::ParserError("Expected: AS, found: SELECT".to_string()),
-        res.unwrap_err()
-    );
 }
 
 #[test]

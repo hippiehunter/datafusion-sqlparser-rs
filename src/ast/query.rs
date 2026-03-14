@@ -3172,9 +3172,6 @@ impl fmt::Display for OpenJsonTableColumn {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub enum UpdateTableFromKind {
-    /// Update Statement where the 'FROM' clause is before the 'SET' keyword (Supported by Snowflake)
-    /// For Example: `UPDATE FROM t1 SET t1.name='aaa'`
-    BeforeSet(Vec<TableWithJoins>),
     /// Update Statement where the 'FROM' clause is after the 'SET' keyword (Which is the standard way)
     /// For Example: `UPDATE SET t1.name='aaa' FROM t1`
     AfterSet(Vec<TableWithJoins>),

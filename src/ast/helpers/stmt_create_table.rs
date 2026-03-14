@@ -26,8 +26,8 @@ use sqlparser_derive::{Visit, VisitMut};
 
 use crate::ast::{
     ColumnDef, CommentDef, CreateTable, CreateTableLikeKind, CreateTableOptions,
-    CreateTableSystemVersioning, Expr, FileFormat, Ident, ObjectName, OnCommit,
-    OneOrManyWithParens, Query, Statement, TableConstraint, TableVersion, WrappedCollection,
+    CreateTableSystemVersioning, ObjectName, OnCommit, Query, Statement, TableConstraint,
+    TableVersion,
 };
 
 use crate::parser::ParserError;
@@ -68,14 +68,11 @@ pub struct CreateTableBuilder {
     pub external: bool,
     pub global: Option<bool>,
     pub if_not_exists: bool,
-    pub transient: bool,
     pub volatile: bool,
-    pub iceberg: bool,
     pub dynamic: bool,
     pub name: ObjectName,
     pub columns: Vec<ColumnDef>,
     pub constraints: Vec<TableConstraint>,
-    pub file_format: Option<FileFormat>,
     pub location: Option<String>,
     pub query: Option<Box<Query>>,
     pub without_rowid: bool,
@@ -84,13 +81,7 @@ pub struct CreateTableBuilder {
     pub version: Option<TableVersion>,
     pub comment: Option<CommentDef>,
     pub on_commit: Option<OnCommit>,
-    pub on_cluster: Option<Ident>,
-    pub primary_key: Option<Box<Expr>>,
-    pub order_by: Option<OneOrManyWithParens<Expr>>,
-    pub partition_by: Option<Box<Expr>>,
-    pub cluster_by: Option<WrappedCollection<Vec<Expr>>>,
     pub inherits: Option<Vec<ObjectName>>,
-    pub strict: bool,
     pub table_options: CreateTableOptions,
     pub system_versioning: Option<CreateTableSystemVersioning>,
 }
@@ -103,14 +94,11 @@ impl CreateTableBuilder {
             external: false,
             global: None,
             if_not_exists: false,
-            transient: false,
             volatile: false,
-            iceberg: false,
             dynamic: false,
             name,
             columns: vec![],
             constraints: vec![],
-            file_format: None,
             location: None,
             query: None,
             without_rowid: false,
@@ -119,13 +107,7 @@ impl CreateTableBuilder {
             version: None,
             comment: None,
             on_commit: None,
-            on_cluster: None,
-            primary_key: None,
-            order_by: None,
-            partition_by: None,
-            cluster_by: None,
             inherits: None,
-            strict: false,
             table_options: CreateTableOptions::None,
             system_versioning: None,
         }
@@ -155,18 +137,8 @@ impl CreateTableBuilder {
         self
     }
 
-    pub fn transient(mut self, transient: bool) -> Self {
-        self.transient = transient;
-        self
-    }
-
     pub fn volatile(mut self, volatile: bool) -> Self {
         self.volatile = volatile;
-        self
-    }
-
-    pub fn iceberg(mut self, iceberg: bool) -> Self {
-        self.iceberg = iceberg;
         self
     }
 
@@ -185,10 +157,6 @@ impl CreateTableBuilder {
         self
     }
 
-    pub fn file_format(mut self, file_format: Option<FileFormat>) -> Self {
-        self.file_format = file_format;
-        self
-    }
     pub fn location(mut self, location: Option<String>) -> Self {
         self.location = location;
         self
@@ -229,38 +197,8 @@ impl CreateTableBuilder {
         self
     }
 
-    pub fn on_cluster(mut self, on_cluster: Option<Ident>) -> Self {
-        self.on_cluster = on_cluster;
-        self
-    }
-
-    pub fn primary_key(mut self, primary_key: Option<Box<Expr>>) -> Self {
-        self.primary_key = primary_key;
-        self
-    }
-
-    pub fn order_by(mut self, order_by: Option<OneOrManyWithParens<Expr>>) -> Self {
-        self.order_by = order_by;
-        self
-    }
-
-    pub fn partition_by(mut self, partition_by: Option<Box<Expr>>) -> Self {
-        self.partition_by = partition_by;
-        self
-    }
-
-    pub fn cluster_by(mut self, cluster_by: Option<WrappedCollection<Vec<Expr>>>) -> Self {
-        self.cluster_by = cluster_by;
-        self
-    }
-
     pub fn inherits(mut self, inherits: Option<Vec<ObjectName>>) -> Self {
         self.inherits = inherits;
-        self
-    }
-
-    pub fn strict(mut self, strict: bool) -> Self {
-        self.strict = strict;
         self
     }
 
@@ -284,14 +222,11 @@ impl CreateTableBuilder {
             external: self.external,
             global: self.global,
             if_not_exists: self.if_not_exists,
-            transient: self.transient,
             volatile: self.volatile,
-            iceberg: self.iceberg,
             dynamic: self.dynamic,
             name: self.name,
             columns: self.columns,
             constraints: self.constraints,
-            file_format: self.file_format,
             location: self.location,
             query: self.query,
             without_rowid: self.without_rowid,
@@ -300,13 +235,7 @@ impl CreateTableBuilder {
             version: self.version,
             comment: self.comment,
             on_commit: self.on_commit,
-            on_cluster: self.on_cluster,
-            primary_key: self.primary_key,
-            order_by: self.order_by,
-            partition_by: self.partition_by,
-            cluster_by: self.cluster_by,
             inherits: self.inherits,
-            strict: self.strict,
             table_options: self.table_options,
             system_versioning: self.system_versioning,
         }
@@ -327,14 +256,11 @@ impl TryFrom<Statement> for CreateTableBuilder {
                 external,
                 global,
                 if_not_exists,
-                transient,
                 volatile,
-                iceberg,
                 dynamic,
                 name,
                 columns,
                 constraints,
-                file_format,
                 location,
                 query,
                 without_rowid,
@@ -343,13 +269,7 @@ impl TryFrom<Statement> for CreateTableBuilder {
                 version,
                 comment,
                 on_commit,
-                on_cluster,
-                primary_key,
-                order_by,
-                partition_by,
-                cluster_by,
                 inherits,
-                strict,
                 table_options,
                 system_versioning,
             }) => Ok(Self {
@@ -358,12 +278,10 @@ impl TryFrom<Statement> for CreateTableBuilder {
                 external,
                 global,
                 if_not_exists,
-                transient,
                 dynamic,
                 name,
                 columns,
                 constraints,
-                file_format,
                 location,
                 query,
                 without_rowid,
@@ -372,14 +290,7 @@ impl TryFrom<Statement> for CreateTableBuilder {
                 version,
                 comment,
                 on_commit,
-                on_cluster,
-                primary_key,
-                order_by,
-                partition_by,
-                cluster_by,
                 inherits,
-                strict,
-                iceberg,
                 volatile,
                 table_options,
                 system_versioning,
@@ -394,8 +305,6 @@ impl TryFrom<Statement> for CreateTableBuilder {
 /// Helper return type when parsing configuration for a `CREATE TABLE` statement.
 #[derive(Default)]
 pub(crate) struct CreateTableConfiguration {
-    pub partition_by: Option<Box<Expr>>,
-    pub cluster_by: Option<WrappedCollection<Vec<Expr>>>,
     pub inherits: Option<Vec<ObjectName>>,
     pub table_options: CreateTableOptions,
 }

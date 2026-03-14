@@ -278,13 +278,6 @@ impl Spanned for Statement {
             Statement::Truncate(truncate) => truncate.span(),
             Statement::Query(query) => query.span(),
             Statement::Insert(insert) => insert.span(),
-            Statement::Directory {
-                overwrite: _,
-                local: _,
-                path: _,
-                file_format: _,
-                source,
-            } => source.span(),
             Statement::Case(stmt) => stmt.span(),
             Statement::If(stmt) => stmt.span(),
             Statement::While(stmt) => stmt.span(),
@@ -586,27 +579,18 @@ impl Spanned for CreateTable {
             global: _,        // bool
             dynamic: _,       // bool
             if_not_exists: _, // bool
-            transient: _,     // bool
             volatile: _,      // bool
-            iceberg: _,       // bool, Snowflake specific
             name,
             columns,
             constraints,
-            file_format: _, // enum
-            location: _,    // string, no span
+            location: _, // string, no span
             query,
             without_rowid: _, // bool
             like: _,
             clone,
             comment: _, // todo, no span
             on_commit: _,
-            on_cluster: _,   // todo, clickhouse specific
-            primary_key: _,  // todo, clickhouse specific
-            order_by: _,     // todo, clickhouse specific
-            partition_by: _, // todo, BigQuery specific
-            cluster_by: _,   // todo, BigQuery specific
-            inherits: _,     // todo, PostgreSQL specific
-            strict: _,       // bool
+            inherits: _, // todo, PostgreSQL specific
             table_options,
             version: _,
             system_versioning: _,
@@ -898,9 +882,6 @@ impl Spanned for ColumnOption {
             ColumnOption::Null => Span::empty(),
             ColumnOption::NotNull => Span::empty(),
             ColumnOption::Default(expr) => expr.span(),
-            ColumnOption::Materialized(expr) => expr.span(),
-            ColumnOption::Ephemeral(expr) => expr.as_ref().map_or(Span::empty(), |e| e.span()),
-            ColumnOption::Alias(expr) => expr.span(),
             ColumnOption::PrimaryKey(constraint) => constraint.span(),
             ColumnOption::Unique(constraint) => constraint.span(),
             ColumnOption::Check(constraint) => constraint.span(),
@@ -913,8 +894,6 @@ impl Spanned for ColumnOption {
             ColumnOption::Generated { .. } => Span::empty(),
             ColumnOption::Options(vec) => union_spans(vec.iter().map(|i| i.span())),
             ColumnOption::Identity(..) => Span::empty(),
-            ColumnOption::OnConflict(..) => Span::empty(),
-            ColumnOption::Policy(..) => Span::empty(),
             ColumnOption::Srid(..) => Span::empty(),
             ColumnOption::Invisible => Span::empty(),
         }
@@ -1199,20 +1178,6 @@ impl Spanned for AlterTableOperation {
                 if_exists: _,
                 drop_behavior: _,
             } => union_spans(column_names.iter().map(|i| i.span)),
-            AlterTableOperation::AttachPartition { partition } => partition.span(),
-            AlterTableOperation::DetachPartition { partition } => partition.span(),
-            AlterTableOperation::FreezePartition {
-                partition,
-                with_name,
-            } => partition
-                .span()
-                .union_opt(&with_name.as_ref().map(|n| n.span)),
-            AlterTableOperation::UnfreezePartition {
-                partition,
-                with_name,
-            } => partition
-                .span()
-                .union_opt(&with_name.as_ref().map(|n| n.span)),
             AlterTableOperation::DropPrimaryKey { .. } => Span::empty(),
             AlterTableOperation::DropForeignKey { name, .. } => name.span,
             AlterTableOperation::DropIndex { name } => name.span,
@@ -2455,7 +2420,6 @@ impl Spanned for SelectInto {
 impl Spanned for UpdateTableFromKind {
     fn span(&self) -> Span {
         let from = match self {
-            UpdateTableFromKind::BeforeSet(from) => from,
             UpdateTableFromKind::AfterSet(from) => from,
         };
         union_spans(from.iter().map(|t| t.span()))
@@ -2628,9 +2592,7 @@ impl Spanned for CreateView {
             core::iter::once(self.name.span())
                 .chain(self.columns.iter().map(|i| i.span()))
                 .chain(core::iter::once(self.query.span()))
-                .chain(core::iter::once(self.options.span()))
-                .chain(self.cluster_by.iter().map(|i| i.span))
-                .chain(self.to.iter().map(|i| i.span())),
+                .chain(core::iter::once(self.options.span())),
         )
     }
 }
@@ -2640,7 +2602,6 @@ impl Spanned for AlterTable {
         union_spans(
             core::iter::once(self.name.span())
                 .chain(self.operations.iter().map(|i| i.span()))
-                .chain(self.on_cluster.iter().map(|i| i.span))
                 .chain(core::iter::once(self.end_token.0.span)),
         )
     }

@@ -2704,13 +2704,10 @@ fn parse_alter_table_add_column() {
             if_exists,
             only,
             operations,
-            table_type,
-            on_cluster: _,
             end_token: _,
         }) => {
             assert_eq!(name.to_string(), "tab");
             assert!(!if_exists);
-            assert_eq!(table_type, None);
             assert!(!only);
             assert_eq!(
                 operations,

@@ -402,7 +402,6 @@ pub fn alter_table_op_with_name(stmt: Statement, expected_name: &str) -> AlterTa
             assert_eq!(alter_table.name.to_string(), expected_name);
             assert!(!alter_table.if_exists);
             assert!(!alter_table.only);
-            assert_eq!(alter_table.table_type, None);
             only(alter_table.operations)
         }
         _ => panic!("Expected ALTER TABLE statement"),

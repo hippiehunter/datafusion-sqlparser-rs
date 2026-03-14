@@ -309,11 +309,6 @@ impl Display for Update {
             SpaceOrNewline.fmt(f)?;
             for_portion_of.fmt(f)?;
         }
-        if let Some(UpdateTableFromKind::BeforeSet(from)) = &self.from {
-            SpaceOrNewline.fmt(f)?;
-            f.write_str("FROM")?;
-            indented_list(f, from)?;
-        }
         if !self.assignments.is_empty() {
             SpaceOrNewline.fmt(f)?;
             f.write_str("SET")?;

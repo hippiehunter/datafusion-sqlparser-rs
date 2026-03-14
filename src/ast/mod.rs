@@ -59,18 +59,17 @@ pub use self::dcl::{
 pub use self::ddl::{
     Alignment, AlterColumnOperation, AlterIndexOperation, AlterPolicyOperation, AlterSchema,
     AlterSchemaOperation, AlterTable, AlterTableAlgorithm, AlterTableLock, AlterTableOperation,
-    AlterTableType, AlterType, AlterTypeAddValue, AlterTypeAddValuePosition, AlterTypeOperation,
-    AlterTypeRename, AlterTypeRenameValue, ColumnDef, ColumnOption, ColumnOptionDef, ColumnOptions,
-    ColumnPolicy, ColumnPolicyProperty, ConstraintCharacteristics, CreateAssertion, CreateDomain,
-    CreateExtension, CreateFunction, CreateIndex, CreateOperator, CreateOperatorClass,
-    CreateOperatorFamily, CreateTable, CreateTableSystemVersioning, CreateTrigger, CreateView,
-    Deduplicate, DeferrableInitial, DropBehavior, DropExtension, DropFunction, DropTrigger,
-    GeneratedAs, GeneratedExpressionMode, IdentityParameters, IdentityProperty,
-    IdentityPropertyFormatKind, IdentityPropertyKind, IdentityPropertyOrder, IndexColumn,
-    IndexOption, IndexType, KeyOrIndexDisplay, NullsDistinctOption, OperatorArgTypes,
-    OperatorClassItem, OperatorPurpose, Owner, Partition, ProcedureParam, ReferentialAction,
-    RenameTableNameKind, ReplicaIdentity, TriggerObjectKind, Truncate,
-    UserDefinedTypeCompositeAttributeDef, UserDefinedTypeInternalLength,
+    AlterType, AlterTypeAddValue, AlterTypeAddValuePosition, AlterTypeOperation, AlterTypeRename,
+    AlterTypeRenameValue, ColumnDef, ColumnOption, ColumnOptionDef, ColumnOptions,
+    ConstraintCharacteristics, CreateAssertion, CreateDomain, CreateExtension, CreateFunction,
+    CreateIndex, CreateOperator, CreateOperatorClass, CreateOperatorFamily, CreateTable,
+    CreateTableSystemVersioning, CreateTrigger, CreateView, Deduplicate, DeferrableInitial,
+    DropBehavior, DropExtension, DropFunction, DropTrigger, GeneratedAs, GeneratedExpressionMode,
+    IdentityParameters, IdentityProperty, IdentityPropertyFormatKind, IdentityPropertyKind,
+    IdentityPropertyOrder, IndexColumn, IndexOption, IndexType, KeyOrIndexDisplay,
+    NullsDistinctOption, OperatorArgTypes, OperatorClassItem, OperatorPurpose, Owner, Partition,
+    ProcedureParam, ReferentialAction, RenameTableNameKind, ReplicaIdentity, TriggerObjectKind,
+    Truncate, UserDefinedTypeCompositeAttributeDef, UserDefinedTypeInternalLength,
     UserDefinedTypeRangeOption, UserDefinedTypeRepresentation, UserDefinedTypeSqlDefinitionOption,
     UserDefinedTypeStorage, ViewColumnDef,
 };
@@ -4820,14 +4819,6 @@ pub enum Statement {
     /// INSERT
     /// ```
     Insert(Insert),
-    // TODO: Support ROW FORMAT
-    Directory {
-        overwrite: bool,
-        local: bool,
-        path: String,
-        file_format: Option<FileFormat>,
-        source: Box<Query>,
-    },
     /// A `CASE` statement.
     Case(CaseStatement),
     /// An `IF` statement.
@@ -6300,25 +6291,6 @@ impl fmt::Display for Statement {
                     write!(f, " USING {}", display_comma_separated(using_exprs))?;
                 }
                 Ok(())
-            }
-            Statement::Directory {
-                overwrite,
-                local,
-                path,
-                file_format,
-                source,
-            } => {
-                write!(
-                    f,
-                    "INSERT{overwrite}{local} DIRECTORY '{path}'",
-                    overwrite = if *overwrite { " OVERWRITE" } else { "" },
-                    local = if *local { " LOCAL" } else { "" },
-                    path = path
-                )?;
-                if let Some(ref ff) = file_format {
-                    write!(f, " STORED AS {ff}")?
-                }
-                write!(f, " {source}")
             }
             Statement::Truncate(truncate) => truncate.fmt(f),
             Statement::Case(stmt) => {
@@ -9168,35 +9140,6 @@ impl fmt::Display for AnalyzeFormat {
             AnalyzeFormat::JSON => "JSON",
             AnalyzeFormat::TRADITIONAL => "TRADITIONAL",
             AnalyzeFormat::TREE => "TREE",
-        })
-    }
-}
-
-/// External table's available file format
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum FileFormat {
-    TEXTFILE,
-    SEQUENCEFILE,
-    ORC,
-    PARQUET,
-    AVRO,
-    RCFILE,
-    JSONFILE,
-}
-
-impl fmt::Display for FileFormat {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use self::FileFormat::*;
-        f.write_str(match self {
-            TEXTFILE => "TEXTFILE",
-            SEQUENCEFILE => "SEQUENCEFILE",
-            ORC => "ORC",
-            PARQUET => "PARQUET",
-            AVRO => "AVRO",
-            RCFILE => "RCFILE",
-            JSONFILE => "JSONFILE",
         })
     }
 }

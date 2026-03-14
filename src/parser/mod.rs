@@ -2295,15 +2295,12 @@ impl<'a> Parser<'a> {
             cascade = self.parse_cascade_option();
         };
 
-        let on_cluster = self.parse_optional_on_cluster()?;
-
         Ok(Truncate {
             table_names,
             partitions,
             table,
             identity,
             cascade,
-            on_cluster,
         }
         .into())
     }
@@ -6317,7 +6314,6 @@ impl<'a> Parser<'a> {
         let or_alter = self.parse_keywords(&[Keyword::OR, Keyword::ALTER]);
         let local = self.parse_one_of_keywords(&[Keyword::LOCAL]).is_some();
         let global = self.parse_one_of_keywords(&[Keyword::GLOBAL]).is_some();
-        let transient = self.parse_one_of_keywords(&[Keyword::TRANSIENT]).is_some();
         let global: Option<bool> = if global {
             Some(true)
         } else if local {
@@ -6330,12 +6326,8 @@ impl<'a> Parser<'a> {
             .is_some();
         let create_view_params = self.parse_create_view_params()?;
         if self.parse_keyword(Keyword::TABLE) {
-            self.parse_create_table(or_replace, temporary, global, transient)
-        } else if self.peek_keyword(Keyword::MATERIALIZED)
-            || self.peek_keyword(Keyword::VIEW)
-            || self.peek_keywords(&[Keyword::SECURE, Keyword::MATERIALIZED, Keyword::VIEW])
-            || self.peek_keywords(&[Keyword::SECURE, Keyword::VIEW])
-        {
+            self.parse_create_table(or_replace, temporary, global)
+        } else if self.peek_keyword(Keyword::MATERIALIZED) || self.peek_keyword(Keyword::VIEW) {
             self.parse_create_view(or_alter, or_replace, temporary, create_view_params)
         } else if self.parse_keyword(Keyword::POLICY) {
             self.parse_create_policy()
@@ -7738,13 +7730,13 @@ impl<'a> Parser<'a> {
         let table_name = self.parse_object_name(false)?;
         let (columns, constraints) = self.parse_columns()?;
 
-        let mut file_format = None;
         let mut location = None;
 
         // Parse STORED AS, LOCATION, etc.
         loop {
             if self.parse_keywords(&[Keyword::STORED, Keyword::AS]) {
-                file_format = Some(self.parse_file_format()?);
+                // Skip the file format keyword (Hive-specific, kept for parsing compatibility)
+                let _ = self.next_token();
             } else if self.parse_keyword(Keyword::LOCATION) {
                 location = Some(self.parse_literal_string()?);
             } else {
@@ -7765,26 +7757,8 @@ impl<'a> Parser<'a> {
             .or_replace(or_replace)
             .if_not_exists(if_not_exists)
             .external(true)
-            .file_format(file_format)
             .location(location)
             .build())
-    }
-
-    pub fn parse_file_format(&self) -> Result<FileFormat, ParserError> {
-        let next_token = self.next_token();
-        match &next_token.token {
-            BorrowedToken::Word(w) => match w.keyword {
-                Keyword::AVRO => Ok(FileFormat::AVRO),
-                Keyword::JSONFILE => Ok(FileFormat::JSONFILE),
-                Keyword::ORC => Ok(FileFormat::ORC),
-                Keyword::PARQUET => Ok(FileFormat::PARQUET),
-                Keyword::RCFILE => Ok(FileFormat::RCFILE),
-                Keyword::SEQUENCEFILE => Ok(FileFormat::SEQUENCEFILE),
-                Keyword::TEXTFILE => Ok(FileFormat::TEXTFILE),
-                _ => self.expected("fileformat", next_token),
-            },
-            _ => self.expected("fileformat", next_token),
-        }
     }
 
     fn parse_analyze_format_kind(&self) -> Result<AnalyzeFormatKind, ParserError> {
@@ -7812,21 +7786,14 @@ impl<'a> Parser<'a> {
         &self,
         or_alter: bool,
         or_replace: bool,
-        temporary: bool,
+        _temporary: bool,
         create_view_params: Option<CreateViewParams>,
     ) -> Result<Statement, ParserError> {
-        let secure = self.parse_keyword(Keyword::SECURE);
+        let _secure = self.parse_keyword(Keyword::SECURE);
         let materialized = self.parse_keyword(Keyword::MATERIALIZED);
         self.expect_keyword_is(Keyword::VIEW)?;
         let allow_unquoted_hyphen = false;
-        // Tries to parse IF NOT EXISTS either before name or after name
-        // Name before IF NOT EXISTS is supported by snowflake but undocumented
-        let if_not_exists_first =
-            self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
         let name = self.parse_object_name(allow_unquoted_hyphen)?;
-        let name_before_not_exists = !if_not_exists_first
-            && self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
-        let if_not_exists = if_not_exists_first || name_before_not_exists;
         // Many dialects support `OR ALTER` right after `CREATE`, but we don't (yet).
         // ANSI SQL and Postgres support RECURSIVE here, but we don't support it either.
         let columns = self.parse_view_columns()?;
@@ -7836,20 +7803,9 @@ impl<'a> Parser<'a> {
             options = CreateTableOptions::With(with_options);
         }
 
-        let cluster_by = if self.parse_keyword(Keyword::CLUSTER) {
-            self.expect_keyword_is(Keyword::BY)?;
-            self.parse_parenthesized_column_list(Optional, false)?
-        } else {
-            vec![]
-        };
-
         self.expect_keyword_is(Keyword::AS)?;
         let query = self.parse_query()?;
         // Optional `WITH [ CASCADED | LOCAL ] CHECK OPTION` is widely supported here.
-
-        let to = None;
-        let comment = None;
-        let with_no_schema_binding = false;
 
         Ok(CreateView {
             or_alter,
@@ -7857,17 +7813,9 @@ impl<'a> Parser<'a> {
             columns,
             query,
             materialized,
-            secure,
             or_replace,
             options,
-            cluster_by,
-            comment,
-            with_no_schema_binding,
-            if_not_exists,
-            temporary,
-            to,
             params: create_view_params,
-            name_before_not_exists,
         }
         .into())
     }
@@ -9840,14 +9788,10 @@ impl<'a> Parser<'a> {
         or_replace: bool,
         temporary: bool,
         global: Option<bool>,
-        transient: bool,
     ) -> Result<Statement, ParserError> {
         let allow_unquoted_hyphen = false;
         let if_not_exists = self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
         let table_name = self.parse_object_name(allow_unquoted_hyphen)?;
-
-        // Clickhouse has `ON CLUSTER 'cluster'` syntax for DDLs
-        let on_cluster = self.parse_optional_on_cluster()?;
 
         let like = self.maybe_parse_create_table_like(allow_unquoted_hyphen)?;
 
@@ -9881,31 +9825,11 @@ impl<'a> Parser<'a> {
 
         let create_table_config = self.parse_optional_create_table_config()?;
 
-        let primary_key = None;
-
-        let order_by = if self.parse_keywords(&[Keyword::ORDER, Keyword::BY]) {
-            if self.consume_token(&BorrowedToken::LParen) {
-                let columns = if self.peek_token() != BorrowedToken::RParen {
-                    self.parse_comma_separated(|p| p.parse_expr())?
-                } else {
-                    vec![]
-                };
-                self.expect_token(&BorrowedToken::RParen)?;
-                Some(OneOrManyWithParens::Many(columns))
-            } else {
-                Some(OneOrManyWithParens::One(self.parse_expr()?))
-            }
-        } else {
-            None
-        };
-
         let on_commit = if self.parse_keywords(&[Keyword::ON, Keyword::COMMIT]) {
             Some(self.parse_create_table_on_commit()?)
         } else {
             None
         };
-
-        let strict = self.parse_keyword(Keyword::STRICT);
 
         // Parse optional `AS ( query )`
         let query = if self.parse_keyword(Keyword::AS) {
@@ -9925,22 +9849,15 @@ impl<'a> Parser<'a> {
             .constraints(constraints)
             .or_replace(or_replace)
             .if_not_exists(if_not_exists)
-            .transient(transient)
             .global(global)
             .query(query)
             .without_rowid(without_rowid)
             .like(like)
             .clone_clause(clone)
             .comment_after_column_def(comment_after_column_def)
-            .order_by(order_by)
             .on_commit(on_commit)
-            .on_cluster(on_cluster)
-            .partition_by(create_table_config.partition_by)
-            .cluster_by(create_table_config.cluster_by)
             .inherits(create_table_config.inherits)
             .table_options(create_table_config.table_options)
-            .primary_key(primary_key)
-            .strict(strict)
             .system_versioning(system_versioning)
             .build())
     }
@@ -10045,16 +9962,6 @@ impl<'a> Parser<'a> {
         if !table_properties.is_empty() {
             table_options = CreateTableOptions::TableProperties(table_properties);
         }
-        let partition_by = if dialect_of!(self is PostgreSqlDialect)
-            && self.parse_keywords(&[Keyword::PARTITION, Keyword::BY])
-        {
-            Some(Box::new(self.parse_expr()?))
-        } else {
-            None
-        };
-
-        let cluster_by = None;
-
         if table_options == CreateTableOptions::None {
             let plain_options = self.parse_plain_options()?;
             if !plain_options.is_empty() {
@@ -10063,8 +9970,6 @@ impl<'a> Parser<'a> {
         };
 
         Ok(CreateTableConfiguration {
-            partition_by,
-            cluster_by,
             inherits,
             table_options,
         })
@@ -10435,11 +10340,7 @@ impl<'a> Parser<'a> {
 
     pub fn parse_column_def(&self) -> Result<ColumnDef, ParserError> {
         let col_name = self.parse_identifier()?;
-        let data_type = if self.is_column_type_sqlite_unspecified() {
-            DataType::Unspecified
-        } else {
-            self.parse_data_type()?
-        };
+        let data_type = self.parse_data_type()?;
         let mut options = Vec::with_capacity(4);
         loop {
             if self.parse_keyword(Keyword::CONSTRAINT) {
@@ -10463,10 +10364,6 @@ impl<'a> Parser<'a> {
             data_type,
             options,
         })
-    }
-
-    fn is_column_type_sqlite_unspecified(&self) -> bool {
-        false
     }
 
     pub fn parse_optional_column_option(&self) -> Result<Option<ColumnOption>, ParserError> {
@@ -11711,11 +11608,7 @@ impl<'a> Parser<'a> {
             }
             Keyword::VIEW => self.parse_alter_view(),
             Keyword::TYPE => self.parse_alter_type(),
-            Keyword::TABLE => self.parse_alter_table(false),
-            Keyword::ICEBERG => {
-                self.expect_keyword(Keyword::TABLE)?;
-                self.parse_alter_table(true)
-            }
+            Keyword::TABLE => self.parse_alter_table(),
             Keyword::INDEX => {
                 let index_name = self.parse_object_name(false)?;
                 let operation = if self.parse_keyword(Keyword::RENAME) {
@@ -11833,11 +11726,10 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse a [Statement::AlterTable]
-    pub fn parse_alter_table(&self, iceberg: bool) -> Result<Statement, ParserError> {
+    pub fn parse_alter_table(&self) -> Result<Statement, ParserError> {
         let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
         let only = self.parse_keyword(Keyword::ONLY); // [ ONLY ]
         let table_name = self.parse_object_name(false)?;
-        let on_cluster = self.parse_optional_on_cluster()?;
         let operations = self.parse_comma_separated(Parser::parse_alter_table_operation)?;
 
         let end_token = if self.peek_token_ref().token == BorrowedToken::SemiColon {
@@ -11851,12 +11743,6 @@ impl<'a> Parser<'a> {
             if_exists,
             only,
             operations,
-            on_cluster,
-            table_type: if iceberg {
-                Some(AlterTableType::Iceberg)
-            } else {
-                None
-            },
             end_token: AttachedToken(end_token.to_static()),
         }
         .into())
@@ -12759,13 +12645,7 @@ impl<'a> Parser<'a> {
         self.expect_token(&BorrowedToken::LParen)?;
         let values = self.parse_comma_separated(|parser| {
             let name = parser.parse_literal_string()?;
-            let e = if parser.consume_token(&BorrowedToken::Eq) {
-                let value = parser.parse_number()?;
-                EnumMember::NamedValue(name, value)
-            } else {
-                EnumMember::Name(name)
-            };
-            Ok(e)
+            Ok(EnumMember::Name(name))
         })?;
         self.expect_token(&BorrowedToken::RParen)?;
 
@@ -12899,9 +12779,6 @@ impl<'a> Parser<'a> {
                         Ok(DataType::Int8(optional_precision?))
                     }
                 }
-                Keyword::INT16 => Ok(DataType::Int16),
-                Keyword::INT32 => Ok(DataType::Int32),
-                Keyword::INT64 => Ok(DataType::Int64),
                 Keyword::INTEGER => {
                     let optional_precision = self.parse_optional_precision();
                     if self.parse_keyword(Keyword::UNSIGNED) {
@@ -12924,11 +12801,6 @@ impl<'a> Parser<'a> {
                         Ok(DataType::BigInt(optional_precision?))
                     }
                 }
-                Keyword::HUGEINT => Ok(DataType::HugeInt),
-                Keyword::UBIGINT => Ok(DataType::UBigInt),
-                Keyword::UHUGEINT => Ok(DataType::UHugeInt),
-                Keyword::USMALLINT => Ok(DataType::USmallInt),
-                Keyword::UTINYINT => Ok(DataType::UTinyInt),
                 Keyword::VARCHAR => Ok(DataType::Varchar(self.parse_optional_character_length()?)),
                 Keyword::NVARCHAR => {
                     Ok(DataType::Nvarchar(self.parse_optional_character_length()?))
@@ -13063,8 +12935,6 @@ impl<'a> Parser<'a> {
                     }
                 }
                 Keyword::ENUM => Ok(DataType::Enum(self.parse_enum_values()?, None)),
-                Keyword::ENUM8 => Ok(DataType::Enum(self.parse_enum_values()?, Some(8))),
-                Keyword::ENUM16 => Ok(DataType::Enum(self.parse_enum_values()?, Some(16))),
                 Keyword::SET => Ok(DataType::Set(self.parse_string_values()?)),
                 Keyword::ARRAY => {
                     self.expect_token(&BorrowedToken::Lt)?;
@@ -17423,71 +17293,52 @@ impl<'a> Parser<'a> {
         let overwrite = self.parse_keyword(Keyword::OVERWRITE);
         let into = self.parse_keyword(Keyword::INTO);
 
-        let local = self.parse_keyword(Keyword::LOCAL);
+        // Optional TABLE keyword for INSERT statements
+        let table = self.parse_keyword(Keyword::TABLE);
+        let table_object = self.parse_table_object()?;
 
-        if self.parse_keyword(Keyword::DIRECTORY) {
-            let path = self.parse_literal_string()?;
-            let file_format = if self.parse_keywords(&[Keyword::STORED, Keyword::AS]) {
-                Some(self.parse_file_format()?)
+        let table_alias =
+            if dialect_of!(self is PostgreSqlDialect) && self.parse_keyword(Keyword::AS) {
+                Some(self.parse_identifier()?)
             } else {
                 None
             };
-            let source = self.parse_query()?;
-            Ok(Statement::Directory {
-                local,
-                path,
-                overwrite,
-                file_format,
-                source,
-            })
+
+        let is_mysql = dialect_of!(self is MySqlDialect);
+
+        let (columns, partitioned, after_columns, source, assignments, overriding) = if self
+            .parse_keywords(&[Keyword::DEFAULT, Keyword::VALUES])
+        {
+            (vec![], None, vec![], None, vec![], None)
         } else {
-            // Optional TABLE keyword for INSERT statements
-            let table = self.parse_keyword(Keyword::TABLE);
-            let table_object = self.parse_table_object()?;
+            let (columns, partitioned, after_columns) = if !self.peek_subquery_start() {
+                let columns = self.parse_parenthesized_column_list(Optional, is_mysql)?;
 
-            let table_alias =
-                if dialect_of!(self is PostgreSqlDialect) && self.parse_keyword(Keyword::AS) {
-                    Some(self.parse_identifier()?)
-                } else {
-                    None
-                };
-
-            let is_mysql = dialect_of!(self is MySqlDialect);
-
-            let (columns, partitioned, after_columns, source, assignments, overriding) = if self
-                .parse_keywords(&[Keyword::DEFAULT, Keyword::VALUES])
-            {
-                (vec![], None, vec![], None, vec![], None)
+                let partitioned = self.parse_insert_partition()?;
+                // Reserved for potential future support of columns after partitions
+                let after_columns = vec![];
+                (columns, partitioned, after_columns)
             } else {
-                let (columns, partitioned, after_columns) = if !self.peek_subquery_start() {
-                    let columns = self.parse_parenthesized_column_list(Optional, is_mysql)?;
+                Default::default()
+            };
 
-                    let partitioned = self.parse_insert_partition()?;
-                    // Reserved for potential future support of columns after partitions
-                    let after_columns = vec![];
-                    (columns, partitioned, after_columns)
+            let overriding = if self.parse_keyword(Keyword::OVERRIDING) {
+                if self.parse_keywords(&[Keyword::SYSTEM, Keyword::VALUE]) {
+                    Some(crate::ast::OverridingKind::SystemValue)
+                } else if self.parse_keywords(&[Keyword::USER, Keyword::VALUE]) {
+                    Some(crate::ast::OverridingKind::UserValue)
                 } else {
-                    Default::default()
-                };
+                    return self.expected(
+                        "SYSTEM VALUE or USER VALUE after OVERRIDING",
+                        self.peek_token(),
+                    );
+                }
+            } else {
+                None
+            };
 
-                let overriding = if self.parse_keyword(Keyword::OVERRIDING) {
-                    if self.parse_keywords(&[Keyword::SYSTEM, Keyword::VALUE]) {
-                        Some(crate::ast::OverridingKind::SystemValue)
-                    } else if self.parse_keywords(&[Keyword::USER, Keyword::VALUE]) {
-                        Some(crate::ast::OverridingKind::UserValue)
-                    } else {
-                        return self.expected(
-                            "SYSTEM VALUE or USER VALUE after OVERRIDING",
-                            self.peek_token(),
-                        );
-                    }
-                } else {
-                    None
-                };
-
-                let (source, assignments) = if self.peek_keyword(Keyword::FORMAT)
-                    || self.peek_keyword(Keyword::SETTINGS)
-                {
+            let (source, assignments) =
+                if self.peek_keyword(Keyword::FORMAT) || self.peek_keyword(Keyword::SETTINGS) {
                     (None, vec![])
                 } else if self.features.supports_insert_set && self.parse_keyword(Keyword::SET) {
                     (None, self.parse_comma_separated(Parser::parse_assignment)?)
@@ -17495,103 +17346,101 @@ impl<'a> Parser<'a> {
                     (Some(self.parse_query()?), vec![])
                 };
 
-                (
-                    columns,
-                    partitioned,
-                    after_columns,
-                    source,
-                    assignments,
-                    overriding,
-                )
-            };
-
-            let insert_alias = if dialect_of!(self is MySqlDialect | PostgreSqlDialect)
-                && self.parse_keyword(Keyword::AS)
-            {
-                let row_alias = self.parse_object_name(false)?;
-                let col_aliases = Some(self.parse_parenthesized_column_list(Optional, false)?);
-                Some(InsertAliases {
-                    row_alias,
-                    col_aliases,
-                })
-            } else {
-                None
-            };
-
-            let on = if self.parse_keyword(Keyword::ON) {
-                if self.parse_keyword(Keyword::CONFLICT) {
-                    let conflict_target =
-                        if self.parse_keywords(&[Keyword::ON, Keyword::CONSTRAINT]) {
-                            Some(ConflictTarget::OnConstraint(self.parse_object_name(false)?))
-                        } else if self.peek_token() == BorrowedToken::LParen {
-                            Some(ConflictTarget::Columns(
-                                self.parse_parenthesized_column_list(IsOptional::Mandatory, false)?,
-                            ))
-                        } else {
-                            None
-                        };
-
-                    self.expect_keyword_is(Keyword::DO)?;
-                    let action = if self.parse_keyword(Keyword::NOTHING) {
-                        OnConflictAction::DoNothing
-                    } else {
-                        self.expect_keyword_is(Keyword::UPDATE)?;
-                        self.expect_keyword_is(Keyword::SET)?;
-                        let assignments = self.parse_comma_separated(Parser::parse_assignment)?;
-                        let selection = if self.parse_keyword(Keyword::WHERE) {
-                            Some(self.parse_expr()?)
-                        } else {
-                            None
-                        };
-                        OnConflictAction::DoUpdate(DoUpdate {
-                            assignments,
-                            selection,
-                        })
-                    };
-
-                    Some(OnInsert::OnConflict(OnConflict {
-                        conflict_target,
-                        action,
-                    }))
-                } else {
-                    self.expect_keyword_is(Keyword::DUPLICATE)?;
-                    self.expect_keyword_is(Keyword::KEY)?;
-                    self.expect_keyword_is(Keyword::UPDATE)?;
-                    let l = self.parse_comma_separated(Parser::parse_assignment)?;
-
-                    Some(OnInsert::DuplicateKeyUpdate(l))
-                }
-            } else {
-                None
-            };
-
-            let returning = if self.parse_keyword(Keyword::RETURNING) {
-                Some(self.parse_comma_separated(Parser::parse_select_item)?)
-            } else {
-                None
-            };
-
-            Ok(Statement::Insert(Insert {
-                insert_token: insert_token.to_static().into(),
-                table: table_object,
-                table_alias,
-                ignore,
-                into,
-                overwrite,
-                partitioned,
+            (
                 columns,
-                overriding,
+                partitioned,
                 after_columns,
                 source,
                 assignments,
-                has_table_keyword: table,
-                on,
-                returning,
-                replace_into,
-                priority,
-                insert_alias,
-            }))
-        }
+                overriding,
+            )
+        };
+
+        let insert_alias = if dialect_of!(self is MySqlDialect | PostgreSqlDialect)
+            && self.parse_keyword(Keyword::AS)
+        {
+            let row_alias = self.parse_object_name(false)?;
+            let col_aliases = Some(self.parse_parenthesized_column_list(Optional, false)?);
+            Some(InsertAliases {
+                row_alias,
+                col_aliases,
+            })
+        } else {
+            None
+        };
+
+        let on = if self.parse_keyword(Keyword::ON) {
+            if self.parse_keyword(Keyword::CONFLICT) {
+                let conflict_target = if self.parse_keywords(&[Keyword::ON, Keyword::CONSTRAINT]) {
+                    Some(ConflictTarget::OnConstraint(self.parse_object_name(false)?))
+                } else if self.peek_token() == BorrowedToken::LParen {
+                    Some(ConflictTarget::Columns(
+                        self.parse_parenthesized_column_list(IsOptional::Mandatory, false)?,
+                    ))
+                } else {
+                    None
+                };
+
+                self.expect_keyword_is(Keyword::DO)?;
+                let action = if self.parse_keyword(Keyword::NOTHING) {
+                    OnConflictAction::DoNothing
+                } else {
+                    self.expect_keyword_is(Keyword::UPDATE)?;
+                    self.expect_keyword_is(Keyword::SET)?;
+                    let assignments = self.parse_comma_separated(Parser::parse_assignment)?;
+                    let selection = if self.parse_keyword(Keyword::WHERE) {
+                        Some(self.parse_expr()?)
+                    } else {
+                        None
+                    };
+                    OnConflictAction::DoUpdate(DoUpdate {
+                        assignments,
+                        selection,
+                    })
+                };
+
+                Some(OnInsert::OnConflict(OnConflict {
+                    conflict_target,
+                    action,
+                }))
+            } else {
+                self.expect_keyword_is(Keyword::DUPLICATE)?;
+                self.expect_keyword_is(Keyword::KEY)?;
+                self.expect_keyword_is(Keyword::UPDATE)?;
+                let l = self.parse_comma_separated(Parser::parse_assignment)?;
+
+                Some(OnInsert::DuplicateKeyUpdate(l))
+            }
+        } else {
+            None
+        };
+
+        let returning = if self.parse_keyword(Keyword::RETURNING) {
+            Some(self.parse_comma_separated(Parser::parse_select_item)?)
+        } else {
+            None
+        };
+
+        Ok(Statement::Insert(Insert {
+            insert_token: insert_token.to_static().into(),
+            table: table_object,
+            table_alias,
+            ignore,
+            into,
+            overwrite,
+            partitioned,
+            columns,
+            overriding,
+            after_columns,
+            source,
+            assignments,
+            has_table_keyword: table,
+            on,
+            returning,
+            replace_into,
+            priority,
+            insert_alias,
+        }))
     }
 
     /// Returns true if the immediate tokens look like the
@@ -17641,21 +17490,14 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
-        let from_before_set = if self.parse_keyword(Keyword::FROM) {
-            Some(UpdateTableFromKind::BeforeSet(
-                self.parse_table_with_joins()?,
-            ))
-        } else {
-            None
-        };
         self.expect_keyword(Keyword::SET)?;
         let assignments = self.parse_comma_separated(Parser::parse_assignment)?;
-        let from = if from_before_set.is_none() && self.parse_keyword(Keyword::FROM) {
+        let from = if self.parse_keyword(Keyword::FROM) {
             Some(UpdateTableFromKind::AfterSet(
                 self.parse_table_with_joins()?,
             ))
         } else {
-            from_before_set
+            None
         };
         let selection = if self.parse_keyword(Keyword::WHERE) {
             Some(self.parse_expr()?)

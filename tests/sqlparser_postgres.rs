@@ -469,7 +469,6 @@ fn parse_create_table_with_defaults() {
             table_options,
             if_not_exists: false,
             external: false,
-            file_format: None,
             location: None,
             ..
         }) => {
@@ -5166,7 +5165,6 @@ fn parse_truncate() {
             table: false,
             identity: None,
             cascade: None,
-            on_cluster: None,
         }),
         truncate
     );
@@ -5190,7 +5188,6 @@ fn parse_truncate_with_options() {
             table: true,
             identity: Some(TruncateIdentityOption::Restart),
             cascade: Some(CascadeOption::Cascade),
-            on_cluster: None,
         }),
         truncate
     );
@@ -5223,7 +5220,6 @@ fn parse_truncate_with_table_list() {
             table: true,
             identity: Some(TruncateIdentityOption::Restart),
             cascade: Some(CascadeOption::Cascade),
-            on_cluster: None,
         }),
         truncate
     );
@@ -5255,7 +5251,6 @@ fn parse_create_table_with_alias() {
             constraints,
             if_not_exists: false,
             external: false,
-            file_format: None,
             location: None,
             ..
         }) => {
@@ -5301,49 +5296,7 @@ fn parse_create_table_with_alias() {
     }
 }
 
-#[test]
-fn parse_create_table_with_partition_by() {
-    let sql = "CREATE TABLE t1 (a INT, b TEXT) PARTITION BY RANGE(a)";
-    match pg_and_generic()
-        .one_statement_parses_to(sql, "CREATE TABLE t1 (a INT, b TEXT) PARTITION BY range(a)")
-    {
-        Statement::CreateTable(create_table) => {
-            assert_eq!("t1", create_table.name.to_string());
-            assert_eq!(
-                vec![
-                    ColumnDef {
-                        name: "a".into(),
-                        data_type: DataType::Int(None),
-                        options: vec![]
-                    },
-                    ColumnDef {
-                        name: "b".into(),
-                        data_type: DataType::Text,
-                        options: vec![]
-                    }
-                ],
-                create_table.columns
-            );
-            match *create_table.partition_by.unwrap() {
-                Expr::Function(f) => {
-                    assert_eq!("range", f.name.to_string());
-                    assert_eq!(
-                        FunctionArguments::List(FunctionArgumentList {
-                            duplicate_treatment: None,
-                            clauses: vec![],
-                            args: vec![FunctionArg::Unnamed(FunctionArgExpr::Expr(
-                                Expr::Identifier(Ident::new("a"))
-                            ))],
-                        }),
-                        f.args
-                    );
-                }
-                _ => unreachable!(),
-            }
-        }
-        _ => unreachable!(),
-    }
-}
+// PARTITION BY on CREATE TABLE removed (was BigQuery/PG shared field)
 
 #[test]
 fn parse_join_constraint_unnest_alias() {

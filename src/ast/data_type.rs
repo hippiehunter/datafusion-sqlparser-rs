@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "visitor")]
 use sqlparser_derive::{Visit, VisitMut};
 
-use crate::ast::{display_comma_separated, Expr, Ident, ObjectName, StructField};
+use crate::ast::{display_comma_separated, Ident, ObjectName, StructField};
 
 use super::{value::escape_single_quote_string, ColumnDef};
 
@@ -34,10 +34,6 @@ use super::{value::escape_single_quote_string, ColumnDef};
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub enum EnumMember {
     Name(String),
-    /// ClickHouse allows to specify an integer value for each enum value.
-    ///
-    /// [ClickHouse](https://clickhouse.com/docs/en/sql-reference/data-types/enum)
-    NamedValue(String, Expr),
 }
 
 /// SQL data types
@@ -154,8 +150,6 @@ pub enum DataType {
     /// Unsigned tiny integer with optional display width,
     /// e.g. TINYINT UNSIGNED or TINYINT(3) UNSIGNED.
     TinyIntUnsigned(Option<u64>),
-    /// Unsigned tiny integer, e.g. UTINYINT
-    UTinyInt,
     /// Int2 is an alias for SmallInt in [PostgreSQL].
     /// Note: Int2 means 2 bytes in PostgreSQL (not 2 bits).
     /// Int2 with optional display width, e.g. INT2 or INT2(5).
@@ -169,8 +163,6 @@ pub enum DataType {
     /// Unsigned small integer with optional display width,
     /// e.g. SMALLINT UNSIGNED or SMALLINT(5) UNSIGNED.
     SmallIntUnsigned(Option<u64>),
-    /// Unsigned small integer, e.g. USMALLINT.
-    USmallInt,
     /// MySQL medium integer ([1]) with optional display width,
     /// e.g. MEDIUMINT or MEDIUMINT(5).
     ///
@@ -196,21 +188,6 @@ pub enum DataType {
     /// [PostgreSQL]: https://www.postgresql.org/docs/current/datatype.html
     /// [ClickHouse]: https://clickhouse.com/docs/en/sql-reference/data-types/int-uint
     Int8(Option<u64>),
-    /// Integer type in [ClickHouse].
-    /// Note: Int16 means 16 bits in [ClickHouse].
-    ///
-    /// [ClickHouse]: https://clickhouse.com/docs/en/sql-reference/data-types/int-uint
-    Int16,
-    /// Integer type in [ClickHouse].
-    /// Note: Int32 means 32 bits in [ClickHouse].
-    ///
-    /// [ClickHouse]: https://clickhouse.com/docs/en/sql-reference/data-types/int-uint
-    Int32,
-    /// Integer type in [BigQuery], [ClickHouse].
-    ///
-    /// [BigQuery]: https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#integer_types
-    /// [ClickHouse]: https://clickhouse.com/docs/en/sql-reference/data-types/int-uint
-    Int64,
     /// Integer with optional display width, e.g. INTEGER or INTEGER(11).
     Integer(Option<u64>),
     /// Unsigned int with optional display width, e.g. INT UNSIGNED or INT(11) UNSIGNED.
@@ -219,16 +196,10 @@ pub enum DataType {
     Int4Unsigned(Option<u64>),
     /// Unsigned integer with optional display width, e.g. INTEGER UNSIGNED or INTEGER(11) UNSIGNED.
     IntegerUnsigned(Option<u64>),
-    /// 128-bit integer type, e.g. HUGEINT.
-    HugeInt,
-    /// Unsigned 128-bit integer type, e.g. UHUGEINT.
-    UHugeInt,
     /// Big integer with optional display width, e.g. BIGINT or BIGINT(20).
     BigInt(Option<u64>),
     /// Unsigned big integer with optional display width, e.g. BIGINT UNSIGNED or BIGINT(20) UNSIGNED.
     BigIntUnsigned(Option<u64>),
-    /// Unsigned big integer, e.g. UBIGINT.
-    UBigInt,
     /// Unsigned Int8 with optional display width, e.g. INT8 UNSIGNED or INT8(11) UNSIGNED.
     Int8Unsigned(Option<u64>),
     /// Signed integer as used in [MySQL CAST] target types, without optional `INTEGER` suffix,
@@ -411,14 +382,6 @@ pub enum DataType {
     Set(Vec<String>),
     /// Struct type
     Struct(Vec<StructField>, StructBracketKind),
-    /// Nullable - special marker NULL represents in ClickHouse as a data type.
-    ///
-    /// [ClickHouse]: https://clickhouse.com/docs/en/sql-reference/data-types/nullable
-    Nullable(Box<DataType>),
-    /// No type specified - only used with
-    /// [`SQLiteDialect`](crate::dialect::SQLiteDialect), from statements such
-    /// as `CREATE TABLE t1 (a)`.
-    Unspecified,
     /// Trigger data type, returned by functions associated with triggers, see [PostgreSQL].
     ///
     /// [PostgreSQL]: https://www.postgresql.org/docs/current/plpgsql-trigger.html
@@ -513,18 +476,6 @@ impl fmt::Display for DataType {
             DataType::Int8(zerofill) => {
                 format_type_with_optional_length(f, "INT8", zerofill, false)
             }
-            DataType::Int16 => {
-                write!(f, "Int16")
-            }
-            DataType::Int32 => {
-                write!(f, "Int32")
-            }
-            DataType::Int64 => {
-                write!(f, "INT64")
-            }
-            DataType::HugeInt => {
-                write!(f, "HUGEINT")
-            }
             DataType::Int4Unsigned(zerofill) => {
                 format_type_with_optional_length(f, "INT4", zerofill, true)
             }
@@ -542,18 +493,6 @@ impl fmt::Display for DataType {
             }
             DataType::Int8Unsigned(zerofill) => {
                 format_type_with_optional_length(f, "INT8", zerofill, true)
-            }
-            DataType::UTinyInt => {
-                write!(f, "UTINYINT")
-            }
-            DataType::USmallInt => {
-                write!(f, "USMALLINT")
-            }
-            DataType::UBigInt => {
-                write!(f, "UBIGINT")
-            }
-            DataType::UHugeInt => {
-                write!(f, "UHUGEINT")
             }
             DataType::Signed => {
                 write!(f, "SIGNED")
@@ -651,9 +590,6 @@ impl fmt::Display for DataType {
                         EnumMember::Name(name) => {
                             write!(f, "'{}'", escape_single_quote_string(name))?
                         }
-                        EnumMember::NamedValue(name, value) => {
-                            write!(f, "'{}' = {}", escape_single_quote_string(name), value)?
-                        }
                     }
                 }
                 write!(f, ")")
@@ -682,11 +618,6 @@ impl fmt::Display for DataType {
                     write!(f, "STRUCT")
                 }
             }
-            // ClickHouse
-            DataType::Nullable(data_type) => {
-                write!(f, "Nullable({data_type})")
-            }
-            DataType::Unspecified => Ok(()),
             DataType::Trigger => write!(f, "TRIGGER"),
             DataType::Table(fields) => match fields {
                 Some(fields) => {
@@ -1000,7 +931,7 @@ pub enum ArrayElemTypeDef {
     AngleBracket(Box<DataType>),
     /// `INT[]` or `INT[2]`
     SquareBracket(Box<DataType>, Option<u64>),
-    /// `Array(Int64)`
+    /// `Array(INT)`
     Parenthesis(Box<DataType>),
 }
 
