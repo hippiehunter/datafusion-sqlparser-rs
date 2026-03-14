@@ -1026,7 +1026,7 @@ impl<'a> Parser<'a> {
                 Keyword::LISTEN if self.features.supports_listen_notify => self.parse_listen(),
                 Keyword::UNLISTEN if self.features.supports_listen_notify => self.parse_unlisten(),
                 Keyword::NOTIFY if self.features.supports_listen_notify => self.parse_notify(),
-                // `PRAGMA` is sqlite specific https://www.sqlite.org/pragma.html
+                // `PRAGMA` statement
                 Keyword::PRAGMA => self.parse_pragma(),
                 Keyword::UNLOAD => {
                     self.prev_token();
@@ -1042,7 +1042,7 @@ impl<'a> Parser<'a> {
                         self.expected("FOREIGN SCHEMA after IMPORT", self.peek_token())
                     }
                 }
-                // `COMMENT` is snowflake specific https://docs.snowflake.com/en/sql-reference/sql/comment
+                // `COMMENT` statement
                 Keyword::COMMENT if self.features.supports_comment_on => self.parse_comment(),
                 Keyword::PRINT => self.parse_print(),
                 Keyword::RETURN => self.parse_return(),
@@ -2412,7 +2412,7 @@ impl<'a> Parser<'a> {
                                 id_parts.push(self.word_to_ident(w, next_token.span))
                             }
                             BorrowedToken::SingleQuotedString(s) => {
-                                // SQLite has single-quoted identifiers
+                                // single-quoted identifiers
                                 id_parts.push(Ident::with_quote('\'', s))
                             }
                             BorrowedToken::Mul => {
@@ -2845,7 +2845,7 @@ impl<'a> Parser<'a> {
         let expr = match &next_token.token {
             BorrowedToken::Word(w) => {
                 // The word we consumed may fall into one of two cases: it has a special meaning, or not.
-                // For example, in Snowflake, the word `interval` may have two meanings depending on the context:
+                // For example, the word `interval` may have two meanings depending on the context:
                 // `SELECT CURRENT_DATE() + INTERVAL '1 DAY', MAX(interval) FROM tbl;`
                 //                          ^^^^^^^^^^^^^^^^      ^^^^^^^^
                 //                         interval expression   identifier
@@ -3389,8 +3389,6 @@ impl<'a> Parser<'a> {
     fn parse_function_call(&self, name: ObjectName) -> Result<Function, ParserError> {
         self.expect_token(&BorrowedToken::LParen)?;
 
-        // Snowflake-specific subquery handling removed (dialect no longer supported)
-
         let args = self.parse_function_argument_list()?;
         let parameters = FunctionArguments::None;
 
@@ -3919,7 +3917,7 @@ impl<'a> Parser<'a> {
         })?;
         match position_expr {
             Some(expr) => Ok(expr),
-            // Snowflake supports `position` as an ordinary function call
+            // Some dialects support `position` as an ordinary function call
             // without the special `IN` syntax.
             None => self.parse_function(ObjectName::from(vec![ident])),
         }
@@ -3983,7 +3981,7 @@ impl<'a> Parser<'a> {
     /// ```sql
     /// TRIM ([WHERE] ['text' FROM] 'text')
     /// TRIM ('text')
-    /// TRIM(<expr>, [, characters]) -- only Snowflake or BigQuery
+    /// TRIM(<expr>, [, characters])
     /// ```
     pub fn parse_trim_expr(&self) -> Result<Expr, ParserError> {
         self.expect_token(&BorrowedToken::LParen)?;
@@ -4516,7 +4514,7 @@ impl<'a> Parser<'a> {
     ///   4. INTERVAL '1:1:1.1' HOUR (5) TO SECOND (5)
     ///   5. INTERVAL '1.1' SECOND (2, 2)
     ///   6. INTERVAL '1:1' HOUR (5) TO MINUTE (5)
-    ///   7. (MySql & BigQuery only): INTERVAL 1 DAY
+    ///   7. (MySql only): INTERVAL 1 DAY
     /// ```
     ///
     /// Note that we do not currently attempt to parse the quoted value.
@@ -4731,8 +4729,6 @@ impl<'a> Parser<'a> {
     /// [field_name] field_type
     /// ```
     ///
-    /// [struct]: https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#declaring_a_struct_type
-    /// [tuple]: https://clickhouse.com/docs/en/sql-reference/data-types/tuple
     fn parse_struct_field_def(&self) -> Result<(StructField, MatchedTrailingBracket), ParserError> {
         // Look beyond the next item to infer whether both field name
         // and type are specified.
@@ -5409,7 +5405,6 @@ impl<'a> Parser<'a> {
                 value,
                 // path segments in SF dot notation can be unquoted or double-quoted
                 quote_style: quote_style @ (Some('"') | None),
-                // some experimentation suggests that snowflake permits
                 // any keyword here unquoted.
                 keyword: _,
             }) => Ok(JsonPathElem::Dot {
@@ -5417,9 +5412,7 @@ impl<'a> Parser<'a> {
                 quoted: quote_style.is_some(),
             }),
 
-            // This token should never be generated on snowflake or generic
-            // dialects, but we handle it just in case this is used on future
-            // dialects.
+            // Handle double-quoted string as a dot-notation key.
             BorrowedToken::DoubleQuotedString(key) => Ok(JsonPathElem::Dot { key, quoted: true }),
 
             _ => self.expected("variant object key name", token),
@@ -5464,8 +5457,7 @@ impl<'a> Parser<'a> {
 
     /// Parses the parens following the `[ NOT ] IN` operator.
     pub fn parse_in(&self, expr: Expr, negated: bool) -> Result<Expr, ParserError> {
-        // BigQuery allows `IN UNNEST(array_expression)`
-        // https://cloud.google.com/bigquery/docs/reference/standard-sql/operators#in_operators
+        // Allow `IN UNNEST(array_expression)`
         if self.parse_keyword(Keyword::UNNEST) {
             self.expect_token(&BorrowedToken::LParen)?;
             let array_expr = self.parse_expr()?;
@@ -6018,10 +6010,8 @@ impl<'a> Parser<'a> {
     /// Parse a comma-separated list of 1+ SelectItem
     pub fn parse_projection(&self) -> Result<Vec<SelectItem>, ParserError> {
         let _guard = self.enter_context(ParseContext::SelectClause);
-        // BigQuery and Snowflake allow trailing commas, but only in project lists
+        // Some dialects allow trailing commas, but only in project lists
         // e.g. `SELECT 1, 2, FROM t`
-        // https://cloud.google.com/bigquery/docs/reference/standard-sql/lexical#trailing_commas
-        // https://docs.snowflake.com/en/release-notes/2024/8_11#select-supports-trailing-commas
 
         let trailing_commas =
             self.options.trailing_commas | self.features.supports_projection_trailing_commas;
@@ -7735,7 +7725,7 @@ impl<'a> Parser<'a> {
         // Parse STORED AS, LOCATION, etc.
         loop {
             if self.parse_keywords(&[Keyword::STORED, Keyword::AS]) {
-                // Skip the file format keyword (Hive-specific, kept for parsing compatibility)
+                // Skip the file format keyword (kept for parsing compatibility)
                 let _ = self.next_token();
             } else if self.parse_keyword(Keyword::LOCATION) {
                 location = Some(self.parse_literal_string()?);
@@ -7795,7 +7785,7 @@ impl<'a> Parser<'a> {
         let allow_unquoted_hyphen = false;
         let name = self.parse_object_name(allow_unquoted_hyphen)?;
         // Many dialects support `OR ALTER` right after `CREATE`, but we don't (yet).
-        // ANSI SQL and Postgres support RECURSIVE here, but we don't support it either.
+        // The SQL standard and Postgres support RECURSIVE here, but we don't support it either.
         let columns = self.parse_view_columns()?;
         let mut options = CreateTableOptions::None;
         let with_options = self.parse_options(Keyword::WITH)?;
@@ -9307,13 +9297,12 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// Parse a [BigQuery] `DECLARE` statement.
+    /// Parse a `DECLARE` statement with simplified syntax.
     ///
     /// Syntax:
     /// ```text
     /// DECLARE variable_name[, ...] [{ <variable_type> | <DEFAULT expression> }];
     /// ```
-    /// [BigQuery]: https://cloud.google.com/bigquery/docs/reference/standard-sql/procedural-language#declare
     pub fn parse_big_query_declare(&self) -> Result<Statement, ParserError> {
         let declare_token = self.attached_token_from_current();
         let names = self.parse_comma_separated(Parser::parse_identifier)?;
@@ -9805,7 +9794,7 @@ impl<'a> Parser<'a> {
         let (columns, constraints) = self.parse_columns()?;
         let comment_after_column_def = None;
 
-        // SQLite supports `WITHOUT ROWID` at the end of `CREATE TABLE`
+        // Parse optional `WITHOUT ROWID` at the end of `CREATE TABLE`
         let without_rowid = self.parse_keywords(&[Keyword::WITHOUT, Keyword::ROWID]);
 
         // Parse optional WITH SYSTEM VERSIONING (SQL:2016 Temporal) BEFORE parse_optional_create_table_config()
@@ -9940,7 +9929,6 @@ impl<'a> Parser<'a> {
 
     /// Parse configuration like inheritance, partitioning, clustering information during the table creation.
     ///
-    /// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#syntax_2)
     /// [PostgreSQL](https://www.postgresql.org/docs/current/ddl-partitioning.html)
     /// [MySql](https://dev.mysql.com/doc/refman/8.4/en/create-table.html)
     fn parse_optional_create_table_config(&self) -> Result<CreateTableConfiguration, ParserError> {
@@ -10004,7 +9992,6 @@ impl<'a> Parser<'a> {
         }
 
         // <https://dev.mysql.com/doc/refman/8.4/en/create-table.html>
-        // <https://clickhouse.com/docs/sql-reference/statements/create/table>
         if self.parse_keywords(&[Keyword::ENGINE]) {
             let _ = self.consume_token(&BorrowedToken::Eq);
             let value = self.next_token();
@@ -10494,14 +10481,14 @@ impl<'a> Parser<'a> {
         } else if self.parse_keyword(Keyword::ASC)
             && self.features.supports_asc_desc_in_column_definition
         {
-            // Support ASC for SQLite
+            // Support ASC in column definition
             Ok(Some(ColumnOption::DialectSpecific(vec![
                 BorrowedToken::make_keyword("ASC"),
             ])))
         } else if self.parse_keyword(Keyword::DESC)
             && self.features.supports_asc_desc_in_column_definition
         {
-            // Support DESC for SQLite
+            // Support DESC in column definition
             Ok(Some(ColumnOption::DialectSpecific(vec![
                 BorrowedToken::make_keyword("DESC"),
             ])))
@@ -12432,8 +12419,8 @@ impl<'a> Parser<'a> {
             tok @ BorrowedToken::Colon | tok @ BorrowedToken::AtSign => {
                 // 1. Not calling self.parse_identifier(false)?
                 //    because only in placeholder we want to check
-                //    numbers as idfentifies.  This because snowflake
-                //    allows numbers as placeholders
+                //    numbers as identifiers, because some dialects
+                //    allow numbers as placeholders
                 // 2. Not calling self.next_token() to enforce `tok`
                 //    be followed immediately by a word/number, ie.
                 //    without any whitespace in between
@@ -13356,7 +13343,7 @@ impl<'a> Parser<'a> {
     ///
     /// The `in_table_clause` parameter indicates whether the object name is a table in a FROM, JOIN,
     /// or similar table clause. Currently, this is used only to support unquoted hyphenated identifiers
-    /// in this context on BigQuery.
+    /// in this context for some dialects.
     pub fn parse_object_name(&self, in_table_clause: bool) -> Result<ObjectName, ParserError> {
         self.parse_object_name_inner(in_table_clause, false)
     }
@@ -13366,7 +13353,7 @@ impl<'a> Parser<'a> {
     ///
     /// The `in_table_clause` parameter indicates whether the object name is a table in a FROM, JOIN,
     /// or similar table clause. Currently, this is used only to support unquoted hyphenated identifiers
-    /// in this context on BigQuery.
+    /// in this context for some dialects.
     ///
     /// The `allow_wildcards` parameter indicates whether to allow for wildcards in the object name
     /// e.g. *, *.*, `foo`.*, or "foo"."bar"
@@ -13849,13 +13836,11 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Parse datetime64 [1]
+    /// Parse datetime64
     /// Syntax
     /// ```sql
     /// DateTime64(precision[, timezone])
     /// ```
-    ///
-    /// [1]: https://clickhouse.com/docs/en/sql-reference/data-types/datetime64
     pub fn parse_datetime_64(&self) -> Result<(u64, Option<String>), ParserError> {
         self.expect_keyword_is(Keyword::DATETIME64)?;
         self.expect_token(&BorrowedToken::LParen)?;
@@ -14118,8 +14103,6 @@ impl<'a> Parser<'a> {
         let mut format = None;
         let mut options = None;
 
-        // Note: DuckDB is compatible with PostgreSQL syntax for this statement,
-        // although not all features may be implemented.
         if describe_alias == DescribeAlias::Explain
             && self.features.supports_explain_with_utility_options
             && self.peek_token().token == BorrowedToken::LParen
@@ -15389,7 +15372,6 @@ impl<'a> Parser<'a> {
 
     pub fn parse_use(&self) -> Result<Statement, ParserError> {
         // Determine which keywords are recognized by the current dialect
-        // Note: Dialect-specific USE syntax removed (HiveDialect, DatabricksDialect, SnowflakeDialect)
         let parsed_keyword = None; // No specific keywords for remaining dialects
 
         let result = {
@@ -15772,7 +15754,7 @@ impl<'a> Parser<'a> {
             // Parse potential version qualifier
             let version = self.maybe_parse_table_version()?;
 
-            // Postgres, MSSQL, ClickHouse: table-valued functions:
+            // Postgres, MSSQL: table-valued functions:
             let args = if self.consume_token(&BorrowedToken::LParen) {
                 Some(self.parse_table_function_args()?)
             } else {
@@ -16757,9 +16739,8 @@ impl<'a> Parser<'a> {
             } else {
                 let mut name = self.parse_grantee_name()?;
                 if self.consume_token(&BorrowedToken::Colon) {
-                    // Redshift supports namespace prefix for external users and groups:
+                    // Namespace prefix for external users and groups:
                     // <Namespace>:<GroupName> or <Namespace>:<UserName>
-                    // https://docs.aws.amazon.com/redshift/latest/mgmt/redshift-iam-access-control-native-idp.html
                     let ident = self.parse_identifier()?;
                     if let GranteeName::ObjectName(namespace) = name {
                         name = GranteeName::ObjectName(ObjectName::from(vec![Ident::new(
@@ -18193,7 +18174,7 @@ impl<'a> Parser<'a> {
                     }),
                 }
             } else {
-                // Clickhouse allows EXCEPT column_name
+                // Allow EXCEPT column_name (without parentheses)
                 let ident = self.parse_identifier()?;
                 Some(ExceptSelectItem {
                     first_element: ident,
@@ -18342,7 +18323,7 @@ impl<'a> Parser<'a> {
         Ok(OrderByOptions { asc, nulls_first })
     }
 
-    // Parse a WITH FILL clause (ClickHouse dialect)
+    // Parse a WITH FILL clause
     // that follow the WITH FILL keywords in a ORDER BY clause
     pub fn parse_with_fill(&self) -> Result<WithFill, ParserError> {
         let from = if self.parse_keyword(Keyword::FROM) {
@@ -18366,7 +18347,7 @@ impl<'a> Parser<'a> {
         Ok(WithFill { from, to, step })
     }
 
-    // Parse a set of comma separated INTERPOLATE expressions (ClickHouse dialect)
+    // Parse a set of comma separated INTERPOLATE expressions
     // that follow the INTERPOLATE keyword in an ORDER BY clause with the WITH FILL modifier
     pub fn parse_interpolations(&self) -> Result<Option<Interpolate>, ParserError> {
         if !self.parse_keyword(Keyword::INTERPOLATE) {
@@ -18387,7 +18368,7 @@ impl<'a> Parser<'a> {
         Ok(Some(Interpolate { exprs: None }))
     }
 
-    // Parse a INTERPOLATE expression (ClickHouse dialect)
+    // Parse a INTERPOLATE expression
     pub fn parse_interpolation(&self) -> Result<InterpolateExpr, ParserError> {
         let column = self.parse_identifier()?;
         let expr = if self.parse_keyword(Keyword::AS) {
@@ -19303,7 +19284,6 @@ impl<'a> Parser<'a> {
     /// ```sql
     /// OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION ID 'partition_id'] [FINAL] [DEDUPLICATE [BY expression]]
     /// ```
-    /// [ClickHouse](https://clickhouse.com/docs/en/sql-reference/statements/optimize)
     pub fn parse_optimize_table(&self) -> Result<Statement, ParserError> {
         let token = self.attached_token_from_current();
         self.expect_keyword_is(Keyword::TABLE)?;

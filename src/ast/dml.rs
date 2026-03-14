@@ -214,7 +214,7 @@ pub struct Delete {
     pub from: FromTable,
     /// FOR PORTION OF (SQL:2016 temporal tables)
     pub for_portion_of: Option<ForPortionOf>,
-    /// USING (Snowflake, Postgres, MySQL)
+    /// USING (Postgres, MySQL)
     pub using: Option<Vec<TableWithJoins>>,
     /// WHERE
     pub selection: Option<Expr>,

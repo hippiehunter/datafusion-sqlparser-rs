@@ -119,7 +119,7 @@ pub enum BorrowedToken<'a> {
     Colon,
     /// DoubleColon `::` (used for casting in PostgreSQL)
     DoubleColon,
-    /// Assignment `:=` (used for keyword argument in DuckDB macros and some functions, and for variable declarations in DuckDB and Snowflake)
+    /// Assignment `:=` (used for keyword arguments in some functions and for variable declarations)
     Assignment,
     /// SemiColon `;` used as separator for COPY and payload
     SemiColon,
@@ -141,9 +141,9 @@ pub enum BorrowedToken<'a> {
     RBrace,
     /// Right Arrow `=>`
     RArrow,
-    /// Sharp `#` used for PostgreSQL Bitwise XOR operator, also PostgreSQL/Redshift geometrical unary/binary operator (Number of points in path or polygon/Intersection)
+    /// Sharp `#` used for PostgreSQL Bitwise XOR operator, also PostgreSQL geometrical unary/binary operator (Number of points in path or polygon/Intersection)
     Sharp,
-    /// `##` PostgreSQL/Redshift geometrical binary operator (Point of closest proximity)
+    /// `##` PostgreSQL geometrical binary operator (Point of closest proximity)
     DoubleSharp,
     /// Tilde `~` used for PostgreSQL Bitwise NOT operator or case sensitive match regular expression operator
     Tilde,
@@ -171,7 +171,7 @@ pub enum BorrowedToken<'a> {
     ExclamationMark,
     /// Double Exclamation Mark `!!` used for PostgreSQL prefix factorial operator
     DoubleExclamationMark,
-    /// AtSign `@` used for PostgreSQL abs operator, also PostgreSQL/Redshift geometrical unary/binary operator (Center, Contained or on)
+    /// AtSign `@` used for PostgreSQL abs operator, also PostgreSQL geometrical unary/binary operator (Center, Contained or on)
     AtSign,
     /// `^@`, a "starts with" string operator in PostgreSQL
     CaretAt,
@@ -187,37 +187,37 @@ pub enum BorrowedToken<'a> {
     LongArrow,
     /// `#>`, extracts JSON sub-object at the specified path
     HashArrow,
-    /// `@-@` PostgreSQL/Redshift geometrical unary operator (Length or circumference)
+    /// `@-@` PostgreSQL geometrical unary operator (Length or circumference)
     AtDashAt,
-    /// `?-` PostgreSQL/Redshift geometrical unary/binary operator (Is horizontal?/Are horizontally aligned?)
+    /// `?-` PostgreSQL geometrical unary/binary operator (Is horizontal?/Are horizontally aligned?)
     QuestionMarkDash,
-    /// `&<` PostgreSQL/Redshift geometrical binary operator (Overlaps to left?)
+    /// `&<` PostgreSQL geometrical binary operator (Overlaps to left?)
     AmpersandLeftAngleBracket,
-    /// `&>` PostgreSQL/Redshift geometrical binary operator (Overlaps to right?)`
+    /// `&>` PostgreSQL geometrical binary operator (Overlaps to right?)`
     AmpersandRightAngleBracket,
-    /// `&<|` PostgreSQL/Redshift geometrical binary operator (Does not extend above?)`
+    /// `&<|` PostgreSQL geometrical binary operator (Does not extend above?)`
     AmpersandLeftAngleBracketVerticalBar,
-    /// `|&>` PostgreSQL/Redshift geometrical binary operator (Does not extend below?)`
+    /// `|&>` PostgreSQL geometrical binary operator (Does not extend below?)`
     VerticalBarAmpersandRightAngleBracket,
-    /// `<->` PostgreSQL/Redshift geometrical binary operator (Distance between)
+    /// `<->` PostgreSQL geometrical binary operator (Distance between)
     TwoWayArrow,
-    /// `<^` PostgreSQL/Redshift geometrical binary operator (Is below?)
+    /// `<^` PostgreSQL geometrical binary operator (Is below?)
     LeftAngleBracketCaret,
-    /// `>^` PostgreSQL/Redshift geometrical binary operator (Is above?)
+    /// `>^` PostgreSQL geometrical binary operator (Is above?)
     RightAngleBracketCaret,
-    /// `?#` PostgreSQL/Redshift geometrical binary operator (Intersects or overlaps)
+    /// `?#` PostgreSQL geometrical binary operator (Intersects or overlaps)
     QuestionMarkSharp,
-    /// `?-|` PostgreSQL/Redshift geometrical binary operator (Is perpendicular?)
+    /// `?-|` PostgreSQL geometrical binary operator (Is perpendicular?)
     QuestionMarkDashVerticalBar,
-    /// `?||` PostgreSQL/Redshift geometrical binary operator (Are parallel?)
+    /// `?||` PostgreSQL geometrical binary operator (Are parallel?)
     QuestionMarkDoubleVerticalBar,
-    /// `~=` PostgreSQL/Redshift geometrical binary operator (Same as)
+    /// `~=` PostgreSQL geometrical binary operator (Same as)
     TildeEqual,
-    /// `<<| PostgreSQL/Redshift geometrical binary operator (Is strictly below?)
+    /// `<<| PostgreSQL geometrical binary operator (Is strictly below?)
     ShiftLeftVerticalBar,
-    /// `|>> PostgreSQL/Redshift geometrical binary operator (Is strictly above?)
+    /// `|>> PostgreSQL geometrical binary operator (Is strictly above?)
     VerticalBarShiftRight,
-    /// `|> BigQuery pipe operator
+    /// `|>` Pipe operator
     VerticalBarRightAngleBracket,
     /// `#>>`, extracts JSON sub-object at the specified path as text
     HashLongArrow,
@@ -1124,7 +1124,7 @@ impl<'a> Tokenizer<'a> {
                         }
                     }
                 }
-                // Redshift uses lower case n for national string literal
+                // Some dialects use lower case n for national string literal
                 n @ 'N' | n @ 'n' => {
                     chars.next(); // consume, to check the next char
                     match chars.peek() {
@@ -1635,7 +1635,7 @@ impl<'a> Tokenizer<'a> {
                 '{' => self.consume_and_return(chars, Token::LBrace),
                 '}' => self.consume_and_return(chars, Token::RBrace),
                 '#' if dialect_of!(self is MySqlDialect) => {
-                    chars.next(); // consume the '#', starting a snowflake single-line comment
+                    chars.next(); // consume the '#', starting a MySQL single-line comment
                     let comment = self.tokenize_single_line_comment_borrowed(chars)?;
                     Ok(Some(BorrowedToken::Whitespace(
                         Whitespace::SingleLineComment {

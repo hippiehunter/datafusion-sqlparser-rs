@@ -33,17 +33,17 @@ use super::display_separated;
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub enum UnaryOperator {
-    /// `@-@` Length or circumference (PostgreSQL/Redshift geometric operator)
+    /// `@-@` Length or circumference (PostgreSQL geometric operator)
     /// see <https://www.postgresql.org/docs/9.5/functions-geometry.html>
     AtDashAt,
     /// Unary logical not operator: e.g. `! false`
     BangNot,
     /// Bitwise Not, e.g. `~9`
     BitwiseNot,
-    /// `@@` Center (PostgreSQL/Redshift geometric operator)
+    /// `@@` Center (PostgreSQL geometric operator)
     /// see <https://www.postgresql.org/docs/9.5/functions-geometry.html>
     DoubleAt,
-    /// `#` Number of points in path or polygon (PostgreSQL/Redshift geometric operator)
+    /// `#` Number of points in path or polygon (PostgreSQL geometric operator)
     /// see <https://www.postgresql.org/docs/9.5/functions-geometry.html>
     Hash,
     /// Plus, e.g. `+9`
@@ -62,10 +62,10 @@ pub enum UnaryOperator {
     PGPrefixFactorial,
     /// Square root, e.g. `|/9` (PostgreSQL-specific)
     PGSquareRoot,
-    /// `?-` Is horizontal? (PostgreSQL/Redshift geometric operator)
+    /// `?-` Is horizontal? (PostgreSQL geometric operator)
     /// see <https://www.postgresql.org/docs/9.5/functions-geometry.html>
     QuestionDash,
-    /// `?|` Is vertical? (PostgreSQL/Redshift geometric operator)
+    /// `?|` Is vertical? (PostgreSQL geometric operator)
     /// see <https://www.postgresql.org/docs/9.5/functions-geometry.html>
     QuestionPipe,
 }
@@ -271,52 +271,52 @@ pub enum BinaryOperator {
     /// Specifies a test for an overlap between two datetime periods:
     /// <https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#overlaps-predicate>
     Overlaps,
-    /// `##` Point of closest proximity (PostgreSQL/Redshift geometric operator)
+    /// `##` Point of closest proximity (PostgreSQL geometric operator)
     /// See <https://www.postgresql.org/docs/9.5/functions-geometry.html>
     DoubleHash,
-    /// `<->` Distance between (PostgreSQL/Redshift geometric operator)
+    /// `<->` Distance between (PostgreSQL geometric operator)
     /// See <https://www.postgresql.org/docs/9.5/functions-geometry.html>
     LtDashGt,
-    /// `&<` Overlaps to left? (PostgreSQL/Redshift geometric operator)
+    /// `&<` Overlaps to left? (PostgreSQL geometric operator)
     /// See <https://www.postgresql.org/docs/9.5/functions-geometry.html>
     AndLt,
-    /// `&>` Overlaps to right? (PostgreSQL/Redshift geometric operator)
+    /// `&>` Overlaps to right? (PostgreSQL geometric operator)
     /// See <https://www.postgresql.org/docs/9.5/functions-geometry.html>
     AndGt,
-    /// `<<|` Is strictly below? (PostgreSQL/Redshift geometric operator)
+    /// `<<|` Is strictly below? (PostgreSQL geometric operator)
     /// See <https://www.postgresql.org/docs/9.5/functions-geometry.html>
     LtLtPipe,
-    /// `|>>` Is strictly above? (PostgreSQL/Redshift geometric operator)
+    /// `|>>` Is strictly above? (PostgreSQL geometric operator)
     /// See <https://www.postgresql.org/docs/9.5/functions-geometry.html>
     PipeGtGt,
-    /// `&<|` Does not extend above? (PostgreSQL/Redshift geometric operator)
+    /// `&<|` Does not extend above? (PostgreSQL geometric operator)
     /// See <https://www.postgresql.org/docs/9.5/functions-geometry.html>
     AndLtPipe,
-    /// `|&>` Does not extend below? (PostgreSQL/Redshift geometric operator)
+    /// `|&>` Does not extend below? (PostgreSQL geometric operator)
     /// See <https://www.postgresql.org/docs/9.5/functions-geometry.html>
     PipeAndGt,
-    /// `<^` Is below? (PostgreSQL/Redshift geometric operator)
+    /// `<^` Is below? (PostgreSQL geometric operator)
     /// See <https://www.postgresql.org/docs/9.5/functions-geometry.html>
     LtCaret,
-    /// `>^` Is above? (PostgreSQL/Redshift geometric operator)
+    /// `>^` Is above? (PostgreSQL geometric operator)
     /// See <https://www.postgresql.org/docs/9.5/functions-geometry.html>
     GtCaret,
-    /// `?#` Intersects? (PostgreSQL/Redshift geometric operator)
+    /// `?#` Intersects? (PostgreSQL geometric operator)
     /// See <https://www.postgresql.org/docs/9.5/functions-geometry.html>
     QuestionHash,
-    /// `?-` Is horizontal? (PostgreSQL/Redshift geometric operator)
+    /// `?-` Is horizontal? (PostgreSQL geometric operator)
     /// See <https://www.postgresql.org/docs/9.5/functions-geometry.html>
     QuestionDash,
-    /// `?-|` Is perpendicular? (PostgreSQL/Redshift geometric operator)
+    /// `?-|` Is perpendicular? (PostgreSQL geometric operator)
     /// See <https://www.postgresql.org/docs/9.5/functions-geometry.html>
     QuestionDashPipe,
-    /// `?||` Are Parallel? (PostgreSQL/Redshift geometric operator)
+    /// `?||` Are Parallel? (PostgreSQL geometric operator)
     /// See <https://www.postgresql.org/docs/9.5/functions-geometry.html>
     QuestionDoublePipe,
-    /// `@` Contained or on? (PostgreSQL/Redshift geometric operator)
+    /// `@` Contained or on? (PostgreSQL geometric operator)
     /// See <https://www.postgresql.org/docs/9.5/functions-geometry.html>
     At,
-    /// `~=` Same as? (PostgreSQL/Redshift geometric operator)
+    /// `~=` Same as? (PostgreSQL geometric operator)
     /// See <https://www.postgresql.org/docs/9.5/functions-geometry.html>
     TildeEq,
     /// ':=' Assignment Operator

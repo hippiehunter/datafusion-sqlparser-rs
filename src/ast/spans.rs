@@ -1446,7 +1446,7 @@ impl Spanned for AssignmentTarget {
 /// Missing spans:
 /// - [Expr::MatchAgainst] # MySQL specific
 /// - [Expr::RLike] # MySQL specific
-/// - [Expr::Struct] # BigQuery specific
+/// - [Expr::Struct]
 /// - [Expr::Lambda]
 impl Spanned for Expr {
     fn span(&self) -> Span {
@@ -2732,19 +2732,6 @@ pub mod tests {
             "WITH cte_outer AS (SELECT a FROM postgres.public.source), cte_ignored AS (SELECT a FROM cte_outer), cte_inner AS (SELECT a FROM cte_outer) SELECT a FROM cte_inner"
         );
     }
-
-    // REMOVED: Test relied on Snowflake-specific syntax (colon operator)
-    // #[test]
-    // pub fn test_snowflake_lateral_flatten() {
-    //     let dialect = &PostgreSqlDialect {};
-    //     let test = SpanTest::new(dialect, "SELECT FLATTENED.VALUE:field::TEXT AS FIELD FROM SNOWFLAKE.SCHEMA.SOURCE AS S, LATERAL FLATTEN(INPUT => S.JSON_ARRAY) AS FLATTENED");
-    //
-    //     let query = test.0.parse_select().unwrap();
-    //
-    //     let select_span = query.span();
-    //
-    //     assert_eq!(test.get_source(select_span), "SELECT FLATTENED.VALUE:field::TEXT AS FIELD FROM SNOWFLAKE.SCHEMA.SOURCE AS S, LATERAL FLATTEN(INPUT => S.JSON_ARRAY) AS FLATTENED");
-    // }
 
     #[test]
     pub fn test_wildcard_from_cte() {

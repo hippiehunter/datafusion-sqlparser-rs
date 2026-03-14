@@ -83,7 +83,6 @@ pub enum DataType {
     /// e.g. CLOB, CLOB(1000), [SQL Standard].
     ///
     /// [SQL Standard]: https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#character-large-object-type
-    /// [Oracle]: https://docs.oracle.com/javadb/10.10.1.2/ref/rrefclob.html
     Clob(Option<u64>),
     /// Fixed-length binary type with optional length,
     /// see [SQL Standard], [MS SQL Server].
@@ -98,10 +97,9 @@ pub enum DataType {
     /// [MS SQL Server]: https://learn.microsoft.com/pt-br/sql/t-sql/data-types/binary-and-varbinary-transact-sql?view=sql-server-ver16
     Varbinary(Option<BinaryLength>),
     /// Large binary object with optional length,
-    /// see [SQL Standard], [Oracle].
+    /// see [SQL Standard].
     ///
     /// [SQL Standard]: https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#binary-large-object-string-type
-    /// [Oracle]: https://docs.oracle.com/javadb/10.8.3.0/ref/rrefblob.html
     Blob(Option<u64>),
     /// [MySQL] blob with up to 2**8 bytes.
     ///
@@ -181,12 +179,10 @@ pub enum DataType {
     ///
     /// [PostgreSQL]: https://www.postgresql.org/docs/current/datatype.html
     Int4(Option<u64>),
-    /// Int8 is an alias for BigInt in [PostgreSQL] and Integer type in [ClickHouse].
+    /// Int8 is an alias for BigInt in [PostgreSQL].
     /// Int8 with optional display width, e.g. INT8 or INT8(11).
-    /// Note: Int8 means 8 bytes in [PostgreSQL], but 8 bits in [ClickHouse].
     ///
     /// [PostgreSQL]: https://www.postgresql.org/docs/current/datatype.html
-    /// [ClickHouse]: https://clickhouse.com/docs/en/sql-reference/data-types/int-uint
     Int8(Option<u64>),
     /// Integer with optional display width, e.g. INTEGER or INTEGER(11).
     Integer(Option<u64>),
@@ -274,9 +270,7 @@ pub enum DataType {
     ///
     /// [1]: https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#datetime-type
     Timestamp(Option<u64>, TimezoneInfo),
-    /// Databricks timestamp without time zone. See [1].
-    ///
-    /// [1]: https://docs.databricks.com/aws/en/sql/language-manual/data-types/timestamp-ntz-type
+    /// Timestamp without time zone.
     TimestampNtz(Option<u64>),
     /// Interval type.
     Interval {
@@ -719,10 +713,9 @@ pub enum StructBracketKind {
 pub enum TimezoneInfo {
     /// No information about time zone, e.g. TIMESTAMP
     None,
-    /// Temporal type 'WITH TIME ZONE', e.g. TIMESTAMP WITH TIME ZONE, [SQL Standard], [Oracle]
+    /// Temporal type 'WITH TIME ZONE', e.g. TIMESTAMP WITH TIME ZONE, [SQL Standard]
     ///
     /// [SQL Standard]: https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#datetime-type
-    /// [Oracle]: https://docs.oracle.com/en/database/oracle/oracle-database/12.2/nlspg/datetime-data-types-and-time-zone-support.html#GUID-3F1C388E-C651-43D5-ADBC-1A49E5C2CA05
     WithTimeZone,
     /// Temporal type 'WITHOUT TIME ZONE', e.g. TIME WITHOUT TIME ZONE, [SQL Standard], [Postgresql]
     ///
@@ -967,7 +960,7 @@ impl fmt::Display for MdArrayTypeDef {
 }
 
 /// Represents different types of geometric shapes which are commonly used in
-/// PostgreSQL/Redshift for spatial operations and geometry-related computations.
+/// PostgreSQL for spatial operations and geometry-related computations.
 ///
 /// [PostgreSQL]: https://www.postgresql.org/docs/9.5/functions-geometry.html
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]

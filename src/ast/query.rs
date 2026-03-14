@@ -191,7 +191,6 @@ impl fmt::Display for SetOperator {
 
 /// A quantifier for [SetOperator].
 // TODO: Restrict parsing specific SetQuantifier in some specific dialects.
-// For example, BigQuery does not support `DISTINCT` for `EXCEPT` and `INTERSECT`
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -383,14 +382,10 @@ impl fmt::Display for Select {
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub enum NamedWindowExpr {
     /// A direct reference to another named window definition.
-    /// [BigQuery]
-    ///
     /// Example:
     /// ```sql
     /// WINDOW mywindow AS prev_window
     /// ```
-    ///
-    /// [BigQuery]: https://cloud.google.com/bigquery/docs/reference/standard-sql/window-function-calls#ref_named_window
     NamedWindow(Ident),
     /// A window expression.
     ///
@@ -666,7 +661,7 @@ impl fmt::Display for IdentWithAlias {
     }
 }
 
-/// Additional options for wildcards, e.g. Snowflake `EXCLUDE`/`RENAME` and Bigquery `EXCEPT`.
+/// Additional options for wildcards, e.g. `EXCLUDE`/`RENAME` and `EXCEPT`.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -674,14 +669,10 @@ pub struct WildcardAdditionalOptions {
     /// The wildcard token `*`
     pub wildcard_token: AttachedToken,
     /// `[ILIKE...]`.
-    ///  Snowflake syntax: <https://docs.snowflake.com/en/sql-reference/sql/select#parameters>
     pub opt_ilike: Option<IlikeSelectItem>,
     /// `[EXCEPT...]`.
     pub opt_except: Option<ExceptSelectItem>,
     /// `[REPLACE]`
-    ///  BigQuery syntax: <https://cloud.google.com/bigquery/docs/reference/standard-sql/query-syntax#select_replace>
-    ///  Clickhouse syntax: <https://clickhouse.com/docs/en/sql-reference/statements/select#replace>
-    ///  Snowflake syntax: <https://docs.snowflake.com/en/sql-reference/sql/select#parameters>
     pub opt_replace: Option<ReplaceSelectItem>,
     /// `[RENAME ...]`.
     pub opt_rename: Option<RenameSelectItem>,
@@ -717,7 +708,7 @@ impl fmt::Display for WildcardAdditionalOptions {
     }
 }
 
-/// Snowflake `ILIKE` information.
+/// `ILIKE` information for wildcard select items.
 ///
 /// # Syntax
 /// ```plaintext
@@ -740,7 +731,7 @@ impl fmt::Display for IlikeSelectItem {
         Ok(())
     }
 }
-/// Snowflake `RENAME` information.
+/// `RENAME` information for wildcard select items.
 ///
 /// # Syntax
 /// ```plaintext
@@ -781,7 +772,7 @@ impl fmt::Display for RenameSelectItem {
     }
 }
 
-/// Bigquery `EXCEPT` information, with at least one column.
+/// `EXCEPT` information for wildcard select items, with at least one column.
 ///
 /// # Syntax
 /// ```plaintext
@@ -814,7 +805,7 @@ impl fmt::Display for ExceptSelectItem {
     }
 }
 
-/// Bigquery `REPLACE` information.
+/// `REPLACE` information for wildcard select items.
 ///
 /// # Syntax
 /// ```plaintext
@@ -902,7 +893,6 @@ impl fmt::Display for TableWithJoins {
 
 /// Joins a table to itself to process hierarchical data in the table.
 ///
-/// See <https://docs.snowflake.com/en/sql-reference/constructs/connect-by>.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -1073,7 +1063,7 @@ pub enum TableFactor {
         /// MSSQL-specific `WITH (...)` hints such as NOLOCK.
         with_hints: Vec<Expr>,
         /// Optional version qualifier to facilitate table time-travel, as
-        /// supported by BigQuery and MSSQL.
+        /// supported by MSSQL.
         version: Option<TableVersion>,
         //  Optional table function modifier to generate the ordinality for column.
         /// For example, `SELECT * FROM generate_series(1, 10) WITH ORDINALITY AS t(a, b);`
@@ -1125,7 +1115,7 @@ pub enum TableFactor {
         with_ordinality: bool,
     },
     /// The `JSON_TABLE` table-valued function.
-    /// Part of the SQL standard, but implemented only by MySQL, Oracle, and DB2.
+    /// Part of the SQL standard, but implemented only by MySQL and other databases.
     ///
     /// <https://modern-sql.com/blog/2017-06/whats-new-in-sql-2016#json_table>
     /// <https://dev.mysql.com/doc/refman/8.0/en/json-table-functions.html#function_json-table>
@@ -1185,8 +1175,6 @@ pub enum TableFactor {
     /// Represents PIVOT operation on a table.
     /// For example `FROM monthly_sales PIVOT(sum(amount) FOR MONTH IN ('JAN', 'FEB'))`
     ///
-    /// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/query-syntax#pivot_operator)
-    /// [Snowflake](https://docs.snowflake.com/en/sql-reference/constructs/pivot)
     Pivot {
         table: Box<TableFactor>,
         aggregate_functions: Vec<ExprWithAlias>, // Function expression
@@ -1202,8 +1190,6 @@ pub enum TableFactor {
     /// table UNPIVOT [ { INCLUDE | EXCLUDE } NULLS ] (value FOR name IN (column1, [ column2, ... ])) [ alias ]
     /// ```
     ///
-    /// See <https://docs.snowflake.com/en/sql-reference/constructs/unpivot>.
-    /// See <https://docs.databricks.com/aws/en/sql/language-manual/sql-ref-syntax-qry-select-unpivot>.
     Unpivot {
         table: Box<TableFactor>,
         value: Expr,
@@ -1214,7 +1200,6 @@ pub enum TableFactor {
     },
     /// A `MATCH_RECOGNIZE` operation on a table.
     ///
-    /// See <https://docs.snowflake.com/en/sql-reference/constructs/match_recognize>.
     MatchRecognize {
         table: Box<TableFactor>,
         /// `PARTITION BY <expr> [, ... ]`
@@ -1236,7 +1221,7 @@ pub enum TableFactor {
         alias: Option<TableAlias>,
     },
     /// The `XMLTABLE` table-valued function.
-    /// Part of the SQL standard, supported by PostgreSQL, Oracle, and DB2.
+    /// Part of the SQL standard, supported by PostgreSQL and other databases.
     ///
     /// <https://www.postgresql.org/docs/15/functions-xml.html#FUNCTIONS-XML-PROCESSING>
     ///
@@ -1454,15 +1439,10 @@ impl fmt::Display for TableSample {
 pub enum PivotValueSource {
     /// Pivot on a static list of values.
     ///
-    /// See <https://docs.snowflake.com/en/sql-reference/constructs/pivot#pivot-on-a-specified-list-of-column-values-for-the-pivot-column>.
     List(Vec<ExprWithAlias>),
     /// Pivot on all distinct values of the pivot column.
-    ///
-    /// See <https://docs.snowflake.com/en/sql-reference/constructs/pivot#pivot-on-all-distinct-column-values-automatically-with-dynamic-pivot>.
     Any(Vec<OrderByExpr>),
     /// Pivot on all values returned by a subquery.
-    ///
-    /// See <https://docs.snowflake.com/en/sql-reference/constructs/pivot#pivot-on-column-values-using-a-subquery-with-dynamic-pivot>.
     Subquery(Box<Query>),
 }
 
@@ -1483,8 +1463,6 @@ impl fmt::Display for PivotValueSource {
 }
 
 /// An item in the `MEASURES` subclause of a `MATCH_RECOGNIZE` operation.
-///
-/// See <https://docs.snowflake.com/en/sql-reference/constructs/match_recognize#measures-specifying-additional-output-columns>.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -1501,7 +1479,6 @@ impl fmt::Display for Measure {
 
 /// The rows per match option in a `MATCH_RECOGNIZE` operation.
 ///
-/// See <https://docs.snowflake.com/en/sql-reference/constructs/match_recognize#row-s-per-match-specifying-the-rows-to-return>.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -1529,7 +1506,6 @@ impl fmt::Display for RowsPerMatch {
 
 /// The after match skip option in a `MATCH_RECOGNIZE` operation.
 ///
-/// See <https://docs.snowflake.com/en/sql-reference/constructs/match_recognize#after-match-skip-specifying-where-to-continue-after-a-match>.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -1580,7 +1556,6 @@ impl fmt::Display for EmptyMatchesMode {
 
 /// A symbol defined in a `MATCH_RECOGNIZE` operation.
 ///
-/// See <https://docs.snowflake.com/en/sql-reference/constructs/match_recognize#define-defining-symbols>.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -1642,7 +1617,6 @@ impl fmt::Display for MatchRecognizeSymbol {
 
 /// The pattern in a `MATCH_RECOGNIZE` operation.
 ///
-/// See <https://docs.snowflake.com/en/sql-reference/constructs/match_recognize#pattern-specifying-the-pattern-to-match>.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -2159,8 +2133,7 @@ impl Display for TableVersion {
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct Join {
     pub relation: TableFactor,
-    /// ClickHouse supports the optional `GLOBAL` keyword before the join operator.
-    /// See [ClickHouse](https://clickhouse.com/docs/en/sql-reference/statements/select/join)
+    /// The optional `GLOBAL` keyword before the join operator.
     pub global: bool,
     pub join_operator: JoinOperator,
 }
@@ -2327,7 +2300,6 @@ pub enum JoinOperator {
     /// `ASOF` joins are used for joining tables containing time-series data
     /// whose timestamp columns do not match exactly.
     ///
-    /// See <https://docs.snowflake.com/en/sql-reference/constructs/asof-join>.
     AsOf {
         match_condition: Expr,
         constraint: JoinConstraint,
@@ -2352,10 +2324,7 @@ pub enum JoinConstraint {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub enum OrderByKind {
-    /// ALL syntax of [DuckDB] and [ClickHouse].
-    ///
-    /// [DuckDB]:  <https://duckdb.org/docs/sql/query_syntax/orderby>
-    /// [ClickHouse]: <https://clickhouse.com/docs/en/sql-reference/statements/select/order-by>
+    /// ALL syntax for ORDER BY.
     All(OrderByOptions),
 
     /// Expressions
@@ -2369,7 +2338,6 @@ pub struct OrderBy {
     pub kind: OrderByKind,
 
     /// Optional: `INTERPOLATE`
-    /// Supported by [ClickHouse syntax]
     pub interpolate: Option<Interpolate>,
 }
 
@@ -2404,7 +2372,6 @@ pub struct OrderByExpr {
     pub expr: Expr,
     pub options: OrderByOptions,
     /// Optional: `WITH FILL`
-    /// Supported by [ClickHouse syntax]: <https://clickhouse.com/docs/en/sql-reference/statements/select/order-by#order-by-expr-with-fill-modifier>
     pub with_fill: Option<WithFill>,
 }
 
@@ -2428,10 +2395,7 @@ impl fmt::Display for OrderByExpr {
     }
 }
 
-/// ClickHouse `WITH FILL` modifier for `ORDER BY` clause.
-/// Supported by [ClickHouse syntax]
-///
-/// [ClickHouse syntax]: <https://clickhouse.com/docs/en/sql-reference/statements/select/order-by#order-by-expr-with-fill-modifier>
+/// `WITH FILL` modifier for `ORDER BY` clause.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -2457,10 +2421,7 @@ impl fmt::Display for WithFill {
     }
 }
 
-/// ClickHouse `INTERPOLATE` clause for use in `ORDER BY` clause when using `WITH FILL` modifier.
-/// Supported by [ClickHouse syntax]
-///
-/// [ClickHouse syntax]: <https://clickhouse.com/docs/en/sql-reference/statements/select/order-by#order-by-expr-with-fill-modifier>
+/// `INTERPOLATE` clause for use in `ORDER BY` clause when using `WITH FILL` modifier.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -2526,7 +2487,6 @@ pub enum LimitClause {
         offset: Option<Offset>,
         /// `BY { <expr>,<expr>,... } }`
         ///
-        /// [ClickHouse](https://clickhouse.com/docs/sql-reference/statements/select/limit-by)
         limit_by: Vec<Expr>,
     },
     /// [MySQL]-specific syntax; the order of expressions is reversed.
@@ -2804,10 +2764,8 @@ impl fmt::Display for SelectInto {
     }
 }
 
-/// ClickHouse supports GROUP BY WITH modifiers(includes ROLLUP|CUBE|TOTALS).
+/// GROUP BY WITH modifiers (includes ROLLUP|CUBE|TOTALS).
 /// e.g. GROUP BY year WITH ROLLUP WITH TOTALS
-///
-/// [ClickHouse]: <https://clickhouse.com/docs/en/sql-reference/statements/select/group-by#rollup-modifier>
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -2837,15 +2795,9 @@ impl fmt::Display for GroupByWithModifier {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub enum GroupByExpr {
-    /// ALL syntax of [Snowflake], [DuckDB] and [ClickHouse].
+    /// ALL syntax for GROUP BY.
     ///
-    /// [Snowflake]: <https://docs.snowflake.com/en/sql-reference/constructs/group-by#label-group-by-all-columns>
-    /// [DuckDB]:  <https://duckdb.org/docs/sql/query_syntax/groupby.html>
-    /// [ClickHouse]: <https://clickhouse.com/docs/en/sql-reference/statements/select/group-by#group-by-all>
-    ///
-    /// ClickHouse also supports WITH modifiers after GROUP BY ALL and expressions.
-    ///
-    /// [ClickHouse]: <https://clickhouse.com/docs/en/sql-reference/statements/select/group-by#rollup-modifier>
+    /// Also supports WITH modifiers after GROUP BY ALL and expressions.
     All(Vec<GroupByWithModifier>),
 
     /// Expressions
@@ -3001,7 +2953,6 @@ impl fmt::Display for ForJson {
 ///
 /// See
 /// - [MySQL's JSON_TABLE documentation](https://dev.mysql.com/doc/refman/8.0/en/json-table-functions.html#function_json-table)
-/// - [Oracle's JSON_TABLE documentation](https://docs.oracle.com/en/database/oracle/oracle-database/21/sqlrf/JSON_TABLE.html)
 /// - [MariaDB's JSON_TABLE documentation](https://mariadb.com/kb/en/json_table/)
 ///
 /// ```sql

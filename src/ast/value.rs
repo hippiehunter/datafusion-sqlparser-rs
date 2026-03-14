@@ -245,7 +245,6 @@ pub enum DateTimeField {
     /// WEEK(MONDAY)
     /// ```
     ///
-    /// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/date_functions#extract)
     Week(Option<Ident>),
     Weeks,
     Day,
@@ -290,7 +289,6 @@ pub enum DateTimeField {
     /// ```sql
     /// EXTRACT(q FROM CURRENT_TIMESTAMP)
     /// ```
-    /// [Snowflake](https://docs.snowflake.com/en/sql-reference/functions-date-time#supported-date-and-time-parts)
     Custom(Ident),
 }
 

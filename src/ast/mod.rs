@@ -377,7 +377,6 @@ impl fmt::Display for ObjectNamePart {
 /// An object name part that consists of a function that dynamically
 /// constructs identifiers.
 ///
-/// - [Snowflake](https://docs.snowflake.com/en/sql-reference/identifier-literal)
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -549,7 +548,6 @@ impl fmt::Display for Interval {
 
 /// A field definition within a struct
 ///
-/// [BigQuery]: https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#struct_type
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -557,7 +555,6 @@ pub struct StructField {
     pub field_name: Option<Ident>,
     pub field_type: DataType,
     /// Struct field options.
-    /// See [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#column_name_and_column_schema)
     pub options: Option<Vec<SqlOption>>,
 }
 
@@ -577,7 +574,6 @@ impl fmt::Display for StructField {
 }
 
 /// Options for `CAST` / `TRY_CAST`
-/// BigQuery: <https://cloud.google.com/bigquery/docs/reference/standard-sql/format-elements#formatting_syntax>
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -593,19 +589,13 @@ pub enum CastFormat {
 pub enum JsonPathElem {
     /// Accesses an object field using dot notation, e.g. `obj:foo.bar.baz`.
     ///
-    /// See <https://docs.snowflake.com/en/user-guide/querying-semistructured#dot-notation>.
     Dot { key: String, quoted: bool },
     /// Accesses an object field or array element using bracket notation,
     /// e.g. `obj['foo']`.
-    ///
-    /// See <https://docs.snowflake.com/en/user-guide/querying-semistructured#bracket-notation>.
     Bracket { key: Expr },
 }
 
 /// A JSON path.
-///
-/// See <https://docs.snowflake.com/en/user-guide/querying-semistructured>.
-/// See <https://docs.databricks.com/en/sql/language-manual/sql-ref-json-path-expression.html>.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -648,7 +638,6 @@ pub enum CastKind {
     Cast,
     /// A cast that returns `NULL` on failure, e.g. `TRY_CAST(<expr> as <datatype>)`.
     ///
-    /// See <https://docs.snowflake.com/en/sql-reference/functions/try_cast>.
     /// See <https://learn.microsoft.com/en-us/sql/t-sql/functions/try-cast-transact-sql>.
     TryCast,
     /// `<expr> :: <datatype>`
@@ -682,10 +671,8 @@ impl fmt::Display for ConstraintReferenceMatchKind {
 
 /// `EXTRACT` syntax variants.
 ///
-/// In Snowflake dialect, the `EXTRACT` expression can support either the `from` syntax
+/// The `EXTRACT` expression can support either the `from` syntax
 /// or the comma syntax.
-///
-/// See <https://docs.snowflake.com/en/sql-reference/functions/extract>
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -832,10 +819,7 @@ pub enum Expr {
         access_chain: Vec<AccessExpr>,
     },
     /// Access data nested in a value containing semi-structured data, such as
-    /// the `VARIANT` type on Snowflake. for example `src:customer[0].name`.
-    ///
-    /// See <https://docs.snowflake.com/en/user-guide/querying-semistructured>.
-    /// See <https://docs.databricks.com/en/sql/language-manual/functions/colonsign.html>.
+    /// the `VARIANT` type. For example `src:customer[0].name`.
     JsonAccess {
         /// The value being queried.
         value: Box<Expr>,
@@ -981,8 +965,7 @@ pub enum Expr {
     /// `[NOT] LIKE <pattern> [ESCAPE <escape_character>]`
     Like {
         negated: bool,
-        // Snowflake supports the ANY keyword to match against a list of patterns
-        // https://docs.snowflake.com/en/sql-reference/functions/like_any
+        // The ANY keyword to match against a list of patterns
         any: bool,
         expr: Box<Expr>,
         pattern: Box<Expr>,
@@ -991,8 +974,7 @@ pub enum Expr {
     /// `ILIKE` (case-insensitive `LIKE`)
     ILike {
         negated: bool,
-        // Snowflake supports the ANY keyword to match against a list of patterns
-        // https://docs.snowflake.com/en/sql-reference/functions/like_any
+        // The ANY keyword to match against a list of patterns
         any: bool,
         expr: Box<Expr>,
         pattern: Box<Expr>,
@@ -1014,7 +996,6 @@ pub enum Expr {
         regexp: bool,
     },
     /// `ANY` operation e.g. `foo > ANY(bar)`, comparison operator is one of `[=, >, <, =>, =<, !=]`
-    /// <https://docs.snowflake.com/en/sql-reference/operators-subquery#all-any>
     AnyOp {
         left: Box<Expr>,
         compare_op: BinaryOperator,
@@ -1023,7 +1004,6 @@ pub enum Expr {
         is_some: bool,
     },
     /// `ALL` operation e.g. `foo > ALL(bar)`, comparison operator is one of `[=, >, <, =>, =<, !=]`
-    /// <https://docs.snowflake.com/en/sql-reference/operators-subquery#all-any>
     AllOp {
         left: Box<Expr>,
         compare_op: BinaryOperator,
@@ -1057,9 +1037,7 @@ pub enum Expr {
         kind: CastKind,
         expr: Box<Expr>,
         data_type: DataType,
-        /// Optional CAST(string_expression AS type FORMAT format_string_expression) as used by [BigQuery]
-        ///
-        /// [BigQuery]: https://cloud.google.com/bigquery/docs/reference/standard-sql/format-elements#formatting_syntax
+        /// Optional CAST(string_expression AS type FORMAT format_string_expression)
         format: Option<CastFormat>,
     },
     /// AT a timestamp to a different timezone e.g. `FROM_UNIXTIME(0) AT TIME ZONE 'UTC-06:00'`
@@ -1130,7 +1108,7 @@ pub enum Expr {
     /// ```sql
     /// TRIM([BOTH | LEADING | TRAILING] [<expr> FROM] <expr>)
     /// TRIM(<expr>)
-    /// TRIM(<expr>, [, characters]) -- only Snowflake or Bigquery
+    /// TRIM(<expr>, [, characters])
     /// ```
     Trim {
         expr: Box<Expr>,
@@ -1159,7 +1137,6 @@ pub enum Expr {
     Value(ValueWithSpan),
     /// Prefixed expression, e.g. introducer strings, projection prefix
     /// <https://dev.mysql.com/doc/refman/8.0/en/charset-introducer.html>
-    /// <https://docs.snowflake.com/en/sql-reference/constructs/connect-by>
     Prefixed {
         prefix: Ident,
         /// The value of the constant.
@@ -1261,8 +1238,6 @@ pub enum Expr {
     /// ```sql
     /// STRUCT<[field_name] field_type, ...>( expr1 [, ... ])
     ///
-    /// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#struct_type)
-    /// [Databricks](https://docs.databricks.com/en/sql/language-manual/functions/struct.html)
     /// ```
     Struct {
         /// Struct values.
@@ -1313,7 +1288,6 @@ pub enum Expr {
     /// SELECT t1.c1, t2.c2 FROM t1 LEFT OUTER JOIN t2 ON t1.c1 = t2.c2
     /// ```
     ///
-    /// See <https://docs.snowflake.com/en/sql-reference/constructs/where#joins-in-the-where-clause>.
     OuterJoin(Box<Expr>),
     /// A reference to the prior level in a CONNECT BY clause.
     Prior(Box<Expr>),
@@ -1324,9 +1298,6 @@ pub enum Expr {
     /// param -> expr | (param1, ...) -> expr
     /// ```
     ///
-    /// [ClickHouse](https://clickhouse.com/docs/en/sql-reference/functions#higher-order-functions---operator-and-lambdaparams-expr-function)
-    /// [Databricks](https://docs.databricks.com/en/sql/language-manual/sql-ref-lambda-functions.html)
-    /// [DuckDB](https://duckdb.org/docs/stable/sql/functions/lambda)
     Lambda(LambdaFunction),
     /// Checks membership of a value in a JSON array
     MemberOf(MemberOf),
@@ -2277,11 +2248,10 @@ impl Display for WindowType {
 pub struct WindowSpec {
     /// Optional window name.
     ///
-    /// You can find it at least in [MySQL][1], [BigQuery][2], [PostgreSQL][3]
+    /// You can find it at least in [MySQL][1] and [PostgreSQL][2].
     ///
     /// [1]: https://dev.mysql.com/doc/refman/8.0/en/window-functions-named-windows.html
-    /// [2]: https://cloud.google.com/bigquery/docs/reference/standard-sql/window-function-calls
-    /// [3]: https://www.postgresql.org/docs/current/sql-expressions.html#SYNTAX-WINDOW-FUNCTIONS
+    /// [2]: https://www.postgresql.org/docs/current/sql-expressions.html#SYNTAX-WINDOW-FUNCTIONS
     pub window_name: Option<Ident>,
     /// `OVER (PARTITION BY ...)`
     pub partition_by: Vec<Expr>,
@@ -2363,7 +2333,6 @@ pub struct WindowFrame {
 impl Default for WindowFrame {
     /// Returns default value for window frame
     ///
-    /// See [this page](https://www.sqlite.org/windowfunctions.html#frame_specifications) for more details.
     fn default() -> Self {
         Self {
             units: WindowFrameUnits::Range,
@@ -2578,8 +2547,6 @@ pub enum Password {
 /// END CASE;
 /// ```
 ///
-/// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/procedural-language#case_search_expression)
-/// [Snowflake](https://docs.snowflake.com/en/sql-reference/snowflake-scripting/case)
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -2631,7 +2598,7 @@ impl fmt::Display for CaseStatement {
 
 /// An `IF` statement.
 ///
-/// Example (BigQuery or Snowflake):
+/// Example:
 /// ```sql
 /// IF TRUE THEN
 ///     SELECT 1;
@@ -2642,9 +2609,6 @@ impl fmt::Display for CaseStatement {
 ///     SELECT 4;
 /// END IF
 /// ```
-/// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/procedural-language#if)
-/// [Snowflake](https://docs.snowflake.com/en/sql-reference/snowflake-scripting/if)
-///
 /// Example (MSSQL):
 /// ```sql
 /// IF 1=1 SELECT 1 ELSE SELECT 2
@@ -3449,7 +3413,7 @@ pub enum SqlPsmDataType {
     TypeOf(ObjectName),
     /// Row type of a table: `table_name%ROWTYPE`
     RowTypeOf(ObjectName),
-    /// The generic RECORD type
+    /// The RECORD type
     Record,
     /// Cursor declaration with optional parameters and query
     Cursor(SqlPsmCursorDeclaration),
@@ -3727,8 +3691,6 @@ impl fmt::Display for RaiseMessage {
 /// ```
 ///
 /// [PostgreSQL](https://www.postgresql.org/docs/current/plpgsql-errors-and-messages.html)
-/// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/procedural-language#raise)
-/// [Snowflake](https://docs.snowflake.com/en/sql-reference/snowflake-scripting/raise)
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -4112,7 +4074,7 @@ impl fmt::Display for DeclareType {
 }
 
 /// A `DECLARE` statement.
-/// [PostgreSQL] [BigQuery]
+/// [PostgreSQL]
 ///
 /// Examples:
 /// ```sql
@@ -4121,8 +4083,6 @@ impl fmt::Display for DeclareType {
 /// ```
 ///
 /// [PostgreSQL]: https://www.postgresql.org/docs/current/sql-declare.html
-/// [Snowflake]: https://docs.snowflake.com/en/sql-reference/snowflake-scripting/declare
-/// [BigQuery]: https://cloud.google.com/bigquery/docs/reference/standard-sql/procedural-language#declare
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -4269,7 +4229,6 @@ pub enum CreateTableOptions {
     /// Options specified using the `OPTIONS` keyword.
     /// e.g. `OPTIONS(description = "123")`
     ///
-    /// <https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#table_option_list>
     Options(Vec<SqlOption>),
 
     /// Plain options, options which are not part on any declerative statement e.g. WITH/OPTIONS/...
@@ -4311,8 +4270,7 @@ impl fmt::Display for CreateTableOptions {
 pub enum FromTable {
     /// An explicit `FROM` keyword was specified.
     WithFromKeyword(Vec<TableWithJoins>),
-    /// BigQuery: `FROM` keyword was omitted.
-    /// <https://cloud.google.com/bigquery/docs/reference/standard-sql/dml-syntax#delete_statement>
+    /// `FROM` keyword was omitted.
     WithoutKeyword(Vec<TableWithJoins>),
 }
 impl Display for FromTable {
@@ -4528,7 +4486,7 @@ pub enum Set {
         variable: ObjectName,
         values: Vec<Expr>,
     },
-    /// Snowflake-style
+    /// Parenthesized-style
     /// SET (a, b, ..) = (1, 2, ..);
     ParenthesizedAssignments {
         variables: Vec<ObjectName>,
@@ -4537,14 +4495,13 @@ pub enum Set {
     /// MySQL-style
     /// SET a = 1, b = 2, ..;
     MultipleAssignments { assignments: Vec<SetAssignment> },
-    /// Session authorization for Postgres/Redshift
+    /// Session authorization for PostgreSQL
     ///
     /// ```sql
     /// SET SESSION AUTHORIZATION { user_name | DEFAULT }
     /// ```
     ///
     /// See <https://www.postgresql.org/docs/current/sql-set-session-authorization.html>
-    /// See <https://docs.aws.amazon.com/redshift/latest/dg/r_SET_SESSION_AUTHORIZATION.html>
     SetSessionAuthorization(SetSessionAuthorizationParam),
     /// MS-SQL session
     ///
@@ -4554,14 +4511,13 @@ pub enum Set {
     /// SET [ SESSION | LOCAL ] ROLE role_name
     /// ```
     ///
-    /// Sets session state. Examples: [ANSI][1], [Postgresql][2], [MySQL][3], and [Oracle][4]
+    /// Sets session state. Examples: [SQL Standard][1], [Postgresql][2], [MySQL][3]
     ///
     /// [1]: https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#set-role-statement
     /// [2]: https://www.postgresql.org/docs/14/sql-set-role.html
     /// [3]: https://dev.mysql.com/doc/refman/8.0/en/set-role.html
-    /// [4]: https://docs.oracle.com/cd/B19306_01/server.102/b14200/statements_10004.htm
     SetRole {
-        /// Non-ANSI optional identifier to inform if the role is defined inside the current session (`SESSION`) or transaction (`LOCAL`).
+        /// Optional identifier to inform if the role is defined inside the current session (`SESSION`) or transaction (`LOCAL`).
         context_modifier: Option<ContextModifier>,
         /// Role name. If NONE is specified, then the current role name is removed.
         role_name: Option<Ident>,
@@ -4708,8 +4664,6 @@ impl Display for Set {
 /// A representation of a `WHEN` arm with all the identifiers catched and the statements to execute
 /// for the arm.
 ///
-/// Snowflake: <https://docs.snowflake.com/en/sql-reference/snowflake-scripting/exception>
-/// BigQuery: <https://cloud.google.com/bigquery/docs/reference/standard-sql/procedural-language#beginexceptionend>
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -5008,7 +4962,6 @@ pub enum Statement {
     /// ```sql
     /// ALTER SCHEMA
     /// ```
-    /// See [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#alter_schema_collate_statement)
     AlterSchema(AlterSchema),
     /// ```sql
     /// ALTER INDEX
@@ -5093,7 +5046,7 @@ pub enum Statement {
         object_type: ObjectType,
         /// An optional `IF EXISTS` clause. (Non-standard.)
         if_exists: bool,
-        /// One or more objects to drop. (ANSI SQL requires exactly one.)
+        /// One or more objects to drop. (The SQL standard requires exactly one.)
         names: Vec<ObjectName>,
         /// Whether `CASCADE` was specified. This will be `false` when
         /// `RESTRICT` or no drop behavior at all was specified.
@@ -5494,8 +5447,6 @@ pub enum Statement {
         ///     WHEN OTHER THEN
         ///         SELECT 4;
         /// ```
-        /// <https://cloud.google.com/bigquery/docs/reference/standard-sql/procedural-language#beginexceptionend>
-        /// <https://docs.snowflake.com/en/sql-reference/snowflake-scripting/exception>
         exception: Option<Vec<ExceptionWhen>>,
         /// TRUE if the statement has an `END` keyword.
         has_end_keyword: bool,
@@ -5512,7 +5463,6 @@ pub enum Statement {
         object_name: ObjectName,
         comment: Option<String>,
         /// An optional `IF EXISTS` clause. (Non-standard.)
-        /// See <https://docs.snowflake.com/en/sql-reference/sql/comment>
         if_exists: bool,
     },
     /// ```sql
@@ -5572,7 +5522,6 @@ pub enum Statement {
         /// CREATE SCHEMA myschema OPTIONS(key1='value1');
         /// ```
         ///
-        /// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#create_schema_statement)
         options: Option<Vec<SqlOption>>,
         /// Default collation specification for the schema.
         ///
@@ -5580,7 +5529,6 @@ pub enum Statement {
         /// CREATE SCHEMA myschema DEFAULT COLLATE 'und:ci';
         /// ```
         ///
-        /// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#create_schema_statement)
         default_collate_spec: Option<Expr>,
         /// Clones a schema
         ///
@@ -5588,14 +5536,11 @@ pub enum Statement {
         /// CREATE SCHEMA myschema CLONE otherschema
         /// ```
         ///
-        /// [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/create-clone#databases-schemas)
         clone: Option<ObjectName>,
     },
     /// ```sql
     /// CREATE DATABASE
     /// ```
-    /// See:
-    /// <https://docs.snowflake.com/en/sql-reference/sql/create-database>
     CreateDatabase {
         /// The `CREATE` token
         create_token: AttachedToken,
@@ -5726,8 +5671,6 @@ pub enum Statement {
     ///
     /// Postgres: <https://www.postgresql.org/docs/current/sql-execute.html>
     /// MSSQL: <https://learn.microsoft.com/en-us/sql/relational-databases/stored-procedures/execute-a-stored-procedure>
-    /// BigQuery: <https://cloud.google.com/bigquery/docs/reference/standard-sql/procedural-language#execute_immediate>
-    /// Snowflake: <https://docs.snowflake.com/en/sql-reference/sql/execute-immediate>
     Execute {
         /// The `EXECUTE` token
         execute_token: AttachedToken,
@@ -5761,7 +5704,6 @@ pub enum Statement {
     /// KILL [CONNECTION | QUERY | MUTATION]
     /// ```
     ///
-    /// See <https://clickhouse.com/docs/en/sql-reference/statements/kill/>
     /// See <https://dev.mysql.com/doc/refman/8.0/en/kill.html>
     Kill {
         /// The `KILL` token
@@ -5778,10 +5720,7 @@ pub enum Statement {
         explain_token: AttachedToken,
         /// `EXPLAIN | DESC | DESCRIBE`
         describe_alias: DescribeAlias,
-        /// Snowflake and ClickHouse support `DESC|DESCRIBE TABLE <table_name>` syntax
-        ///
-        /// [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/desc-table.html)
-        /// [ClickHouse](https://clickhouse.com/docs/en/sql-reference/statements/describe-table)
+        /// Whether the `TABLE` keyword was specified before the table name.
         has_table_keyword: bool,
         /// Table name
         #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
@@ -5801,10 +5740,8 @@ pub enum Statement {
         /// `EXPLAIN QUERY PLAN`
         /// Display the query plan without running the query.
         ///
-        /// [SQLite](https://sqlite.org/lang_explain.html)
         query_plan: bool,
         /// `EXPLAIN ESTIMATE`
-        /// [Clickhouse](https://clickhouse.com/docs/en/sql-reference/statements/explain#explain-estimate)
         estimate: bool,
         /// A SQL query that specifies what to explain
         statement: Box<Statement>,
@@ -5835,8 +5772,6 @@ pub enum Statement {
     /// ```sql
     /// MERGE INTO <target_table> USING <source> ON <join_expr> { matchedClause | notMatchedClause } [ ... ]
     /// ```
-    /// [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/merge)
-    /// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/dml-syntax#merge_statement)
     /// [MSSQL](https://learn.microsoft.com/en-us/sql/t-sql/statements/merge-transact-sql?view=sql-server-ver16)
     Merge {
         merge_token: AttachedToken,
@@ -5859,7 +5794,6 @@ pub enum Statement {
     ///
     /// See [Spark SQL docs] for more details.
     ///
-    /// [Spark SQL docs]: https://docs.databricks.com/spark/latest/spark-sql/language-manual/sql-ref-syntax-aux-cache-cache-table.html
     Cache {
         cache_token: AttachedToken,
         /// Table flag
@@ -5942,7 +5876,6 @@ pub enum Statement {
     /// UNLOAD(statement) TO <destination> [ WITH options ]
     /// ```
     ///
-    /// [Redshift](https://docs.aws.amazon.com/redshift/latest/dg/r_UNLOAD.html):
     /// ```sql
     /// UNLOAD('statement') TO <destination> [ OPTIONS ]
     /// ```
@@ -5960,7 +5893,6 @@ pub enum Statement {
     /// OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION ID 'partition_id'] [FINAL] [DEDUPLICATE [BY expression]]
     /// ```
     ///
-    /// See ClickHouse <https://clickhouse.com/docs/en/sql-reference/statements/optimize>
     OptimizeTable {
         #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
         token: AttachedToken,
@@ -6056,19 +5988,16 @@ pub enum Statement {
     /// ```sql
     /// CREATE [OR REPLACE] USER <user> [IF NOT EXISTS]
     /// ```
-    /// [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/create-user)
     CreateUser(CreateUser),
     /// ```sql
     /// ALTER USER \[ IF EXISTS \] \[ <name> \]
     /// ```
-    /// [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/alter-user)
     AlterUser(AlterUser),
     /// Re-sorts rows and reclaims space in either a specified table or all tables in the current database
     ///
     /// ```sql
     /// VACUUM tbl
     /// ```
-    /// [Redshift](https://docs.aws.amazon.com/redshift/latest/dg/r_VACUUM_command.html)
     Vacuum(VacuumStatement),
     /// Restore the value of a run-time parameter to the default value.
     ///
@@ -6096,7 +6025,6 @@ impl From<ddl::Truncate> for Statement {
 /// {COPY | REVOKE} CURRENT GRANTS
 /// ```
 ///
-/// - [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/grant-ownership#optional-parameters)
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -7762,7 +7690,7 @@ pub enum MinMaxValue {
 pub enum OnInsert {
     /// ON DUPLICATE KEY UPDATE (MySQL when the key already exists, then execute an update instead)
     DuplicateKeyUpdate(Vec<Assignment>),
-    /// ON CONFLICT is a PostgreSQL and Sqlite extension
+    /// ON CONFLICT is a PostgreSQL extension
     OnConflict(OnConflict),
 }
 
@@ -8843,7 +8771,6 @@ pub struct Function {
     /// HISTOGRAM(0.5, 0.6)(x, y)
     /// ```
     ///
-    /// [ClickHouse](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/parametric-functions)
     pub parameters: FunctionArguments,
     /// The arguments to the function, including any options specified within the
     /// delimiting parentheses.
@@ -8867,7 +8794,6 @@ pub struct Function {
     /// FIRST_VALUE( <expr> ) [ { IGNORE | RESPECT } NULLS ] OVER ...
     /// ```
     ///
-    /// [Snowflake](https://docs.snowflake.com/en/sql-reference/functions/first_value)
     pub null_treatment: Option<NullTreatment>,
     /// The `OVER` clause, indicating a window function call.
     pub over: Option<WindowType>,
@@ -8981,33 +8907,27 @@ impl fmt::Display for FunctionArgumentList {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub enum FunctionArgumentClause {
-    /// Indicates how `NULL`s should be handled in the calculation, e.g. in `FIRST_VALUE` on [BigQuery].
+    /// Indicates how `NULL`s should be handled in the calculation, e.g. in `FIRST_VALUE`.
     ///
     /// Syntax:
     /// ```plaintext
     /// { IGNORE | RESPECT } NULLS ]
     /// ```
-    ///
-    /// [BigQuery]: https://cloud.google.com/bigquery/docs/reference/standard-sql/navigation_functions#first_value
     IgnoreOrRespectNulls(NullTreatment),
-    /// Specifies the the ordering for some ordered set aggregates, e.g. `ARRAY_AGG` on [BigQuery].
-    ///
-    /// [BigQuery]: https://cloud.google.com/bigquery/docs/reference/standard-sql/aggregate_functions#array_agg
+    /// Specifies the the ordering for some ordered set aggregates, e.g. `ARRAY_AGG`.
     OrderBy(Vec<OrderByExpr>),
-    /// Specifies a limit for the `ARRAY_AGG` and `ARRAY_CONCAT_AGG` functions on BigQuery.
+    /// Specifies a limit for the `ARRAY_AGG` and `ARRAY_CONCAT_AGG` functions.
     Limit(Expr),
     /// Specifies the behavior on overflow of the `LISTAGG` function.
     ///
     /// See <https://trino.io/docs/current/functions/aggregate.html>.
     OnOverflow(ListAggOnOverflow),
-    /// Specifies a minimum or maximum bound on the input to [`ANY_VALUE`] on BigQuery.
+    /// Specifies a minimum or maximum bound on the input to `ANY_VALUE`.
     ///
     /// Syntax:
     /// ```plaintext
     /// HAVING { MAX | MIN } expression
     /// ```
-    ///
-    /// [`ANY_VALUE`]: https://cloud.google.com/bigquery/docs/reference/standard-sql/aggregate_functions#any_value
     Having(HavingBound),
     /// The `SEPARATOR` clause to the [`GROUP_CONCAT`] function in MySQL.
     ///
@@ -9180,7 +9100,7 @@ impl fmt::Display for ListAggOnOverflow {
     }
 }
 
-/// The `HAVING` clause in a call to `ANY_VALUE` on BigQuery.
+/// The `HAVING` clause in a call to `ANY_VALUE`.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -9259,7 +9179,7 @@ impl fmt::Display for KillType {
             // MySQL
             KillType::Connection => "CONNECTION",
             KillType::Query => "QUERY",
-            // Clickhouse supports Mutation
+            // Mutation variant
             KillType::Mutation => "MUTATION",
         })
     }
@@ -9378,8 +9298,8 @@ pub enum SqlOption {
     /// e.g.
     ///
     ///   UNION  = (tbl_name\[,tbl_name\]...) <https://dev.mysql.com/doc/refman/8.4/en/create-table.html>
-    ///   ENGINE = ReplicatedMergeTree('/table_name','{replica}', ver) <https://clickhouse.com/docs/engines/table-engines/mergetree-family/replication>
-    ///   ENGINE = SummingMergeTree(\[columns\]) <https://clickhouse.com/docs/engines/table-engines/mergetree-family/summingmergetree>
+    ///   ENGINE = ReplicatedMergeTree('/table_name','{replica}', ver)
+    ///   ENGINE = SummingMergeTree(\[columns\])
     NamedParenthesizedList(NamedParenthesizedList),
 }
 
@@ -10239,7 +10159,6 @@ impl fmt::Display for TransactionIsolationLevel {
 
 /// Modifier for the transaction in the `BEGIN` syntax
 ///
-/// SQLite: <https://sqlite.org/lang_transaction.html>
 /// MS-SQL: <https://learn.microsoft.com/en-us/sql/t-sql/language-elements/try-catch-transact-sql>
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -10460,7 +10379,6 @@ impl fmt::Display for CopyOption {
 /// An option in `COPY` statement before PostgreSQL version 9.0.
 ///
 /// [PostgreSQL](https://www.postgresql.org/docs/8.4/sql-copy.html)
-/// [Redshift](https://docs.aws.amazon.com/redshift/latest/dg/r_COPY-alphabetical-parm-list.html)
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -10707,7 +10625,7 @@ impl fmt::Display for UnloadPartitionBy {
 
 /// An `IAM_ROLE` option in the AWS ecosystem
 ///
-/// [Redshift COPY](https://docs.aws.amazon.com/redshift/latest/dg/copy-parameters-authorization.html#copy-iam-role)
+/// An `IAM_ROLE` option in the AWS ecosystem.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -10767,8 +10685,6 @@ impl fmt::Display for CopyLegacyCsvOption {
 /// ```sql
 /// MERGE INTO T USING U ON FALSE WHEN MATCHED THEN DELETE
 /// ```
-/// [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/merge)
-/// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/dml-syntax#merge_statement)
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -10778,12 +10694,8 @@ pub enum MergeClauseKind {
     /// `WHEN NOT MATCHED`
     NotMatched,
     /// `WHEN MATCHED BY TARGET`
-    ///
-    /// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/dml-syntax#merge_statement)
     NotMatchedByTarget,
     /// `WHEN MATCHED BY SOURCE`
-    ///
-    /// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/dml-syntax#merge_statement)
     NotMatchedBySource,
 }
 
@@ -10800,8 +10712,6 @@ impl Display for MergeClauseKind {
 
 /// The type of expression used to insert rows within a `MERGE` statement.
 ///
-/// [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/merge)
-/// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/dml-syntax#merge_statement)
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -10819,7 +10729,6 @@ pub enum MergeInsertKind {
     /// ```sql
     /// INSERT ROW
     /// ```
-    /// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/dml-syntax#merge_statement)
     Row,
 }
 
@@ -10844,8 +10753,6 @@ impl Display for MergeInsertKind {
 /// INSERT ROW
 /// ```
 ///
-/// [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/merge)
-/// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/dml-syntax#merge_statement)
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -10878,8 +10785,6 @@ impl Display for MergeInsertExpr {
 /// INSERT (product, quantity) VALUES(product, quantity)
 /// ```
 ///
-/// [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/merge)
-/// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/dml-syntax#merge_statement)
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -10924,8 +10829,6 @@ impl Display for MergeAction {
 /// ```sql
 /// WHEN NOT MATCHED BY SOURCE AND product LIKE '%washer%' THEN DELETE
 /// ```
-/// [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/merge)
-/// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/dml-syntax#merge_statement)
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -11115,7 +11018,7 @@ impl fmt::Display for DropFunctionOption {
     }
 }
 
-/// Generic function description for DROP FUNCTION and CREATE TRIGGER.
+/// Function description for DROP FUNCTION and CREATE TRIGGER.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -11351,9 +11254,7 @@ impl fmt::Display for SqlDataAccess {
     }
 }
 
-/// [BigQuery] Determinism specifier used in a UDF definition.
-///
-/// [BigQuery]: https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#syntax_11
+/// Determinism specifier used in a UDF definition.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -11378,7 +11279,6 @@ impl fmt::Display for FunctionDeterminismSpecifier {
 /// Represent the expression body of a `CREATE FUNCTION` statement as well as
 /// where within the statement, the body shows up.
 ///
-/// [BigQuery]: https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#syntax_11
 /// [PostgreSQL]: https://www.postgresql.org/docs/15/sql-createfunction.html
 /// [MsSql]: https://learn.microsoft.com/en-us/sql/t-sql/statements/create-function-transact-sql
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
@@ -11395,7 +11295,6 @@ pub enum CreateFunctionBody {
     /// OPTIONS(description="desc");
     /// ```
     ///
-    /// [BigQuery]: https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#syntax_11
     AsBeforeOptions(Expr),
     /// A function body expression using the 'AS' keyword and shows up
     /// after any `OPTIONS` clause.
@@ -11407,7 +11306,6 @@ pub enum CreateFunctionBody {
     /// AS (x * y);
     /// ```
     ///
-    /// [BigQuery]: https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#syntax_11
     AsAfterOptions(Expr),
     /// Function body with statements before the `RETURN` keyword.
     ///
@@ -11814,8 +11712,7 @@ impl Display for UtilityOption {
 }
 
 /// Represents the different options available for `SHOW`
-/// statements to filter the results. Example from Snowflake:
-/// <https://docs.snowflake.com/en/sql-reference/sql/show-tables>
+/// statements to filter the results.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -12096,7 +11993,6 @@ pub enum TableObject {
     /// ```sql
     /// INSERT INTO TABLE FUNCTION remote('localhost', default.simple_table)
     /// ```
-    /// [Clickhouse](https://clickhouse.com/docs/en/sql-reference/table-functions)
     TableFunction(Function),
 }
 
@@ -12457,7 +12353,6 @@ impl fmt::Display for MemberOf {
 /// CREATE [OR REPLACE] USER [IF NOT EXISTS] <name> [OPTIONS]
 /// ```
 ///
-/// [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/create-user)
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -12512,7 +12407,6 @@ impl fmt::Display for CreateUser {
 /// ALTER USER [ IF EXISTS ] [ <name> ] [ OPTIONS ]
 /// ```
 ///
-/// [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/alter-user)
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -12560,13 +12454,10 @@ pub enum CreateTableLikeKind {
     /// '''sql
     /// CREATE TABLE new (LIKE old ...)
     /// '''
-    /// [Redshift](https://docs.aws.amazon.com/redshift/latest/dg/r_CREATE_TABLE_NEW.html)
     Parenthesized(CreateTableLike),
     /// '''sql
     /// CREATE TABLE new LIKE old ...
     /// '''
-    /// [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/create-table#label-create-table-like)
-    /// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#create_table_like)
     Plain(CreateTableLike),
 }
 
@@ -12635,7 +12526,6 @@ impl fmt::Display for CreateTableLike {
 /// '''sql
 /// VACUUM [ FULL | SORT ONLY | DELETE ONLY | REINDEX | RECLUSTER ] [ \[ table_name \] [ TO threshold PERCENT ] \[ BOOST \] ]
 /// '''
-/// [Redshift](https://docs.aws.amazon.com/redshift/latest/dg/r_VACUUM_command.html)
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]

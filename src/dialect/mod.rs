@@ -106,14 +106,14 @@ pub trait Dialect: Debug + Any {
     /// Determine if a character starts a quoted identifier. The default
     /// implementation, accepting "double quoted" ids is both ANSI-compliant
     /// and appropriate for most dialects (with the notable exception of
-    /// MySQL, MS SQL, and sqlite). You can accept one of characters listed
+    /// MySQL and MS SQL). You can accept one of characters listed
     /// in `Word::matching_end_quote` here
     fn is_delimited_identifier_start(&self, ch: char) -> bool {
         ch == '"' || ch == '`'
     }
 
     /// Determine if a character starts a potential nested quoted identifier.
-    /// Example: RedShift supports the following quote styles to all mean the same thing:
+    /// Example: some dialects support the following quote styles to all mean the same thing:
     /// ```sql
     /// SELECT 1 AS foo;
     /// SELECT 1 AS "foo";
@@ -128,7 +128,7 @@ pub trait Dialect: Debug + Any {
     /// If the next sequence of tokens potentially represent a nested identifier, then this method
     /// returns a tuple containing the outer quote style, and if present, the inner (nested) quote style.
     ///
-    /// Example (Redshift):
+    /// Example:
     /// ```text
     /// `["foo"]` => Some(`[`, Some(`"`))
     /// `[foo]` => Some(`[`, None)
@@ -168,7 +168,7 @@ pub trait Dialect: Debug + Any {
 
     /// Determine if the dialect supports escaping characters via '\' in string literals.
     ///
-    /// Some dialects like BigQuery and Snowflake support this while others like
+    /// Some dialects support this while others like
     /// Postgres do not. Such that the following is accepted by the former but
     /// rejected by the latter.
     /// ```sql
@@ -188,7 +188,7 @@ pub trait Dialect: Debug + Any {
     ///
     /// [MySQL] has a special case when escaping single quoted strings which leaves these unescaped
     /// so they can be used in LIKE patterns without double-escaping (as is necessary in other
-    /// escaping dialects, such as [Snowflake]). Generally, special characters have escaping rules
+    /// escaping dialects). Generally, special characters have escaping rules
     /// causing them to be replaced with a different byte sequences (e.g. `'\0'` becoming the zero
     /// byte), and the default if an escaped character does not have a specific escaping rule is to
     /// strip the backslash (e.g. there is no rule for `h`, so `'\h' = 'h'`). MySQL's special case
@@ -206,7 +206,6 @@ pub trait Dialect: Debug + Any {
     /// ```
     ///
     /// [MySQL]: https://dev.mysql.com/doc/refman/8.4/en/string-literals.html
-    /// [Snowflake]: https://docs.snowflake.com/en/sql-reference/functions/like#usage-notes
     fn ignores_wildcard_escapes(&self) -> bool {
         false
     }
@@ -276,7 +275,7 @@ pub trait Dialect: Debug + Any {
     /// ```
     /// and internally represented as a **flat list** of joins.
     ///
-    /// In contrast, some dialects (e.g. **Snowflake**) assume **right-associative**
+    /// In contrast, some dialects assume **right-associative**
     /// precedence and interpret the same query as:
     /// ```sql
     /// (t1 NATURAL JOIN (t5 INNER JOIN t0 ON ...))
@@ -536,8 +535,6 @@ pub trait Dialect: Debug + Any {
     /// following a wildcard in the projection section. For example:
     /// `SELECT * EXCLUDE col1 FROM tbl`.
     ///
-    /// [Redshift](https://docs.aws.amazon.com/redshift/latest/dg/r_EXCLUDE_list.html)
-    /// [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/select)
     fn supports_select_wildcard_exclude(&self) -> bool {
         false
     }
@@ -547,7 +544,6 @@ pub trait Dialect: Debug + Any {
     /// after a wildcard. For example:
     /// `SELECT *, c1, c2 EXCLUDE c3 FROM tbl`
     ///
-    /// [Redshift](https://docs.aws.amazon.com/redshift/latest/dg/r_EXCLUDE_list.html)
     fn supports_select_exclude(&self) -> bool {
         false
     }
@@ -814,7 +810,7 @@ pub trait Dialect: Debug + Any {
     }
 
     /// Returns true if this dialect allows dollar placeholders
-    /// e.g. `SELECT $var` (SQLite)
+    /// e.g. `SELECT $var`
     fn supports_dollar_placeholder(&self) -> bool {
         false
     }
@@ -937,7 +933,7 @@ pub trait Dialect: Debug + Any {
     }
 
     /// Returns reserved keywords that may prefix a select item expression
-    /// e.g. `SELECT CONNECT_BY_ROOT name FROM Tbl2` (Snowflake)
+    /// e.g. `SELECT CONNECT_BY_ROOT name FROM Tbl2`
     fn get_reserved_keywords_for_select_item_operator(&self) -> &[Keyword] {
         &[]
     }
@@ -1095,7 +1091,6 @@ pub trait Dialect: Debug + Any {
     /// that returns an identifier. Typically used to generate identifiers
     /// programmatically.
     ///
-    /// - [Snowflake](https://docs.snowflake.com/en/sql-reference/identifier-literal)
     fn is_identifier_generating_function_name(
         &self,
         _ident: &Ident,
@@ -1144,14 +1139,11 @@ pub trait Dialect: Debug + Any {
     /// '''sql
     /// CREATE TABLE new LIKE old ...
     /// '''
-    /// [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/create-table#label-create-table-like)
-    /// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#create_table_like)
     ///
     /// Parenthesized:
     /// '''sql
     /// CREATE TABLE new (LIKE old ...)
     /// '''
-    /// [Redshift](https://docs.aws.amazon.com/redshift/latest/dg/r_CREATE_TABLE_NEW.html)
     fn supports_create_table_like_parenthesized(&self) -> bool {
         false
     }

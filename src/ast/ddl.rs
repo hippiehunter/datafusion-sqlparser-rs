@@ -159,12 +159,10 @@ pub enum AlterTableOperation {
     /// `DROP PRIMARY KEY`
     ///
     /// [MySQL](https://dev.mysql.com/doc/refman/8.4/en/alter-table.html)
-    /// [Snowflake](https://docs.snowflake.com/en/sql-reference/constraints-drop)
     DropPrimaryKey { drop_behavior: Option<DropBehavior> },
     /// `DROP FOREIGN KEY <fk_symbol>`
     ///
     /// [MySQL](https://dev.mysql.com/doc/refman/8.4/en/alter-table.html)
-    /// [Snowflake](https://docs.snowflake.com/en/sql-reference/constraints-drop)
     DropForeignKey {
         name: Ident,
         drop_behavior: Option<DropBehavior>,
@@ -875,7 +873,7 @@ impl fmt::Display for KeyOrIndexDisplay {
 
 /// Indexing method used by that index.
 ///
-/// This structure isn't present on ANSI, but is found at least in [`MySQL` CREATE TABLE][1],
+/// This structure isn't present in the SQL standard, but is found at least in [`MySQL` CREATE TABLE][1],
 /// [`MySQL` CREATE INDEX][2], and [Postgresql CREATE INDEX][3] statements.
 ///
 /// [1]: https://dev.mysql.com/doc/refman/8.0/en/create-table.html
@@ -1073,7 +1071,7 @@ impl fmt::Display for ViewColumnDef {
 
 /// An optionally-named `ColumnOption`: `[ CONSTRAINT <name> ] <column-option>`.
 ///
-/// Note that implementations are substantially more permissive than the ANSI
+/// Note that implementations are substantially more permissive than the SQL standard
 /// specification on what order column options can be presented in, and whether
 /// they are allowed to be named. The specification distinguishes between
 /// constraints (NOT NULL, UNIQUE, PRIMARY KEY, and CHECK), which can be named
@@ -1107,7 +1105,6 @@ impl fmt::Display for ColumnOptionDef {
 /// { IDENTITY | AUTOINCREMENT } [ (seed , increment) | START num INCREMENT num ] [ ORDER | NOORDER ]
 /// ```
 /// [MS SQL Server]: https://learn.microsoft.com/en-us/sql/t-sql/statements/create-table-transact-sql-identity-property
-/// [Snowflake]: https://docs.snowflake.com/en/sql-reference/sql/create-table
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -1118,20 +1115,17 @@ pub enum IdentityPropertyKind {
     ///  AUTOINCREMENT(100, 1) NOORDER
     ///  AUTOINCREMENT START 100 INCREMENT 1 ORDER
     /// ```
-    /// [Snowflake]: https://docs.snowflake.com/en/sql-reference/sql/create-table
     Autoincrement(IdentityProperty),
     /// An identity property declared via the `IDENTITY` key word
-    /// Example, [MS SQL Server] or [Snowflake]:
+    /// Example, [MS SQL Server]:
     /// ```sql
     ///  IDENTITY(100, 1)
     /// ```
-    /// [Snowflake]
     /// ```sql
     ///  IDENTITY(100, 1) ORDER
     ///  IDENTITY START 100 INCREMENT 1 NOORDER
     /// ```
     /// [MS SQL Server]: https://learn.microsoft.com/en-us/sql/t-sql/statements/create-table-transact-sql-identity-property
-    /// [Snowflake]: https://docs.snowflake.com/en/sql-reference/sql/create-table
     Identity(IdentityProperty),
 }
 
@@ -1162,7 +1156,6 @@ pub struct IdentityProperty {
 
 /// A format of parameters of identity column.
 ///
-/// It is [Snowflake] specific.
 /// Syntax
 /// ```sql
 /// (seed , increment) | START num INCREMENT num
@@ -1173,7 +1166,6 @@ pub struct IdentityProperty {
 /// (seed , increment)
 /// ```
 /// [MS SQL Server]: https://learn.microsoft.com/en-us/sql/t-sql/statements/create-table-transact-sql-identity-property
-/// [Snowflake]: https://docs.snowflake.com/en/sql-reference/sql/create-table
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -1184,14 +1176,12 @@ pub enum IdentityPropertyFormatKind {
     ///  (100, 1)
     /// ```
     /// [MS SQL Server]: https://learn.microsoft.com/en-us/sql/t-sql/statements/create-table-transact-sql-identity-property
-    /// [Snowflake]: https://docs.snowflake.com/en/sql-reference/sql/create-table
     FunctionCall(IdentityParameters),
     /// A parameters of identity column declared with keywords `START` and `INCREMENT`
     /// Example:
     /// ```sql
     ///  START 100 INCREMENT 1
     /// ```
-    /// [Snowflake]: https://docs.snowflake.com/en/sql-reference/sql/create-table
     StartAndIncrement(IdentityParameters),
 }
 
@@ -1224,7 +1214,6 @@ pub struct IdentityParameters {
 /// ```sql
 /// ORDER | NOORDER
 /// ```
-/// [Snowflake]: https://docs.snowflake.com/en/sql-reference/sql/create-table
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -1270,7 +1259,7 @@ pub enum ColumnOption {
     /// `CHECK (<expr>)`
     Check(CheckConstraint),
     /// Dialect-specific options, such as:
-    /// - MySQL's `AUTO_INCREMENT` or SQLite's `AUTOINCREMENT`
+    /// - MySQL's `AUTO_INCREMENT`
     /// - ...
     DialectSpecific(Vec<Token>),
     CharacterSet(ObjectName),
@@ -1287,13 +1276,11 @@ pub enum ColumnOption {
         /// false if 'GENERATED ALWAYS' is skipped (option starts with AS)
         generated_keyword: bool,
     },
-    /// BigQuery specific: Explicit column options in a view [1] or table [2]
+    /// Explicit column options in a view or table.
     /// Syntax
     /// ```sql
     /// OPTIONS(description="field desc")
     /// ```
-    /// [1]: https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#view_column_option_list
-    /// [2]: https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#column_option_list
     Options(Vec<SqlOption>),
     /// Creates an identity or an autoincrement column in a table.
     /// Syntax
@@ -1301,7 +1288,6 @@ pub enum ColumnOption {
     /// { IDENTITY | AUTOINCREMENT } [ (seed , increment) | START num INCREMENT num ] [ ORDER | NOORDER ]
     /// ```
     /// [MS SQL Server]: https://learn.microsoft.com/en-us/sql/t-sql/statements/create-table-transact-sql-identity-property
-    /// [Snowflake]: https://docs.snowflake.com/en/sql-reference/sql/create-table
     Identity(IdentityPropertyKind),
     /// MySQL specific: Spatial reference identifier
     /// Syntax:
@@ -2013,8 +1999,7 @@ impl fmt::Display for UserDefinedTypeSqlDefinitionOption {
 pub enum Partition {
     Identifier(Ident),
     Expr(Expr),
-    /// ClickHouse supports PART expr which represents physical partition in disk.
-    /// [ClickHouse](https://clickhouse.com/docs/en/sql-reference/statements/alter/partition#attach-partitionpart)
+    /// PART expr which represents a physical partition in disk.
     Part(Expr),
     Partitions(Vec<Expr>),
 }
@@ -2032,8 +2017,7 @@ impl fmt::Display for Partition {
     }
 }
 
-/// DEDUPLICATE statement used in OPTIMIZE TABLE et al. such as in ClickHouse SQL
-/// [ClickHouse](https://clickhouse.com/docs/en/sql-reference/statements/optimize)
+/// DEDUPLICATE statement used in OPTIMIZE TABLE et al.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -2243,7 +2227,7 @@ impl fmt::Display for CreateTable {
             write!(f, " COMMENT '{comment}'")?;
         }
 
-        // Only for SQLite
+        // WITHOUT ROWID option
         if self.without_rowid {
             write!(f, " WITHOUT ROWID")?;
         }
@@ -2446,15 +2430,10 @@ pub struct CreateFunction {
     /// ```sql
     /// CREATE FUNCTION foo() LANGUAGE js AS "console.log();"
     /// ```
-    /// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#create_a_javascript_udf)
     pub language: Option<Ident>,
     /// Determinism keyword used for non-sql UDF definitions.
-    ///
-    /// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#syntax_11)
     pub determinism_specifier: Option<FunctionDeterminismSpecifier>,
     /// List of options for creating the function.
-    ///
-    /// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#syntax_11)
     pub options: Option<Vec<SqlOption>>,
     /// Connection resource for a remote function.
     ///
@@ -2464,7 +2443,6 @@ pub struct CreateFunction {
     /// RETURNS FLOAT64
     /// REMOTE WITH CONNECTION us.myconnection
     /// ```
-    /// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#create_a_remote_function)
     pub remote_connection: Option<ObjectName>,
     /// SQL:2016 SQL data access characteristic
     ///
@@ -2589,7 +2567,6 @@ impl fmt::Display for CreateFunction {
 
 /// An `ALTER SCHEMA` (`Statement::AlterSchema`) operation.
 ///
-/// See [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#alter_schema_collate_statement)
 /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-alterschema.html)
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -2751,7 +2728,6 @@ pub struct CreateTrigger {
     /// CREATE TEMP TRIGGER trigger_name;
     /// ```
     ///
-    /// [SQLite](https://sqlite.org/lang_createtrigger.html#temp_triggers_on_non_temp_tables)
     pub temporary: bool,
     /// The `OR REPLACE` clause is used to re-create the trigger if it already exists.
     ///
@@ -2818,7 +2794,7 @@ pub struct CreateTrigger {
     pub referencing: Vec<TriggerReferencing>,
     /// This specifies whether the trigger function should be fired once for
     /// every row affected by the trigger event, or just once per SQL statement.
-    /// This is optional in some SQL dialects, such as SQLite, and if not specified, in
+    /// This is optional in some SQL dialects, and if not specified, in
     /// those cases, the implied default is `FOR EACH ROW`.
     pub trigger_object: Option<TriggerObjectKind>,
     ///  Triggering conditions
