@@ -478,7 +478,7 @@ fn x_series_nested_xml_construction() {
     // SQL:2016 X-series: Deeply nested XML construction - NOT YET IMPLEMENTED
     one_statement_parses_to_std(
         "SELECT XMLELEMENT(NAME 'order', XMLELEMENT(NAME 'customer', XMLFOREST(c.name, c.address)), XMLAGG(XMLELEMENT(NAME 'item', i.product))) FROM customers c JOIN items i ON c.id = i.customer_id GROUP BY c.id",
-        "SELECT XMLELEMENT(NAME 'order', XMLELEMENT(NAME 'customer', XMLFOREST(c.name, c.address)), XMLAGG(XMLELEMENT(NAME 'item', i.product))) FROM customers AS c JOIN items AS i ON c.id = i.customer_id GROUP BY c.id"
+        "SELECT XMLELEMENT(NAME 'order', XMLELEMENT(NAME 'customer', XMLFOREST(c.name, c.address)), xmlagg(XMLELEMENT(NAME 'item', i.product))) FROM customers AS c JOIN items AS i ON c.id = i.customer_id GROUP BY c.id"
     );
 }
 

@@ -6068,10 +6068,10 @@ impl fmt::Display for Statement {
     /// indentation and line breaks. For example:
     ///
     /// ```
-    /// # use sqlparser::dialect::GenericDialect;
+    /// # use sqlparser::dialect::PostgreSqlDialect;
     /// # use sqlparser::parser::Parser;
     /// let sql = "SELECT a, b FROM table_1";
-    /// let ast = Parser::parse_sql(&GenericDialect, sql).unwrap();
+    /// let ast = Parser::parse_sql(&PostgreSqlDialect {}, sql).unwrap();
     ///
     /// // Regular formatting
     /// assert_eq!(format!("{}", ast[0]), "SELECT a, b FROM table_1");

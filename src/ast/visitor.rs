@@ -153,7 +153,7 @@ impl<'a> VisitMut for Cow<'a, str> {
 /// # Example
 /// ```
 /// # use sqlparser::parser::Parser;
-/// # use sqlparser::dialect::GenericDialect;
+/// # use sqlparser::dialect::PostgreSqlDialect;
 /// # use sqlparser::ast::{Visit, Visitor, ObjectName, Expr};
 /// # use core::ops::ControlFlow;
 /// // A structure that records statements and relations
@@ -179,7 +179,7 @@ impl<'a> VisitMut for Cow<'a, str> {
 /// }
 ///
 /// let sql = "SELECT a FROM foo where x IN (SELECT y FROM bar)";
-/// let statements = Parser::parse_sql(&GenericDialect{}, sql)
+/// let statements = Parser::parse_sql(&PostgreSqlDialect{}, sql)
 ///    .unwrap();
 ///
 /// // Drive the visitor through the AST
@@ -294,7 +294,7 @@ pub trait Visitor {
 /// # Example
 /// ```
 /// # use sqlparser::parser::Parser;
-/// # use sqlparser::dialect::GenericDialect;
+/// # use sqlparser::dialect::PostgreSqlDialect;
 /// # use sqlparser::ast::{VisitMut, VisitorMut, ObjectName, Expr, Ident};
 /// # use core::ops::ControlFlow;
 ///
@@ -314,7 +314,7 @@ pub trait Visitor {
 /// }
 ///
 /// let sql = "SELECT to_replace FROM foo where to_replace IN (SELECT to_replace FROM bar)";
-/// let mut statements = Parser::parse_sql(&GenericDialect{}, sql).unwrap();
+/// let mut statements = Parser::parse_sql(&PostgreSqlDialect{}, sql).unwrap();
 ///
 /// // Drive the visitor through the AST
 /// statements.visit(&mut Replacer);
@@ -429,11 +429,11 @@ impl<E, F: FnMut(&mut ObjectName) -> ControlFlow<E>> VisitorMut for RelationVisi
 /// # Example
 /// ```
 /// # use sqlparser::parser::Parser;
-/// # use sqlparser::dialect::GenericDialect;
+/// # use sqlparser::dialect::PostgreSqlDialect;
 /// # use sqlparser::ast::{visit_relations};
 /// # use core::ops::ControlFlow;
 /// let sql = "SELECT a FROM foo where x IN (SELECT y FROM bar)";
-/// let statements = Parser::parse_sql(&GenericDialect{}, sql)
+/// let statements = Parser::parse_sql(&PostgreSqlDialect{}, sql)
 ///    .unwrap();
 ///
 /// // visit statements, capturing relations (table names)
@@ -469,11 +469,11 @@ where
 /// # Example
 /// ```
 /// # use sqlparser::parser::Parser;
-/// # use sqlparser::dialect::GenericDialect;
+/// # use sqlparser::dialect::PostgreSqlDialect;
 /// # use sqlparser::ast::{ObjectName, ObjectNamePart, Ident, visit_relations_mut};
 /// # use core::ops::ControlFlow;
 /// let sql = "SELECT a FROM foo";
-/// let mut statements = Parser::parse_sql(&GenericDialect{}, sql)
+/// let mut statements = Parser::parse_sql(&PostgreSqlDialect{}, sql)
 ///    .unwrap();
 ///
 /// // visit statements, renaming table foo to bar
@@ -517,11 +517,11 @@ impl<E, F: FnMut(&mut Expr) -> ControlFlow<E>> VisitorMut for ExprVisitor<F> {
 /// # Example
 /// ```
 /// # use sqlparser::parser::Parser;
-/// # use sqlparser::dialect::GenericDialect;
+/// # use sqlparser::dialect::PostgreSqlDialect;
 /// # use sqlparser::ast::{visit_expressions};
 /// # use core::ops::ControlFlow;
 /// let sql = "SELECT a FROM foo where x IN (SELECT y FROM bar)";
-/// let statements = Parser::parse_sql(&GenericDialect{}, sql)
+/// let statements = Parser::parse_sql(&PostgreSqlDialect{}, sql)
 ///    .unwrap();
 ///
 /// // visit all expressions
@@ -561,11 +561,11 @@ where
 /// ## Remove all select limits in sub-queries
 /// ```
 /// # use sqlparser::parser::Parser;
-/// # use sqlparser::dialect::GenericDialect;
+/// # use sqlparser::dialect::PostgreSqlDialect;
 /// # use sqlparser::ast::{Expr, visit_expressions_mut, visit_statements_mut};
 /// # use core::ops::ControlFlow;
 /// let sql = "SELECT (SELECT y FROM z LIMIT 9) FROM t LIMIT 3";
-/// let mut statements = Parser::parse_sql(&GenericDialect{}, sql).unwrap();
+/// let mut statements = Parser::parse_sql(&PostgreSqlDialect{}, sql).unwrap();
 ///
 /// // Remove all select limits in sub-queries
 /// visit_expressions_mut(&mut statements, |expr| {
@@ -586,11 +586,11 @@ where
 ///
 /// ```
 /// # use sqlparser::parser::Parser;
-/// # use sqlparser::dialect::GenericDialect;
+/// # use sqlparser::dialect::PostgreSqlDialect;
 /// # use sqlparser::ast::*;
 /// # use core::ops::ControlFlow;
 /// let sql = "SELECT x, y FROM t";
-/// let mut statements = Parser::parse_sql(&GenericDialect{}, sql).unwrap();
+/// let mut statements = Parser::parse_sql(&PostgreSqlDialect{}, sql).unwrap();
 ///
 /// visit_expressions_mut(&mut statements, |expr| {
 ///   if matches!(expr, Expr::Identifier(col_name) if col_name.value == "x") {
@@ -649,11 +649,11 @@ impl<E, F: FnMut(&mut Statement) -> ControlFlow<E>> VisitorMut for StatementVisi
 /// # Example
 /// ```
 /// # use sqlparser::parser::Parser;
-/// # use sqlparser::dialect::GenericDialect;
+/// # use sqlparser::dialect::PostgreSqlDialect;
 /// # use sqlparser::ast::{visit_statements};
 /// # use core::ops::ControlFlow;
 /// let sql = "SELECT a FROM foo where x IN (SELECT y FROM bar); CREATE TABLE baz(q int)";
-/// let statements = Parser::parse_sql(&GenericDialect{}, sql)
+/// let statements = Parser::parse_sql(&PostgreSqlDialect{}, sql)
 ///    .unwrap();
 ///
 /// // visit all statements
@@ -686,11 +686,11 @@ where
 /// # Example
 /// ```
 /// # use sqlparser::parser::Parser;
-/// # use sqlparser::dialect::GenericDialect;
+/// # use sqlparser::dialect::PostgreSqlDialect;
 /// # use sqlparser::ast::{Statement, visit_statements_mut};
 /// # use core::ops::ControlFlow;
 /// let sql = "SELECT x FROM foo LIMIT 9+$limit; SELECT * FROM t LIMIT f()";
-/// let mut statements = Parser::parse_sql(&GenericDialect{}, sql).unwrap();
+/// let mut statements = Parser::parse_sql(&PostgreSqlDialect{}, sql).unwrap();
 ///
 /// // Remove all select limits in outer statements (not in sub-queries)
 /// visit_statements_mut(&mut statements, |stmt| {
@@ -716,7 +716,7 @@ where
 mod tests {
     use super::*;
     use crate::ast::Statement;
-    use crate::dialect::GenericDialect;
+    use crate::dialect::PostgreSqlDialect;
     use crate::parser::Parser;
     use crate::tokenizer::Tokenizer;
 
@@ -790,7 +790,7 @@ mod tests {
     }
 
     fn do_visit<V: Visitor<Break = ()>>(sql: &str, visitor: &mut V) -> Statement {
-        let dialect = GenericDialect {};
+        let dialect = PostgreSqlDialect {};
         let tokens = Tokenizer::new(&dialect, sql).tokenized_owned().unwrap();
         let s = Parser::new(&dialect)
             .with_tokens(tokens)
@@ -981,7 +981,7 @@ mod tests {
             .join(" OR ");
         let sql = format!("SELECT x where {cond}");
 
-        let dialect = GenericDialect {};
+        let dialect = PostgreSqlDialect {};
         let tokens = Tokenizer::new(&dialect, sql.as_str())
             .tokenized_owned()
             .unwrap();
@@ -999,7 +999,7 @@ mod tests {
 #[cfg(test)]
 mod visit_mut_tests {
     use crate::ast::{Statement, Value, VisitMut, VisitorMut};
-    use crate::dialect::GenericDialect;
+    use crate::dialect::PostgreSqlDialect;
     use crate::parser::Parser;
     use crate::tokenizer::Tokenizer;
     use core::ops::ControlFlow;
@@ -1024,7 +1024,7 @@ mod visit_mut_tests {
     }
 
     fn do_visit_mut<V: VisitorMut<Break = ()>>(sql: &str, visitor: &mut V) -> Statement {
-        let dialect = GenericDialect {};
+        let dialect = PostgreSqlDialect {};
         let tokens = Tokenizer::new(&dialect, sql).tokenized_owned().unwrap();
         let mut s = Parser::new(&dialect)
             .with_tokens(tokens)

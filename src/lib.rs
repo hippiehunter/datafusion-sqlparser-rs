@@ -32,10 +32,10 @@
 //! # Example parsing SQL text
 //!
 //! ```
-//! use sqlparser::dialect::GenericDialect;
+//! use sqlparser::dialect::PostgreSqlDialect;
 //! use sqlparser::parser::Parser;
 //!
-//! let dialect = GenericDialect {}; // or AnsiDialect
+//! let dialect = PostgreSqlDialect {};
 //!
 //! let sql = "SELECT a, b, 123, myfunc(b) \
 //!            FROM table_1 \
@@ -54,12 +54,12 @@
 //! useful for tools that analyze and manipulate SQL.
 //!
 //! ```
-//! # use sqlparser::dialect::GenericDialect;
+//! # use sqlparser::dialect::PostgreSqlDialect;
 //! # use sqlparser::parser::Parser;
 //! let sql = "SELECT a FROM table_1";
 //!
 //! // parse to a Vec<Statement>
-//! let ast = Parser::parse_sql(&GenericDialect, sql).unwrap();
+//! let ast = Parser::parse_sql(&PostgreSqlDialect {}, sql).unwrap();
 //!
 //! // The original SQL text can be generated from the AST
 //! assert_eq!(ast[0].to_string(), sql);
@@ -70,10 +70,10 @@
 //! SQL statements can be pretty-printed with proper indentation and line breaks using the alternate flag (`{:#}`):
 //!
 //! ```
-//! # use sqlparser::dialect::GenericDialect;
+//! # use sqlparser::dialect::PostgreSqlDialect;
 //! # use sqlparser::parser::Parser;
 //! let sql = "SELECT a, b FROM table_1";
-//! let ast = Parser::parse_sql(&GenericDialect, sql).unwrap();
+//! let ast = Parser::parse_sql(&PostgreSqlDialect {}, sql).unwrap();
 //!
 //! // Pretty print with indentation and line breaks
 //! let pretty_sql = format!("{:#}", ast[0]);

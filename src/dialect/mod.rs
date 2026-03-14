@@ -15,12 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-mod ansi;
-mod db2;
-mod generic;
 mod mssql;
 mod mysql;
-mod oracle;
 mod postgresql;
 
 use core::any::{Any, TypeId};
@@ -30,12 +26,8 @@ use core::str::Chars;
 
 use log::debug;
 
-pub use self::ansi::AnsiDialect;
-pub use self::db2::Db2Dialect;
-pub use self::generic::GenericDialect;
 pub use self::mssql::MsSqlDialect;
 pub use self::mysql::MySqlDialect;
-pub use self::oracle::OracleDialect;
 pub use self::postgresql::PostgreSqlDialect;
 use crate::ast::{ColumnOption, Expr, GranteesType, Ident, ObjectNamePart, Statement};
 pub use crate::keywords;
@@ -55,7 +47,7 @@ use alloc::boxed::Box;
 /// 1. user defined [`Dialect`]s can customize the parsing behavior
 /// 2. The differences between dialects can be clearly documented in the trait
 ///
-/// `dialect_of!(parser is SQLiteDialect |  GenericDialect)` evaluates
+/// `dialect_of!(parser is PostgreSqlDialect | MySqlDialect)` evaluates
 /// to `true` if `parser.dialect` is one of the [`Dialect`]s specified.
 macro_rules! dialect_of {
     ( $parsed_dialect: ident is $($dialect_type: ty)|+ ) => {
@@ -80,27 +72,24 @@ macro_rules! dialect_is {
 /// custom extensions or various historical reasons. This trait
 /// encapsulates the parsing differences between dialects.
 ///
-/// [`GenericDialect`] is the most permissive dialect, and parses the union of
-/// all the other dialects, when there is no ambiguity.
-///
 /// # Examples
 /// Most users create a [`Dialect`] directly, as shown on the [module
 /// level documentation]:
 ///
 /// ```
-/// # use sqlparser::dialect::AnsiDialect;
-/// let dialect = AnsiDialect {};
+/// # use sqlparser::dialect::PostgreSqlDialect;
+/// let dialect = PostgreSqlDialect {};
 /// ```
 ///
 /// It is also possible to dynamically create a [`Dialect`] from its
 /// name. For example:
 ///
 /// ```
-/// # use sqlparser::dialect::{AnsiDialect, dialect_from_str};
-/// let dialect = dialect_from_str("ansi").unwrap();
+/// # use sqlparser::dialect::{PostgreSqlDialect, dialect_from_str};
+/// let dialect = dialect_from_str("postgresql").unwrap();
 ///
-/// // Parsed dialect is an instance of `AnsiDialect`:
-/// assert!(dialect.is::<AnsiDialect>());
+/// // Parsed dialect is an instance of `PostgreSqlDialect`:
+/// assert!(dialect.is::<PostgreSqlDialect>());
 /// ```
 ///
 /// [module level documentation]: crate
@@ -1207,13 +1196,9 @@ impl dyn Dialect {
 pub fn dialect_from_str(dialect_name: impl AsRef<str>) -> Option<Box<dyn Dialect>> {
     let dialect_name = dialect_name.as_ref();
     match dialect_name.to_lowercase().as_str() {
-        "generic" => Some(Box::new(GenericDialect)),
         "mysql" => Some(Box::new(MySqlDialect {})),
         "postgresql" | "postgres" => Some(Box::new(PostgreSqlDialect {})),
         "mssql" => Some(Box::new(MsSqlDialect {})),
-        "ansi" => Some(Box::new(AnsiDialect {})),
-        "oracle" => Some(Box::new(OracleDialect {})),
-        "db2" => Some(Box::new(Db2Dialect {})),
         _ => None,
     }
 }
@@ -1228,37 +1213,30 @@ mod tests {
 
     #[test]
     fn test_is_dialect() {
-        let generic_dialect: &dyn Dialect = &GenericDialect {};
-        let ansi_dialect: &dyn Dialect = &AnsiDialect {};
+        let pg_dialect: &dyn Dialect = &PostgreSqlDialect {};
+        let mysql_dialect: &dyn Dialect = &MySqlDialect {};
 
-        let generic_holder = DialectHolder {
-            dialect: generic_dialect,
+        let pg_holder = DialectHolder {
+            dialect: pg_dialect,
         };
-        let ansi_holder = DialectHolder {
-            dialect: ansi_dialect,
+        let mysql_holder = DialectHolder {
+            dialect: mysql_dialect,
         };
 
-        assert!(dialect_of!(generic_holder is GenericDialect |  AnsiDialect),);
-        assert!(!dialect_of!(generic_holder is  AnsiDialect));
-        assert!(dialect_of!(ansi_holder is AnsiDialect));
-        assert!(dialect_of!(ansi_holder is GenericDialect | AnsiDialect));
-        assert!(!dialect_of!(ansi_holder is GenericDialect | MsSqlDialect));
+        assert!(dialect_of!(pg_holder is PostgreSqlDialect | MySqlDialect),);
+        assert!(!dialect_of!(pg_holder is MySqlDialect));
+        assert!(dialect_of!(mysql_holder is MySqlDialect));
+        assert!(dialect_of!(mysql_holder is PostgreSqlDialect | MySqlDialect));
+        assert!(!dialect_of!(mysql_holder is PostgreSqlDialect | MsSqlDialect));
     }
 
     #[test]
     fn test_dialect_from_str() {
-        assert!(parse_dialect("generic").is::<GenericDialect>());
         assert!(parse_dialect("mysql").is::<MySqlDialect>());
         assert!(parse_dialect("MySql").is::<MySqlDialect>());
         assert!(parse_dialect("postgresql").is::<PostgreSqlDialect>());
         assert!(parse_dialect("postgres").is::<PostgreSqlDialect>());
         assert!(parse_dialect("MsSql").is::<MsSqlDialect>());
-        assert!(parse_dialect("ansi").is::<AnsiDialect>());
-        assert!(parse_dialect("ANSI").is::<AnsiDialect>());
-        assert!(parse_dialect("oracle").is::<OracleDialect>());
-        assert!(parse_dialect("Oracle").is::<OracleDialect>());
-        assert!(parse_dialect("db2").is::<Db2Dialect>());
-        assert!(parse_dialect("DB2").is::<Db2Dialect>());
 
         // error cases
         assert!(dialect_from_str("Unknown").is_none());
@@ -1272,8 +1250,8 @@ mod tests {
     #[test]
     fn identifier_quote_style() {
         let tests: Vec<(&dyn Dialect, &str, Option<char>)> = vec![
-            (&GenericDialect {}, "id", None),
             (&PostgreSqlDialect {}, "id", Some('"')),
+            (&MySqlDialect {}, "id", Some('`')),
         ];
 
         for (dialect, ident, expected) in tests {

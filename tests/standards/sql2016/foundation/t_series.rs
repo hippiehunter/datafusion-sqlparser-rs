@@ -336,7 +336,7 @@ fn t173_01_drop_sequence() {
 #[test]
 fn t174_01_alter_sequence() {
     // SQL:2016 T174: ALTER SEQUENCE - NOT YET IMPLEMENTED
-    // ALTER SEQUENCE is not fully supported in GenericDialect
+    // ALTER SEQUENCE is not fully supported in PostgreSqlDialect
     verified_standard_stmt("ALTER SEQUENCE seq RESTART");
 }
 

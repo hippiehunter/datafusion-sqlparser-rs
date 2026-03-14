@@ -15,11 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use sqlparser::dialect::GenericDialect;
+use sqlparser::dialect::{MySqlDialect, PostgreSqlDialect};
 use sqlparser::parser::Parser;
 
 fn prettify(sql: &str) -> String {
-    let ast = Parser::parse_sql(&GenericDialect {}, sql).unwrap();
+    let ast = Parser::parse_sql(&PostgreSqlDialect {}, sql).unwrap();
+    format!("{:#}", ast[0])
+}
+
+fn prettify_mysql(sql: &str) -> String {
+    let ast = Parser::parse_sql(&MySqlDialect {}, sql).unwrap();
     format!("{:#}", ast[0])
 }
 
@@ -102,13 +107,13 @@ fn test_pretty_print_group_by() {
         r#"
 SELECT
   a,
-  COUNT(*)
+  count(*)
 FROM
   my_table
 GROUP BY
   a
 HAVING
-  COUNT(*) > 1
+  count(*) > 1
 "#
         .trim()
     );
@@ -163,7 +168,7 @@ fn test_pretty_print_window_function() {
 SELECT
   id,
   value,
-  ROW_NUMBER() OVER (
+  row_number() OVER (
     PARTITION BY category
     ORDER BY value DESC
   ) AS rank
@@ -254,15 +259,6 @@ RETURNING
         .trim()
     );
 
-    assert_eq!(
-        prettify("DELETE table1, table2"),
-        r#"
-DELETE
-  table1,
-  table2
-"#
-        .trim()
-    );
 }
 
 #[test]

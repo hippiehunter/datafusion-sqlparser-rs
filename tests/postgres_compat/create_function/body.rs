@@ -200,7 +200,7 @@ fn test_create_function_c_language_dollar_lib() {
         "CREATE FUNCTION my_c_func(INTEGER) RETURNS INTEGER LANGUAGE C AS '$libdir/my_extension'",
         |stmt: Statement| {
             let cf = extract_create_function(&stmt);
-            assert_eq!(cf.language.as_ref().unwrap().to_string(), "C");
+            assert_eq!(cf.language.as_ref().unwrap().to_string(), "c");
         }
     );
 }

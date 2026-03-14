@@ -91,21 +91,21 @@ fn t054_01_greatest_basic() {
     // SQL:2023 T054: GREATEST function - basic usage
     verified_with_ast!("SELECT GREATEST(a, b)", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "GREATEST");
+        assert_eq!(func.name.to_string(), "greatest");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 2);
     });
 
     verified_with_ast!("SELECT GREATEST(a, b, c)", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "GREATEST");
+        assert_eq!(func.name.to_string(), "greatest");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 3);
     });
 
     verified_with_ast!("SELECT GREATEST(1, 2, 3, 4, 5)", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "GREATEST");
+        assert_eq!(func.name.to_string(), "greatest");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 5);
     });
@@ -118,7 +118,7 @@ fn t054_02_greatest_expressions() {
         "SELECT GREATEST(price * quantity, min_total) FROM orders",
         |stmt: Statement| {
             let func = extract_function_from_select(stmt);
-            assert_eq!(func.name.to_string(), "GREATEST");
+            assert_eq!(func.name.to_string(), "greatest");
             let args = get_function_args(&func);
             assert_eq!(args.len(), 2);
             // First arg should be a binary operation
@@ -128,7 +128,7 @@ fn t054_02_greatest_expressions() {
 
     verified_with_ast!("SELECT GREATEST(a + b, c * d, e - f)", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "GREATEST");
+        assert_eq!(func.name.to_string(), "greatest");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 3);
         // All args should be binary operations
@@ -141,7 +141,7 @@ fn t054_02_greatest_expressions() {
         "SELECT GREATEST(COALESCE(a, 0), COALESCE(b, 0))",
         |stmt: Statement| {
             let func = extract_function_from_select(stmt);
-            assert_eq!(func.name.to_string(), "GREATEST");
+            assert_eq!(func.name.to_string(), "greatest");
             let args = get_function_args(&func);
             assert_eq!(args.len(), 2);
             // Both args should be function calls (COALESCE)
@@ -156,21 +156,21 @@ fn t054_03_least_basic() {
     // SQL:2023 T054: LEAST function - basic usage
     verified_with_ast!("SELECT LEAST(a, b)", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "LEAST");
+        assert_eq!(func.name.to_string(), "least");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 2);
     });
 
     verified_with_ast!("SELECT LEAST(a, b, c)", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "LEAST");
+        assert_eq!(func.name.to_string(), "least");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 3);
     });
 
     verified_with_ast!("SELECT LEAST(1, 2, 3, 4, 5)", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "LEAST");
+        assert_eq!(func.name.to_string(), "least");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 5);
     });
@@ -183,7 +183,7 @@ fn t054_04_least_expressions() {
         "SELECT LEAST(price, max_price) FROM products",
         |stmt: Statement| {
             let func = extract_function_from_select(stmt);
-            assert_eq!(func.name.to_string(), "LEAST");
+            assert_eq!(func.name.to_string(), "least");
             let args = get_function_args(&func);
             assert_eq!(args.len(), 2);
         }
@@ -191,14 +191,14 @@ fn t054_04_least_expressions() {
 
     verified_with_ast!("SELECT LEAST(a + b, c * d, e - f)", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "LEAST");
+        assert_eq!(func.name.to_string(), "least");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 3);
     });
 
     verified_with_ast!("SELECT LEAST(LENGTH(name), 50)", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "LEAST");
+        assert_eq!(func.name.to_string(), "least");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 2);
         // First arg should be a function call
@@ -216,7 +216,7 @@ fn t054_05_greatest_least_in_where() {
                 if let SetExpr::Select(sel) = *q.body {
                     if let Some(Expr::BinaryOp { left, .. }) = sel.selection {
                         if let Expr::Function(func) = *left {
-                            assert_eq!(func.name.to_string(), "GREATEST");
+                            assert_eq!(func.name.to_string(), "greatest");
                             let args = get_function_args(&func);
                             assert_eq!(args.len(), 3);
                         } else {
@@ -235,7 +235,7 @@ fn t054_05_greatest_least_in_where() {
                 if let SetExpr::Select(sel) = *q.body {
                     if let Some(Expr::BinaryOp { left, .. }) = sel.selection {
                         if let Expr::Function(func) = *left {
-                            assert_eq!(func.name.to_string(), "LEAST");
+                            assert_eq!(func.name.to_string(), "least");
                             let args = get_function_args(&func);
                             assert_eq!(args.len(), 2);
                         }
@@ -255,19 +255,19 @@ fn t054_06_greatest_with_null() {
     // (This differs from MIN aggregate which ignores NULLs)
     verified_with_ast!("SELECT GREATEST(a, NULL, b)", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "GREATEST");
+        assert_eq!(func.name.to_string(), "greatest");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 3);
     });
 
     verified_with_ast!("SELECT GREATEST(1, 2, NULL)", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "GREATEST");
+        assert_eq!(func.name.to_string(), "greatest");
     });
 
     verified_with_ast!("SELECT GREATEST(NULL, NULL)", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "GREATEST");
+        assert_eq!(func.name.to_string(), "greatest");
     });
 }
 
@@ -277,19 +277,19 @@ fn t054_07_least_with_null() {
     // Per SQL standard, LEAST returns NULL if any argument is NULL
     verified_with_ast!("SELECT LEAST(a, NULL, b)", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "LEAST");
+        assert_eq!(func.name.to_string(), "least");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 3);
     });
 
     verified_with_ast!("SELECT LEAST(1, NULL, 3)", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "LEAST");
+        assert_eq!(func.name.to_string(), "least");
     });
 
     verified_with_ast!("SELECT LEAST(NULL, NULL)", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "LEAST");
+        assert_eq!(func.name.to_string(), "least");
     });
 }
 
@@ -307,14 +307,14 @@ fn t055_01_lpad_two_args() {
     // SQL:2023 T055: LPAD with two arguments (default space padding)
     verified_with_ast!("SELECT LPAD(name, 10)", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "LPAD");
+        assert_eq!(func.name.to_string(), "lpad");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 2);
     });
 
     verified_with_ast!("SELECT LPAD(code, 5) FROM products", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "LPAD");
+        assert_eq!(func.name.to_string(), "lpad");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 2);
     });
@@ -325,21 +325,21 @@ fn t055_02_lpad_three_args() {
     // SQL:2023 T055: LPAD with three arguments (custom padding)
     verified_with_ast!("SELECT LPAD(name, 10, ' ')", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "LPAD");
+        assert_eq!(func.name.to_string(), "lpad");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 3);
     });
 
     verified_with_ast!("SELECT LPAD(name, 10, '0')", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "LPAD");
+        assert_eq!(func.name.to_string(), "lpad");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 3);
     });
 
     verified_with_ast!("SELECT LPAD(col, 20, '**')", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "LPAD");
+        assert_eq!(func.name.to_string(), "lpad");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 3);
     });
@@ -348,7 +348,7 @@ fn t055_02_lpad_three_args() {
         "SELECT LPAD(CAST(id AS VARCHAR), 8, '0') FROM users",
         |stmt: Statement| {
             let func = extract_function_from_select(stmt);
-            assert_eq!(func.name.to_string(), "LPAD");
+            assert_eq!(func.name.to_string(), "lpad");
             let args = get_function_args(&func);
             assert_eq!(args.len(), 3);
             // First arg should be a CAST
@@ -362,14 +362,14 @@ fn t055_03_rpad_two_args() {
     // SQL:2023 T055: RPAD with two arguments (default space padding)
     verified_with_ast!("SELECT RPAD(name, 10)", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "RPAD");
+        assert_eq!(func.name.to_string(), "rpad");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 2);
     });
 
     verified_with_ast!("SELECT RPAD(code, 5) FROM products", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "RPAD");
+        assert_eq!(func.name.to_string(), "rpad");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 2);
     });
@@ -380,21 +380,21 @@ fn t055_04_rpad_three_args() {
     // SQL:2023 T055: RPAD with three arguments (custom padding)
     verified_with_ast!("SELECT RPAD(name, 10, ' ')", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "RPAD");
+        assert_eq!(func.name.to_string(), "rpad");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 3);
     });
 
     verified_with_ast!("SELECT RPAD(name, 10, '0')", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "RPAD");
+        assert_eq!(func.name.to_string(), "rpad");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 3);
     });
 
     verified_with_ast!("SELECT RPAD(col, 20, '**')", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "RPAD");
+        assert_eq!(func.name.to_string(), "rpad");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 3);
     });
@@ -403,7 +403,7 @@ fn t055_04_rpad_three_args() {
         "SELECT RPAD(description, 100, '.') FROM items",
         |stmt: Statement| {
             let func = extract_function_from_select(stmt);
-            assert_eq!(func.name.to_string(), "RPAD");
+            assert_eq!(func.name.to_string(), "rpad");
             let args = get_function_args(&func);
             assert_eq!(args.len(), 3);
         }
@@ -528,7 +528,7 @@ fn t056_04_ltrim_one_arg() {
     // LTRIM convenience function (equivalent to TRIM(LEADING ...))
     verified_with_ast!("SELECT LTRIM(name)", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "LTRIM");
+        assert_eq!(func.name.to_string(), "ltrim");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 1);
     });
@@ -537,7 +537,7 @@ fn t056_04_ltrim_one_arg() {
         "SELECT LTRIM(description) FROM products",
         |stmt: Statement| {
             let func = extract_function_from_select(stmt);
-            assert_eq!(func.name.to_string(), "LTRIM");
+            assert_eq!(func.name.to_string(), "ltrim");
             let args = get_function_args(&func);
             assert_eq!(args.len(), 1);
         }
@@ -549,28 +549,28 @@ fn t056_05_ltrim_two_args() {
     // LTRIM with two arguments (custom character set)
     verified_with_ast!("SELECT LTRIM(name, ' ')", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "LTRIM");
+        assert_eq!(func.name.to_string(), "ltrim");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 2);
     });
 
     verified_with_ast!("SELECT LTRIM(name, ' \\t')", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "LTRIM");
+        assert_eq!(func.name.to_string(), "ltrim");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 2);
     });
 
     verified_with_ast!("SELECT LTRIM(path, '/')", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "LTRIM");
+        assert_eq!(func.name.to_string(), "ltrim");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 2);
     });
 
     verified_with_ast!("SELECT LTRIM(code, '0')", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "LTRIM");
+        assert_eq!(func.name.to_string(), "ltrim");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 2);
     });
@@ -581,7 +581,7 @@ fn t056_06_rtrim_one_arg() {
     // RTRIM convenience function (equivalent to TRIM(TRAILING ...))
     verified_with_ast!("SELECT RTRIM(name)", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "RTRIM");
+        assert_eq!(func.name.to_string(), "rtrim");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 1);
     });
@@ -590,7 +590,7 @@ fn t056_06_rtrim_one_arg() {
         "SELECT RTRIM(description) FROM products",
         |stmt: Statement| {
             let func = extract_function_from_select(stmt);
-            assert_eq!(func.name.to_string(), "RTRIM");
+            assert_eq!(func.name.to_string(), "rtrim");
             let args = get_function_args(&func);
             assert_eq!(args.len(), 1);
         }
@@ -602,28 +602,28 @@ fn t056_07_rtrim_two_args() {
     // RTRIM with two arguments (custom character set)
     verified_with_ast!("SELECT RTRIM(name, ' ')", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "RTRIM");
+        assert_eq!(func.name.to_string(), "rtrim");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 2);
     });
 
     verified_with_ast!("SELECT RTRIM(name, ' \\t')", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "RTRIM");
+        assert_eq!(func.name.to_string(), "rtrim");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 2);
     });
 
     verified_with_ast!("SELECT RTRIM(path, '/')", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "RTRIM");
+        assert_eq!(func.name.to_string(), "rtrim");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 2);
     });
 
     verified_with_ast!("SELECT RTRIM(code, '.')", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "RTRIM");
+        assert_eq!(func.name.to_string(), "rtrim");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 2);
     });
@@ -634,7 +634,7 @@ fn t056_08_btrim_one_arg() {
     // BTRIM convenience function (equivalent to TRIM(BOTH ...))
     verified_with_ast!("SELECT BTRIM(name)", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "BTRIM");
+        assert_eq!(func.name.to_string(), "btrim");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 1);
     });
@@ -643,7 +643,7 @@ fn t056_08_btrim_one_arg() {
         "SELECT BTRIM(description) FROM products",
         |stmt: Statement| {
             let func = extract_function_from_select(stmt);
-            assert_eq!(func.name.to_string(), "BTRIM");
+            assert_eq!(func.name.to_string(), "btrim");
             let args = get_function_args(&func);
             assert_eq!(args.len(), 1);
         }
@@ -655,28 +655,28 @@ fn t056_09_btrim_two_args() {
     // BTRIM with two arguments (custom character set)
     verified_with_ast!("SELECT BTRIM(name, ' ')", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "BTRIM");
+        assert_eq!(func.name.to_string(), "btrim");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 2);
     });
 
     verified_with_ast!("SELECT BTRIM(name, ' \\t')", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "BTRIM");
+        assert_eq!(func.name.to_string(), "btrim");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 2);
     });
 
     verified_with_ast!("SELECT BTRIM(value, '\"')", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "BTRIM");
+        assert_eq!(func.name.to_string(), "btrim");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 2);
     });
 
     verified_with_ast!("SELECT BTRIM(text, '[]')", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "BTRIM");
+        assert_eq!(func.name.to_string(), "btrim");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 2);
     });
@@ -821,7 +821,7 @@ fn t626_01_any_value_basic() {
     // SQL:2023 T626: ANY_VALUE aggregate function
     verified_with_ast!("SELECT ANY_VALUE(name) FROM users", |stmt: Statement| {
         let func = extract_function_from_select(stmt);
-        assert_eq!(func.name.to_string(), "ANY_VALUE");
+        assert_eq!(func.name.to_string(), "any_value");
         let args = get_function_args(&func);
         assert_eq!(args.len(), 1);
     });
@@ -830,7 +830,7 @@ fn t626_01_any_value_basic() {
         "SELECT ANY_VALUE(price) FROM products",
         |stmt: Statement| {
             let func = extract_function_from_select(stmt);
-            assert_eq!(func.name.to_string(), "ANY_VALUE");
+            assert_eq!(func.name.to_string(), "any_value");
             let args = get_function_args(&func);
             assert_eq!(args.len(), 1);
         }
@@ -848,11 +848,11 @@ fn t626_02_any_value_group_by() {
                     assert_eq!(sel.projection.len(), 3);
                     // Second item should be ANY_VALUE
                     if let SelectItem::UnnamedExpr(Expr::Function(func)) = &sel.projection[1] {
-                        assert_eq!(func.name.to_string(), "ANY_VALUE");
+                        assert_eq!(func.name.to_string(), "any_value");
                     }
                     // Third item should be COUNT
                     if let SelectItem::UnnamedExpr(Expr::Function(func)) = &sel.projection[2] {
-                        assert_eq!(func.name.to_string(), "COUNT");
+                        assert_eq!(func.name.to_string(), "count");
                     }
                 }
             }
@@ -867,7 +867,7 @@ fn t626_02_any_value_group_by() {
                     assert_eq!(sel.projection.len(), 2);
                     // Second item should be ANY_VALUE
                     if let SelectItem::UnnamedExpr(Expr::Function(func)) = &sel.projection[1] {
-                        assert_eq!(func.name.to_string(), "ANY_VALUE");
+                        assert_eq!(func.name.to_string(), "any_value");
                     }
                 }
             }
@@ -886,10 +886,10 @@ fn t626_03_any_value_complex() {
                     assert_eq!(sel.projection.len(), 4);
                     // Second and third items should be ANY_VALUE
                     if let SelectItem::UnnamedExpr(Expr::Function(func)) = &sel.projection[1] {
-                        assert_eq!(func.name.to_string(), "ANY_VALUE");
+                        assert_eq!(func.name.to_string(), "any_value");
                     }
                     if let SelectItem::UnnamedExpr(Expr::Function(func)) = &sel.projection[2] {
-                        assert_eq!(func.name.to_string(), "ANY_VALUE");
+                        assert_eq!(func.name.to_string(), "any_value");
                     }
                 }
             }
@@ -900,7 +900,7 @@ fn t626_03_any_value_complex() {
         "SELECT ANY_VALUE(DISTINCT status) FROM orders",
         |stmt: Statement| {
             let func = extract_function_from_select(stmt);
-            assert_eq!(func.name.to_string(), "ANY_VALUE");
+            assert_eq!(func.name.to_string(), "any_value");
             // Verify DISTINCT is present in the args
             if let FunctionArguments::List(list) = &func.args {
                 assert!(list.duplicate_treatment.is_some());
@@ -920,7 +920,7 @@ fn t626_04_any_value_with_having() {
                     assert_eq!(sel.projection.len(), 2);
                     // Second item should be ANY_VALUE
                     if let SelectItem::UnnamedExpr(Expr::Function(func)) = &sel.projection[1] {
-                        assert_eq!(func.name.to_string(), "ANY_VALUE");
+                        assert_eq!(func.name.to_string(), "any_value");
                     }
                     // Verify HAVING clause exists
                     assert!(sel.having.is_some());

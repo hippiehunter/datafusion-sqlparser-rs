@@ -34,7 +34,7 @@ fn test_create_procedure_minimal() {
             assert!(!proc.or_alter);
             assert!(proc.params.as_ref().map(|p| p.is_empty()).unwrap_or(true));
             assert!(proc.language.is_some());
-            assert_eq!(proc.language.as_ref().unwrap().to_string(), "SQL");
+            assert_eq!(proc.language.as_ref().unwrap().to_string(), "sql");
             assert!(proc.has_as);
         }
     );
@@ -151,7 +151,7 @@ fn test_create_procedure_sql_language() {
         |stmt: Statement| {
             let proc = extract_create_procedure(&stmt);
             assert_eq!(proc.name.to_string(), "insert_default");
-            assert_eq!(proc.language.as_ref().unwrap().to_string(), "SQL");
+            assert_eq!(proc.language.as_ref().unwrap().to_string(), "sql");
             // TODO: Verify body contains INSERT statement AST
         }
     );

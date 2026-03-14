@@ -148,7 +148,7 @@ fn f314_03_merge_multiple_matched() {
         "MERGE INTO orders AS o USING updates AS u ON o.id = u.id \
          WHEN MATCHED AND u.action = 'cancel' THEN DELETE \
          WHEN MATCHED AND u.action = 'update' THEN UPDATE SET o.status = u.new_status \
-         WHEN MATCHED THEN UPDATE SET o.modified_at = CURRENT_TIMESTAMP",
+         WHEN MATCHED THEN UPDATE SET o.modified_at = current_timestamp",
     );
 }
 
@@ -227,7 +227,7 @@ fn merge_with_cte() {
          MERGE INTO balances b USING source s ON b.id = s.id \
          WHEN MATCHED THEN UPDATE SET b.balance = b.balance + s.total \
          WHEN NOT MATCHED THEN INSERT (id, balance) VALUES (s.id, s.total)",
-        "WITH source AS (SELECT id, SUM(amount) AS total FROM transactions GROUP BY id) \
+        "WITH source AS (SELECT id, sum(amount) AS total FROM transactions GROUP BY id) \
          MERGE INTO balances AS b USING source AS s ON b.id = s.id \
          WHEN MATCHED THEN UPDATE SET b.balance = b.balance + s.total \
          WHEN NOT MATCHED THEN INSERT (id, balance) VALUES (s.id, s.total)",

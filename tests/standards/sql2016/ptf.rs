@@ -49,7 +49,7 @@ fn b200_03_table_function_in_join() {
 fn b200_04_table_function_lateral() {
     one_statement_parses_to_std(
         "SELECT * FROM customers c, LATERAL TABLE(get_customer_orders(c.id)) AS orders",
-        "SELECT * FROM customers AS c, LATERAL TABLE(get_customer_orders(c.id)) AS orders",
+        "SELECT * FROM customers AS c, LATERAL table(get_customer_orders(c.id)) AS orders",
     );
 }
 

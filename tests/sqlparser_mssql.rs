@@ -31,7 +31,7 @@ use sqlparser::ast::DataType::{Int, Text, Varbinary};
 use sqlparser::ast::DeclareAssignment::MsSqlAssignment;
 use sqlparser::ast::Value::SingleQuotedString;
 use sqlparser::ast::*;
-use sqlparser::dialect::{GenericDialect, MsSqlDialect};
+use sqlparser::dialect::MsSqlDialect;
 use sqlparser::parser::{Parser, ParserError, ParserOptions};
 
 #[test]
@@ -2370,7 +2370,7 @@ fn tsql() -> TestedDialects {
 }
 
 fn ms_and_generic() -> TestedDialects {
-    TestedDialects::new(vec![Box::new(MsSqlDialect {}), Box::new(GenericDialect {})])
+    TestedDialects::new(vec![Box::new(MsSqlDialect {})])
 }
 
 #[test]

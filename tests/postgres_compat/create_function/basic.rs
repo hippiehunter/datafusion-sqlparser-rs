@@ -37,7 +37,7 @@ fn test_create_function_minimal() {
             assert!(!cf.if_not_exists);
             assert!(cf.args.as_ref().map(|a| a.is_empty()).unwrap_or(false));
             assert!(cf.return_type.is_some());
-            assert_eq!(cf.language.as_ref().unwrap().to_string(), "SQL");
+            assert_eq!(cf.language.as_ref().unwrap().to_string(), "sql");
             assert!(cf.function_body.is_some());
         }
     );
@@ -124,7 +124,7 @@ fn test_create_function_language_sql() {
         |stmt: Statement| {
             let cf = extract_create_function(&stmt);
             assert_eq!(cf.name.to_string(), "square");
-            assert_eq!(cf.language.as_ref().unwrap().to_string(), "SQL");
+            assert_eq!(cf.language.as_ref().unwrap().to_string(), "sql");
         }
     );
 }

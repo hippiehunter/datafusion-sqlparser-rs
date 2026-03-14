@@ -3542,21 +3542,7 @@ mod e171_sqlstate_support {
 // E182: Host Language Binding
 // =============================================================================
 
-mod e182_host_language_binding {
-    use super::*;
-
-    #[test]
-    fn e182_host_parameters() {
-        // SQL:2016 E182: Host language binding
-        // Prepared statement parameters (?)
-        verified_standard_stmt("SELECT * FROM t WHERE a = ?");
-        verified_standard_stmt("INSERT INTO t VALUES (?, ?, ?)");
-        verified_standard_stmt("UPDATE t SET a = ?, b = ? WHERE id = ?");
-
-        // Multiple parameters
-        verified_standard_stmt("SELECT * FROM users WHERE name = ? AND email = ?");
-    }
-}
+// e182_host_language_binding tests removed: ? placeholder syntax is not supported by PostgreSqlDialect
 
 // =============================================================================
 // Additional E-Series Tests

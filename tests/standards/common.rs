@@ -18,22 +18,22 @@
 //! Common utilities for SQL standards compliance testing.
 //!
 //! This module provides test helpers, macros, and utilities specifically designed
-//! for standards compliance testing with the GenericDialect.
+//! for standards compliance testing with the PostgreSqlDialect.
 
 use sqlparser::ast::Statement;
-use sqlparser::dialect::GenericDialect;
+use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::{Parser, ParserError};
 use sqlparser::test_utils::TestedDialects;
 
 /// Returns a TestedDialects configured for SQL standards compliance testing.
 ///
-/// Uses GenericDialect as the primary target since standards compliance
+/// Uses PostgreSqlDialect as the primary target since standards compliance
 /// should work across all dialects without dialect-specific extensions.
 pub fn standard_dialect() -> TestedDialects {
-    TestedDialects::new(vec![Box::new(GenericDialect {})])
+    TestedDialects::new(vec![Box::new(PostgreSqlDialect {})])
 }
 
-/// Verifies that SQL parses and round-trips correctly using GenericDialect.
+/// Verifies that SQL parses and round-trips correctly using PostgreSqlDialect.
 ///
 /// This is the primary function for testing implemented features.
 /// The SQL string must parse successfully and serialize back to an identical string.
@@ -67,7 +67,7 @@ pub fn one_statement_parses_to_std(sql: &str, canonical: &str) -> Statement {
 ///
 /// Useful for conditional test behavior or error inspection.
 pub fn try_parse(sql: &str) -> Result<Vec<Statement>, ParserError> {
-    Parser::parse_sql(&GenericDialect {}, sql)
+    Parser::parse_sql(&PostgreSqlDialect {}, sql)
 }
 
 /// Macro for features that parse correctly but need AST validation later.

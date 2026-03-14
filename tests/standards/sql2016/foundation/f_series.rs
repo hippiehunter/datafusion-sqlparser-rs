@@ -1316,7 +1316,7 @@ mod f131_grouped_operations {
                         {
                             assert_eq!(
                                 func.name.to_string(),
-                                "COUNT",
+                                "count",
                                 "Expected COUNT function in projection"
                             );
                         } else {
@@ -1359,7 +1359,7 @@ mod f131_grouped_operations {
                         {
                             assert_eq!(
                                 func.name.to_string(),
-                                "COUNT",
+                                "count",
                                 "Expected COUNT function in projection"
                             );
                         } else {
@@ -1386,7 +1386,7 @@ mod f131_grouped_operations {
                         // Verify all 5 aggregate functions in projection
                         assert_eq!(select.projection.len(), 5, "Expected 5 projection items");
 
-                        let expected_funcs = vec!["SUM", "AVG", "MAX", "MIN", "COUNT"];
+                        let expected_funcs = vec!["sum", "avg", "max", "min", "count"];
                         for (i, expected_name) in expected_funcs.iter().enumerate() {
                             if let SelectItem::UnnamedExpr(Expr::Function(func)) =
                                 &select.projection[i]
@@ -1456,7 +1456,7 @@ mod f131_grouped_operations {
                                     if let Expr::Function(func) = expr {
                                         assert_eq!(
                                             func.name.to_string(),
-                                            "COUNT",
+                                            "count",
                                             "Expected COUNT function in subquery"
                                         );
                                         assert_eq!(
@@ -1523,7 +1523,7 @@ mod f131_grouped_operations {
                         {
                             assert_eq!(
                                 func.name.to_string(),
-                                "COUNT",
+                                "count",
                                 "Expected COUNT function in projection"
                             );
                         } else {
@@ -1818,7 +1818,7 @@ mod f261_case_expression {
                     if let sqlparser::ast::SelectItem::UnnamedExpr(Expr::Function(func)) =
                         &select.projection[0]
                     {
-                        assert_eq!(func.name.to_string(), "NULLIF");
+                        assert_eq!(func.name.to_string(), "nullif");
                         if let sqlparser::ast::FunctionArguments::List(arg_list) = &func.args {
                             assert_eq!(
                                 arg_list.args.len(),
@@ -1844,7 +1844,7 @@ mod f261_case_expression {
                     if let sqlparser::ast::SelectItem::UnnamedExpr(Expr::Function(func)) =
                         &select.projection[0]
                     {
-                        assert_eq!(func.name.to_string(), "COALESCE");
+                        assert_eq!(func.name.to_string(), "coalesce");
                         if let sqlparser::ast::FunctionArguments::List(arg_list) = &func.args {
                             assert_eq!(
                                 arg_list.args.len(),
@@ -3219,7 +3219,7 @@ mod f_series_integration_tests {
 
                         // Verify INFORMATION_SCHEMA tables
                         if let TableFactor::Table { name, alias: Some(alias), .. } = &select.from[0].relation {
-                            assert_eq!(name.to_string(), "INFORMATION_SCHEMA.TABLES");
+                            assert_eq!(name.to_string(), "information_schema.tables");
                             assert_eq!(alias.name.to_string(), "t");
                         }
 
@@ -3230,7 +3230,7 @@ mod f_series_integration_tests {
                         // Note: LEFT JOIN parses as JoinOperator::Left
                         if let JoinOperator::Left(JoinConstraint::On(expr)) = &select.from[0].joins[0].join_operator {
                             if let TableFactor::Table { name, .. } = &select.from[0].joins[0].relation {
-                                assert_eq!(name.to_string(), "INFORMATION_SCHEMA.COLUMNS");
+                                assert_eq!(name.to_string(), "information_schema.columns");
                             }
 
                             // Verify compound ON condition with AND
@@ -3244,7 +3244,7 @@ mod f_series_integration_tests {
                         // Verify second LEFT JOIN to TABLE_CONSTRAINTS
                         if let JoinOperator::Left(JoinConstraint::On(expr)) = &select.from[0].joins[1].join_operator {
                             if let TableFactor::Table { name, .. } = &select.from[0].joins[1].relation {
-                                assert_eq!(name.to_string(), "INFORMATION_SCHEMA.TABLE_CONSTRAINTS");
+                                assert_eq!(name.to_string(), "information_schema.table_constraints");
                             }
 
                             // Verify compound ON condition with AND

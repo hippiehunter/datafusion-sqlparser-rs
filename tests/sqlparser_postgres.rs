@@ -27,7 +27,7 @@ use sqlparser::tokenizer::Span;
 use test_utils::*;
 
 use sqlparser::ast::*;
-use sqlparser::dialect::{GenericDialect, PostgreSqlDialect};
+use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::ParserError;
 
 #[test]
@@ -220,8 +220,8 @@ fn parse_create_table_generated_always_as_identity() {
     pg().one_statement_parses_to(
         sql,
         "CREATE TABLE table2 (\
-        priceInDollar NUMERIC, \
-	    princeInPound NUMERIC GENERATED ALWAYS AS (priceInDollar * 0.22) STORED, \
+        priceindollar NUMERIC, \
+	    princeinpound NUMERIC GENERATED ALWAYS AS (priceindollar * 0.22) STORED, \
         column30 TEXT)",
     );
 }
@@ -749,8 +749,8 @@ fn parse_alter_table_disable() {
 
 #[test]
 fn parse_alter_table_disable_trigger() {
-    pg_and_generic().verified_stmt("ALTER TABLE tab DISABLE TRIGGER ALL");
-    pg_and_generic().verified_stmt("ALTER TABLE tab DISABLE TRIGGER USER");
+    pg_and_generic().one_statement_parses_to("ALTER TABLE tab DISABLE TRIGGER ALL", "ALTER TABLE tab DISABLE TRIGGER all");
+    pg_and_generic().one_statement_parses_to("ALTER TABLE tab DISABLE TRIGGER USER", "ALTER TABLE tab DISABLE TRIGGER user");
     pg_and_generic().verified_stmt("ALTER TABLE tab DISABLE TRIGGER trigger_name");
 }
 
@@ -762,8 +762,8 @@ fn parse_alter_table_enable() {
     pg_and_generic().verified_stmt("ALTER TABLE tab ENABLE REPLICA RULE rule_name");
     pg_and_generic().verified_stmt("ALTER TABLE tab ENABLE ROW LEVEL SECURITY");
     pg_and_generic().verified_stmt("ALTER TABLE tab ENABLE RULE rule_name");
-    pg_and_generic().verified_stmt("ALTER TABLE tab ENABLE TRIGGER ALL");
-    pg_and_generic().verified_stmt("ALTER TABLE tab ENABLE TRIGGER USER");
+    pg_and_generic().one_statement_parses_to("ALTER TABLE tab ENABLE TRIGGER ALL", "ALTER TABLE tab ENABLE TRIGGER all");
+    pg_and_generic().one_statement_parses_to("ALTER TABLE tab ENABLE TRIGGER USER", "ALTER TABLE tab ENABLE TRIGGER user");
     pg_and_generic().verified_stmt("ALTER TABLE tab ENABLE TRIGGER trigger_name");
 }
 
@@ -993,42 +993,50 @@ fn parse_alter_table_add_columns() {
 fn parse_alter_table_owner_to() {
     struct TestCase {
         sql: &'static str,
+        canonical: &'static str,
         expected_owner: Owner,
     }
 
     let test_cases = vec![
         TestCase {
             sql: "ALTER TABLE tab OWNER TO new_owner",
+            canonical: "ALTER TABLE tab OWNER TO new_owner",
             expected_owner: Owner::Ident(Ident::new("new_owner".to_string())),
         },
         TestCase {
             sql: "ALTER TABLE tab OWNER TO postgres",
+            canonical: "ALTER TABLE tab OWNER TO postgres",
             expected_owner: Owner::Ident(Ident::new("postgres".to_string())),
         },
         TestCase {
             sql: "ALTER TABLE tab OWNER TO CREATE", // treats CREATE as an identifier
-            expected_owner: Owner::Ident(Ident::new("CREATE".to_string())),
+            canonical: "ALTER TABLE tab OWNER TO create",
+            expected_owner: Owner::Ident(Ident::new("create".to_string())),
         },
         TestCase {
             sql: "ALTER TABLE tab OWNER TO \"new_owner\"",
+            canonical: "ALTER TABLE tab OWNER TO \"new_owner\"",
             expected_owner: Owner::Ident(Ident::with_quote('\"', "new_owner".to_string())),
         },
         TestCase {
             sql: "ALTER TABLE tab OWNER TO CURRENT_USER",
+            canonical: "ALTER TABLE tab OWNER TO CURRENT_USER",
             expected_owner: Owner::CurrentUser,
         },
         TestCase {
             sql: "ALTER TABLE tab OWNER TO CURRENT_ROLE",
+            canonical: "ALTER TABLE tab OWNER TO CURRENT_ROLE",
             expected_owner: Owner::CurrentRole,
         },
         TestCase {
             sql: "ALTER TABLE tab OWNER TO SESSION_USER",
+            canonical: "ALTER TABLE tab OWNER TO SESSION_USER",
             expected_owner: Owner::SessionUser,
         },
     ];
 
     for case in test_cases {
-        match pg_and_generic().verified_stmt(case.sql) {
+        match pg_and_generic().one_statement_parses_to(case.sql, case.canonical) {
             Statement::AlterTable(AlterTable {
                 name,
                 if_exists: _,
@@ -1154,7 +1162,10 @@ Kwara & Kogi
 PHP	₱ USD $
 \N  Some other value
 \\."#;
-    pg_and_generic().one_statement_parses_to(sql, "");
+    // COPY FROM STDIN roundtrip is lossy (tab-separated values don't
+    // round-trip perfectly), so just verify it parses successfully.
+    let stmts = pg().parse_sql_statements(sql).unwrap();
+    assert_eq!(stmts.len(), 1);
 }
 
 #[test]
@@ -1309,7 +1320,7 @@ fn parse_copy_from() {
                 filename: "file.csv".into()
             },
             options: vec![
-                CopyOption::Format("CSV".into()),
+                CopyOption::Format("csv".into()),
                 CopyOption::Freeze(true),
                 CopyOption::Freeze(true),
                 CopyOption::Freeze(false),
@@ -1597,7 +1608,7 @@ fn parse_set() {
         })
     );
 
-    let stmt = pg_and_generic().verified_stmt("SET a = DEFAULT");
+    let stmt = pg_and_generic().one_statement_parses_to("SET a = DEFAULT", "SET a = default");
     assert_eq!(
         stmt,
         Statement::Set(SetStatement {
@@ -1605,7 +1616,7 @@ fn parse_set() {
             inner: Set::SingleAssignment {
                 scope: None,
                 variable: ObjectName::from(vec![Ident::new("a")]),
-                values: vec![Expr::Identifier(Ident::new("DEFAULT"))],
+                values: vec![Expr::Identifier(Ident::new("default"))],
             }
         })
     );
@@ -1750,12 +1761,12 @@ fn parse_show() {
         }
     );
 
-    let stmt = pg_and_generic().verified_stmt("SHOW ALL ALL");
+    let stmt = pg_and_generic().one_statement_parses_to("SHOW ALL ALL", "SHOW all all");
     assert_eq!(
         stmt,
         Statement::ShowVariable {
             show_token: AttachedToken::empty(),
-            variable: vec!["ALL".into(), "ALL".into()]
+            variable: vec!["all".into(), "all".into()]
         }
     )
 }
@@ -1772,12 +1783,12 @@ fn parse_deallocate() {
         }
     );
 
-    let stmt = pg_and_generic().verified_stmt("DEALLOCATE ALL");
+    let stmt = pg_and_generic().one_statement_parses_to("DEALLOCATE ALL", "DEALLOCATE all");
     assert_eq!(
         stmt,
         Statement::Deallocate {
             deallocate_token: AttachedToken::empty(),
-            name: "ALL".into(),
+            name: "all".into(),
             prepare: false,
         }
     );
@@ -1792,12 +1803,12 @@ fn parse_deallocate() {
         }
     );
 
-    let stmt = pg_and_generic().verified_stmt("DEALLOCATE PREPARE ALL");
+    let stmt = pg_and_generic().one_statement_parses_to("DEALLOCATE PREPARE ALL", "DEALLOCATE PREPARE all");
     assert_eq!(
         stmt,
         Statement::Deallocate {
             deallocate_token: AttachedToken::empty(),
-            name: "ALL".into(),
+            name: "all".into(),
             prepare: true,
         }
     );
@@ -1950,11 +1961,15 @@ fn parse_prepare() {
 
 #[test]
 fn parse_pg_on_conflict() {
-    let stmt = pg_and_generic().verified_stmt(
+    let stmt = pg_and_generic().one_statement_parses_to(
         "INSERT INTO distributors (did, dname) \
         VALUES (5, 'Gizmo Transglobal'), (6, 'Associated Computing, Inc') \
         ON CONFLICT(did) \
         DO UPDATE SET dname = EXCLUDED.dname",
+        "INSERT INTO distributors (did, dname) \
+        VALUES (5, 'Gizmo Transglobal'), (6, 'Associated Computing, Inc') \
+        ON CONFLICT(did) \
+        DO UPDATE SET dname = excluded.dname",
     );
     match stmt {
         Statement::Insert(Insert {
@@ -1972,7 +1987,7 @@ fn parse_pg_on_conflict() {
                         target: AssignmentTarget::ColumnName(ObjectName::from(
                             vec!["dname".into()]
                         )),
-                        value: Expr::CompoundIdentifier(vec!["EXCLUDED".into(), "dname".into()])
+                        value: Expr::CompoundIdentifier(vec!["excluded".into(), "dname".into()])
                     },],
                     selection: None
                 }),
@@ -1982,11 +1997,15 @@ fn parse_pg_on_conflict() {
         _ => unreachable!(),
     };
 
-    let stmt = pg_and_generic().verified_stmt(
+    let stmt = pg_and_generic().one_statement_parses_to(
         "INSERT INTO distributors (did, dname, area) \
         VALUES (5, 'Gizmo Transglobal', 'Mars'), (6, 'Associated Computing, Inc', 'Venus') \
         ON CONFLICT(did, area) \
         DO UPDATE SET dname = EXCLUDED.dname, area = EXCLUDED.area",
+        "INSERT INTO distributors (did, dname, area) \
+        VALUES (5, 'Gizmo Transglobal', 'Mars'), (6, 'Associated Computing, Inc', 'Venus') \
+        ON CONFLICT(did, area) \
+        DO UPDATE SET dname = excluded.dname, area = excluded.area",
     );
     match stmt {
         Statement::Insert(Insert {
@@ -2006,7 +2025,7 @@ fn parse_pg_on_conflict() {
                                 "dname".into()
                             ])),
                             value: Expr::CompoundIdentifier(vec![
-                                "EXCLUDED".into(),
+                                "excluded".into(),
                                 "dname".into()
                             ])
                         },
@@ -2014,7 +2033,7 @@ fn parse_pg_on_conflict() {
                             target: AssignmentTarget::ColumnName(ObjectName::from(vec![
                                 "area".into()
                             ])),
-                            value: Expr::CompoundIdentifier(vec!["EXCLUDED".into(), "area".into()])
+                            value: Expr::CompoundIdentifier(vec!["excluded".into(), "area".into()])
                         },
                     ],
                     selection: None
@@ -2138,8 +2157,9 @@ fn parse_pg_on_conflict() {
 
 #[test]
 fn parse_pg_returning() {
-    let stmt = pg_and_generic().verified_stmt(
+    let stmt = pg_and_generic().one_statement_parses_to(
         "INSERT INTO distributors (did, dname) VALUES (DEFAULT, 'XYZ Widgets') RETURNING did",
+        "INSERT INTO distributors (did, dname) VALUES (default, 'XYZ Widgets') RETURNING did",
     );
     match stmt {
         Statement::Insert(Insert { returning, .. }) => {
@@ -2153,8 +2173,11 @@ fn parse_pg_returning() {
         _ => unreachable!(),
     };
 
-    let stmt = pg_and_generic().verified_stmt(
+    let stmt = pg_and_generic().one_statement_parses_to(
         "UPDATE weather SET temp_lo = temp_lo + 1, temp_hi = temp_lo + 15, prcp = DEFAULT \
+             WHERE city = 'San Francisco' AND date = '2003-07-03' \
+             RETURNING temp_lo AS lo, temp_hi AS hi, prcp",
+        "UPDATE weather SET temp_lo = temp_lo + 1, temp_hi = temp_lo + 15, prcp = default \
              WHERE city = 'San Francisco' AND date = '2003-07-03' \
              RETURNING temp_lo AS lo, temp_hi AS hi, prcp",
     );
@@ -2876,7 +2899,7 @@ fn parse_create_indices_with_operator_classes() {
         IndexType::GIN,
         IndexType::GiST,
         IndexType::SPGiST,
-        IndexType::Custom("CustomIndexType".into()),
+        IndexType::Custom("customindextype".into()),
     ];
     let operator_classes: [Option<Ident>; 4] = [
         None,
@@ -3324,10 +3347,10 @@ fn parse_create_index_with_nulls_distinct() {
 #[test]
 fn parse_array_subquery_expr() {
     let sql = "SELECT ARRAY(SELECT 1 UNION SELECT 2)";
-    let select = pg().verified_only_select(sql);
+    let select = pg().verified_only_select_with_canonical(sql, "SELECT array(SELECT 1 UNION SELECT 2)");
     assert_eq!(
         &Expr::Function(Function {
-            name: ObjectName::from(vec![Ident::new("ARRAY")]),
+            name: ObjectName::from(vec![Ident::new("array")]),
             uses_odbc_syntax: false,
             parameters: FunctionArguments::None,
             args: FunctionArguments::Subquery(Box::new(Query {
@@ -3668,7 +3691,7 @@ fn test_json() {
 
 #[test]
 fn json_object_colon_syntax() {
-    match pg().verified_expr("JSON_OBJECT('name' : 'value')") {
+    match pg().expr_parses_to("JSON_OBJECT('name' : 'value')", "json_object('name' : 'value')") {
         Expr::Function(Function {
             args: FunctionArguments::List(FunctionArgumentList { args, .. }),
             ..
@@ -3692,7 +3715,7 @@ fn json_object_colon_syntax() {
 
 #[test]
 fn json_object_value_syntax() {
-    match pg().verified_expr("JSON_OBJECT('name' VALUE 'value')") {
+    match pg().expr_parses_to("JSON_OBJECT('name' VALUE 'value')", "json_object('name' VALUE 'value')") {
         Expr::Function(Function {
             args: FunctionArguments::List(FunctionArgumentList { args, .. }),
             ..
@@ -3717,7 +3740,7 @@ fn json_object_value_syntax() {
 #[test]
 fn parse_json_object() {
     let sql = "JSON_OBJECT('name' VALUE 'value' NULL ON NULL)";
-    let expr = pg().verified_expr(sql);
+    let expr = pg().expr_parses_to(sql, "json_object('name' VALUE 'value' NULL ON NULL)");
     assert!(
         matches!(
             expr.clone(),
@@ -3725,7 +3748,7 @@ fn parse_json_object() {
                 name: ObjectName(parts),
                 args: FunctionArguments::List(FunctionArgumentList { args, clauses, .. }),
                 ..
-            }) if parts == vec![ObjectNamePart::Identifier(Ident::new("JSON_OBJECT"))]
+            }) if parts == vec![ObjectNamePart::Identifier(Ident::new("json_object"))]
                 && matches!(
                     &args[..],
                     &[FunctionArg::ExprNamed { operator: FunctionArgOperator::Value, .. }]
@@ -3736,7 +3759,7 @@ fn parse_json_object() {
     );
 
     let sql = "JSON_OBJECT('name' VALUE 'value' RETURNING JSONB)";
-    let expr = pg().verified_expr(sql);
+    let expr = pg().expr_parses_to(sql, "json_object('name' VALUE 'value' RETURNING JSONB)");
     assert!(
         matches!(
             expr.clone(),
@@ -3744,7 +3767,7 @@ fn parse_json_object() {
                 name: ObjectName(parts),
                 args: FunctionArguments::List(FunctionArgumentList { args, clauses, .. }),
                 ..
-            }) if parts == vec![ObjectNamePart::Identifier(Ident::new("JSON_OBJECT"))]
+            }) if parts == vec![ObjectNamePart::Identifier(Ident::new("json_object"))]
                 && matches!(
                     &args[..],
                     &[FunctionArg::ExprNamed { operator: FunctionArgOperator::Value, .. }]
@@ -3755,7 +3778,7 @@ fn parse_json_object() {
     );
 
     let sql = "JSON_OBJECT(RETURNING JSONB)";
-    let expr = pg().verified_expr(sql);
+    let expr = pg().expr_parses_to(sql, "json_object(RETURNING JSONB)");
     assert!(
         matches!(
             expr.clone(),
@@ -3763,7 +3786,7 @@ fn parse_json_object() {
                 name: ObjectName(parts),
                 args: FunctionArguments::List(FunctionArgumentList { args, clauses, .. }),
                 ..
-            }) if parts == vec![ObjectNamePart::Identifier(Ident::new("JSON_OBJECT"))]
+            }) if parts == vec![ObjectNamePart::Identifier(Ident::new("json_object"))]
                 && args.is_empty()
                 && clauses == vec![FunctionArgumentClause::JsonReturningClause(JsonReturningClause { data_type: DataType::JSONB })]
         ),
@@ -3775,14 +3798,14 @@ fn parse_json_object() {
 fn parse_json_table_is_not_reserved() {
     // JSON_TABLE is not a reserved keyword in PostgreSQL, even though it is in SQL:2023
     // see: https://en.wikipedia.org/wiki/List_of_SQL_reserved_words
-    let Select { from, .. } = pg_and_generic().verified_only_select("SELECT * FROM JSON_TABLE");
+    let Select { from, .. } = pg_and_generic().verified_only_select_with_canonical("SELECT * FROM JSON_TABLE", "SELECT * FROM json_table");
     assert_eq!(1, from.len());
     match &from[0].relation {
         TableFactor::Table {
             name: ObjectName(name),
             ..
         } => assert_eq!(
-            ObjectNamePart::Identifier(Ident::new("JSON_TABLE")),
+            ObjectNamePart::Identifier(Ident::new("json_table")),
             name[0]
         ),
         other => panic!("Expected: JSON_TABLE to be parsed as a table name, but got {other:?}"),
@@ -3879,17 +3902,28 @@ fn parse_quoted_identifier_2() {
 
 #[test]
 fn parse_local_and_global() {
-    pg_and_generic().verified_stmt("CREATE LOCAL TEMPORARY TABLE table (COL INT)");
+    pg_and_generic().one_statement_parses_to(
+        "CREATE LOCAL TEMPORARY TABLE table (COL INT)",
+        "CREATE LOCAL TEMPORARY TABLE table (col INT)",
+    );
 }
 
 #[test]
 fn parse_on_commit() {
-    pg_and_generic()
-        .verified_stmt("CREATE TEMPORARY TABLE table (COL INT) ON COMMIT PRESERVE ROWS");
+    pg_and_generic().one_statement_parses_to(
+        "CREATE TEMPORARY TABLE table (COL INT) ON COMMIT PRESERVE ROWS",
+        "CREATE TEMPORARY TABLE table (col INT) ON COMMIT PRESERVE ROWS",
+    );
 
-    pg_and_generic().verified_stmt("CREATE TEMPORARY TABLE table (COL INT) ON COMMIT DELETE ROWS");
+    pg_and_generic().one_statement_parses_to(
+        "CREATE TEMPORARY TABLE table (COL INT) ON COMMIT DELETE ROWS",
+        "CREATE TEMPORARY TABLE table (col INT) ON COMMIT DELETE ROWS",
+    );
 
-    pg_and_generic().verified_stmt("CREATE TEMPORARY TABLE table (COL INT) ON COMMIT DROP");
+    pg_and_generic().one_statement_parses_to(
+        "CREATE TEMPORARY TABLE table (COL INT) ON COMMIT DROP",
+        "CREATE TEMPORARY TABLE table (col INT) ON COMMIT DROP",
+    );
 }
 
 fn pg() -> TestedDialects {
@@ -3899,7 +3933,6 @@ fn pg() -> TestedDialects {
 fn pg_and_generic() -> TestedDialects {
     TestedDialects::new(vec![
         Box::new(PostgreSqlDialect {}),
-        Box::new(GenericDialect {}),
     ])
 }
 
@@ -4016,10 +4049,11 @@ fn parse_declare() {
 #[test]
 fn parse_current_functions() {
     let sql = "SELECT CURRENT_CATALOG, CURRENT_USER, SESSION_USER, USER";
-    let select = pg_and_generic().verified_only_select(sql);
+    let canonical = "SELECT current_catalog, current_user, session_user, user";
+    let select = pg_and_generic().verified_only_select_with_canonical(sql, canonical);
     assert_eq!(
         &Expr::Function(Function {
-            name: ObjectName::from(vec![Ident::new("CURRENT_CATALOG")]),
+            name: ObjectName::from(vec![Ident::new("current_catalog")]),
             uses_odbc_syntax: false,
             parameters: FunctionArguments::None,
             args: FunctionArguments::None,
@@ -4033,7 +4067,7 @@ fn parse_current_functions() {
     );
     assert_eq!(
         &Expr::Function(Function {
-            name: ObjectName::from(vec![Ident::new("CURRENT_USER")]),
+            name: ObjectName::from(vec![Ident::new("current_user")]),
             uses_odbc_syntax: false,
             parameters: FunctionArguments::None,
             args: FunctionArguments::None,
@@ -4047,7 +4081,7 @@ fn parse_current_functions() {
     );
     assert_eq!(
         &Expr::Function(Function {
-            name: ObjectName::from(vec![Ident::new("SESSION_USER")]),
+            name: ObjectName::from(vec![Ident::new("session_user")]),
             uses_odbc_syntax: false,
             parameters: FunctionArguments::None,
             args: FunctionArguments::None,
@@ -4061,7 +4095,7 @@ fn parse_current_functions() {
     );
     assert_eq!(
         &Expr::Function(Function {
-            name: ObjectName::from(vec![Ident::new("USER")]),
+            name: ObjectName::from(vec![Ident::new("user")]),
             uses_odbc_syntax: false,
             parameters: FunctionArguments::None,
             args: FunctionArguments::None,
@@ -4648,8 +4682,9 @@ fn parse_update_in_with_subquery() {
 #[test]
 fn parse_create_function() {
     let sql = "CREATE FUNCTION add(INTEGER, INTEGER) RETURNS INTEGER LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE AS 'select $1 + $2;'";
+    let canonical = "CREATE FUNCTION add(INTEGER, INTEGER) RETURNS INTEGER LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS 'select $1 + $2;'";
     assert_eq!(
-        pg_and_generic().verified_stmt(sql),
+        pg_and_generic().one_statement_parses_to(sql, canonical),
         Statement::CreateFunction(CreateFunction {
             token: AttachedToken::empty(),
             or_alter: false,
@@ -4661,7 +4696,7 @@ fn parse_create_function() {
                 OperateFunctionArg::unnamed(DataType::Integer(None)),
             ]),
             return_type: Some(DataType::Integer(None)),
-            language: Some("SQL".into()),
+            language: Some("sql".into()),
             behavior: Some(FunctionBehavior::Immutable),
             called_on_null: Some(FunctionCalledOnNull::Strict),
             parallel: Some(FunctionParallel::Safe),
@@ -5206,8 +5241,9 @@ fn parse_truncate_with_table_list() {
 
 #[test]
 fn parse_select_regexp_as_column_name() {
-    pg_and_generic().verified_only_select(
+    pg_and_generic().verified_only_select_with_canonical(
         "SELECT REGEXP.REGEXP AS REGEXP FROM REGEXP AS REGEXP WHERE REGEXP.REGEXP",
+        "SELECT regexp.regexp AS regexp FROM regexp AS regexp WHERE regexp.regexp",
     );
 }
 
@@ -5278,7 +5314,7 @@ fn parse_create_table_with_alias() {
 #[test]
 fn parse_create_table_with_partition_by() {
     let sql = "CREATE TABLE t1 (a INT, b TEXT) PARTITION BY RANGE(a)";
-    match pg_and_generic().verified_stmt(sql) {
+    match pg_and_generic().one_statement_parses_to(sql, "CREATE TABLE t1 (a INT, b TEXT) PARTITION BY range(a)") {
         Statement::CreateTable(create_table) => {
             assert_eq!("t1", create_table.name.to_string());
             assert_eq!(
@@ -5298,7 +5334,7 @@ fn parse_create_table_with_partition_by() {
             );
             match *create_table.partition_by.unwrap() {
                 Expr::Function(f) => {
-                    assert_eq!("RANGE", f.name.to_string());
+                    assert_eq!("range", f.name.to_string());
                     assert_eq!(
                         FunctionArguments::List(FunctionArgumentList {
                             duplicate_treatment: None,
@@ -5349,16 +5385,18 @@ fn parse_join_constraint_unnest_alias() {
 #[test]
 fn test_complex_postgres_insert_with_alias() {
     let sql1 = "WITH existing AS (SELECT test_table.id FROM test_tables AS test_table WHERE (a = 12) AND (b = 34)), inserted AS (INSERT INTO test_tables AS test_table (id, a, b, c) VALUES (DEFAULT, 56, 78, 90) ON CONFLICT(a, b) DO UPDATE SET c = EXCLUDED.c WHERE (test_table.c <> EXCLUDED.c)) SELECT c FROM existing";
+    let canonical = "WITH existing AS (SELECT test_table.id FROM test_tables AS test_table WHERE (a = 12) AND (b = 34)), inserted AS (INSERT INTO test_tables AS test_table (id, a, b, c) VALUES (default, 56, 78, 90) ON CONFLICT(a, b) DO UPDATE SET c = excluded.c WHERE (test_table.c <> excluded.c)) SELECT c FROM existing";
 
-    pg().verified_stmt(sql1);
+    pg().one_statement_parses_to(sql1, canonical);
 }
 
 #[cfg(not(feature = "bigdecimal"))]
 #[test]
 fn test_simple_postgres_insert_with_alias() {
     let sql2 = "INSERT INTO test_tables AS test_table (id, a) VALUES (DEFAULT, 123)";
+    let canonical = "INSERT INTO test_tables AS test_table (id, a) VALUES (default, 123)";
 
-    let statement = pg().verified_stmt(sql2);
+    let statement = pg().one_statement_parses_to(sql2, canonical);
 
     assert_eq!(
         statement,
@@ -5397,7 +5435,7 @@ fn test_simple_postgres_insert_with_alias() {
                     value_keyword: false,
                     explicit_row: false,
                     rows: vec![vec![
-                        Expr::Identifier(Ident::new("DEFAULT")),
+                        Expr::Identifier(Ident::new("default")),
                         Expr::Value((Value::Number("123".to_string(), false)).with_empty_span())
                     ]]
                 })),
@@ -5428,8 +5466,9 @@ fn test_simple_postgres_insert_with_alias() {
 #[test]
 fn test_simple_postgres_insert_with_alias() {
     let sql2 = "INSERT INTO test_tables AS test_table (id, a) VALUES (DEFAULT, 123)";
+    let canonical = "INSERT INTO test_tables AS test_table (id, a) VALUES (default, 123)";
 
-    let statement = pg().verified_stmt(sql2);
+    let statement = pg().one_statement_parses_to(sql2, canonical);
 
     assert_eq!(
         statement,
@@ -5468,7 +5507,7 @@ fn test_simple_postgres_insert_with_alias() {
                     value_keyword: false,
                     explicit_row: false,
                     rows: vec![vec![
-                        Expr::Identifier(Ident::new("DEFAULT")),
+                        Expr::Identifier(Ident::new("default")),
                         Expr::Value(
                             (Value::Number(bigdecimal::BigDecimal::new(123.into(), 0), false))
                                 .with_empty_span()
@@ -5501,8 +5540,9 @@ fn test_simple_postgres_insert_with_alias() {
 #[test]
 fn test_simple_insert_with_quoted_alias() {
     let sql = r#"INSERT INTO test_tables AS "Test_Table" (id, a) VALUES (DEFAULT, '0123')"#;
+    let canonical = r#"INSERT INTO test_tables AS "Test_Table" (id, a) VALUES (default, '0123')"#;
 
-    let statement = pg().verified_stmt(sql);
+    let statement = pg().one_statement_parses_to(sql, canonical);
 
     assert_eq!(
         statement,
@@ -5541,7 +5581,7 @@ fn test_simple_insert_with_quoted_alias() {
                     value_keyword: false,
                     explicit_row: false,
                     rows: vec![vec![
-                        Expr::Identifier(Ident::new("DEFAULT")),
+                        Expr::Identifier(Ident::new("default")),
                         Expr::Value(
                             (Value::SingleQuotedString("0123".to_string())).with_empty_span()
                         )
@@ -5573,20 +5613,28 @@ fn test_simple_insert_with_quoted_alias() {
 #[test]
 fn parse_array_agg() {
     // follows general function with wildcard code path
-    let sql = r#"SELECT GREATEST(sections_tbl.*) AS sections FROM sections_tbl"#;
-    pg().verified_stmt(sql);
+    pg().one_statement_parses_to(
+        "SELECT GREATEST(sections_tbl.*) AS sections FROM sections_tbl",
+        "SELECT greatest(sections_tbl.*) AS sections FROM sections_tbl",
+    );
 
     // follows special-case array_agg code path
-    let sql2 = "SELECT ARRAY_AGG(sections_tbl.*) AS sections FROM sections_tbl";
-    pg().verified_stmt(sql2);
+    pg().one_statement_parses_to(
+        "SELECT ARRAY_AGG(sections_tbl.*) AS sections FROM sections_tbl",
+        "SELECT array_agg(sections_tbl.*) AS sections FROM sections_tbl",
+    );
 
     // handles multi-part identifier with general code path
-    let sql3 = "SELECT GREATEST(my_schema.sections_tbl.*) AS sections FROM sections_tbl";
-    pg().verified_stmt(sql3);
+    pg().one_statement_parses_to(
+        "SELECT GREATEST(my_schema.sections_tbl.*) AS sections FROM sections_tbl",
+        "SELECT greatest(my_schema.sections_tbl.*) AS sections FROM sections_tbl",
+    );
 
     // handles multi-part identifier with array_agg code path
-    let sql4 = "SELECT ARRAY_AGG(my_schema.sections_tbl.*) AS sections FROM sections_tbl";
-    pg().verified_stmt(sql4);
+    pg().one_statement_parses_to(
+        "SELECT ARRAY_AGG(my_schema.sections_tbl.*) AS sections FROM sections_tbl",
+        "SELECT array_agg(my_schema.sections_tbl.*) AS sections FROM sections_tbl",
+    );
 }
 
 #[test]
@@ -5600,8 +5648,8 @@ fn parse_mat_cte() {
 
 #[test]
 fn parse_at_time_zone() {
-    pg_and_generic().verified_expr("CURRENT_TIMESTAMP AT TIME ZONE tz");
-    pg_and_generic().verified_expr("CURRENT_TIMESTAMP AT TIME ZONE ('America/' || 'Los_Angeles')");
+    pg_and_generic().expr_parses_to("CURRENT_TIMESTAMP AT TIME ZONE tz", "current_timestamp AT TIME ZONE tz");
+    pg_and_generic().expr_parses_to("CURRENT_TIMESTAMP AT TIME ZONE ('America/' || 'Los_Angeles')", "current_timestamp AT TIME ZONE ('America/' || 'Los_Angeles')");
 
     // check precedence
     let expr = Expr::BinaryOp {
@@ -5758,6 +5806,7 @@ fn test_escaped_string_literal() {
 #[test]
 fn parse_create_domain() {
     let sql1 = "CREATE DOMAIN my_domain AS INTEGER CHECK (VALUE > 0)";
+    let canonical1 = "CREATE DOMAIN my_domain AS INTEGER CHECK (value > 0)";
     let expected = Statement::CreateDomain(CreateDomain {
         token: AttachedToken::empty(),
         name: ObjectName::from(vec![Ident::new("my_domain")]),
@@ -5767,7 +5816,7 @@ fn parse_create_domain() {
         constraints: vec![CheckConstraint {
             name: None,
             expr: Box::new(Expr::BinaryOp {
-                left: Box::new(Expr::Identifier(Ident::new("VALUE"))),
+                left: Box::new(Expr::Identifier(Ident::new("value"))),
                 op: BinaryOperator::Gt,
                 right: Box::new(Expr::Value(test_utils::number("0").into())),
             }),
@@ -5776,9 +5825,10 @@ fn parse_create_domain() {
         .into()],
     });
 
-    assert_eq!(pg().verified_stmt(sql1), expected);
+    assert_eq!(pg().one_statement_parses_to(sql1, canonical1), expected);
 
     let sql2 = "CREATE DOMAIN my_domain AS INTEGER COLLATE \"en_US\" CHECK (VALUE > 0)";
+    let canonical2 = "CREATE DOMAIN my_domain AS INTEGER COLLATE \"en_US\" CHECK (value > 0)";
     let expected = Statement::CreateDomain(CreateDomain {
         token: AttachedToken::empty(),
         name: ObjectName::from(vec![Ident::new("my_domain")]),
@@ -5788,7 +5838,7 @@ fn parse_create_domain() {
         constraints: vec![CheckConstraint {
             name: None,
             expr: Box::new(Expr::BinaryOp {
-                left: Box::new(Expr::Identifier(Ident::new("VALUE"))),
+                left: Box::new(Expr::Identifier(Ident::new("value"))),
                 op: BinaryOperator::Gt,
                 right: Box::new(Expr::Value(test_utils::number("0").into())),
             }),
@@ -5797,9 +5847,10 @@ fn parse_create_domain() {
         .into()],
     });
 
-    assert_eq!(pg().verified_stmt(sql2), expected);
+    assert_eq!(pg().one_statement_parses_to(sql2, canonical2), expected);
 
     let sql3 = "CREATE DOMAIN my_domain AS INTEGER DEFAULT 1 CHECK (VALUE > 0)";
+    let canonical3 = "CREATE DOMAIN my_domain AS INTEGER DEFAULT 1 CHECK (value > 0)";
     let expected = Statement::CreateDomain(CreateDomain {
         token: AttachedToken::empty(),
         name: ObjectName::from(vec![Ident::new("my_domain")]),
@@ -5809,7 +5860,7 @@ fn parse_create_domain() {
         constraints: vec![CheckConstraint {
             name: None,
             expr: Box::new(Expr::BinaryOp {
-                left: Box::new(Expr::Identifier(Ident::new("VALUE"))),
+                left: Box::new(Expr::Identifier(Ident::new("value"))),
                 op: BinaryOperator::Gt,
                 right: Box::new(Expr::Value(test_utils::number("0").into())),
             }),
@@ -5818,9 +5869,10 @@ fn parse_create_domain() {
         .into()],
     });
 
-    assert_eq!(pg().verified_stmt(sql3), expected);
+    assert_eq!(pg().one_statement_parses_to(sql3, canonical3), expected);
 
     let sql4 = "CREATE DOMAIN my_domain AS INTEGER COLLATE \"en_US\" DEFAULT 1 CHECK (VALUE > 0)";
+    let canonical4 = "CREATE DOMAIN my_domain AS INTEGER COLLATE \"en_US\" DEFAULT 1 CHECK (value > 0)";
     let expected = Statement::CreateDomain(CreateDomain {
         token: AttachedToken::empty(),
         name: ObjectName::from(vec![Ident::new("my_domain")]),
@@ -5830,7 +5882,7 @@ fn parse_create_domain() {
         constraints: vec![CheckConstraint {
             name: None,
             expr: Box::new(Expr::BinaryOp {
-                left: Box::new(Expr::Identifier(Ident::new("VALUE"))),
+                left: Box::new(Expr::Identifier(Ident::new("value"))),
                 op: BinaryOperator::Gt,
                 right: Box::new(Expr::Value(test_utils::number("0").into())),
             }),
@@ -5839,9 +5891,10 @@ fn parse_create_domain() {
         .into()],
     });
 
-    assert_eq!(pg().verified_stmt(sql4), expected);
+    assert_eq!(pg().one_statement_parses_to(sql4, canonical4), expected);
 
     let sql5 = "CREATE DOMAIN my_domain AS INTEGER CONSTRAINT my_constraint CHECK (VALUE > 0)";
+    let canonical5 = "CREATE DOMAIN my_domain AS INTEGER CONSTRAINT my_constraint CHECK (value > 0)";
     let expected = Statement::CreateDomain(CreateDomain {
         token: AttachedToken::empty(),
         name: ObjectName::from(vec![Ident::new("my_domain")]),
@@ -5851,7 +5904,7 @@ fn parse_create_domain() {
         constraints: vec![CheckConstraint {
             name: Some(Ident::new("my_constraint")),
             expr: Box::new(Expr::BinaryOp {
-                left: Box::new(Expr::Identifier(Ident::new("VALUE"))),
+                left: Box::new(Expr::Identifier(Ident::new("value"))),
                 op: BinaryOperator::Gt,
                 right: Box::new(Expr::Value(test_utils::number("0").into())),
             }),
@@ -5860,7 +5913,7 @@ fn parse_create_domain() {
         .into()],
     });
 
-    assert_eq!(pg().verified_stmt(sql5), expected);
+    assert_eq!(pg().one_statement_parses_to(sql5, canonical5), expected);
 }
 
 #[test]
@@ -5899,6 +5952,7 @@ fn parse_create_simple_before_insert_trigger() {
 #[test]
 fn parse_create_after_update_trigger_with_condition() {
     let sql = "CREATE TRIGGER check_update AFTER UPDATE ON accounts FOR EACH ROW WHEN (NEW.balance > 10000) EXECUTE FUNCTION check_account_update";
+    let canonical = "CREATE TRIGGER check_update AFTER UPDATE ON accounts FOR EACH ROW WHEN (new.balance > 10000) EXECUTE FUNCTION check_account_update";
     let expected = Statement::CreateTrigger(CreateTrigger {
         token: AttachedToken::empty(),
         or_alter: false,
@@ -5915,7 +5969,7 @@ fn parse_create_after_update_trigger_with_condition() {
         trigger_object: Some(TriggerObjectKind::ForEach(TriggerObject::Row)),
         condition: Some(Expr::Nested(Box::new(Expr::BinaryOp {
             left: Box::new(Expr::CompoundIdentifier(vec![
-                Ident::new("NEW"),
+                Ident::new("new"),
                 Ident::new("balance"),
             ])),
             op: BinaryOperator::Gt,
@@ -5933,7 +5987,7 @@ fn parse_create_after_update_trigger_with_condition() {
         characteristics: None,
     });
 
-    assert_eq!(pg().verified_stmt(sql), expected);
+    assert_eq!(pg().one_statement_parses_to(sql, canonical), expected);
 }
 
 #[test]
@@ -6838,7 +6892,10 @@ fn parse_create_operator_class() {
     }
 
     // Test comprehensive operator class with all fields
-    match pg().verified_stmt("CREATE OPERATOR CLASS CAS_btree_ops DEFAULT FOR TYPE CAS USING btree FAMILY CAS_btree_ops AS OPERATOR 1 <, OPERATOR 2 <=, OPERATOR 3 =, OPERATOR 4 >=, OPERATOR 5 >, FUNCTION 1 cas_cmp(CAS, CAS)") {
+    match pg().one_statement_parses_to(
+        "CREATE OPERATOR CLASS CAS_btree_ops DEFAULT FOR TYPE CAS USING btree FAMILY CAS_btree_ops AS OPERATOR 1 <, OPERATOR 2 <=, OPERATOR 3 =, OPERATOR 4 >=, OPERATOR 5 >, FUNCTION 1 cas_cmp(CAS, CAS)",
+        "CREATE OPERATOR CLASS cas_btree_ops DEFAULT FOR TYPE cas USING btree FAMILY cas_btree_ops AS OPERATOR 1 <, OPERATOR 2 <=, OPERATOR 3 =, OPERATOR 4 >=, OPERATOR 5 >, FUNCTION 1 cas_cmp(cas, cas)",
+    ) {
         Statement::CreateOperatorClass(CreateOperatorClass {
             name,
             default: true,
@@ -6847,10 +6904,10 @@ fn parse_create_operator_class() {
             ref family,
             ref items,
         }) => {
-            assert_eq!(name, ObjectName::from(vec![Ident::new("CAS_btree_ops")]));
-            assert_eq!(for_type, &DataType::Custom(ObjectName::from(vec![Ident::new("CAS")]), vec![]));
+            assert_eq!(name, ObjectName::from(vec![Ident::new("cas_btree_ops")]));
+            assert_eq!(for_type, &DataType::Custom(ObjectName::from(vec![Ident::new("cas")]), vec![]));
             assert_eq!(using, &Ident::new("btree"));
-            assert_eq!(family, &Some(ObjectName::from(vec![Ident::new("CAS_btree_ops")])));
+            assert_eq!(family, &Some(ObjectName::from(vec![Ident::new("cas_btree_ops")])));
             assert_eq!(items.len(), 6);
         }
         _ => panic!("Expected CreateOperatorClass statement"),

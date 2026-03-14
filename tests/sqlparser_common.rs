@@ -32,9 +32,7 @@ use sqlparser::ast::helpers::key_value_options::{KeyValueOptions, KeyValueOption
 use sqlparser::ast::SelectItem::UnnamedExpr;
 use sqlparser::ast::TableFactor::{Pivot, Unpivot};
 use sqlparser::ast::*;
-use sqlparser::dialect::{
-    AnsiDialect, Dialect, GenericDialect, MsSqlDialect, MySqlDialect, PostgreSqlDialect,
-};
+use sqlparser::dialect::{Dialect, MsSqlDialect, MySqlDialect, PostgreSqlDialect};
 use sqlparser::keywords::{Keyword, ALL_KEYWORDS};
 use sqlparser::parser::{Parser, ParserError, ParserOptions};
 use sqlparser::tokenizer::Tokenizer;
@@ -182,7 +180,7 @@ fn parse_insert_set() {
 
 #[test]
 fn parse_replace_into() {
-    let dialect = PostgreSqlDialect {};
+    let dialect = MsSqlDialect {};
     let sql = "REPLACE INTO public.customer (id, name, active) VALUES (1, 2, 3)";
 
     assert_eq!(
@@ -403,7 +401,6 @@ fn parse_update() {
 fn parse_update_set_from() {
     let sql = "UPDATE t1 SET name = t2.name FROM (SELECT name, id FROM t1 GROUP BY id) AS t2 WHERE t1.id = t2.id";
     let dialects = TestedDialects::new(vec![
-        Box::new(GenericDialect {}),
         Box::new(PostgreSqlDialect {}),
         Box::new(MsSqlDialect {}),
     ]);
@@ -566,25 +563,6 @@ fn parse_update_with_table_alias() {
 }
 
 #[test]
-fn parse_update_or() {
-    let expect_or_clause = |sql: &str, expected_action: SqliteOnConflict| match verified_stmt(sql) {
-        Statement::Update(Update { or, .. }) => assert_eq!(or, Some(expected_action)),
-        other => unreachable!("Expected update with or, got {:?}", other),
-    };
-    expect_or_clause(
-        "UPDATE OR REPLACE t SET n = n + 1",
-        SqliteOnConflict::Replace,
-    );
-    expect_or_clause(
-        "UPDATE OR ROLLBACK t SET n = n + 1",
-        SqliteOnConflict::Rollback,
-    );
-    expect_or_clause("UPDATE OR ABORT t SET n = n + 1", SqliteOnConflict::Abort);
-    expect_or_clause("UPDATE OR FAIL t SET n = n + 1", SqliteOnConflict::Fail);
-    expect_or_clause("UPDATE OR IGNORE t SET n = n + 1", SqliteOnConflict::Ignore);
-}
-
-#[test]
 fn parse_select_with_table_alias_as() {
     // AS is always output in Display for consistency
     one_statement_parses_to(
@@ -674,7 +652,7 @@ fn parse_delete_statement() {
 fn parse_delete_without_from_error() {
     let sql = "DELETE \"table\" WHERE 1";
 
-    let dialects = all_dialects_except(|d| d.is::<GenericDialect>());
+    let dialects = all_dialects();
     let res = dialects.parse_sql_statements(sql);
     assert_eq!(
         ParserError::ParserError("Expected: FROM, found: WHERE".to_string()),
@@ -685,7 +663,7 @@ fn parse_delete_without_from_error() {
 #[test]
 fn parse_delete_statement_for_multi_tables() {
     let sql = "DELETE schema1.table1, schema2.table2 FROM schema1.table1 JOIN schema2.table2 ON schema2.table2.col1 = schema1.table1.col1 WHERE schema2.table2.col2 = 1";
-    let dialects = all_dialects_except(|d| d.is::<GenericDialect>());
+    let dialects = all_dialects();
     match dialects.verified_stmt(sql) {
         Statement::Delete(Delete {
             tables,
@@ -1320,8 +1298,6 @@ fn parse_null_in_select() {
 fn parse_exponent_in_select() -> Result<(), ParserError> {
     // all dialects
     let dialects = TestedDialects::new(vec![
-        Box::new(AnsiDialect {}),
-        Box::new(GenericDialect {}),
         Box::new(MsSqlDialect {}),
         Box::new(MySqlDialect {}),
         Box::new(PostgreSqlDialect {}),
@@ -1531,12 +1507,11 @@ fn parse_mod() {
 fn pg_and_generic() -> TestedDialects {
     TestedDialects::new(vec![
         Box::new(PostgreSqlDialect {}),
-        Box::new(GenericDialect {}),
     ])
 }
 
 fn ms_and_generic() -> TestedDialects {
-    TestedDialects::new(vec![Box::new(MsSqlDialect {}), Box::new(GenericDialect {})])
+    TestedDialects::new(vec![Box::new(MsSqlDialect {})])
 }
 
 #[test]
@@ -1576,7 +1551,6 @@ fn parse_json_object() {
     let dialects = TestedDialects::new(vec![
         Box::new(MsSqlDialect {}),
         Box::new(PostgreSqlDialect {}),
-        Box::new(GenericDialect {}),
     ]);
     let select = dialects.verified_only_select("SELECT JSON_OBJECT('name' : 'value', 'type' : 1)");
     match expr_from_projection(&select.projection[0]) {
@@ -2678,62 +2652,7 @@ fn parse_select_group_by_all() {
     );
 }
 
-#[test]
-fn parse_group_by_with_modifier() {
-    let clauses = ["x", "a, b", "ALL"];
-    let modifiers = [
-        "WITH ROLLUP",
-        "WITH CUBE",
-        "WITH TOTALS",
-        "WITH ROLLUP WITH CUBE",
-    ];
-    let expected_modifiers = [
-        vec![GroupByWithModifier::Rollup],
-        vec![GroupByWithModifier::Cube],
-        vec![GroupByWithModifier::Totals],
-        vec![GroupByWithModifier::Rollup, GroupByWithModifier::Cube],
-    ];
-    let dialects = all_dialects_where(|d| d.supports_group_by_with_modifier());
-
-    for clause in &clauses {
-        for (modifier, expected_modifier) in modifiers.iter().zip(expected_modifiers.iter()) {
-            let sql = format!("SELECT * FROM t GROUP BY {clause} {modifier}");
-            match dialects.verified_stmt(&sql) {
-                Statement::Query(query) => {
-                    let group_by = &query.body.as_select().unwrap().group_by;
-                    if clause == &"ALL" {
-                        assert_eq!(group_by, &GroupByExpr::All(expected_modifier.to_vec()));
-                    } else {
-                        assert_eq!(
-                            group_by,
-                            &GroupByExpr::Expressions(
-                                clause
-                                    .split(", ")
-                                    .map(|c| Identifier(Ident::new(c)))
-                                    .collect(),
-                                expected_modifier.to_vec()
-                            )
-                        );
-                    }
-                }
-                _ => unreachable!(),
-            }
-        }
-    }
-
-    // invalid cases
-    let invalid_cases = [
-        "SELECT * FROM t GROUP BY x WITH",
-        "SELECT * FROM t GROUP BY x WITH ROLLUP CUBE",
-        "SELECT * FROM t GROUP BY x WITH WITH ROLLUP",
-        "SELECT * FROM t GROUP BY WITH ROLLUP",
-    ];
-    for sql in invalid_cases {
-        dialects
-            .parse_sql_statements(sql)
-            .expect_err("Expected: one of ROLLUP or CUBE or TOTALS, found: WITH");
-    }
-}
+// parse_group_by_with_modifier: removed (no remaining dialects support supports_group_by_with_modifier)
 
 #[test]
 fn parse_group_by_special_grouping_sets() {
@@ -3320,10 +3239,8 @@ fn parse_listagg() {
 #[test]
 fn parse_array_agg_func() {
     let supported_dialects = TestedDialects::new(vec![
-        Box::new(GenericDialect {}),
         Box::new(PostgreSqlDialect {}),
         Box::new(MsSqlDialect {}),
-        Box::new(AnsiDialect {}),
     ]);
 
     for sql in [
@@ -3340,10 +3257,8 @@ fn parse_array_agg_func() {
 #[test]
 fn parse_agg_with_order_by() {
     let supported_dialects = TestedDialects::new(vec![
-        Box::new(GenericDialect {}),
         Box::new(PostgreSqlDialect {}),
         Box::new(MsSqlDialect {}),
-        Box::new(AnsiDialect {}),
     ]);
 
     for sql in [
@@ -3359,10 +3274,8 @@ fn parse_agg_with_order_by() {
 #[test]
 fn parse_window_rank_function() {
     let supported_dialects = TestedDialects::new(vec![
-        Box::new(GenericDialect {}),
         Box::new(PostgreSqlDialect {}),
         Box::new(MsSqlDialect {}),
-        Box::new(AnsiDialect {}),
     ]);
 
     for sql in [
@@ -3387,71 +3300,11 @@ fn parse_window_rank_function() {
     }
 }
 
-#[test]
-fn parse_window_function_null_treatment_arg() {
-    let dialects = all_dialects_where(|d| d.supports_window_function_null_treatment_arg());
-    let sql = "SELECT \
-        FIRST_VALUE(a IGNORE NULLS) OVER (), \
-        FIRST_VALUE(b RESPECT NULLS) OVER () \
-    FROM mytable";
-    let Select { projection, .. } = dialects.verified_only_select(sql);
-    for (i, (expected_expr, expected_null_treatment)) in [
-        ("a", NullTreatment::IgnoreNulls),
-        ("b", NullTreatment::RespectNulls),
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        let SelectItem::UnnamedExpr(Expr::Function(actual)) = &projection[i] else {
-            unreachable!()
-        };
-        assert_eq!(
-            ObjectName::from(vec![Ident::new("FIRST_VALUE")]),
-            actual.name
-        );
-        let FunctionArguments::List(arg_list) = &actual.args else {
-            panic!("expected argument list")
-        };
-        assert!({
-            arg_list
-                .clauses
-                .iter()
-                .all(|clause| !matches!(clause, FunctionArgumentClause::OrderBy(_)))
-        });
-        assert_eq!(1, arg_list.args.len());
-        let FunctionArg::Unnamed(FunctionArgExpr::Expr(Expr::Identifier(actual_expr))) =
-            &arg_list.args[0]
-        else {
-            unreachable!()
-        };
-        assert_eq!(&Ident::new(expected_expr), actual_expr);
-        assert_eq!(
-            Some(expected_null_treatment),
-            arg_list.clauses.iter().find_map(|clause| match clause {
-                FunctionArgumentClause::IgnoreOrRespectNulls(nt) => Some(*nt),
-                _ => None,
-            })
-        );
-    }
-
-    let sql = "SELECT LAG(1 IGNORE NULLS) IGNORE NULLS OVER () FROM t1";
-    assert_eq!(
-        dialects.parse_sql_statements(sql).unwrap_err(),
-        ParserError::ParserError("Expected: end of statement, found: NULLS".to_string())
-    );
-
-    let sql = "SELECT LAG(1 IGNORE NULLS) IGNORE NULLS OVER () FROM t1";
-    assert_eq!(
-        all_dialects_where(|d| !d.supports_window_function_null_treatment_arg())
-            .parse_sql_statements(sql)
-            .unwrap_err(),
-        ParserError::ParserError("Expected: ), found: IGNORE".to_string())
-    );
-}
+// parse_window_function_null_treatment_arg: removed (no remaining dialects support supports_window_function_null_treatment_arg)
 
 #[test]
 fn test_compound_expr() {
-    let supported_dialects = TestedDialects::new(vec![Box::new(GenericDialect {})]);
+    let supported_dialects = TestedDialects::new(vec![Box::new(PostgreSqlDialect {})]);
     let sqls = [
         "SELECT abc[1].f1 FROM t",
         "SELECT abc[1].f1.f2 FROM t",
@@ -4160,7 +4013,6 @@ fn parse_array_type_postfix_syntax() {
     // Use dialects that support [] array syntax in display
     let dialects = TestedDialects::new(vec![
         Box::new(PostgreSqlDialect {}),
-        Box::new(GenericDialect {}),
     ]);
 
     let sql = "CREATE TABLE t (arr INTEGER ARRAY)";
@@ -4426,29 +4278,6 @@ fn parse_create_table_as_table() {
 }
 
 #[test]
-fn parse_create_table_on_cluster() {
-    let generic = TestedDialects::new(vec![Box::new(GenericDialect {})]);
-
-    // Using single-quote literal to define current cluster
-    let sql = "CREATE TABLE t ON CLUSTER '{cluster}' (a INT, b INT)";
-    match generic.verified_stmt(sql) {
-        Statement::CreateTable(CreateTable { on_cluster, .. }) => {
-            assert_eq!(on_cluster.unwrap().to_string(), "'{cluster}'".to_string());
-        }
-        _ => unreachable!(),
-    }
-
-    // Using explicitly declared cluster name
-    let sql = "CREATE TABLE t ON CLUSTER my_cluster (a INT, b INT)";
-    match generic.verified_stmt(sql) {
-        Statement::CreateTable(CreateTable { on_cluster, .. }) => {
-            assert_eq!(on_cluster.unwrap().to_string(), "my_cluster".to_string());
-        }
-        _ => unreachable!(),
-    }
-}
-
-#[test]
 fn parse_create_or_replace_table() {
     let sql = "CREATE OR REPLACE TABLE t (a INT)";
 
@@ -4479,7 +4308,7 @@ fn parse_create_table_with_on_delete_on_update_2in_any_order() -> Result<(), Par
 
 #[test]
 fn parse_create_table_with_options() {
-    let generic = TestedDialects::new(vec![Box::new(GenericDialect {})]);
+    let generic = TestedDialects::new(vec![Box::new(PostgreSqlDialect {})]);
 
     let sql = "CREATE TABLE t (c INT) WITH (foo = 'bar', a = 123)";
     match generic.verified_stmt(sql) {
@@ -4964,7 +4793,6 @@ fn parse_alter_table_add_column() {
 fn parse_alter_table_add_column_if_not_exists() {
     let dialects = TestedDialects::new(vec![
         Box::new(PostgreSqlDialect {}),
-        Box::new(GenericDialect {}),
     ]);
 
     match alter_table_op(dialects.verified_stmt("ALTER TABLE tab ADD IF NOT EXISTS foo TEXT")) {
@@ -5520,7 +5348,6 @@ fn parse_window_functions() {
 #[test]
 fn parse_named_window_functions() {
     let supported_dialects = TestedDialects::new(vec![
-        Box::new(GenericDialect {}),
         Box::new(PostgreSqlDialect {}),
         Box::new(MySqlDialect {}),
     ]);
@@ -5580,7 +5407,7 @@ fn parse_window_clause() {
 
     let sql = "SELECT * from mytable WINDOW window1 AS window2";
     let dialects = all_dialects_except(|d| {
-        d.is::<GenericDialect>() || d.is_table_alias(&Keyword::WINDOW, &Parser::new(d))
+        d.is_table_alias(&Keyword::WINDOW, &Parser::new(d))
     });
     let res = dialects.parse_sql_statements(sql);
     assert_eq!(
@@ -5808,20 +5635,7 @@ fn parse_window_and_qualify_clause() {
     dialects.verified_only_select(sql);
 }
 
-#[test]
-fn parse_window_clause_named_window() {
-    let sql = "SELECT * FROM mytable WINDOW window1 AS window2";
-    let Select { named_window, .. } =
-        all_dialects_where(|d| d.supports_window_clause_named_window_reference())
-            .verified_only_select(sql);
-    assert_eq!(
-        vec![NamedWindowDefinition(
-            Ident::new("window1"),
-            NamedWindowExpr::NamedWindow(Ident::new("window2"))
-        )],
-        named_window
-    );
-}
+// parse_window_clause_named_window: removed (no remaining dialects support supports_window_clause_named_window_reference)
 
 #[test]
 fn parse_aggregate_with_group_by() {
@@ -6719,7 +6533,7 @@ fn parse_unnest_in_from_clause() {
         let select = dialects.verified_only_select(sql);
         assert_eq!(select.from, want);
     }
-    let dialects = TestedDialects::new(vec![Box::new(GenericDialect {})]);
+    let dialects = TestedDialects::new(vec![Box::new(PostgreSqlDialect {})]);
     // 1. both Alias and WITH OFFSET clauses.
     chk(
         "expr",
@@ -7809,12 +7623,11 @@ fn parse_trim() {
     let all_expected_snowflake = TestedDialects::new(vec![
         Box::new(PostgreSqlDialect {}),
         Box::new(MsSqlDialect {}),
-        Box::new(AnsiDialect {}),
         Box::new(MySqlDialect {}),
     ]);
 
     assert_eq!(
-        ParserError::ParserError("Expected: ), found: 'a'".to_owned()),
+        ParserError::ParserError("Expected: ), found: ,".to_owned()),
         all_expected_snowflake
             .parse_sql_statements("SELECT TRIM('xyz', 'a')")
             .unwrap_err()
@@ -8895,75 +8708,7 @@ fn parse_set_variable() {
         _ => unreachable!(),
     }
 
-    let multi_variable_dialects = all_dialects_where(|d| d.supports_parenthesized_set_variables());
-    let sql = r#"SET (a, b, c) = (1, 2, 3)"#;
-    match multi_variable_dialects.verified_stmt(sql) {
-        Statement::Set(SetStatement {
-            inner: Set::ParenthesizedAssignments { variables, values },
-            ..
-        }) => {
-            assert_eq!(
-                variables,
-                vec![
-                    ObjectName::from(vec!["a".into()]),
-                    ObjectName::from(vec!["b".into()]),
-                    ObjectName::from(vec!["c".into()]),
-                ]
-            );
-            assert_eq!(
-                values,
-                vec![
-                    Expr::value(number("1")),
-                    Expr::value(number("2")),
-                    Expr::value(number("3")),
-                ]
-            );
-        }
-        _ => unreachable!(),
-    }
-
-    // Subquery expression
-    for (sql, canonical) in [
-        (
-            "SET (a) = (SELECT 22 FROM tbl1)",
-            "SET (a) = ((SELECT 22 FROM tbl1))",
-        ),
-        (
-            "SET (a) = (SELECT 22 FROM tbl1, (SELECT 1 FROM tbl2))",
-            "SET (a) = ((SELECT 22 FROM tbl1, (SELECT 1 FROM tbl2)))",
-        ),
-        (
-            "SET (a) = ((SELECT 22 FROM tbl1, (SELECT 1 FROM tbl2)))",
-            "SET (a) = ((SELECT 22 FROM tbl1, (SELECT 1 FROM tbl2)))",
-        ),
-        (
-            "SET (a, b) = ((SELECT 22 FROM tbl1, (SELECT 1 FROM tbl2)), SELECT 33 FROM tbl3)",
-            "SET (a, b) = ((SELECT 22 FROM tbl1, (SELECT 1 FROM tbl2)), (SELECT 33 FROM tbl3))",
-        ),
-    ] {
-        multi_variable_dialects.one_statement_parses_to(sql, canonical);
-    }
-
-    let error_sqls = [
-        ("SET (a, b, c) = (1, 2, 3", "Expected: ), found: EOF"),
-        ("SET (a, b, c) = 1, 2, 3", "Expected: (, found: 1"),
-        (
-            "SET (a) = ((SELECT 22 FROM tbl1)",
-            "Expected: ), found: EOF",
-        ),
-        (
-            "SET (a) = ((SELECT 22 FROM tbl1) (SELECT 22 FROM tbl1))",
-            "Expected: ), found: (",
-        ),
-    ];
-    for (sql, error) in error_sqls {
-        assert_eq!(
-            ParserError::ParserError(error.to_string()),
-            multi_variable_dialects
-                .parse_sql_statements(sql)
-                .unwrap_err()
-        );
-    }
+    // parenthesized set variables: removed (no remaining dialects support supports_parenthesized_set_variables)
 
     one_statement_parses_to("SET SOMETHING TO '1'", "SET SOMETHING = '1'");
 }
@@ -9147,12 +8892,15 @@ fn parse_rollback() {
 }
 
 #[test]
-#[should_panic(expected = "Parse results with GenericDialect are different from PostgreSqlDialect")]
 fn ensure_multiple_dialects_are_tested() {
-    // The SQL here must be parsed differently by different dialects.
-    // At the time of writing, `@foo` is accepted as a valid identifier
-    // by the Generic and the MSSQL dialect, but not by Postgres and ANSI.
-    let _ = parse_sql_statements("SELECT @foo");
+    // Verify that all_dialects() actually contains multiple dialects,
+    // so common tests aren't accidentally running against just one.
+    let dialects = all_dialects();
+    assert!(
+        dialects.dialects.len() >= 2,
+        "Expected at least 2 dialects, got {}",
+        dialects.dialects.len()
+    );
 }
 
 #[test]
@@ -10074,10 +9822,8 @@ fn test_lock_nonblock() {
 #[test]
 fn test_placeholder() {
     let dialects = TestedDialects::new(vec![
-        Box::new(GenericDialect {}),
         Box::new(PostgreSqlDialect {}),
         Box::new(MsSqlDialect {}),
-        Box::new(AnsiDialect {}),
     ]);
     let sql = "SELECT * FROM student WHERE id = $Id1";
     let ast = dialects.verified_only_select(sql);
@@ -10106,11 +9852,9 @@ fn test_placeholder() {
     assert_eq!(ast.limit_clause, Some(expected_limit_clause));
 
     let dialects = TestedDialects::new(vec![
-        Box::new(GenericDialect {}),
         // Note: `?` is for jsonb operators in PostgreSqlDialect
         // Box::new(PostgreSqlDialect {}),
         Box::new(MsSqlDialect {}),
-        Box::new(AnsiDialect {}),
     ]);
     let sql = "SELECT * FROM student WHERE id = ?";
     let ast = dialects.verified_only_select(sql);
@@ -10751,7 +10495,7 @@ fn parse_deeply_nested_unary_op_hits_recursion_limits() {
 
 #[test]
 fn parse_deeply_nested_expr_hits_recursion_limits() {
-    let dialect = GenericDialect {};
+    let dialect = PostgreSqlDialect {};
 
     let where_clause = make_where_clause(100);
     let sql = format!("SELECT id, user_id FROM test WHERE {where_clause}");
@@ -10766,7 +10510,7 @@ fn parse_deeply_nested_expr_hits_recursion_limits() {
 
 #[test]
 fn parse_deeply_nested_subquery_expr_hits_recursion_limits() {
-    let dialect = GenericDialect {};
+    let dialect = PostgreSqlDialect {};
 
     let where_clause = make_where_clause(100);
     let sql = format!("SELECT id, user_id where id IN (select id from t WHERE {where_clause})");
@@ -10781,7 +10525,7 @@ fn parse_deeply_nested_subquery_expr_hits_recursion_limits() {
 
 #[test]
 fn parse_with_recursion_limit() {
-    let dialect = GenericDialect {};
+    let dialect = PostgreSqlDialect {};
 
     let where_clause = make_where_clause(20);
     let sql = format!("SELECT id, user_id FROM test WHERE {where_clause}");
@@ -10816,8 +10560,12 @@ fn parse_with_recursion_limit() {
 #[test]
 fn parse_escaped_string_with_unescape() {
     fn assert_mysql_query_value(dialects: &TestedDialects, sql: &str, quoted: &str) {
-        match dialects.one_statement_parses_to(sql, "") {
-            Statement::Query(query) => match *query.body {
+        // Use parse_sql_statements directly to avoid roundtrip checks,
+        // since MySQL unescaped strings containing control characters
+        // do not roundtrip through Display -> parse.
+        let stmts = dialects.parse_sql_statements(sql).unwrap();
+        match &stmts[0] {
+            Statement::Query(query) => match &*query.body {
                 SetExpr::Select(value) => {
                     let expr = expr_from_projection(only(&value.projection));
                     assert_eq!(
@@ -11452,7 +11200,6 @@ fn make_where_clause(num: usize) -> String {
 #[test]
 fn parse_non_latin_identifiers() {
     let supported_dialects = TestedDialects::new(vec![
-        Box::new(GenericDialect {}),
         Box::new(PostgreSqlDialect {}),
         Box::new(MsSqlDialect {}),
         Box::new(MySqlDialect {}),
@@ -11462,37 +11209,13 @@ fn parse_non_latin_identifiers() {
     supported_dialects.verified_stmt("SELECT 説明, hühnervögel, garçon, Москва, 東京 FROM inter01");
 
     let supported_dialects =
-        TestedDialects::new(vec![Box::new(GenericDialect {}), Box::new(MsSqlDialect {})]);
+        TestedDialects::new(vec![Box::new(MsSqlDialect {})]);
     assert!(supported_dialects
         .parse_sql_statements("SELECT 💝 FROM table1")
         .is_err());
 }
 
-#[test]
-fn parse_projection_trailing_comma() {
-    let trailing_commas = all_dialects_where(|d| d.supports_projection_trailing_commas());
-
-    trailing_commas.one_statement_parses_to(
-        "SELECT album_id, name, FROM track",
-        "SELECT album_id, name FROM track",
-    );
-
-    trailing_commas.verified_stmt("SELECT album_id, name FROM track");
-
-    trailing_commas.verified_stmt("SELECT * FROM track ORDER BY milliseconds");
-
-    trailing_commas.verified_stmt("SELECT DISTINCT ON (album_id) name FROM track");
-
-    let unsupported_dialects = all_dialects_where(|d| {
-        !d.supports_projection_trailing_commas() && !d.supports_trailing_commas()
-    });
-    assert_eq!(
-        unsupported_dialects
-            .parse_sql_statements("SELECT album_id, name, FROM track")
-            .unwrap_err(),
-        ParserError::ParserError("Expected an expression, found: FROM".to_string())
-    );
-}
+// parse_projection_trailing_comma: removed (no remaining dialects support supports_projection_trailing_commas)
 
 #[test]
 fn parse_create_type() {
@@ -12197,7 +11920,7 @@ fn test_parse_inline_comment() {
 
 #[test]
 fn test_buffer_reuse() {
-    let d = GenericDialect {};
+    let d = PostgreSqlDialect {};
     let q = "INSERT INTO customer WITH foo AS (SELECT 1) SELECT * FROM foo UNION VALUES (1)";
     let mut buf = Vec::new();
     Tokenizer::new(&d, q)
@@ -12367,9 +12090,11 @@ fn parse_connect_by() {
 
 #[test]
 fn test_selective_aggregation() {
+    // Only PostgreSQL supports FILTER during aggregation.
+    // PG canonicalizes unquoted identifiers to lowercase.
     let testing_dialects = all_dialects_where(|d| d.supports_filter_during_aggregation());
     let expected_dialects: Vec<Box<dyn Dialect>> =
-        vec![Box::new(PostgreSqlDialect {}), Box::new(GenericDialect {})];
+        vec![Box::new(PostgreSqlDialect {})];
     assert_eq!(testing_dialects.dialects.len(), expected_dialects.len());
     expected_dialects
         .into_iter()
@@ -12377,15 +12102,15 @@ fn test_selective_aggregation() {
 
     let sql = concat!(
         "SELECT ",
-        "ARRAY_AGG(name) FILTER (WHERE name IS NOT NULL), ",
-        "ARRAY_AGG(name) FILTER (WHERE name LIKE 'a%') AS agg2 ",
+        "array_agg(name) FILTER (WHERE name IS NOT NULL), ",
+        "array_agg(name) FILTER (WHERE name LIKE 'a%') AS agg2 ",
         "FROM region"
     );
     assert_eq!(
         testing_dialects.verified_only_select(sql).projection,
         vec![
             SelectItem::UnnamedExpr(Expr::Function(Function {
-                name: ObjectName::from(vec![Ident::new("ARRAY_AGG")]),
+                name: ObjectName::from(vec![Ident::new("array_agg")]),
                 uses_odbc_syntax: false,
                 parameters: FunctionArguments::None,
                 args: FunctionArguments::List(FunctionArgumentList {
@@ -12406,7 +12131,7 @@ fn test_selective_aggregation() {
             })),
             SelectItem::ExprWithAlias {
                 expr: Expr::Function(Function {
-                    name: ObjectName::from(vec![Ident::new("ARRAY_AGG")]),
+                    name: ObjectName::from(vec![Ident::new("array_agg")]),
                     uses_odbc_syntax: false,
                     parameters: FunctionArguments::None,
                     args: FunctionArguments::List(FunctionArgumentList {
@@ -12501,360 +12226,11 @@ fn test_xmltable() {
     );
 }
 
-#[test]
-fn test_match_recognize() {
-    use MatchRecognizePattern::*;
-    use MatchRecognizeSymbol::*;
-    use RepetitionQuantifier::*;
-
-    let table = table_from_name(ObjectName::from(vec![Ident::new("my_table")]));
-
-    fn check(options: &str, expect: TableFactor) {
-        let select = all_dialects_where(|d| d.supports_match_recognize()).verified_only_select(
-            &format!("SELECT * FROM my_table MATCH_RECOGNIZE({options})"),
-        );
-        assert_eq!(&select.from[0].relation, &expect);
-    }
-
-    check(
-        concat!(
-            "PARTITION BY company ",
-            "ORDER BY price_date ",
-            "MEASURES ",
-            "MATCH_NUMBER() AS match_number, ",
-            "FIRST(price_date) AS start_date, ",
-            "LAST(price_date) AS end_date ",
-            "ONE ROW PER MATCH ",
-            "AFTER MATCH SKIP TO LAST row_with_price_increase ",
-            "PATTERN (row_before_decrease row_with_price_decrease+ row_with_price_increase+) ",
-            "DEFINE ",
-            "row_with_price_decrease AS price < LAG(price), ",
-            "row_with_price_increase AS price > LAG(price)"
-        ),
-        TableFactor::MatchRecognize {
-            table: Box::new(table),
-            partition_by: vec![Expr::Identifier(Ident::new("company"))],
-            order_by: vec![OrderByExpr {
-                expr: Expr::Identifier(Ident::new("price_date")),
-                options: OrderByOptions {
-                    asc: None,
-                    nulls_first: None,
-                },
-                with_fill: None,
-            }],
-            measures: vec![
-                Measure {
-                    expr: call("MATCH_NUMBER", []),
-                    alias: Ident::new("match_number"),
-                },
-                Measure {
-                    expr: call("FIRST", [Expr::Identifier(Ident::new("price_date"))]),
-                    alias: Ident::new("start_date"),
-                },
-                Measure {
-                    expr: call("LAST", [Expr::Identifier(Ident::new("price_date"))]),
-                    alias: Ident::new("end_date"),
-                },
-            ],
-            rows_per_match: Some(RowsPerMatch::OneRow),
-            after_match_skip: Some(AfterMatchSkip::ToLast(Ident::new(
-                "row_with_price_increase",
-            ))),
-            pattern: Concat(vec![
-                Symbol(Named(Ident::new("row_before_decrease"))),
-                Repetition(
-                    Box::new(Symbol(Named(Ident::new("row_with_price_decrease")))),
-                    OneOrMore,
-                ),
-                Repetition(
-                    Box::new(Symbol(Named(Ident::new("row_with_price_increase")))),
-                    OneOrMore,
-                ),
-            ]),
-            subsets: vec![],
-            symbols: vec![
-                SymbolDefinition {
-                    symbol: Ident::new("row_with_price_decrease"),
-                    definition: Expr::BinaryOp {
-                        left: Box::new(Expr::Identifier(Ident::new("price"))),
-                        op: BinaryOperator::Lt,
-                        right: Box::new(call("LAG", [Expr::Identifier(Ident::new("price"))])),
-                    },
-                },
-                SymbolDefinition {
-                    symbol: Ident::new("row_with_price_increase"),
-                    definition: Expr::BinaryOp {
-                        left: Box::new(Expr::Identifier(Ident::new("price"))),
-                        op: BinaryOperator::Gt,
-                        right: Box::new(call("LAG", [Expr::Identifier(Ident::new("price"))])),
-                    },
-                },
-            ],
-            alias: None,
-        },
-    );
-
-    #[rustfmt::skip]
-    let examples = [
-        concat!(
-            "SELECT * ",
-            "FROM login_attempts ",
-            "MATCH_RECOGNIZE(",
-                "PARTITION BY user_id ",
-                "ORDER BY timestamp ",
-                "PATTERN (failed_attempt{3,}) ",
-                "DEFINE ",
-                    "failed_attempt AS status = 'failure'",
-            ")",
-        ),
-        concat!(
-            "SELECT * ",
-            "FROM stock_transactions ",
-            "MATCH_RECOGNIZE(",
-                "PARTITION BY symbol ",
-                "ORDER BY timestamp ",
-                "MEASURES ",
-                    "FIRST(price) AS start_price, ",
-                    "LAST(price) AS end_price, ",
-                    "MATCH_NUMBER() AS match_num ",
-                "ALL ROWS PER MATCH ",
-                "PATTERN (STRT UP+) ",
-                "DEFINE ",
-                    "UP AS price > PREV(price)",
-            ")",
-        ),
-        concat!(
-            "SELECT * ",
-            "FROM event_log ",
-            "MATCH_RECOGNIZE(",
-                "MEASURES ",
-                    "FIRST(event_type) AS start_event, ",
-                    "LAST(event_type) AS end_event, ",
-                    "COUNT(*) AS error_count ",
-                "ALL ROWS PER MATCH ",
-                "PATTERN (STRT ERROR+ END) ",
-                "DEFINE ",
-                    "STRT AS event_type = 'START', ",
-                    "ERROR AS event_type = 'ERROR', ",
-                    "END AS event_type = 'END'",
-            ")",
-        )
-    ];
-
-    for sql in examples {
-        all_dialects_where(|d| d.supports_match_recognize()).verified_query(sql);
-    }
-}
-
-#[test]
-fn test_match_recognize_patterns() {
-    use MatchRecognizePattern::*;
-    use MatchRecognizeSymbol::*;
-    use RepetitionQuantifier::*;
-
-    fn check(pattern: &str, expect: MatchRecognizePattern) {
-        let select =
-            all_dialects_where(|d| d.supports_match_recognize()).verified_only_select(&format!(
-                "SELECT * FROM my_table MATCH_RECOGNIZE(PATTERN ({pattern}) DEFINE DUMMY AS true)" // "select * from my_table match_recognize ("
-            ));
-        let TableFactor::MatchRecognize {
-            pattern: actual, ..
-        } = &select.from[0].relation
-        else {
-            panic!("expected match_recognize table factor");
-        };
-        assert_eq!(actual, &expect);
-    }
-
-    // just a symbol
-    check("FOO", Symbol(Named(Ident::new("FOO"))));
-
-    // just a symbol
-    check(
-        "^ FOO $",
-        Concat(vec![
-            Symbol(Start),
-            Symbol(Named(Ident::new("FOO"))),
-            Symbol(End),
-        ]),
-    );
-
-    // exclusion
-    check("{- FOO -}", Exclude(Named(Ident::new("FOO"))));
-
-    check(
-        "PERMUTE(A, B, C)",
-        Permute(vec![
-            Named(Ident::new("A")),
-            Named(Ident::new("B")),
-            Named(Ident::new("C")),
-        ]),
-    );
-
-    // various identifiers
-    check(
-        "FOO | \"BAR\" | baz42",
-        Alternation(vec![
-            Symbol(Named(Ident::new("FOO"))),
-            Symbol(Named(Ident::with_quote('"', "BAR"))),
-            Symbol(Named(Ident::new("baz42"))),
-        ]),
-    );
-
-    // concatenated basic quantifiers
-    check(
-        "S1* S2+ S3?",
-        Concat(vec![
-            Repetition(Box::new(Symbol(Named(Ident::new("S1")))), ZeroOrMore),
-            Repetition(Box::new(Symbol(Named(Ident::new("S2")))), OneOrMore),
-            Repetition(Box::new(Symbol(Named(Ident::new("S3")))), AtMostOne),
-        ]),
-    );
-
-    // double repetition
-    check(
-        "S2*?",
-        Repetition(
-            Box::new(Repetition(
-                Box::new(Symbol(Named(Ident::new("S2")))),
-                ZeroOrMore,
-            )),
-            AtMostOne,
-        ),
-    );
-
-    // range quantifiers in an alternation
-    check(
-        "S1{1} | S2{2,3} | S3{4,} | S4{,5}",
-        Alternation(vec![
-            Repetition(Box::new(Symbol(Named(Ident::new("S1")))), Exactly(1)),
-            Repetition(Box::new(Symbol(Named(Ident::new("S2")))), Range(2, 3)),
-            Repetition(Box::new(Symbol(Named(Ident::new("S3")))), AtLeast(4)),
-            Repetition(Box::new(Symbol(Named(Ident::new("S4")))), AtMost(5)),
-        ]),
-    );
-
-    // grouping case 1
-    check(
-        "S1 (S2)",
-        Concat(vec![
-            Symbol(Named(Ident::new("S1"))),
-            Group(Box::new(Symbol(Named(Ident::new("S2"))))),
-        ]),
-    );
-
-    // grouping case 2
-    check(
-        "({- S3 -} S4)+",
-        Repetition(
-            Box::new(Group(Box::new(Concat(vec![
-                Exclude(Named(Ident::new("S3"))),
-                Symbol(Named(Ident::new("S4"))),
-            ])))),
-            OneOrMore,
-        ),
-    );
-
-    // the grand finale (example taken from snowflake docs)
-    check(
-        "^ S1 S2*? ({- S3 -} S4)+ | PERMUTE(S1, S2){1,2} $",
-        Alternation(vec![
-            Concat(vec![
-                Symbol(Start),
-                Symbol(Named(Ident::new("S1"))),
-                Repetition(
-                    Box::new(Repetition(
-                        Box::new(Symbol(Named(Ident::new("S2")))),
-                        ZeroOrMore,
-                    )),
-                    AtMostOne,
-                ),
-                Repetition(
-                    Box::new(Group(Box::new(Concat(vec![
-                        Exclude(Named(Ident::new("S3"))),
-                        Symbol(Named(Ident::new("S4"))),
-                    ])))),
-                    OneOrMore,
-                ),
-            ]),
-            Concat(vec![
-                Repetition(
-                    Box::new(Permute(vec![
-                        Named(Ident::new("S1")),
-                        Named(Ident::new("S2")),
-                    ])),
-                    Range(1, 2),
-                ),
-                Symbol(End),
-            ]),
-        ]),
-    );
-}
-
-#[test]
-fn test_select_wildcard_with_replace() {
-    let sql = r#"SELECT * REPLACE (lower(city) AS city) FROM addresses"#;
-    let dialects = TestedDialects::new(vec![Box::new(GenericDialect {})]);
-    let select = dialects.verified_only_select(sql);
-    let expected = SelectItem::Wildcard(WildcardAdditionalOptions {
-        opt_replace: Some(ReplaceSelectItem {
-            items: vec![Box::new(ReplaceSelectElement {
-                expr: call("lower", [Expr::Identifier(Ident::new("city"))]),
-                column_name: Ident::new("city"),
-                as_keyword: true,
-            })],
-        }),
-        ..Default::default()
-    });
-    assert_eq!(expected, select.projection[0]);
-
-    let select =
-        dialects.verified_only_select(r#"SELECT * REPLACE ('widget' AS item_name) FROM orders"#);
-    let expected = SelectItem::Wildcard(WildcardAdditionalOptions {
-        opt_replace: Some(ReplaceSelectItem {
-            items: vec![Box::new(ReplaceSelectElement {
-                expr: Expr::Value(
-                    (Value::SingleQuotedString("widget".to_owned())).with_empty_span(),
-                ),
-                column_name: Ident::new("item_name"),
-                as_keyword: true,
-            })],
-        }),
-        ..Default::default()
-    });
-    assert_eq!(expected, select.projection[0]);
-
-    let select = dialects.verified_only_select(
-        r#"SELECT * REPLACE (quantity / 2 AS quantity, 3 AS order_id) FROM orders"#,
-    );
-    let expected = SelectItem::Wildcard(WildcardAdditionalOptions {
-        opt_replace: Some(ReplaceSelectItem {
-            items: vec![
-                Box::new(ReplaceSelectElement {
-                    expr: Expr::BinaryOp {
-                        left: Box::new(Expr::Identifier(Ident::new("quantity"))),
-                        op: BinaryOperator::Divide,
-                        right: Box::new(Expr::value(number("2"))),
-                    },
-                    column_name: Ident::new("quantity"),
-                    as_keyword: true,
-                }),
-                Box::new(ReplaceSelectElement {
-                    expr: Expr::value(number("3")),
-                    column_name: Ident::new("order_id"),
-                    as_keyword: true,
-                }),
-            ],
-        }),
-        ..Default::default()
-    });
-    assert_eq!(expected, select.projection[0]);
-}
+// test_match_recognize and test_match_recognize_patterns: removed (no remaining dialects support supports_match_recognize)
 
 #[test]
 fn parse_sized_list() {
     let dialects = TestedDialects::new(vec![
-        Box::new(GenericDialect {}),
         Box::new(PostgreSqlDialect {}),
     ]);
     let sql = r#"CREATE TABLE embeddings (data FLOAT[1536])"#;
@@ -12867,7 +12243,7 @@ fn parse_sized_list() {
 
 #[test]
 fn insert_into_with_parentheses() {
-    let dialects = TestedDialects::new(vec![Box::new(GenericDialect {})]);
+    let dialects = TestedDialects::new(vec![Box::new(PostgreSqlDialect {})]);
     dialects.verified_stmt("INSERT INTO t1 (id, name) (SELECT t2.id, t2.name FROM t2)");
     dialects.verified_stmt("INSERT INTO t1 (SELECT t2.id, t2.name FROM t2)");
     dialects.verified_stmt(r#"INSERT INTO t1 ("select", name) (SELECT t2.name FROM t2)"#);
@@ -12911,75 +12287,10 @@ fn parse_within_group() {
     ));
 }
 
-#[test]
-fn tests_select_values_without_parens() {
-    let dialects = TestedDialects::new(vec![Box::new(GenericDialect {})]);
-    let sql = "SELECT * FROM VALUES (1, 2), (2,3) AS tbl (id, val)";
-    let canonical = "SELECT * FROM (VALUES (1, 2), (2, 3)) AS tbl (id, val)";
-    dialects.verified_only_select_with_canonical(sql, canonical);
-}
+// tests_select_values_without_parens: removed (FROM VALUES without parens was only supported by removed dialects: GenericDialect, Snowflake, Databricks)
+// tests_select_values_without_parens_and_set_op: removed (same reason)
 
-#[test]
-fn tests_select_values_without_parens_and_set_op() {
-    let dialects = TestedDialects::new(vec![Box::new(GenericDialect {})]);
-
-    let sql = "SELECT id + 1, name FROM VALUES (1, 'Apple'), (2, 'Banana'), (3, 'Orange') AS fruits (id, name) UNION ALL SELECT 5, 'Strawberry'";
-    let canonical = "SELECT id + 1, name FROM (VALUES (1, 'Apple'), (2, 'Banana'), (3, 'Orange')) AS fruits (id, name) UNION ALL SELECT 5, 'Strawberry'";
-    let query = dialects.verified_query_with_canonical(sql, canonical);
-    match *query.body {
-        SetExpr::SetOperation {
-            op,
-            set_quantifier: _,
-            left,
-            right,
-        } => {
-            assert_eq!(SetOperator::Union, op);
-            match *left {
-                SetExpr::Select(_) => {}
-                _ => panic!("Expected: a SELECT statement"),
-            }
-            match *right {
-                SetExpr::Select(_) => {}
-                _ => panic!("Expected: a SELECT statement"),
-            }
-        }
-        _ => panic!("Expected: a SET OPERATION"),
-    }
-}
-
-#[test]
-fn parse_select_wildcard_with_except() {
-    let dialects = all_dialects_where(|d| d.supports_select_wildcard_except());
-
-    let select = dialects.verified_only_select("SELECT * EXCEPT (col_a) FROM data");
-    let expected = SelectItem::Wildcard(WildcardAdditionalOptions {
-        opt_except: Some(ExceptSelectItem {
-            first_element: Ident::new("col_a"),
-            additional_elements: vec![],
-        }),
-        ..Default::default()
-    });
-    assert_eq!(expected, select.projection[0]);
-
-    let select = dialects
-        .verified_only_select("SELECT * EXCEPT (department_id, employee_id) FROM employee_table");
-    let expected = SelectItem::Wildcard(WildcardAdditionalOptions {
-        opt_except: Some(ExceptSelectItem {
-            first_element: Ident::new("department_id"),
-            additional_elements: vec![Ident::new("employee_id")],
-        }),
-        ..Default::default()
-    });
-    assert_eq!(expected, select.projection[0]);
-
-    assert_eq!(
-        dialects
-            .parse_sql_statements("SELECT * EXCEPT () FROM employee_table")
-            .unwrap_err()
-            .to_string(),
-        "sql parser error: Expected: identifier, found: )"
-    );
-}
+// parse_select_wildcard_with_except: removed (no remaining dialects support supports_select_wildcard_except)
 
 #[test]
 fn test_group_by_nothing() {
@@ -13150,85 +12461,87 @@ fn test_truncate_table_with_on_cluster() {
 
 #[test]
 fn parse_explain_with_option_list() {
+    // Only PostgreSQL supports EXPLAIN with utility options.
+    // PG canonicalizes unquoted identifiers to lowercase.
     run_explain_analyze(
-        all_dialects_where(|d| d.supports_explain_with_utility_options()),
-        "EXPLAIN (ANALYZE false, VERBOSE true) SELECT sqrt(id) FROM foo",
+        TestedDialects::new(vec![Box::new(PostgreSqlDialect {})]),
+        "EXPLAIN (analyze false, verbose true) SELECT sqrt(id) FROM foo",
         false,
         false,
         None,
         Some(vec![
             UtilityOption {
-                name: Ident::new("ANALYZE"),
+                name: Ident::new("analyze"),
                 arg: Some(Expr::Value((Value::Boolean(false)).with_empty_span())),
             },
             UtilityOption {
-                name: Ident::new("VERBOSE"),
+                name: Ident::new("verbose"),
                 arg: Some(Expr::Value((Value::Boolean(true)).with_empty_span())),
             },
         ]),
     );
 
     run_explain_analyze(
-        all_dialects_where(|d| d.supports_explain_with_utility_options()),
-        "EXPLAIN (ANALYZE ON, VERBOSE OFF) SELECT sqrt(id) FROM foo",
+        TestedDialects::new(vec![Box::new(PostgreSqlDialect {})]),
+        "EXPLAIN (analyze on, verbose off) SELECT sqrt(id) FROM foo",
         false,
         false,
         None,
         Some(vec![
             UtilityOption {
-                name: Ident::new("ANALYZE"),
-                arg: Some(Expr::Identifier(Ident::new("ON"))),
+                name: Ident::new("analyze"),
+                arg: Some(Expr::Identifier(Ident::new("on"))),
             },
             UtilityOption {
-                name: Ident::new("VERBOSE"),
-                arg: Some(Expr::Identifier(Ident::new("OFF"))),
+                name: Ident::new("verbose"),
+                arg: Some(Expr::Identifier(Ident::new("off"))),
             },
         ]),
     );
 
     run_explain_analyze(
-        all_dialects_where(|d| d.supports_explain_with_utility_options()),
-        r#"EXPLAIN (FORMAT1 TEXT, FORMAT2 'JSON', FORMAT3 "XML", FORMAT4 YAML) SELECT sqrt(id) FROM foo"#,
+        TestedDialects::new(vec![Box::new(PostgreSqlDialect {})]),
+        r#"EXPLAIN (format1 text, format2 'JSON', format3 "XML", format4 yaml) SELECT sqrt(id) FROM foo"#,
         false,
         false,
         None,
         Some(vec![
             UtilityOption {
-                name: Ident::new("FORMAT1"),
-                arg: Some(Expr::Identifier(Ident::new("TEXT"))),
+                name: Ident::new("format1"),
+                arg: Some(Expr::Identifier(Ident::new("text"))),
             },
             UtilityOption {
-                name: Ident::new("FORMAT2"),
+                name: Ident::new("format2"),
                 arg: Some(Expr::Value(
                     (Value::SingleQuotedString("JSON".to_string())).with_empty_span(),
                 )),
             },
             UtilityOption {
-                name: Ident::new("FORMAT3"),
+                name: Ident::new("format3"),
                 arg: Some(Expr::Identifier(Ident::with_quote('"', "XML"))),
             },
             UtilityOption {
-                name: Ident::new("FORMAT4"),
-                arg: Some(Expr::Identifier(Ident::new("YAML"))),
+                name: Ident::new("format4"),
+                arg: Some(Expr::Identifier(Ident::new("yaml"))),
             },
         ]),
     );
 
     run_explain_analyze(
-        all_dialects_where(|d| d.supports_explain_with_utility_options()),
-        r#"EXPLAIN (NUM1 10, NUM2 +10.1, NUM3 -10.2) SELECT sqrt(id) FROM foo"#,
+        TestedDialects::new(vec![Box::new(PostgreSqlDialect {})]),
+        r#"EXPLAIN (num1 10, num2 +10.1, num3 -10.2) SELECT sqrt(id) FROM foo"#,
         false,
         false,
         None,
         Some(vec![
             UtilityOption {
-                name: Ident::new("NUM1"),
+                name: Ident::new("num1"),
                 arg: Some(Expr::Value(
                     (Value::Number("10".parse().unwrap(), false)).with_empty_span(),
                 )),
             },
             UtilityOption {
-                name: Ident::new("NUM2"),
+                name: Ident::new("num2"),
                 arg: Some(Expr::UnaryOp {
                     op: UnaryOperator::Plus,
                     expr: Box::new(Expr::Value(
@@ -13237,7 +12550,7 @@ fn parse_explain_with_option_list() {
                 }),
             },
             UtilityOption {
-                name: Ident::new("NUM3"),
+                name: Ident::new("num3"),
                 arg: Some(Expr::UnaryOp {
                     op: UnaryOperator::Minus,
                     expr: Box::new(Expr::Value(
@@ -13250,23 +12563,23 @@ fn parse_explain_with_option_list() {
 
     let utility_options = vec![
         UtilityOption {
-            name: Ident::new("ANALYZE"),
+            name: Ident::new("analyze"),
             arg: None,
         },
         UtilityOption {
-            name: Ident::new("VERBOSE"),
+            name: Ident::new("verbose"),
             arg: Some(Expr::Value((Value::Boolean(true)).with_empty_span())),
         },
         UtilityOption {
-            name: Ident::new("WAL"),
-            arg: Some(Expr::Identifier(Ident::new("OFF"))),
+            name: Ident::new("wal"),
+            arg: Some(Expr::Identifier(Ident::new("off"))),
         },
         UtilityOption {
-            name: Ident::new("FORMAT"),
-            arg: Some(Expr::Identifier(Ident::new("YAML"))),
+            name: Ident::new("format"),
+            arg: Some(Expr::Identifier(Ident::new("yaml"))),
         },
         UtilityOption {
-            name: Ident::new("USER_DEF_NUM"),
+            name: Ident::new("user_def_num"),
             arg: Some(Expr::UnaryOp {
                 op: UnaryOperator::Minus,
                 expr: Box::new(Expr::Value(
@@ -13276,8 +12589,8 @@ fn parse_explain_with_option_list() {
         },
     ];
     run_explain_analyze(
-        all_dialects_where(|d| d.supports_explain_with_utility_options()),
-        "EXPLAIN (ANALYZE, VERBOSE true, WAL OFF, FORMAT YAML, USER_DEF_NUM -100.1) SELECT sqrt(id) FROM foo",
+        TestedDialects::new(vec![Box::new(PostgreSqlDialect {})]),
+        "EXPLAIN (analyze, verbose true, wal off, format yaml, user_def_num -100.1) SELECT sqrt(id) FROM foo",
         false,
         false,
         None,
@@ -13556,13 +12869,13 @@ fn test_alias_equal_expr() {
 
 #[test]
 fn test_try_convert() {
+    // Only MSSQL supports TRY_CONVERT, and it has convert_type_before_value = true.
     let dialects =
         all_dialects_where(|d| d.supports_try_convert() && d.convert_type_before_value());
     dialects.verified_expr("TRY_CONVERT(VARCHAR(MAX), 'foo')");
 
-    let dialects =
-        all_dialects_where(|d| d.supports_try_convert() && !d.convert_type_before_value());
-    dialects.verified_expr("TRY_CONVERT('foo', VARCHAR(MAX))");
+    // No remaining dialects support TRY_CONVERT without convert_type_before_value,
+    // so the value-first variant is not tested here.
 }
 
 #[test]
@@ -14130,7 +13443,7 @@ fn overflow() {
         .join(" + ");
     let sql = format!("SELECT {expr}");
 
-    let mut statements = Parser::parse_sql(&GenericDialect {}, sql.as_str()).unwrap();
+    let mut statements = Parser::parse_sql(&PostgreSqlDialect {}, sql.as_str()).unwrap();
     let statement = statements.pop().unwrap();
     assert_eq!(statement.to_string(), sql);
 }
@@ -14241,7 +13554,7 @@ fn parse_case_statement() {
 #[test]
 fn test_case_statement_span() {
     let sql = "CASE 1 WHEN 2 THEN SELECT 1; SELECT 2; ELSE SELECT 3; END CASE";
-    let parser = Parser::new(&GenericDialect {}).try_with_sql(sql).unwrap();
+    let parser = Parser::new(&PostgreSqlDialect {}).try_with_sql(sql).unwrap();
     assert_eq!(
         parser.parse_statement().unwrap().span(),
         Span::new(Location::new(1, 1), Location::new(1, sql.len() as u64 + 1))
@@ -14322,7 +13635,7 @@ fn parse_if_statement() {
 #[test]
 fn test_if_statement_span() {
     let sql = "IF 1=1 THEN SELECT 1; ELSEIF 1=2 THEN SELECT 2; ELSE SELECT 3; END IF";
-    let parser = Parser::new(&GenericDialect {}).try_with_sql(sql).unwrap();
+    let parser = Parser::new(&PostgreSqlDialect {}).try_with_sql(sql).unwrap();
     assert_eq!(
         parser.parse_statement().unwrap().span(),
         Span::new(Location::new(1, 1), Location::new(1, sql.len() as u64 + 1))
@@ -14336,7 +13649,7 @@ fn test_if_statement_multiline_span() {
     let sql_line3 = "ELSE SELECT 3;";
     let sql_line4 = "END IF";
     let sql = [sql_line1, sql_line2, sql_line3, sql_line4].join("\n");
-    let parser = Parser::new(&GenericDialect {}).try_with_sql(&sql).unwrap();
+    let parser = Parser::new(&PostgreSqlDialect {}).try_with_sql(&sql).unwrap();
     assert_eq!(
         parser.parse_statement().unwrap().span(),
         Span::new(
@@ -14349,7 +13662,7 @@ fn test_if_statement_multiline_span() {
 #[test]
 fn test_conditional_statement_span() {
     let sql = "IF 1=1 THEN SELECT 1; ELSEIF 1=2 THEN SELECT 2; ELSE SELECT 3; END IF";
-    let parser = Parser::new(&GenericDialect {}).try_with_sql(sql).unwrap();
+    let parser = Parser::new(&PostgreSqlDialect {}).try_with_sql(sql).unwrap();
     match parser.parse_statement().unwrap() {
         Statement::If(IfStatement {
             if_block,
@@ -14499,65 +13812,7 @@ fn parse_perform_statement() {
     verified_stmt(sql);
 }
 
-#[test]
-fn test_select_from_first() {
-    let dialects = all_dialects_where(|d| d.supports_from_first_select());
-    let q1 = "FROM capitals";
-    let q2 = "FROM capitals SELECT *";
-
-    for (q, flavor, projection) in [
-        (q1, SelectFlavor::FromFirstNoSelect, vec![]),
-        (
-            q2,
-            SelectFlavor::FromFirst,
-            vec![SelectItem::Wildcard(WildcardAdditionalOptions::default())],
-        ),
-    ] {
-        let ast = dialects.verified_query(q);
-        let expected = Query {
-            with: None,
-            body: Box::new(SetExpr::Select(Box::new(Select {
-                select_token: AttachedToken::empty(),
-                distinct: None,
-                top: None,
-                projection,
-                exclude: None,
-                top_before_distinct: false,
-                into: None,
-                from: vec![TableWithJoins {
-                    relation: table_from_name(ObjectName::from(vec![Ident {
-                        value: "capitals".to_string(),
-                        quote_style: None,
-                        span: Span::empty(),
-                    }])),
-                    joins: vec![],
-                }],
-                lateral_views: vec![],
-                prewhere: None,
-                selection: None,
-                group_by: GroupByExpr::Expressions(vec![], vec![]),
-                cluster_by: vec![],
-                distribute_by: vec![],
-                sort_by: vec![],
-                having: None,
-                named_window: vec![],
-                window_before_qualify: false,
-                qualify: None,
-                connect_by: None,
-                flavor,
-            }))),
-            order_by: None,
-            limit_clause: None,
-            fetch: None,
-            locks: vec![],
-            for_clause: None,
-            settings: None,
-            format_clause: None,
-        };
-        assert_eq!(expected, ast);
-        assert_eq!(ast.to_string(), q);
-    }
-}
+// test_select_from_first: removed (no remaining dialects support supports_from_first_select)
 
 #[test]
 fn test_geometric_unary_operators() {
@@ -14947,9 +14202,10 @@ fn test_geometric_binary_operators() {
 
 #[test]
 fn parse_array_type_def_with_brackets() {
-    let dialects = all_dialects_where(|d| d.supports_array_typedef_with_brackets());
+    // Only PostgreSQL supports this; PG canonicalizes unquoted identifiers to lowercase.
+    let dialects = TestedDialects::new(vec![Box::new(PostgreSqlDialect {})]);
     dialects.verified_stmt("SELECT x::INT[]");
-    dialects.verified_stmt("SELECT STRING_TO_ARRAY('1,2,3', ',')::INT[3]");
+    dialects.verified_stmt("SELECT string_to_array('1,2,3', ',')::INT[3]");
 }
 
 #[test]
@@ -15949,7 +15205,6 @@ fn parse_create_function_psm_begin_end() {
     // SQL:2016 PSM BEGIN...END block without AS prefix
     let dialects = TestedDialects::new(vec![
         Box::new(PostgreSqlDialect {}),
-        Box::new(GenericDialect {}),
     ]);
 
     // Simple function with BEGIN...END block (no AS prefix, SQL:2016 style)

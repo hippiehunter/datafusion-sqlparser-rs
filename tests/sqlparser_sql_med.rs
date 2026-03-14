@@ -25,7 +25,7 @@
 //! - IMPORT FOREIGN SCHEMA
 
 use sqlparser::ast::*;
-use sqlparser::dialect::{GenericDialect, PostgreSqlDialect};
+use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
 use test_utils::*;
 
@@ -39,7 +39,6 @@ fn pg() -> TestedDialects {
 fn pg_and_generic() -> TestedDialects {
     TestedDialects::new(vec![
         Box::new(PostgreSqlDialect {}),
-        Box::new(GenericDialect {}),
     ])
 }
 

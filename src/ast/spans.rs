@@ -70,10 +70,10 @@ fn union_spans<I: Iterator<Item = Span>>(iter: I) -> Span {
 /// ```
 /// # use sqlparser::parser::{Parser, ParserError};
 /// # use sqlparser::ast::Spanned;
-/// # use sqlparser::dialect::GenericDialect;
+/// # use sqlparser::dialect::PostgreSqlDialect;
 /// # use sqlparser::tokenizer::Location;
 /// # fn main() -> Result<(), ParserError> {
-/// let dialect = GenericDialect {};
+/// let dialect = PostgreSqlDialect {};
 /// let sql = r#"SELECT *
 ///   FROM table_1"#;
 /// let statements = Parser::new(&dialect)
@@ -2785,7 +2785,7 @@ impl Spanned for CreateOperatorClass {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::dialect::{Dialect, GenericDialect};
+    use crate::dialect::{Dialect, PostgreSqlDialect};
     use crate::parser::Parser;
     use crate::tokenizer::Span;
 
@@ -2808,7 +2808,7 @@ pub mod tests {
 
     #[test]
     fn test_join() {
-        let dialect = &GenericDialect;
+        let dialect = &PostgreSqlDialect {};
         let test = SpanTest::new(
             dialect,
             "SELECT id, name FROM users LEFT JOIN companies ON users.company_id = companies.id",
@@ -2833,7 +2833,7 @@ pub mod tests {
 
     #[test]
     pub fn test_union() {
-        let dialect = &GenericDialect;
+        let dialect = &PostgreSqlDialect {};
         let test = SpanTest::new(
             dialect,
             "SELECT a FROM postgres.public.source UNION SELECT a FROM postgres.public.source",
@@ -2850,7 +2850,7 @@ pub mod tests {
 
     #[test]
     pub fn test_subquery() {
-        let dialect = &GenericDialect;
+        let dialect = &PostgreSqlDialect {};
         let test = SpanTest::new(
             dialect,
             "SELECT a FROM (SELECT a FROM postgres.public.source) AS b",
@@ -2875,7 +2875,7 @@ pub mod tests {
 
     #[test]
     pub fn test_cte() {
-        let dialect = &GenericDialect;
+        let dialect = &PostgreSqlDialect {};
         let test = SpanTest::new(
             dialect,
             "WITH cte_outer AS (SELECT a FROM postgres.public.source), cte_ignored AS (SELECT a FROM cte_outer), cte_inner AS (SELECT a FROM cte_outer) SELECT a FROM cte_inner",
@@ -2894,7 +2894,7 @@ pub mod tests {
     // REMOVED: Test relied on Snowflake-specific syntax (colon operator)
     // #[test]
     // pub fn test_snowflake_lateral_flatten() {
-    //     let dialect = &GenericDialect;
+    //     let dialect = &PostgreSqlDialect {};
     //     let test = SpanTest::new(dialect, "SELECT FLATTENED.VALUE:field::TEXT AS FIELD FROM SNOWFLAKE.SCHEMA.SOURCE AS S, LATERAL FLATTEN(INPUT => S.JSON_ARRAY) AS FLATTENED");
     //
     //     let query = test.0.parse_select().unwrap();
@@ -2906,7 +2906,7 @@ pub mod tests {
 
     #[test]
     pub fn test_wildcard_from_cte() {
-        let dialect = &GenericDialect;
+        let dialect = &PostgreSqlDialect {};
         let test = SpanTest::new(
             dialect,
             "WITH cte AS (SELECT a FROM postgres.public.source) SELECT cte.* FROM cte",
@@ -2932,7 +2932,7 @@ pub mod tests {
 
     #[test]
     fn test_case_expr_span() {
-        let dialect = &GenericDialect;
+        let dialect = &PostgreSqlDialect {};
         let test = SpanTest::new(dialect, "CASE 1 WHEN 2 THEN 3 ELSE 4 END");
         let expr = test.0.parse_expr().unwrap();
         let expr_span = expr.span();
@@ -2945,7 +2945,7 @@ pub mod tests {
     #[test]
     fn test_placeholder_span() {
         let sql = "\nSELECT\n  :fooBar";
-        let r = Parser::parse_sql(&GenericDialect, sql).unwrap();
+        let r = Parser::parse_sql(&PostgreSqlDialect {}, sql).unwrap();
         assert_eq!(1, r.len());
         match &r[0] {
             Statement::Query(q) => {
@@ -2955,7 +2955,7 @@ pub mod tests {
                         value: Value::Placeholder(s),
                         span,
                     })) => {
-                        assert_eq!(":fooBar", s);
+                        assert_eq!(":foobar", s);
                         assert_eq!(&Span::new((3, 3).into(), (3, 10).into()), span);
                     }
                     _ => panic!("expected unnamed expression; got {col:?}"),
@@ -2990,7 +2990,7 @@ ALTER TABLE users
  WHERE quux > 42 ;
 "#;
 
-        let r = Parser::parse_sql(&crate::dialect::GenericDialect, sql).unwrap();
+        let r = Parser::parse_sql(&crate::dialect::PostgreSqlDialect {}, sql).unwrap();
         assert_eq!(1, r.len());
 
         let stmt_span = r[0].span();
@@ -3007,7 +3007,7 @@ ALTER TABLE users
   FROM DUAL
 ;"#;
 
-        let r = Parser::parse_sql(&crate::dialect::GenericDialect, sql).unwrap();
+        let r = Parser::parse_sql(&crate::dialect::PostgreSqlDialect {}, sql).unwrap();
         assert_eq!(1, r.len());
 
         let stmt_span = r[0].span();
@@ -3029,7 +3029,7 @@ FROM
 WHERE id = 1
 ;"#;
 
-        let r = Parser::parse_sql(&crate::dialect::GenericDialect, sql).unwrap();
+        let r = Parser::parse_sql(&crate::dialect::PostgreSqlDialect {}, sql).unwrap();
         assert_eq!(1, r.len());
 
         dbg!(&r[0]);
@@ -3048,7 +3048,7 @@ WHERE id = 1
        WHERE foo.x = 42
 ;"#;
 
-        let r = Parser::parse_sql(&crate::dialect::GenericDialect, sql).unwrap();
+        let r = Parser::parse_sql(&crate::dialect::PostgreSqlDialect {}, sql).unwrap();
         assert_eq!(1, r.len());
 
         let stmt_span = r[0].span();

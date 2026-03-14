@@ -35,7 +35,7 @@ fn test_create_procedure_language_sql() {
         |stmt: Statement| {
             let proc = extract_create_procedure(&stmt);
             assert!(proc.language.is_some());
-            assert_eq!(proc.language.as_ref().unwrap().to_string(), "SQL");
+            assert_eq!(proc.language.as_ref().unwrap().to_string(), "sql");
         }
     );
 }

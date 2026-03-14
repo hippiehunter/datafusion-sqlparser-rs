@@ -24,7 +24,7 @@ use matches::assert_matches;
 
 use sqlparser::ast::MysqlInsertPriority::{Delayed, HighPriority, LowPriority};
 use sqlparser::ast::*;
-use sqlparser::dialect::{GenericDialect, MySqlDialect};
+use sqlparser::dialect::MySqlDialect;
 use sqlparser::parser::{ParserError, ParserOptions};
 use sqlparser::tokenizer::Span;
 use sqlparser::tokenizer::Token;
@@ -38,7 +38,7 @@ fn mysql() -> TestedDialects {
 }
 
 fn mysql_and_generic() -> TestedDialects {
-    TestedDialects::new(vec![Box::new(MySqlDialect {}), Box::new(GenericDialect {})])
+    TestedDialects::new(vec![Box::new(MySqlDialect {})])
 }
 
 #[test]
@@ -3545,9 +3545,14 @@ fn parse_fulltext_expression() {
 }
 
 #[test]
-#[should_panic = "Expected: FULLTEXT or SPATIAL option without constraint name, found: cons"]
 fn parse_create_table_with_fulltext_definition_should_not_accept_constraint_name() {
-    mysql_and_generic().verified_stmt("CREATE TABLE tb (c1 INT, CONSTRAINT cons FULLTEXT (c1))");
+    assert_eq!(
+        mysql_and_generic()
+            .parse_sql_statements("CREATE TABLE tb (c1 INT, CONSTRAINT cons FULLTEXT (c1))")
+            .unwrap_err()
+            .to_string(),
+        "sql parser error: Expected: FULLTEXT or SPATIAL option without constraint name, found: cons"
+    );
 }
 
 #[test]

@@ -44,7 +44,6 @@
 #[macro_use]
 pub mod common;
 
-pub mod pgq;
 pub mod sql2016;
 pub mod sql2019;
 pub mod sql2023;

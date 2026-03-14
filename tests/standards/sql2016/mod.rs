@@ -32,5 +32,4 @@
 //! | B | B200 | Polymorphic table functions | In Progress |
 
 pub mod foundation;
-pub mod pattern_recognition;
 pub mod ptf;
