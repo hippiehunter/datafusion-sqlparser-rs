@@ -332,6 +332,9 @@ impl Spanned for Statement {
             }
             Statement::CreateOperatorClass(create_operator_class) => create_operator_class.span(),
             Statement::CreateAssertion(create_assertion) => create_assertion.token.0.span,
+            Statement::CreatePropertyGraph(create_property_graph) => {
+                create_property_graph.token.0.span
+            }
             Statement::AlterTable(alter_table) => alter_table.span(),
             Statement::AlterIndex { name, operation } => name.span().union(&operation.span()),
             Statement::AlterView {
@@ -355,6 +358,7 @@ impl Spanned for Statement {
             Statement::DropFunction(drop_function) => drop_function.span(),
             Statement::DropDomain(drop_domain) => drop_domain.token.0.span,
             Statement::DropAssertion(drop_assertion) => drop_assertion.token.0.span,
+            Statement::DropPropertyGraph(drop_property_graph) => drop_property_graph.token.0.span,
             Statement::DropProcedure { token, .. } => token.0.span,
             Statement::Declare { declare_token, .. } => declare_token.0.span,
             Statement::Fetch { fetch_token, .. } => fetch_token.0.span,
@@ -1520,6 +1524,25 @@ impl Spanned for Expr {
             } => expr.span(),
             Expr::IsDocument { expr, negated: _ } => expr.span(),
             Expr::IsContent { expr, negated: _ } => expr.span(),
+            Expr::IsLabeled {
+                expr,
+                negated: _,
+                label,
+            } => expr.span().union(&label.span),
+            Expr::IsSourceOf { node, edge } => node.span().union(&edge.span()),
+            Expr::IsDestinationOf { node, edge } => node.span().union(&edge.span()),
+            Expr::IsSameAs { left, right } => left.span().union(&right.span()),
+            Expr::GraphExists {
+                negated: _,
+                pattern: _,
+            } => Span::empty(),
+            Expr::GraphCount { subquery: _ } => Span::empty(),
+            Expr::GraphValue { subquery: _ } => Span::empty(),
+            Expr::GraphCollect { subquery: _ } => Span::empty(),
+            Expr::GraphSum { subquery: _ } => Span::empty(),
+            Expr::GraphAvg { subquery: _ } => Span::empty(),
+            Expr::GraphMin { subquery: _ } => Span::empty(),
+            Expr::GraphMax { subquery: _ } => Span::empty(),
             Expr::SimilarTo {
                 negated: _,
                 expr,
@@ -2126,6 +2149,17 @@ impl Spanned for TableFactor {
                     .chain(alias.as_ref().map(|i| i.span())),
             ),
             TableFactor::OpenJsonTable { .. } => Span::empty(),
+            TableFactor::GraphTable {
+                graph_name,
+                match_clause: _,
+                alias,
+            } => union_spans(
+                graph_name
+                    .0
+                    .iter()
+                    .map(|i| i.span())
+                    .chain(alias.as_ref().map(|a| a.span())),
+            ),
         }
     }
 }
