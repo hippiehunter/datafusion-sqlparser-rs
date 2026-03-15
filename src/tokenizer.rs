@@ -1560,12 +1560,17 @@ impl<'a> Tokenizer<'a> {
                         }
                         Some('<') => self.consume_for_binop(chars, "<<", Token::ShiftLeft),
                         Some('-') if self.features.supports_geometric_types => {
-                            chars.next(); // consume
-                            match chars.peek() {
-                                Some('>') => {
-                                    self.consume_for_binop(chars, "<->", Token::TwoWayArrow)
-                                }
-                                _ => self.start_binop_opt(chars, "<-", None),
+                            // Peek ahead: <-> is a distance operator, but <- alone is not
+                            // a valid operator (it's used as a left-arrow in SQL/PGQ graph
+                            // patterns where < and - are separate tokens).
+                            if chars.peek_nth(1) == Some('>') {
+                                chars.next(); // consume '-'
+                                self.consume_for_binop(chars, "<->", Token::TwoWayArrow)
+                            } else {
+                                // Don't consume the '-'; return '<' as Lt directly
+                                // (bypass start_binop which would greedily consume '-'
+                                // as a custom operator part)
+                                Ok(Some(Token::Lt))
                             }
                         }
                         Some('^') if self.features.supports_geometric_types => {
