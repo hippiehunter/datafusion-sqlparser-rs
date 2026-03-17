@@ -958,6 +958,7 @@ impl Spanned for AlterColumnOperation {
                 had_set: _,
             } => using.as_ref().map_or(Span::empty(), |u| u.span()),
             AlterColumnOperation::AddGenerated { .. } => Span::empty(),
+            AlterColumnOperation::SetStorage(_) => Span::empty(),
         }
     }
 }

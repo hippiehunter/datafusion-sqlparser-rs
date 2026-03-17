@@ -5118,6 +5118,7 @@ impl<'a> Parser<'a> {
                         | BinaryOperator::PGILikeMatch
                         | BinaryOperator::PGNotLikeMatch
                         | BinaryOperator::PGNotILikeMatch
+                        | BinaryOperator::PGCustomBinaryOperator(_)
                 ) {
                     return parser_err!(
                         format!(
@@ -11758,6 +11759,23 @@ impl<'a> Parser<'a> {
                     generated_as,
                     sequence_options,
                 }
+            } else if self.parse_keywords(&[Keyword::SET, Keyword::STORAGE]) {
+                let storage_keyword = self.parse_one_of_keywords(&[
+                    Keyword::PLAIN,
+                    Keyword::EXTERNAL,
+                    Keyword::EXTENDED,
+                    Keyword::MAIN,
+                ]);
+                match storage_keyword {
+                    Some(Keyword::PLAIN) => AlterColumnOperation::SetStorage(UserDefinedTypeStorage::Plain),
+                    Some(Keyword::EXTERNAL) => AlterColumnOperation::SetStorage(UserDefinedTypeStorage::External),
+                    Some(Keyword::EXTENDED) => AlterColumnOperation::SetStorage(UserDefinedTypeStorage::Extended),
+                    Some(Keyword::MAIN) => AlterColumnOperation::SetStorage(UserDefinedTypeStorage::Main),
+                    _ => return self.expected(
+                        "storage type (PLAIN, EXTERNAL, EXTENDED, or MAIN)",
+                        self.peek_token(),
+                    ),
+                }
             } else {
                 let message = if is_postgresql {
                     "SET/DROP NOT NULL, SET DEFAULT, SET DATA TYPE, or ADD GENERATED after ALTER COLUMN"
@@ -16037,6 +16055,25 @@ impl<'a> Parser<'a> {
         } else if self.parse_keyword_with_tokens(Keyword::GRAPH_TABLE, &[BorrowedToken::LParen]) {
             self.parse_graph_table_factor()
         } else {
+            // FROM ONLY tablename: PostgreSQL syntax to exclude child tables.
+            // Consume ONLY when the next token looks like a table reference (identifier
+            // or quoted string), but not when followed by '(' (function call syntax)
+            // or a keyword like AS/JOIN (where ONLY is itself a table name).
+            if self.peek_keyword(Keyword::ONLY) {
+                let consume = match &self.peek_nth_token(1).token {
+                    BorrowedToken::LParen => false,
+                    BorrowedToken::Word(w) => {
+                        w.keyword == Keyword::NoKeyword
+                            || (!keywords::RESERVED_FOR_TABLE_ALIAS.contains(&w.keyword)
+                                && w.keyword != Keyword::AS)
+                    }
+                    BorrowedToken::DoubleQuotedString(_) => true,
+                    _ => false,
+                };
+                if consume {
+                    let _ = self.parse_keyword(Keyword::ONLY);
+                }
+            }
             let name = self.parse_object_name(true)?;
 
             let json_path = match self.peek_token().token {

@@ -771,6 +771,11 @@ pub enum AlterColumnOperation {
         generated_as: Option<GeneratedAs>,
         sequence_options: Option<Vec<SequenceOptions>>,
     },
+
+    /// `SET STORAGE {PLAIN | EXTERNAL | EXTENDED | MAIN}`
+    ///
+    /// Note: this is a PostgreSQL-specific operation.
+    SetStorage(UserDefinedTypeStorage),
 }
 
 impl fmt::Display for AlterColumnOperation {
@@ -819,6 +824,9 @@ impl fmt::Display for AlterColumnOperation {
                     write!(f, " )")?;
                 }
                 Ok(())
+            }
+            AlterColumnOperation::SetStorage(storage_type) => {
+                write!(f, "SET STORAGE {storage_type}")
             }
         }
     }

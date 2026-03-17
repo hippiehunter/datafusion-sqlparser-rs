@@ -4036,6 +4036,25 @@ fn parse_declare() {
 }
 
 #[test]
+fn parse_from_only() {
+    // FROM ONLY schema.table — the pg_dump case
+    pg().one_statement_parses_to(
+        "SELECT * FROM ONLY public.backup_ci",
+        "SELECT * FROM public.backup_ci",
+    );
+    // FROM ONLY unqualified
+    pg().one_statement_parses_to(
+        "SELECT * FROM ONLY backup_ci",
+        "SELECT * FROM backup_ci",
+    );
+    // DECLARE CURSOR with FROM ONLY
+    pg().one_statement_parses_to(
+        "DECLARE c CURSOR FOR SELECT id FROM ONLY public.t",
+        "DECLARE c CURSOR FOR SELECT id FROM public.t",
+    );
+}
+
+#[test]
 fn parse_current_functions() {
     let sql = "SELECT CURRENT_CATALOG, CURRENT_USER, SESSION_USER, USER";
     let canonical = "SELECT current_catalog, current_user, session_user, user";
