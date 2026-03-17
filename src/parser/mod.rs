@@ -1032,6 +1032,9 @@ impl<'a> Parser<'a> {
                     self.prev_token();
                     self.parse_unload()
                 }
+                Keyword::LOCK => {
+                    self.parse_pg_lock_table(next_token)
+                }
                 Keyword::RENAME => self.parse_rename(),
                 Keyword::LOAD => self.parse_load(),
                 // IMPORT FOREIGN SCHEMA is SQL/MED standard
@@ -19585,6 +19588,51 @@ impl<'a> Parser<'a> {
             lock_type,
             of,
             nonblock,
+        })
+    }
+
+    /// Parse PostgreSQL `LOCK [ TABLE ] [ ONLY ] name [, ...] [ IN lockmode MODE ] [ NOWAIT ]`
+    fn parse_pg_lock_table(
+        &self,
+        lock_token: TokenWithSpan,
+    ) -> Result<Statement, ParserError> {
+        // Optional TABLE keyword
+        self.parse_keyword(Keyword::TABLE);
+        // Optional ONLY keyword
+        self.parse_keyword(Keyword::ONLY);
+        // Parse table names (comma-separated, possibly schema-qualified)
+        let mut tables = vec![];
+        loop {
+            let name = self.parse_object_name(false)?;
+            let table_ident = name.0.last()
+                .and_then(|p| p.as_ident().cloned())
+                .unwrap_or_else(|| Ident::new(name.to_string()));
+            tables.push(LockTable {
+                table: table_ident,
+                alias: None,
+                lock_type: LockTableType::Read { local: false },
+            });
+            if !self.consume_token(&BorrowedToken::Comma) {
+                break;
+            }
+        }
+        // Optional IN ... MODE
+        if self.parse_keyword(Keyword::IN) {
+            // Consume all tokens until MODE keyword
+            while !self.parse_keyword(Keyword::MODE) {
+                if self.peek_token().token == BorrowedToken::SemiColon
+                    || self.peek_token().token == BorrowedToken::EOF
+                {
+                    break;
+                }
+                self.next_token();
+            }
+        }
+        // Optional NOWAIT
+        self.parse_keyword(Keyword::NOWAIT);
+        Ok(Statement::LockTables {
+            lock_token: AttachedToken(lock_token.to_static()),
+            tables,
         })
     }
 
