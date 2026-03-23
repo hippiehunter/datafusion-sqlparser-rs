@@ -526,6 +526,7 @@ impl Spanned for Statement {
                 unlisten_token,
                 channel,
             } => unlisten_token.0.span.union(&channel.span),
+            Statement::WaitForLsn { wait_token, .. } => wait_token.0.span,
             Statement::RenameTable(rename_tables) => {
                 if let Some(first) = rename_tables.first() {
                     first.token.0.span

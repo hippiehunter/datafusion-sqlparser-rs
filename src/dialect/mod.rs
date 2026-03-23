@@ -1148,6 +1148,13 @@ pub trait Dialect: Debug + Any {
         false
     }
 
+    /// Returns true if the dialect supports PostgreSQL 19's `WAIT FOR LSN` statement.
+    ///
+    /// See <https://www.postgresql.org/docs/devel/sql-waitforlsn.html>
+    fn supports_wait_for_lsn(&self) -> bool {
+        false
+    }
+
     /// Snapshot every boolean capability method into a [`DialectFeatures`].
     fn features(&self) -> DialectFeatures {
         DialectFeatures {
@@ -1251,6 +1258,7 @@ pub trait Dialect: Debug + Any {
                 .supports_string_literal_backslash_escape(),
             ignores_wildcard_escapes: self.ignores_wildcard_escapes(),
             supports_unicode_string_literal: self.supports_unicode_string_literal(),
+            supports_wait_for_lsn: self.supports_wait_for_lsn(),
         }
     }
 }
@@ -1345,6 +1353,7 @@ pub struct DialectFeatures {
     pub supports_string_literal_backslash_escape: bool,
     pub ignores_wildcard_escapes: bool,
     pub supports_unicode_string_literal: bool,
+    pub supports_wait_for_lsn: bool,
 }
 
 /// This represents the operators for which precedence must be defined

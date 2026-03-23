@@ -15247,3 +15247,37 @@ fn test_error_missing_parenthesis() {
         err
     );
 }
+
+#[test]
+fn parse_wait_for_lsn() {
+    let dialects = all_dialects_where(|d| d.supports_wait_for_lsn());
+
+    match dialects.verified_stmt("WAIT FOR LSN '0/18724C0'") {
+        Statement::WaitForLsn {
+            lsn, timeout_ms, ..
+        } => {
+            assert_eq!("0/18724C0", lsn);
+            assert_eq!(None, timeout_ms);
+        }
+        _ => unreachable!(),
+    };
+
+    match dialects.verified_stmt("WAIT FOR LSN '0/18724C0' WITH (TIMEOUT '5000')") {
+        Statement::WaitForLsn {
+            lsn, timeout_ms, ..
+        } => {
+            assert_eq!("0/18724C0", lsn);
+            assert_eq!(Some("5000".to_string()), timeout_ms);
+        }
+        _ => unreachable!(),
+    };
+
+    let dialects = all_dialects_where(|d| !d.supports_wait_for_lsn());
+
+    assert_eq!(
+        dialects
+            .parse_sql_statements("WAIT FOR LSN '0/18724C0'")
+            .unwrap_err(),
+        ParserError::ParserError("Expected: an SQL statement, found: WAIT".to_string())
+    );
+}

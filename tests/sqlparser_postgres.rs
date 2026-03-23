@@ -7138,10 +7138,49 @@ fn parse_create_publication() {
                 tables[0].columns,
                 Some(vec![Ident::new("col1"), Ident::new("col2")])
             );
+            assert!(tables[0].row_filter.is_none());
             assert_eq!(tables[1].name.to_string(), "t2");
             assert!(tables[1].columns.is_none());
+            assert!(tables[1].row_filter.is_none());
         }
         _ => panic!("Expected CreatePublication with Tables and columns"),
+    }
+
+    // FOR TABLE with row filters
+    let sql =
+        "CREATE PUBLICATION my_pub FOR TABLE t1 WHERE (a > 5), t2 (col1, col2) WHERE (col2 = 'x')";
+    let stmt = pg_and_generic().verified_stmt(sql);
+    match stmt {
+        Statement::CreatePublication {
+            for_object: PublicationForObject::Tables(tables),
+            ..
+        } => {
+            assert_eq!(tables.len(), 2);
+            assert_eq!(tables[0].name.to_string(), "t1");
+            assert!(tables[0].columns.is_none());
+            assert_eq!(
+                tables[0]
+                    .row_filter
+                    .as_ref()
+                    .map(ToString::to_string)
+                    .as_deref(),
+                Some("a > 5")
+            );
+            assert_eq!(tables[1].name.to_string(), "t2");
+            assert_eq!(
+                tables[1].columns,
+                Some(vec![Ident::new("col1"), Ident::new("col2")])
+            );
+            assert_eq!(
+                tables[1]
+                    .row_filter
+                    .as_ref()
+                    .map(ToString::to_string)
+                    .as_deref(),
+                Some("col2 = 'x'")
+            );
+        }
+        _ => panic!("Expected CreatePublication with row filters"),
     }
 
     // WITH options

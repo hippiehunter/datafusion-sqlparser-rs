@@ -203,6 +203,11 @@ impl Dialect for PostgreSqlDialect {
         true
     }
 
+    /// see <https://www.postgresql.org/docs/devel/sql-waitforlsn.html>
+    fn supports_wait_for_lsn(&self) -> bool {
+        true
+    }
+
     /// see <https://www.postgresql.org/docs/13/functions-math.html>
     fn supports_factorial_operator(&self) -> bool {
         true

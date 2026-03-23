@@ -1026,6 +1026,7 @@ impl<'a> Parser<'a> {
                 Keyword::LISTEN if self.features.supports_listen_notify => self.parse_listen(),
                 Keyword::UNLISTEN if self.features.supports_listen_notify => self.parse_unlisten(),
                 Keyword::NOTIFY if self.features.supports_listen_notify => self.parse_notify(),
+                Keyword::WAIT if self.features.supports_wait_for_lsn => self.parse_wait_for_lsn(),
                 // `PRAGMA` statement
                 Keyword::PRAGMA => self.parse_pragma(),
                 Keyword::UNLOAD => {
@@ -2572,6 +2573,31 @@ impl<'a> Parser<'a> {
             notify_token,
             channel,
             payload,
+        })
+    }
+
+    /// Parses `WAIT FOR LSN '<lsn>' [ WITH ( TIMEOUT '<ms>' ) ]`
+    pub fn parse_wait_for_lsn(&self) -> Result<Statement, ParserError> {
+        let wait_token = self.attached_token_from_current();
+        self.expect_keyword(Keyword::FOR)?;
+        self.expect_keyword(Keyword::LSN)?;
+        let lsn = self.parse_literal_string()?;
+        let timeout_ms = if self.parse_keyword(Keyword::WITH) {
+            self.expect_token(&BorrowedToken::LParen)?;
+            let ident = self.parse_identifier()?;
+            if ident.value.to_uppercase() != "TIMEOUT" {
+                return self.expected("TIMEOUT", self.peek_token());
+            }
+            let value = self.parse_literal_string()?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            Some(value)
+        } else {
+            None
+        };
+        Ok(Statement::WaitForLsn {
+            wait_token,
+            lsn,
+            timeout_ms,
         })
     }
 
@@ -9059,6 +9085,7 @@ impl<'a> Parser<'a> {
     /// CREATE PUBLICATION name FOR TABLE t1, t2
     /// CREATE PUBLICATION name FOR TABLES IN SCHEMA s1, s2
     /// CREATE PUBLICATION name FOR TABLE t1 (col1, col2), t2
+    /// CREATE PUBLICATION name FOR TABLE t1 WHERE (col1 > 0), t2 (col2) WHERE (col2 IS NOT NULL)
     /// ```
     ///
     /// [PostgreSQL Documentation](https://www.postgresql.org/docs/current/sql-createpublication.html)
@@ -9081,7 +9108,19 @@ impl<'a> Parser<'a> {
                 } else {
                     None
                 };
-                Ok(PublicationTable { name, columns })
+                let row_filter = if p.parse_keyword(Keyword::WHERE) {
+                    p.expect_token(&BorrowedToken::LParen)?;
+                    let expr = p.parse_expr()?;
+                    p.expect_token(&BorrowedToken::RParen)?;
+                    Some(expr)
+                } else {
+                    None
+                };
+                Ok(PublicationTable {
+                    name,
+                    columns,
+                    row_filter,
+                })
             })?;
             PublicationForObject::Tables(tables)
         } else {

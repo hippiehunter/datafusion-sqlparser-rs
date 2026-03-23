@@ -4458,11 +4458,12 @@ pub enum CreatePolicyCommand {
     Delete,
 }
 
-/// A table specification in a `CREATE PUBLICATION` statement, optionally with column list.
+/// A table specification in a `CREATE PUBLICATION` statement, optionally with
+/// a column list and row filter.
 ///
 /// Example:
 /// ```sql
-/// CREATE PUBLICATION pub FOR TABLE t1 (col1, col2), t2;
+/// CREATE PUBLICATION pub FOR TABLE t1 (col1, col2) WHERE (col1 > 0), t2;
 /// ```
 ///
 /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-createpublication.html)
@@ -4474,6 +4475,8 @@ pub struct PublicationTable {
     pub name: ObjectName,
     /// Optional column list
     pub columns: Option<Vec<Ident>>,
+    /// Optional row filter expression
+    pub row_filter: Option<Expr>,
 }
 
 impl fmt::Display for PublicationTable {
@@ -4481,6 +4484,9 @@ impl fmt::Display for PublicationTable {
         write!(f, "{}", self.name)?;
         if let Some(ref columns) = self.columns {
             write!(f, " ({})", display_comma_separated(columns))?;
+        }
+        if let Some(ref row_filter) = self.row_filter {
+            write!(f, " WHERE ({})", row_filter)?;
         }
         Ok(())
     }
@@ -6090,6 +6096,20 @@ pub enum Statement {
         payload: Option<String>,
     },
     /// ```sql
+    /// WAIT FOR LSN '0/18724C0' WITH ( TIMEOUT '5000' )
+    /// ```
+    /// Blocks until the server has replayed WAL up to the specified LSN.
+    ///
+    /// See PostgreSQL 19 <https://www.postgresql.org/docs/devel/sql-waitforlsn.html>
+    WaitForLsn {
+        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+        wait_token: AttachedToken,
+        /// LSN value as a string literal (e.g., '0/18724C0')
+        lsn: String,
+        /// Optional timeout in milliseconds
+        timeout_ms: Option<String>,
+    },
+    /// ```sql
     /// LOAD DATA [LOCAL] INPATH 'filepath' [OVERWRITE] INTO TABLE tablename
     /// [PARTITION (partcol1=val1, partcol2=val2 ...)]
     /// [INPUTFORMAT 'inputformat' SERDE 'serde']
@@ -7623,6 +7643,17 @@ impl fmt::Display for Statement {
                 write!(f, "NOTIFY {channel}")?;
                 if let Some(payload) = payload {
                     write!(f, ", '{payload}'")?;
+                }
+                Ok(())
+            }
+            Statement::WaitForLsn {
+                wait_token: _,
+                lsn,
+                timeout_ms,
+            } => {
+                write!(f, "WAIT FOR LSN '{lsn}'")?;
+                if let Some(ms) = timeout_ms {
+                    write!(f, " WITH (TIMEOUT '{ms}')")?;
                 }
                 Ok(())
             }
