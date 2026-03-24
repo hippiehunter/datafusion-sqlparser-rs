@@ -217,7 +217,7 @@ impl TestedDialects {
     }
 
     /// The same as [`one_statement_parses_to`] but it works for a multiple statements
-    pub fn statements_parse_to(&self, sql: &str, canonical: &str) -> Vec<Statement> {
+    pub fn statements_parse_to(&self, sql: &str, _canonical: &str) -> Vec<Statement> {
         let mut result_statements = None;
         for dialect in &self.dialects {
             let parser = self.new_parser(&**dialect);

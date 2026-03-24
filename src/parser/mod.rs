@@ -6286,15 +6286,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Parse the comma of a comma-separated syntax element.
-    /// Returns true if there is a next element
-    fn is_parse_comma_separated_end(&self) -> bool {
-        self.is_parse_comma_separated_end_with_trailing_commas(
-            self.options.trailing_commas,
-            &Self::is_reserved_for_column_alias,
-        )
-    }
-
     /// Parse a comma-separated list of 1+ items accepted by `F`
     pub fn parse_comma_separated<T, F>(&self, f: F) -> Result<Vec<T>, ParserError>
     where
@@ -19673,9 +19664,9 @@ impl<'a> Parser<'a> {
         lock_token: TokenWithSpan,
     ) -> Result<Statement, ParserError> {
         // Optional TABLE keyword
-        self.parse_keyword(Keyword::TABLE);
+        let _ = self.parse_keyword(Keyword::TABLE);
         // Optional ONLY keyword
-        self.parse_keyword(Keyword::ONLY);
+        let _ = self.parse_keyword(Keyword::ONLY);
         // Parse table names (comma-separated, possibly schema-qualified)
         let mut tables = vec![];
         loop {
@@ -19705,7 +19696,7 @@ impl<'a> Parser<'a> {
             }
         }
         // Optional NOWAIT
-        self.parse_keyword(Keyword::NOWAIT);
+        let _ = self.parse_keyword(Keyword::NOWAIT);
         Ok(Statement::LockTables {
             lock_token: AttachedToken(lock_token.to_static()),
             tables,
