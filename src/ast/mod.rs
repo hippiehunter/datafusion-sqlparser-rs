@@ -3397,6 +3397,10 @@ pub enum DiagnosticsItem {
     More,
     ReturnedSqlstate,
     MessageText,
+    PgContext,
+    PgExceptionContext,
+    PgExceptionDetail,
+    PgExceptionHint,
 }
 
 impl fmt::Display for DiagnosticsItem {
@@ -3407,6 +3411,10 @@ impl fmt::Display for DiagnosticsItem {
             DiagnosticsItem::More => write!(f, "MORE"),
             DiagnosticsItem::ReturnedSqlstate => write!(f, "RETURNED_SQLSTATE"),
             DiagnosticsItem::MessageText => write!(f, "MESSAGE_TEXT"),
+            DiagnosticsItem::PgContext => write!(f, "PG_CONTEXT"),
+            DiagnosticsItem::PgExceptionContext => write!(f, "PG_EXCEPTION_CONTEXT"),
+            DiagnosticsItem::PgExceptionDetail => write!(f, "PG_EXCEPTION_DETAIL"),
+            DiagnosticsItem::PgExceptionHint => write!(f, "PG_EXCEPTION_HINT"),
         }
     }
 }
@@ -12384,6 +12392,7 @@ impl fmt::Display for ReturnStatement {
         match value {
             Some(ReturnStatementValue::Expr(expr)) => write!(f, "RETURN {expr}"),
             Some(ReturnStatementValue::Next(expr)) => write!(f, "RETURN NEXT {expr}"),
+            Some(ReturnStatementValue::NextNoExpr) => write!(f, "RETURN NEXT"),
             Some(ReturnStatementValue::Query(query)) => write!(f, "RETURN QUERY {query}"),
             Some(ReturnStatementValue::QueryExecute { query_expr, using }) => {
                 write!(f, "RETURN QUERY EXECUTE {query_expr}")?;
@@ -12408,6 +12417,8 @@ pub enum ReturnStatementValue {
     Expr(Expr),
     /// RETURN NEXT expression (for set-returning functions)
     Next(Expr),
+    /// RETURN NEXT (no expression) — returns current OUT column values
+    NextNoExpr,
     /// RETURN QUERY query (return all rows from a query)
     Query(Box<Query>),
     /// RETURN QUERY EXECUTE expression [USING ...]

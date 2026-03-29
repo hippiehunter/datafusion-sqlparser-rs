@@ -2443,6 +2443,7 @@ impl Spanned for SelectInto {
             temporary: _, // bool
             unlogged: _,  // bool
             table: _,     // bool
+            strict: _,    // bool
             name,
             additional_targets,
         } = self;

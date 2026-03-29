@@ -1406,9 +1406,48 @@ impl<'a> Parser<'a> {
                 || self.peek_token_ref().token == BorrowedToken::LParen
             {
                 // PL/pgSQL query loop: FOR rec IN SELECT ... LOOP ... END LOOP
+                // We try parse_query() and verify LOOP follows. If the query
+                // parser consumed LOOP as a table alias, we fall back to
+                // collecting tokens up to the LOOP keyword and re-parsing.
+                let query = self.maybe_parse(|p| {
+                    let q = p.parse_query()?;
+                    // Verify LOOP (or DO) follows — if not, the query ate too much.
+                    if p.peek_keyword(Keyword::LOOP) || p.peek_keyword(Keyword::DO) {
+                        Ok(q)
+                    } else {
+                        Err(ParserError::ParserError(
+                            "query consumed LOOP keyword".to_string(),
+                        ))
+                    }
+                })?;
+                let query = match query {
+                    Some(q) => q,
+                    None => {
+                        // Fallback: collect raw SQL tokens until LOOP keyword
+                        let mut tokens = Vec::new();
+                        while !self.peek_keyword(Keyword::LOOP) && !self.peek_keyword(Keyword::DO)
+                        {
+                            if self.peek_token_ref().token == BorrowedToken::EOF {
+                                return Err(ParserError::ParserError(
+                                    "Expected LOOP after FOR ... IN query".to_string(),
+                                ));
+                            }
+                            tokens.push(self.next_token().token.to_static());
+                        }
+                        // Re-parse the collected tokens as a query
+                        let sql: String = tokens
+                            .iter()
+                            .map(|t| t.to_string())
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        let mut inner_parser =
+                            Parser::new(self.dialect).try_with_sql(&sql)?;
+                        inner_parser.parse_query()?
+                    }
+                };
                 ForLoopVariant::Query {
                     cursor_name: None,
-                    query: self.parse_query()?,
+                    query,
                 }
             } else {
                 // Try to parse integer range:
@@ -1731,6 +1770,10 @@ impl<'a> Parser<'a> {
                 Keyword::MORE => Ok(DiagnosticsItem::More),
                 Keyword::RETURNED_SQLSTATE => Ok(DiagnosticsItem::ReturnedSqlstate),
                 Keyword::MESSAGE_TEXT => Ok(DiagnosticsItem::MessageText),
+                Keyword::PG_CONTEXT => Ok(DiagnosticsItem::PgContext),
+                Keyword::PG_EXCEPTION_CONTEXT => Ok(DiagnosticsItem::PgExceptionContext),
+                Keyword::PG_EXCEPTION_DETAIL => Ok(DiagnosticsItem::PgExceptionDetail),
+                Keyword::PG_EXCEPTION_HINT => Ok(DiagnosticsItem::PgExceptionHint),
                 _ => self.expected("diagnostics item", next_token),
             },
             _ => self.expected("diagnostics item", next_token),
@@ -1791,9 +1834,9 @@ impl<'a> Parser<'a> {
             let exception_handlers = if self.parse_keyword(Keyword::EXCEPTION) {
                 let mut handlers = vec![];
                 while self.parse_keyword(Keyword::WHEN) {
-                    let mut idents = vec![self.parse_identifier()?];
+                    let mut idents = vec![self.parse_exception_condition()?];
                     while self.parse_keyword(Keyword::OR) {
-                        idents.push(self.parse_identifier()?);
+                        idents.push(self.parse_exception_condition()?);
                     }
                     self.expect_keyword(Keyword::THEN)?;
                     let handler_statements =
@@ -1850,6 +1893,22 @@ impl<'a> Parser<'a> {
             }
         };
         Ok(conditional_statements)
+    }
+
+    /// Parse a single exception condition in a WHEN clause.
+    ///
+    /// Handles:
+    /// - `SQLSTATE 'code'` — encoded as Ident with value `SQLSTATE:code`
+    /// - `condition_name` — regular identifier (e.g. OTHERS, DIVISION_BY_ZERO)
+    fn parse_exception_condition(&self) -> Result<Ident, ParserError> {
+        if self.parse_keyword(Keyword::SQLSTATE) {
+            let code = self.parse_literal_string()?;
+            // Use a double-quoted identifier so this round-trips through Display/re-parse.
+            // The lowering layer detects the "SQLSTATE:" prefix.
+            Ok(Ident::with_quote('"', format!("SQLSTATE:{code}")))
+        } else {
+            self.parse_identifier()
+        }
     }
 
     /// Parse a `RAISE` statement.
@@ -1964,40 +2023,49 @@ impl<'a> Parser<'a> {
     pub fn parse_perform(&self) -> Result<Statement, ParserError> {
         self.expect_keyword_is(Keyword::PERFORM)?;
 
+        // PL/pgSQL PERFORM is equivalent to SELECT but discards results.
+        // We always synthesize a SELECT query from the tokens after PERFORM.
+        // `PERFORM expr` => `SELECT expr`
+        // `PERFORM expr FROM t WHERE ...` => `SELECT expr FROM t WHERE ...`
+        // `PERFORM SELECT ...` => pass through
         let query = if self.peek_keyword(Keyword::SELECT)
             || self.peek_keyword(Keyword::WITH)
             || self.peek_keyword(Keyword::VALUES)
-            || self.peek_keyword(Keyword::FROM)
             || self.peek_token_ref().token == BorrowedToken::LParen
         {
             self.parse_query()?
         } else {
-            // PostgreSQL allows `PERFORM func_call(...)` without an explicit SELECT.
-            // Normalize this to a single-expression SELECT query in the AST.
-            let expr = self.parse_expr()?;
-            Box::new(Query {
-                with: None,
-                body: Box::new(SetExpr::Select(Box::new(Select {
-                    select_token: AttachedToken::empty(),
-                    distinct: None,
-                    top: None,
-                    top_before_distinct: false,
-                    projection: vec![SelectItem::UnnamedExpr(expr)],
-                    into: None,
-                    from: vec![],
-                    selection: None,
-                    group_by: GroupByExpr::Expressions(vec![], vec![]),
-                    having: None,
-                    named_window: vec![],
-                    connect_by: None,
-                    flavor: SelectFlavor::Standard,
-                }))),
-                order_by: None,
-                limit_clause: None,
-                fetch: None,
-                locks: vec![],
-                for_clause: None,
-            })
+            // Collect the expression(s), then check for FROM/WHERE/etc.
+            // We synthesize "SELECT <tokens...>" and re-parse as a query.
+            let mut tokens = Vec::new();
+            let mut depth = 0i32;
+            loop {
+                let tok = &self.peek_token_ref().token;
+                if *tok == BorrowedToken::EOF {
+                    break;
+                }
+                if *tok == BorrowedToken::SemiColon && depth == 0 {
+                    break;
+                }
+                if *tok == BorrowedToken::LParen {
+                    depth += 1;
+                }
+                if *tok == BorrowedToken::RParen {
+                    if depth == 0 {
+                        break;
+                    }
+                    depth -= 1;
+                }
+                tokens.push(self.next_token().token.to_static());
+            }
+            let body: String = tokens
+                .iter()
+                .map(|t| t.to_string())
+                .collect::<Vec<_>>()
+                .join(" ");
+            let sql = format!("SELECT {body}");
+            let mut inner_parser = Parser::new(self.dialect).try_with_sql(&sql)?;
+            inner_parser.parse_query()?
         };
 
         Ok(Statement::Perform(PerformStatement {
@@ -7193,9 +7261,9 @@ impl<'a> Parser<'a> {
         let exception_handlers = if self.parse_keyword(Keyword::EXCEPTION) {
             let mut handlers = vec![];
             while self.parse_keyword(Keyword::WHEN) {
-                let mut idents = vec![self.parse_identifier()?];
+                let mut idents = vec![self.parse_exception_condition()?];
                 while self.parse_keyword(Keyword::OR) {
-                    idents.push(self.parse_identifier()?);
+                    idents.push(self.parse_exception_condition()?);
                 }
                 self.expect_keyword(Keyword::THEN)?;
 
@@ -13012,6 +13080,10 @@ impl<'a> Parser<'a> {
             BorrowedToken::Word(w) => match w.keyword {
                 Keyword::BOOLEAN => Ok(DataType::Boolean),
                 Keyword::BOOL => Ok(DataType::Bool),
+                Keyword::SETOF => {
+                    let inner = self.parse_data_type()?;
+                    Ok(DataType::SetOf(Box::new(inner)))
+                }
                 Keyword::FLOAT => {
                     let precision = self.parse_exact_number_optional_precision_scale()?;
 
@@ -19841,17 +19913,11 @@ impl<'a> Parser<'a> {
             while !self.peek_keyword(Keyword::END) {
                 self.expect_keyword(Keyword::WHEN)?;
 
-                // Each `WHEN` case can have one or more conditions, e.g.
-                // WHEN EXCEPTION_1 [OR EXCEPTION_2] THEN
-                // So we parse identifiers until the `THEN` keyword.
-                let mut idents = Vec::new();
-
-                while !self.parse_keyword(Keyword::THEN) {
-                    let ident = self.parse_identifier()?;
-                    idents.push(ident);
-
-                    let _ = self.parse_keyword(Keyword::OR);
+                let mut idents = vec![self.parse_exception_condition()?];
+                while self.parse_keyword(Keyword::OR) {
+                    idents.push(self.parse_exception_condition()?);
                 }
+                self.expect_keyword(Keyword::THEN)?;
 
                 let statements = self.parse_statement_list(&[Keyword::WHEN, Keyword::END])?;
 
@@ -19893,12 +19959,11 @@ impl<'a> Parser<'a> {
             let mut when = Vec::new();
             while !self.peek_keyword(Keyword::END) {
                 self.expect_keyword(Keyword::WHEN)?;
-                let mut idents = Vec::new();
-                while !self.parse_keyword(Keyword::THEN) {
-                    let ident = self.parse_identifier()?;
-                    idents.push(ident);
-                    let _ = self.parse_keyword(Keyword::OR);
+                let mut idents = vec![self.parse_exception_condition()?];
+                while self.parse_keyword(Keyword::OR) {
+                    idents.push(self.parse_exception_condition()?);
                 }
+                self.expect_keyword(Keyword::THEN)?;
                 let stmts = self.parse_statement_list(&[Keyword::WHEN, Keyword::END])?;
                 when.push(ExceptionWhen {
                     idents,
@@ -20379,6 +20444,12 @@ impl<'a> Parser<'a> {
             .is_some();
         let unlogged = self.parse_keyword(Keyword::UNLOGGED);
         let table = self.parse_keyword(Keyword::TABLE);
+        // PL/pgSQL STRICT modifier: SELECT ... INTO STRICT var
+        let strict = if !temporary && !unlogged && !table {
+            self.parse_keyword(Keyword::STRICT)
+        } else {
+            false
+        };
         let name = self.parse_object_name(false)?;
         let mut additional_targets = vec![];
 
@@ -20395,6 +20466,7 @@ impl<'a> Parser<'a> {
             temporary,
             unlogged,
             table,
+            strict,
             name,
             additional_targets,
         })
@@ -21822,9 +21894,13 @@ impl<'a> Parser<'a> {
 
         // Check for RETURN NEXT, RETURN QUERY, or RETURN QUERY EXECUTE
         let value = if self.parse_keyword(Keyword::NEXT) {
-            // RETURN NEXT expression
-            let expr = self.parse_expr()?;
-            Some(ReturnStatementValue::Next(expr))
+            // RETURN NEXT [expression]
+            // If no expression follows (e.g. bare "RETURN NEXT;"), this returns
+            // the current values of the OUT columns in a RETURNS TABLE function.
+            match self.maybe_parse(|p| p.parse_expr())? {
+                Some(expr) => Some(ReturnStatementValue::Next(expr)),
+                None => Some(ReturnStatementValue::NextNoExpr),
+            }
         } else if self.parse_keyword(Keyword::QUERY) {
             // RETURN QUERY ... or RETURN QUERY EXECUTE ...
             if self.parse_keyword(Keyword::EXECUTE) {

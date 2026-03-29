@@ -380,6 +380,10 @@ pub enum DataType {
     ///
     /// [PostgreSQL]: https://www.postgresql.org/docs/current/plpgsql-trigger.html
     Trigger,
+    /// SETOF type — set-returning function return type, see [PostgreSQL].
+    ///
+    /// [PostgreSQL]: https://www.postgresql.org/docs/current/xfunc-sql.html#XFUNC-SQL-FUNCTIONS-RETURNING-SET
+    SetOf(Box<DataType>),
     /// Geometric type, see [PostgreSQL].
     ///
     /// [PostgreSQL]: https://www.postgresql.org/docs/9.5/functions-geometry.html
@@ -613,6 +617,7 @@ impl fmt::Display for DataType {
                 }
             }
             DataType::Trigger => write!(f, "TRIGGER"),
+            DataType::SetOf(inner) => write!(f, "SETOF {inner}"),
             DataType::Table(fields) => match fields {
                 Some(fields) => {
                     write!(f, "TABLE({})", display_comma_separated(fields))
