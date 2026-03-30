@@ -259,9 +259,7 @@ END $$ LANGUAGE plpgsql"#
 #[test]
 fn test_for_integer_range() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-INTEGER-FOR-LOOPS
-    // FOR loop over integer range
-    // TODO: Round-trip fails because FOR range `..` operator tokenization issue
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
     i INTEGER;
@@ -276,9 +274,7 @@ END $$ LANGUAGE plpgsql"#
 #[test]
 fn test_for_integer_range_reverse() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-INTEGER-FOR-LOOPS
-    // FOR loop in reverse order
-    // TODO: Round-trip fails because FOR range `..` operator tokenization issue
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
     i INTEGER;
@@ -293,9 +289,7 @@ END $$ LANGUAGE plpgsql"#
 #[test]
 fn test_for_integer_range_by_step() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-INTEGER-FOR-LOOPS
-    // FOR loop with BY step
-    // TODO: Round-trip fails because FOR range `..` operator tokenization issue
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
     i INTEGER;
@@ -310,9 +304,7 @@ END $$ LANGUAGE plpgsql"#
 #[test]
 fn test_for_integer_dynamic_bounds() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-INTEGER-FOR-LOOPS
-    // FOR loop with dynamic bounds from expressions
-    // TODO: Round-trip fails because FOR range `..` operator tokenization issue
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test(start_val INTEGER, end_val INTEGER) RETURNS void AS $$
 DECLARE
     i INTEGER;
@@ -422,9 +414,7 @@ END $$ LANGUAGE plpgsql"#
 #[test]
 fn test_nested_loops() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-CONTROL-STRUCTURES-LOOPS
-    // Nested FOR loops
-    // TODO: Round-trip fails because FOR range `..` operator tokenization issue
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
     i INTEGER;
@@ -505,9 +495,7 @@ END $$ LANGUAGE plpgsql"#
 #[test]
 fn test_continue_when() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-CONTINUE
-    // CONTINUE WHEN condition
-    // TODO: Round-trip fails because FOR range `..` operator tokenization issue
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test() RETURNS void AS $$
 DECLARE
     i INTEGER;

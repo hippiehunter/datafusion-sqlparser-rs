@@ -6602,7 +6602,17 @@ impl fmt::Display for Statement {
                 }
 
                 if *has_as {
-                    write!(f, " AS {body}")
+                    let is_plpgsql = language
+                        .as_ref()
+                        .is_some_and(|l| {
+                            l.value.eq_ignore_ascii_case("plpgsql")
+                                || l.value.eq_ignore_ascii_case("pgsql")
+                        });
+                    if is_plpgsql {
+                        write!(f, " AS $$ {body} $$")
+                    } else {
+                        write!(f, " AS {body}")
+                    }
                 } else {
                     write!(f, " {body}")
                 }

@@ -213,10 +213,8 @@ fn test_do_block_loop() {
 #[test]
 fn test_do_block_for_loop() {
     // https://www.postgresql.org/docs/current/sql-do.html
-    // FOR loop over integer range
-    pg_expect_parse_error!(
-        "DO $$ DECLARE i INTEGER; BEGIN FOR i IN 1..10 LOOP RAISE NOTICE '%', i; END LOOP; END $$",
-        "Expected"
+    pg_roundtrip_only!(
+        "DO $$ DECLARE i INTEGER; BEGIN FOR i IN 1..10 LOOP RAISE NOTICE '%', i; END LOOP; END $$"
     );
 }
 

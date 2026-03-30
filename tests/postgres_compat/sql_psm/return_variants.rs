@@ -95,7 +95,6 @@ END $$ LANGUAGE plpgsql"#
 fn test_return_next_simple() {
     // https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-RETURNING
     // RETURN NEXT to build result set one row at a time
-    // TODO: RETURNS SETOF type parsing fails
     pg_expect_parse_error!(
         r#"CREATE FUNCTION test() RETURNS SETOF INTEGER AS $$
 BEGIN

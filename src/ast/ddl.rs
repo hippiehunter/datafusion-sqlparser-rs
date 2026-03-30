@@ -2556,11 +2556,20 @@ impl fmt::Display for CreateFunction {
             write!(f, " AS {function_body}")?;
         }
         if let Some(CreateFunctionBody::AsBeginEnd(bes)) = &self.function_body {
-            // PL/pgSQL bodies with DECLARE, labels, or EXCEPTION need dollar-quoting
-            // to round-trip correctly, since `AS DECLARE ... BEGIN ... END` is not
-            // valid syntax (the parser expects a string literal after AS when DECLARE
-            // precedes BEGIN).
-            let needs_dollar_quoting = !bes.declarations.is_empty()
+            // PL/pgSQL function bodies must always be dollar-quoted so the
+            // re-parse path goes through the PL/pgSQL rewriting pipeline
+            // (`:=` assignments, `..` integer ranges, alias declarations).
+            // Without dollar-quoting, `AS BEGIN...END` is parsed as plain SQL
+            // which doesn't handle these constructs.
+            let is_plpgsql = self
+                .language
+                .as_ref()
+                .is_some_and(|l| {
+                    l.value.eq_ignore_ascii_case("plpgsql")
+                        || l.value.eq_ignore_ascii_case("pgsql")
+                });
+            let needs_dollar_quoting = is_plpgsql
+                || !bes.declarations.is_empty()
                 || bes.label.is_some()
                 || bes.exception_handlers.is_some();
             if needs_dollar_quoting {

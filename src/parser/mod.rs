@@ -1457,9 +1457,7 @@ impl<'a> Parser<'a> {
                 let lower = Box::new(self.parse_expr()?);
 
                 if !self.parse_keyword(Keyword::TO) {
-                    // Expect .. (two periods) - tokenizer gives us two Period tokens
-                    self.expect_token(&BorrowedToken::Period)?;
-                    self.expect_token(&BorrowedToken::Period)?;
+                    self.expect_token(&BorrowedToken::DoubleDot)?;
                 }
 
                 let upper = Box::new(self.parse_expr()?);
@@ -7047,48 +7045,10 @@ impl<'a> Parser<'a> {
     /// Rewrite PL/pgSQL integer FOR-range syntax `lower .. upper` into
     /// a parser-friendly `lower TO upper` form.
     fn rewrite_sql_psm_for_integer_ranges(body: &str) -> String {
-        let mut rewritten = String::with_capacity(body.len());
-
-        for segment in body.split_inclusive('\n') {
-            let line = segment.strip_suffix('\n').unwrap_or(segment);
-            let trimmed = line.trim_start();
-
-            if trimmed.len() >= 4 && trimmed[..4].eq_ignore_ascii_case("FOR ") {
-                let bytes = line.as_bytes();
-                let mut range_pos = None;
-                let mut i = 0usize;
-                while i + 1 < bytes.len() {
-                    if bytes[i] == b'.' && bytes[i + 1] == b'.' {
-                        let prev = if i == 0 { None } else { Some(bytes[i - 1]) };
-                        let next = if i + 2 < bytes.len() {
-                            Some(bytes[i + 2])
-                        } else {
-                            None
-                        };
-                        // Avoid rewriting ellipses, only the standalone `..` range operator.
-                        if prev != Some(b'.') && next != Some(b'.') {
-                            range_pos = Some(i);
-                            break;
-                        }
-                    }
-                    i += 1;
-                }
-
-                if let Some(pos) = range_pos {
-                    rewritten.push_str(&line[..pos]);
-                    rewritten.push_str(" TO ");
-                    rewritten.push_str(&line[pos + 2..]);
-                    if segment.ends_with('\n') {
-                        rewritten.push('\n');
-                    }
-                    continue;
-                }
-            }
-
-            rewritten.push_str(segment);
-        }
-
-        rewritten
+        // The tokenizer now handles `..` correctly by not consuming the first
+        // dot into a preceding number literal when followed by another dot.
+        // No text rewriting is needed; return the body unchanged.
+        body.to_string()
     }
 
     /// Parse a SQL/PSM label: <<label_name>>
@@ -17216,71 +17176,34 @@ impl<'a> Parser<'a> {
         let token = self.next_token();
         let quantifier = match token.token {
             BorrowedToken::Mul => {
-                // Check if this is *n..m or *..m syntax (SQL/PGQ range quantifier)
-                if matches!(self.peek_token().token, BorrowedToken::Period) {
-                    // This is *..m syntax (implicit 0 start)
-                    self.expect_token(&BorrowedToken::Period)?;
-
-                    // Next token might be:
-                    // - Period followed by Number (if tokenized as . . 5)
-                    // - Number starting with . (if tokenized as . .5)
-                    let next_token = self.next_token();
-                    let (m_value, span_start) = match next_token.token {
-                        BorrowedToken::Period => {
-                            // Tokenized as . . 5
-                            let num_token = self.next_token();
-                            let BorrowedToken::Number(m, _) = num_token.token else {
-                                return self.expected("number", num_token);
-                            };
-                            let m_str: &str = &m;
-                            (
-                                m_str.trim_start_matches('.').to_string(),
-                                num_token.span.start,
-                            )
-                        }
-                        BorrowedToken::Number(m, _) => {
-                            // Tokenized as . .5
-                            let m_str: &str = &m;
-                            (
-                                m_str.trim_start_matches('.').to_string(),
-                                next_token.span.start,
-                            )
-                        }
-                        _ => return self.expected("number after ..", next_token),
+                if matches!(self.peek_token().token, BorrowedToken::DoubleDot) {
+                    // *..m syntax (implicit 0 start)
+                    self.expect_token(&BorrowedToken::DoubleDot)?;
+                    let num_token = self.next_token();
+                    let BorrowedToken::Number(m, _) = num_token.token else {
+                        return self.expected("number", num_token);
                     };
-
-                    RepetitionQuantifier::Range(0, Self::parse(m_value, span_start)?)
+                    let m_str: &str = &m;
+                    RepetitionQuantifier::Range(
+                        0,
+                        Self::parse(m_str.to_string(), num_token.span.start)?,
+                    )
                 } else if matches!(self.peek_token().token, BorrowedToken::Number(_, _)) {
-                    // This is *n..m syntax
+                    // *n..m syntax
                     let num_token = self.next_token();
                     let BorrowedToken::Number(n, _) = num_token.token else {
                         return self.expected("number", num_token);
                     };
-                    // The tokenizer might parse "1..3" as:
-                    // - Number("1.", _), Number(".3", _), OR
-                    // - Number("1", _), Period, Period, Number("3", _)
-                    // We need to handle both cases.
-                    let n_str: &str = &n;
-                    let n_value = if n_str.ends_with('.') {
-                        n_str.trim_end_matches('.')
-                    } else {
-                        // Consume two periods
-                        self.expect_token(&BorrowedToken::Period)?;
-                        self.expect_token(&BorrowedToken::Period)?;
-                        n_str
-                    };
-
-                    // Next token could be a number like "3" or ".3"
+                    self.expect_token(&BorrowedToken::DoubleDot)?;
                     let end_token = self.next_token();
                     let BorrowedToken::Number(m, _) = end_token.token else {
                         return self.expected("number", end_token);
                     };
+                    let n_str: &str = &n;
                     let m_str: &str = &m;
-                    let m_value = m_str.trim_start_matches('.');
-
                     RepetitionQuantifier::Range(
-                        Self::parse(n_value.to_string(), num_token.span.start)?,
-                        Self::parse(m_value.to_string(), end_token.span.start)?,
+                        Self::parse(n_str.to_string(), num_token.span.start)?,
+                        Self::parse(m_str.to_string(), end_token.span.start)?,
                     )
                 } else {
                     RepetitionQuantifier::ZeroOrMore

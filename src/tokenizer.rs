@@ -115,6 +115,8 @@ pub enum BorrowedToken<'a> {
     RParen,
     /// Period (used for compound identifiers or projections into nested types)
     Period,
+    /// Double period `..` (used for PL/pgSQL integer range in FOR loops, SQL/PGQ repetition)
+    DoubleDot,
     /// Colon `:`
     Colon,
     /// DoubleColon `::` (used for casting in PostgreSQL)
@@ -289,6 +291,7 @@ impl<'a> fmt::Display for BorrowedToken<'a> {
             BorrowedToken::LParen => f.write_str("("),
             BorrowedToken::RParen => f.write_str(")"),
             BorrowedToken::Period => f.write_str("."),
+            BorrowedToken::DoubleDot => f.write_str(".."),
             BorrowedToken::Colon => f.write_str(":"),
             BorrowedToken::DoubleColon => f.write_str("::"),
             BorrowedToken::Assignment => f.write_str(":="),
@@ -411,6 +414,7 @@ impl<'a> BorrowedToken<'a> {
             BorrowedToken::LParen => BorrowedToken::LParen,
             BorrowedToken::RParen => BorrowedToken::RParen,
             BorrowedToken::Period => BorrowedToken::Period,
+            BorrowedToken::DoubleDot => BorrowedToken::DoubleDot,
             BorrowedToken::Colon => BorrowedToken::Colon,
             BorrowedToken::DoubleColon => BorrowedToken::DoubleColon,
             BorrowedToken::Assignment => BorrowedToken::Assignment,
@@ -1289,6 +1293,13 @@ impl<'a> Tokenizer<'a> {
                         );
                     }
 
+                    // `..` range operator (PL/pgSQL FOR ranges, SQL/PGQ repetition)
+                    if ch == '.' && chars.peek_nth(1) == Some('.') {
+                        chars.next();
+                        chars.next();
+                        return Ok(Some(Token::DoubleDot));
+                    }
+
                     // Some dialects support underscore as number separator
                     // There can only be one at a time and it must be followed by another digit
                     let is_number_separator = |ch: char, next_char: Option<char>| {
@@ -1310,8 +1321,13 @@ impl<'a> Tokenizer<'a> {
                         return Ok(Some(Token::HexStringLiteral(s2)));
                     }
 
-                    // match one period
+                    // match one period, but not `..` (range operator)
                     if let Some('.') = chars.peek() {
+                        if chars.peek_nth(1) == Some('.') {
+                            // `..` follows digits — return the digits as a number;
+                            // the `..` will be tokenized as DoubleDot on the next call.
+                            return Ok(Some(Token::Number(s, false)));
+                        }
                         s.push('.');
                         chars.next();
                     }
