@@ -11667,6 +11667,17 @@ impl<'a> Parser<'a> {
                     self.peek_token(),
                 );
             }
+        } else if self.parse_keywords(&[Keyword::NO, Keyword::FORCE, Keyword::ROW, Keyword::LEVEL, Keyword::SECURITY]) {
+            AlterTableOperation::NoForceRowLevelSecurity
+        } else if self.parse_keyword(Keyword::FORCE) {
+            if self.parse_keywords(&[Keyword::ROW, Keyword::LEVEL, Keyword::SECURITY]) {
+                AlterTableOperation::ForceRowLevelSecurity
+            } else {
+                return self.expected(
+                    "ROW LEVEL SECURITY after FORCE",
+                    self.peek_token(),
+                );
+            }
         } else if self.parse_keyword(Keyword::DROP) {
             if self.parse_keywords(&[Keyword::IF, Keyword::EXISTS, Keyword::PARTITION]) {
                 self.expect_token(&BorrowedToken::LParen)?;
