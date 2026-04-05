@@ -69,8 +69,9 @@ pub use self::ddl::{
     GraphKeyClause, GraphPropertiesClause, GraphVertexTableDefinition, IdentityParameters,
     IdentityProperty, IdentityPropertyFormatKind, IdentityPropertyKind, IdentityPropertyOrder,
     IndexColumn, IndexOption, IndexType, KeyOrIndexDisplay, NullsDistinctOption, OperatorArgTypes,
-    OperatorClassItem, OperatorPurpose, Owner, Partition, ProcedureParam, ReferentialAction,
-    RenameTableNameKind, ReplicaIdentity, TriggerObjectKind, Truncate,
+    OperatorClassItem, OperatorPurpose, Owner, Partition, PartitionByClause, PartitionKeyDef,
+    PartitionKeyExpr, PartitionStrategy, ProcedureParam, ReferentialAction,
+    RenameTableNameKind, ReplicaIdentity, SplitPartitionTarget, TriggerObjectKind, Truncate,
     UserDefinedTypeCompositeAttributeDef, UserDefinedTypeInternalLength,
     UserDefinedTypeRangeOption, UserDefinedTypeRepresentation, UserDefinedTypeSqlDefinitionOption,
     UserDefinedTypeStorage, ViewColumnDef,
@@ -5667,6 +5668,62 @@ pub enum Statement {
         checkpoint_token: AttachedToken,
     },
     /// ```sql
+    /// BACKUP DATABASE [TO '<s3_uri>'] [ESTIMATE] [INCREMENTAL]
+    /// ```
+    Backup {
+        /// What to back up: DATABASE or a specific table name
+        object_type: Option<ObjectName>,
+        /// Target S3 URI
+        location: Option<String>,
+        /// ESTIMATE — preview without executing
+        estimate: bool,
+        /// INCREMENTAL — incremental snapshot only
+        incremental: bool,
+    },
+    /// ```sql
+    /// RESTORE {DATABASE | TABLE <name>} [FROM '<s3_uri>']
+    ///     TO {TIMESTAMP '<ts>' | LSN <n>} [DRY RUN]
+    /// ```
+    Restore {
+        /// What to restore: DATABASE or a specific table name
+        object_type: Option<ObjectName>,
+        /// Source S3 URI
+        location: Option<String>,
+        /// Target timestamp (mutually exclusive with target_lsn)
+        target_timestamp: Option<String>,
+        /// Target LSN (mutually exclusive with target_timestamp)
+        target_lsn: Option<u64>,
+        /// DRY RUN — preview without executing
+        dry_run: bool,
+    },
+    /// ```sql
+    /// RECOVER PAGE <page_id> FROM TABLE <table_name>
+    /// ```
+    RecoverPage {
+        page_id: String,
+        table_name: ObjectName,
+    },
+    /// ```sql
+    /// VALIDATE BACKUP [FROM '<s3_uri>'] [FULL]
+    /// ```
+    ValidateBackup {
+        location: Option<String>,
+        full: bool,
+    },
+    /// ```sql
+    /// SHOW BACKUPS [FROM '<s3_uri>'] [ALL]
+    /// ```
+    ShowBackups {
+        location: Option<String>,
+        all: bool,
+    },
+    /// ```sql
+    /// CANCEL BACKUP <operation_id>
+    /// ```
+    CancelBackup {
+        operation_id: String,
+    },
+    /// ```sql
     /// CREATE SCHEMA
     /// ```
     CreateSchema {
@@ -7230,6 +7287,82 @@ impl fmt::Display for Statement {
                 Ok(())
             }
             Statement::Checkpoint { .. } => write!(f, "CHECKPOINT"),
+            Statement::Backup {
+                object_type,
+                location,
+                estimate,
+                incremental,
+            } => {
+                write!(f, "BACKUP")?;
+                if let Some(obj) = object_type {
+                    write!(f, " {obj}")?;
+                } else {
+                    write!(f, " DATABASE")?;
+                }
+                if let Some(loc) = location {
+                    write!(f, " TO '{loc}'")?;
+                }
+                if *estimate {
+                    write!(f, " ESTIMATE")?;
+                }
+                if *incremental {
+                    write!(f, " INCREMENTAL")?;
+                }
+                Ok(())
+            }
+            Statement::Restore {
+                object_type,
+                location,
+                target_timestamp,
+                target_lsn,
+                dry_run,
+            } => {
+                write!(f, "RESTORE")?;
+                if let Some(obj) = object_type {
+                    write!(f, " {obj}")?;
+                } else {
+                    write!(f, " DATABASE")?;
+                }
+                if let Some(loc) = location {
+                    write!(f, " FROM '{loc}'")?;
+                }
+                if let Some(ts) = target_timestamp {
+                    write!(f, " TO TIMESTAMP '{ts}'")?;
+                }
+                if let Some(lsn) = target_lsn {
+                    write!(f, " TO LSN {lsn}")?;
+                }
+                if *dry_run {
+                    write!(f, " DRY RUN")?;
+                }
+                Ok(())
+            }
+            Statement::RecoverPage { page_id, table_name } => {
+                write!(f, "RECOVER PAGE {page_id} FROM TABLE {table_name}")
+            }
+            Statement::ValidateBackup { location, full } => {
+                write!(f, "VALIDATE BACKUP")?;
+                if let Some(loc) = location {
+                    write!(f, " FROM '{loc}'")?;
+                }
+                if *full {
+                    write!(f, " FULL")?;
+                }
+                Ok(())
+            }
+            Statement::ShowBackups { location, all } => {
+                write!(f, "SHOW BACKUPS")?;
+                if *all {
+                    write!(f, " ALL")?;
+                }
+                if let Some(loc) = location {
+                    write!(f, " FROM '{loc}'")?;
+                }
+                Ok(())
+            }
+            Statement::CancelBackup { operation_id } => {
+                write!(f, "CANCEL BACKUP {operation_id}")
+            }
             Statement::CreateSchema {
                 create_token: _,
                 schema_name,

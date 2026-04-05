@@ -41,7 +41,7 @@ use crate::ast::{
         CheckConstraint, ForeignKeyConstraint, PrimaryKeyConstraint, TableConstraint,
         UniqueConstraint,
     },
-    ArgMode, AttachedToken, CommentDef, ConditionalStatements, CreateFunctionBody,
+    ArgMode, AttachedToken, CommentDef, ConditionalStatements, CreateFunctionBody, PartitionBoundSpec,
     CreateFunctionUsing, CreateTableLikeKind, CreateTableOptions, CreateViewParams, DataType, Expr,
     FunctionBehavior, FunctionCalledOnNull, FunctionDesc, FunctionDeterminismSpecifier,
     FunctionParallel, Ident, MySQLColumnPosition, ObjectName, OnCommit, OperateFunctionArg,
@@ -297,6 +297,27 @@ pub enum AlterTableOperation {
     /// ```
     /// [PostgreSQL](https://www.postgresql.org/docs/current/sql-altertable.html)
     SetOptionsParens { options: Vec<SqlOption> },
+    /// `ALTER TABLE ... ATTACH PARTITION name FOR VALUES ...`
+    AttachPartition {
+        partition_name: ObjectName,
+        bound: PartitionBoundSpec,
+    },
+    /// `ALTER TABLE ... DETACH PARTITION name [CONCURRENTLY | FINALIZE]`
+    DetachPartition {
+        partition_name: ObjectName,
+        concurrently: bool,
+        finalize: bool,
+    },
+    /// `ALTER TABLE ... SPLIT PARTITION name INTO (...)`
+    SplitPartition {
+        partition_name: ObjectName,
+        into: Vec<SplitPartitionTarget>,
+    },
+    /// `ALTER TABLE ... MERGE PARTITIONS (p1, p2, ...) INTO name`
+    MergePartitions {
+        partitions: Vec<ObjectName>,
+        into: ObjectName,
+    },
 }
 
 /// An `ALTER Policy` (`Statement::AlterPolicy`) operation
@@ -650,6 +671,43 @@ impl fmt::Display for AlterTableOperation {
             }
             AlterTableOperation::SetOptionsParens { options } => {
                 write!(f, "SET ({})", display_comma_separated(options))
+            }
+            AlterTableOperation::AttachPartition {
+                partition_name,
+                bound,
+            } => {
+                write!(f, "ATTACH PARTITION {partition_name} {bound}")
+            }
+            AlterTableOperation::DetachPartition {
+                partition_name,
+                concurrently,
+                finalize,
+            } => {
+                write!(f, "DETACH PARTITION {partition_name}")?;
+                if *concurrently {
+                    write!(f, " CONCURRENTLY")?;
+                }
+                if *finalize {
+                    write!(f, " FINALIZE")?;
+                }
+                Ok(())
+            }
+            AlterTableOperation::SplitPartition {
+                partition_name,
+                into,
+            } => {
+                write!(
+                    f,
+                    "SPLIT PARTITION {partition_name} INTO ({})",
+                    display_comma_separated(into)
+                )
+            }
+            AlterTableOperation::MergePartitions { partitions, into } => {
+                write!(
+                    f,
+                    "MERGE PARTITIONS ({}) INTO {into}",
+                    display_comma_separated(partitions)
+                )
             }
         }
     }
@@ -2158,6 +2216,99 @@ impl fmt::Display for CreateTableSystemVersioning {
     }
 }
 
+/// `PARTITION BY { RANGE | LIST | HASH } ( key_def, ... )`
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct PartitionByClause {
+    pub strategy: PartitionStrategy,
+    pub columns: Vec<PartitionKeyDef>,
+}
+
+impl fmt::Display for PartitionByClause {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "PARTITION BY {} ({})",
+            self.strategy,
+            display_comma_separated(&self.columns)
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum PartitionStrategy {
+    Range,
+    List,
+    Hash,
+}
+
+impl fmt::Display for PartitionStrategy {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            PartitionStrategy::Range => write!(f, "RANGE"),
+            PartitionStrategy::List => write!(f, "LIST"),
+            PartitionStrategy::Hash => write!(f, "HASH"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct PartitionKeyDef {
+    pub column_or_expr: PartitionKeyExpr,
+    pub collation: Option<ObjectName>,
+    pub opclass: Option<ObjectName>,
+}
+
+impl fmt::Display for PartitionKeyDef {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.column_or_expr)?;
+        if let Some(collation) = &self.collation {
+            write!(f, " COLLATE {collation}")?;
+        }
+        if let Some(opclass) = &self.opclass {
+            write!(f, " {opclass}")?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum PartitionKeyExpr {
+    Column(Ident),
+    Expr(Expr),
+}
+
+impl fmt::Display for PartitionKeyExpr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            PartitionKeyExpr::Column(ident) => write!(f, "{ident}"),
+            PartitionKeyExpr::Expr(expr) => write!(f, "({expr})"),
+        }
+    }
+}
+
+/// Target partition in a `SPLIT PARTITION ... INTO (...)` statement.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct SplitPartitionTarget {
+    pub name: ObjectName,
+    pub bound: PartitionBoundSpec,
+}
+
+impl fmt::Display for SplitPartitionTarget {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "PARTITION {} {}", self.name, self.bound)
+    }
+}
+
 /// CREATE TABLE statement.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -2195,6 +2346,12 @@ pub struct CreateTable {
     /// SQL:2016 temporal table system versioning
     /// `WITH SYSTEM VERSIONING [WITH HISTORY TABLE history_table_name]`
     pub system_versioning: Option<CreateTableSystemVersioning>,
+    /// PostgreSQL `PARTITION BY { RANGE | LIST | HASH } ( ... )`
+    pub partition_by: Option<PartitionByClause>,
+    /// PostgreSQL `PARTITION OF parent_table`
+    pub partition_of: Option<ObjectName>,
+    /// PostgreSQL partition bound spec (`FOR VALUES ...` or `DEFAULT`)
+    pub partition_bound: Option<PartitionBoundSpec>,
 }
 
 impl fmt::Display for CreateTable {
@@ -2226,6 +2383,10 @@ impl fmt::Display for CreateTable {
             dynamic = if self.dynamic { "DYNAMIC " } else { "" },
             name = self.name,
         )?;
+        // PARTITION OF parent FOR VALUES ...
+        if let Some(parent) = &self.partition_of {
+            write!(f, " PARTITION OF {parent}")?;
+        }
         if !self.columns.is_empty() || !self.constraints.is_empty() {
             f.write_str(" (")?;
             NewLine.fmt(f)?;
@@ -2264,6 +2425,16 @@ impl fmt::Display for CreateTable {
 
         if let Some(version) = &self.version {
             write!(f, " {version}")?;
+        }
+
+        // Partition bound spec (FOR VALUES ... or DEFAULT) for PARTITION OF
+        if let Some(bound) = &self.partition_bound {
+            write!(f, " {bound}")?;
+        }
+
+        // PARTITION BY clause
+        if let Some(partition_by) = &self.partition_by {
+            write!(f, " {partition_by}")?;
         }
 
         if self.external {

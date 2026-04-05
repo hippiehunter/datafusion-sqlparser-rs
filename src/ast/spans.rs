@@ -406,6 +406,12 @@ impl Spanned for Statement {
                 .span
                 .union_opt(&savepoint.as_ref().map(|i| i.span)),
             Statement::Checkpoint { checkpoint_token } => checkpoint_token.0.span,
+            Statement::Backup { .. }
+            | Statement::Restore { .. }
+            | Statement::RecoverPage { .. }
+            | Statement::ValidateBackup { .. }
+            | Statement::ShowBackups { .. }
+            | Statement::CancelBackup { .. } => Span::empty(),
             Statement::CreateSchema {
                 create_token,
                 schema_name,
@@ -599,6 +605,9 @@ impl Spanned for CreateTable {
             table_options,
             version: _,
             system_versioning: _,
+            partition_by: _,
+            partition_of: _,
+            partition_bound: _,
         } = self;
 
         union_spans(
@@ -1254,6 +1263,21 @@ impl Spanned for AlterTableOperation {
             AlterTableOperation::ValidateConstraint { name } => name.span,
             AlterTableOperation::SetOptionsParens { options } => {
                 union_spans(options.iter().map(|i| i.span()))
+            }
+            AlterTableOperation::AttachPartition { partition_name, .. } => {
+                partition_name.span()
+            }
+            AlterTableOperation::DetachPartition { partition_name, .. } => {
+                partition_name.span()
+            }
+            AlterTableOperation::SplitPartition { partition_name, .. } => {
+                partition_name.span()
+            }
+            AlterTableOperation::MergePartitions { partitions, into } => {
+                union_spans(
+                    partitions.iter().map(|p| p.span())
+                        .chain(core::iter::once(into.span()))
+                )
             }
         }
     }

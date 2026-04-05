@@ -26,9 +26,10 @@ use sqlparser_derive::{Visit, VisitMut};
 
 use crate::ast::{
     ColumnDef, CommentDef, CreateTable, CreateTableLikeKind, CreateTableOptions,
-    CreateTableSystemVersioning, ObjectName, OnCommit, Query, Statement, TableConstraint,
-    TableVersion,
+    CreateTableSystemVersioning, ObjectName, OnCommit, PartitionBoundSpec, Query, Statement,
+    TableConstraint, TableVersion,
 };
+use crate::ast::ddl::PartitionByClause;
 
 use crate::parser::ParserError;
 
@@ -84,6 +85,9 @@ pub struct CreateTableBuilder {
     pub inherits: Option<Vec<ObjectName>>,
     pub table_options: CreateTableOptions,
     pub system_versioning: Option<CreateTableSystemVersioning>,
+    pub partition_by: Option<PartitionByClause>,
+    pub partition_of: Option<ObjectName>,
+    pub partition_bound: Option<PartitionBoundSpec>,
 }
 
 impl CreateTableBuilder {
@@ -110,6 +114,9 @@ impl CreateTableBuilder {
             inherits: None,
             table_options: CreateTableOptions::None,
             system_versioning: None,
+            partition_by: None,
+            partition_of: None,
+            partition_bound: None,
         }
     }
     pub fn or_replace(mut self, or_replace: bool) -> Self {
@@ -215,6 +222,21 @@ impl CreateTableBuilder {
         self
     }
 
+    pub fn partition_by(mut self, partition_by: Option<PartitionByClause>) -> Self {
+        self.partition_by = partition_by;
+        self
+    }
+
+    pub fn partition_of(mut self, partition_of: Option<ObjectName>) -> Self {
+        self.partition_of = partition_of;
+        self
+    }
+
+    pub fn partition_bound(mut self, partition_bound: Option<PartitionBoundSpec>) -> Self {
+        self.partition_bound = partition_bound;
+        self
+    }
+
     pub fn build(self) -> Statement {
         CreateTable {
             or_replace: self.or_replace,
@@ -238,6 +260,9 @@ impl CreateTableBuilder {
             inherits: self.inherits,
             table_options: self.table_options,
             system_versioning: self.system_versioning,
+            partition_by: self.partition_by,
+            partition_of: self.partition_of,
+            partition_bound: self.partition_bound,
         }
         .into()
     }
@@ -272,6 +297,9 @@ impl TryFrom<Statement> for CreateTableBuilder {
                 inherits,
                 table_options,
                 system_versioning,
+                partition_by,
+                partition_of,
+                partition_bound,
             }) => Ok(Self {
                 or_replace,
                 temporary,
@@ -294,6 +322,9 @@ impl TryFrom<Statement> for CreateTableBuilder {
                 volatile,
                 table_options,
                 system_versioning,
+                partition_by,
+                partition_of,
+                partition_bound,
             }),
             _ => Err(ParserError::ParserError(format!(
                 "Expected create table statement, but received: {stmt}"

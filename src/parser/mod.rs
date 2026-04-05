@@ -1012,6 +1012,10 @@ impl<'a> Parser<'a> {
                 Keyword::RELEASE => self.parse_release(),
                 Keyword::COMMIT => self.parse_commit(),
                 Keyword::CHECKPOINT => self.parse_checkpoint(),
+                Keyword::BACKUP => self.parse_backup(),
+                Keyword::RESTORE => self.parse_restore(),
+                Keyword::RECOVER => self.parse_recover(),
+                Keyword::VALIDATE => self.parse_validate(),
                 Keyword::RAISERROR => Ok(self.parse_raiserror()?),
                 Keyword::ROLLBACK => self.parse_rollback(),
                 Keyword::ASSERT => self.parse_assert(),
@@ -10143,17 +10147,47 @@ impl<'a> Parser<'a> {
         let if_not_exists = self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
         let table_name = self.parse_object_name(allow_unquoted_hyphen)?;
 
-        let like = self.maybe_parse_create_table_like(allow_unquoted_hyphen)?;
+        // Check for PARTITION OF parent_table (must come before column list)
+        let (partition_of, partition_bound) =
+            if self.parse_keywords(&[Keyword::PARTITION, Keyword::OF]) {
+                let parent = self.parse_object_name(allow_unquoted_hyphen)?;
+                // Parse the bound spec (FOR VALUES ... or DEFAULT)
+                let bound = self.parse_partition_bound_spec()?;
+                (Some(parent), Some(bound))
+            } else {
+                (None, None)
+            };
 
-        let clone = if self.parse_keyword(Keyword::CLONE) {
+        let like = if partition_of.is_none() {
+            self.maybe_parse_create_table_like(allow_unquoted_hyphen)?
+        } else {
+            None
+        };
+
+        let clone = if partition_of.is_none() && self.parse_keyword(Keyword::CLONE) {
             self.parse_object_name(allow_unquoted_hyphen).ok()
         } else {
             None
         };
 
         // parse optional column list (schema)
-        let (columns, constraints) = self.parse_columns()?;
+        // For PARTITION OF, this parses constraint overrides if present
+        let (columns, constraints) = if partition_of.is_some()
+            && self.peek_token().token != Token::LParen
+        {
+            (vec![], vec![])
+        } else {
+            self.parse_columns()?
+        };
         let comment_after_column_def = None;
+
+        // Parse PARTITION BY { RANGE | LIST | HASH } ( ... )
+        // This can appear on both regular tables and PARTITION OF (sub-partitioning)
+        let partition_by = if self.parse_keywords(&[Keyword::PARTITION, Keyword::BY]) {
+            Some(self.parse_partition_by_clause()?)
+        } else {
+            None
+        };
 
         // Parse optional `WITHOUT ROWID` at the end of `CREATE TABLE`
         let without_rowid = self.parse_keywords(&[Keyword::WITHOUT, Keyword::ROWID]);
@@ -10209,6 +10243,9 @@ impl<'a> Parser<'a> {
             .inherits(create_table_config.inherits)
             .table_options(create_table_config.table_options)
             .system_versioning(system_versioning)
+            .partition_by(partition_by)
+            .partition_of(partition_of)
+            .partition_bound(partition_bound)
             .build())
     }
 
@@ -11918,6 +11955,48 @@ impl<'a> Parser<'a> {
             };
 
             AlterTableOperation::ReplicaIdentity { identity }
+        } else if self.parse_keywords(&[Keyword::ATTACH, Keyword::PARTITION]) {
+            let partition_name = self.parse_object_name(false)?;
+            let bound = self.parse_partition_bound_spec()?;
+            AlterTableOperation::AttachPartition {
+                partition_name,
+                bound,
+            }
+        } else if self.parse_keywords(&[Keyword::DETACH, Keyword::PARTITION]) {
+            let partition_name = self.parse_object_name(false)?;
+            let concurrently = self.parse_keyword(Keyword::CONCURRENTLY);
+            let finalize = if !concurrently {
+                self.parse_keyword(Keyword::FINALIZE)
+            } else {
+                false
+            };
+            AlterTableOperation::DetachPartition {
+                partition_name,
+                concurrently,
+                finalize,
+            }
+        } else if self.parse_keywords(&[Keyword::SPLIT, Keyword::PARTITION]) {
+            let partition_name = self.parse_object_name(false)?;
+            self.expect_keyword(Keyword::INTO)?;
+            self.expect_token(&BorrowedToken::LParen)?;
+            let into = self.parse_comma_separated(|p| {
+                p.expect_keyword(Keyword::PARTITION)?;
+                let name = p.parse_object_name(false)?;
+                let bound = p.parse_partition_bound_spec()?;
+                Ok(SplitPartitionTarget { name, bound })
+            })?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            AlterTableOperation::SplitPartition {
+                partition_name,
+                into,
+            }
+        } else if self.parse_keywords(&[Keyword::MERGE, Keyword::PARTITIONS]) {
+            self.expect_token(&BorrowedToken::LParen)?;
+            let partitions = self.parse_comma_separated(|p| p.parse_object_name(false))?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            self.expect_keyword(Keyword::INTO)?;
+            let into = self.parse_object_name(false)?;
+            AlterTableOperation::MergePartitions { partitions, into }
         } else if self.parse_keywords(&[Keyword::VALIDATE, Keyword::CONSTRAINT]) {
             let name = self.parse_identifier()?;
             AlterTableOperation::ValidateConstraint { name }
@@ -20007,6 +20086,105 @@ impl<'a> Parser<'a> {
         Ok(Statement::Checkpoint { checkpoint_token })
     }
 
+    /// Parse BACKUP DATABASE [TO '<uri>'] [ESTIMATE] [INCREMENTAL]
+    pub fn parse_backup(&self) -> Result<Statement, ParserError> {
+        let object_type = if self.parse_keyword(Keyword::DATABASE) {
+            None
+        } else {
+            Some(self.parse_object_name(false)?)
+        };
+
+        let location = if self.parse_keyword(Keyword::TO) {
+            Some(self.parse_literal_string()?)
+        } else {
+            None
+        };
+
+        let estimate = self.parse_keyword(Keyword::ESTIMATE);
+        let incremental = self.parse_keyword(Keyword::INCREMENTAL);
+
+        Ok(Statement::Backup {
+            object_type,
+            location,
+            estimate,
+            incremental,
+        })
+    }
+
+    /// Parse RESTORE {DATABASE | TABLE <name>} [FROM '<uri>'] TO {TIMESTAMP '<ts>' | LSN <n>} [DRY RUN]
+    pub fn parse_restore(&self) -> Result<Statement, ParserError> {
+        let object_type = if self.parse_keyword(Keyword::DATABASE) {
+            None
+        } else if self.parse_keyword(Keyword::TABLE) {
+            Some(self.parse_object_name(false)?)
+        } else {
+            None
+        };
+
+        let location = if self.parse_keyword(Keyword::FROM) {
+            Some(self.parse_literal_string()?)
+        } else {
+            None
+        };
+
+        let mut target_timestamp = None;
+        let mut target_lsn = None;
+
+        if self.parse_keyword(Keyword::TO) {
+            if self.parse_keyword(Keyword::TIMESTAMP) {
+                target_timestamp = Some(self.parse_literal_string()?);
+            } else if self.parse_keyword(Keyword::LSN) {
+                let lsn_str = self.parse_literal_string()?;
+                target_lsn = Some(lsn_str.parse::<u64>().map_err(|e| {
+                    ParserError::ParserError(format!("invalid LSN value: {e}"))
+                })?);
+            } else {
+                return Err(ParserError::ParserError(
+                    "expected TIMESTAMP or LSN after TO".to_string(),
+                ));
+            }
+        }
+
+        let dry_run = self.parse_keywords(&[Keyword::DRY, Keyword::RUN]);
+
+        Ok(Statement::Restore {
+            object_type,
+            location,
+            target_timestamp,
+            target_lsn,
+            dry_run,
+        })
+    }
+
+    /// Parse RECOVER PAGE <page_id> FROM TABLE <table_name>
+    pub fn parse_recover(&self) -> Result<Statement, ParserError> {
+        self.expect_keyword(Keyword::PAGE)?;
+        let page_id = self.next_token().token.to_string();
+        self.expect_keyword(Keyword::FROM)?;
+        self.expect_keyword(Keyword::TABLE)?;
+        let table_name = self.parse_object_name(false)?;
+
+        Ok(Statement::RecoverPage {
+            page_id,
+            table_name,
+        })
+    }
+
+    /// Parse VALIDATE BACKUP [FROM '<uri>'] [FULL]
+    pub fn parse_validate(&self) -> Result<Statement, ParserError> {
+        self.expect_keyword(Keyword::BACKUP)?;
+
+        let location = if self.parse_keyword(Keyword::FROM) {
+            Some(self.parse_literal_string()?)
+        } else {
+            None
+        };
+
+        let full = self.parse_keyword(Keyword::FULL);
+
+        Ok(Statement::ValidateBackup { location, full })
+    }
+
     pub fn parse_rollback(&self) -> Result<Statement, ParserError> {
         let rollback_token = self.attached_token_from_current();
         let chain = self.parse_commit_rollback_chain()?;
@@ -20918,6 +21096,70 @@ impl<'a> Parser<'a> {
         } else {
             self.expected("FROM, IN, or WITH after FOR VALUES", self.peek_token())
         }
+    }
+
+    /// Parse `PARTITION BY { RANGE | LIST | HASH } ( key_def, ... )`
+    fn parse_partition_by_clause(
+        &self,
+    ) -> Result<PartitionByClause, ParserError> {
+        let strategy = if self.parse_keyword(Keyword::RANGE) {
+            PartitionStrategy::Range
+        } else if self.parse_keyword(Keyword::LIST) {
+            PartitionStrategy::List
+        } else if self.parse_keyword(Keyword::HASH) {
+            PartitionStrategy::Hash
+        } else {
+            return self.expected("RANGE, LIST, or HASH after PARTITION BY", self.peek_token());
+        };
+
+        self.expect_token(&BorrowedToken::LParen)?;
+        let columns = self.parse_comma_separated(|p| {
+            // Each element is either (expr) or column_name [COLLATE collation] [opclass]
+            let column_or_expr = if p.peek_token().token == Token::LParen {
+                // Parenthesized expression
+                p.expect_token(&BorrowedToken::LParen)?;
+                let expr = p.parse_expr()?;
+                p.expect_token(&BorrowedToken::RParen)?;
+                PartitionKeyExpr::Expr(expr)
+            } else {
+                // Check if this is a function call (word followed by '(')
+                let is_func = matches!(p.peek_token().token, BorrowedToken::Word(_))
+                    && p.peek_nth_token(1).token == Token::LParen;
+                if is_func {
+                    let expr = p.parse_expr()?;
+                    PartitionKeyExpr::Expr(expr)
+                } else {
+                    let ident = p.parse_identifier()?;
+                    PartitionKeyExpr::Column(ident)
+                }
+            };
+
+            let collation = if p.parse_keyword(Keyword::COLLATE) {
+                Some(p.parse_object_name(false)?)
+            } else {
+                None
+            };
+
+            // opclass is a plain unquoted identifier (not a keyword)
+            let opclass = if let BorrowedToken::Word(w) = &p.peek_token().token {
+                if w.keyword == Keyword::NoKeyword || w.quote_style.is_some() {
+                    Some(p.parse_object_name(false)?)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            Ok(PartitionKeyDef {
+                column_or_expr,
+                collation,
+                opclass,
+            })
+        })?;
+        self.expect_token(&BorrowedToken::RParen)?;
+
+        Ok(PartitionByClause { strategy, columns })
     }
 
     /// Parse a `ALTER FOREIGN TABLE` statement.
