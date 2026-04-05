@@ -2712,6 +2712,7 @@ impl<'a> Parser<'a> {
             }
             Keyword::CURRENT_CATALOG
             | Keyword::CURRENT_USER
+            | Keyword::CURRENT_SCHEMA
             | Keyword::SESSION_USER
             | Keyword::USER
                 if dialect_of!(self is PostgreSqlDialect) =>
