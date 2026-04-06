@@ -1016,6 +1016,7 @@ impl<'a> Parser<'a> {
                 Keyword::RESTORE => self.parse_restore(),
                 Keyword::RECOVER => self.parse_recover(),
                 Keyword::VALIDATE => self.parse_validate(),
+                Keyword::CANCEL => self.parse_cancel(),
                 Keyword::RAISERROR => Ok(self.parse_raiserror()?),
                 Keyword::ROLLBACK => self.parse_rollback(),
                 Keyword::ASSERT => self.parse_assert(),
@@ -1444,8 +1445,7 @@ impl<'a> Parser<'a> {
                             .map(|t| t.to_string())
                             .collect::<Vec<_>>()
                             .join(" ");
-                        let mut inner_parser =
-                            Parser::new(self.dialect).try_with_sql(&sql)?;
+                        let inner_parser = Parser::new(self.dialect).try_with_sql(&sql)?;
                         inner_parser.parse_query()?
                     }
                 };
@@ -2066,7 +2066,7 @@ impl<'a> Parser<'a> {
                 .collect::<Vec<_>>()
                 .join(" ");
             let sql = format!("SELECT {body}");
-            let mut inner_parser = Parser::new(self.dialect).try_with_sql(&sql)?;
+            let inner_parser = Parser::new(self.dialect).try_with_sql(&sql)?;
             inner_parser.parse_query()?
         };
 
@@ -13866,6 +13866,15 @@ impl<'a> Parser<'a> {
                 parts.push(part);
             }
 
+            if self.features.supports_object_name_double_dot_notation
+                && parts.len() == 1
+                && self.consume_token(&BorrowedToken::DoubleDot)
+            {
+                // Empty string here means default schema in object names like db..table.
+                parts.push(ObjectNamePart::Identifier(Ident::new("")));
+                continue;
+            }
+
             if !self.consume_token(&BorrowedToken::Period) {
                 break;
             }
@@ -15680,6 +15689,14 @@ impl<'a> Parser<'a> {
             self.parse_show_charset(show_token, false)
         } else if self.parse_keyword(Keyword::CHARSET) {
             self.parse_show_charset(show_token, true)
+        } else if self.parse_keyword(Keyword::BACKUPS) {
+            let location = if self.parse_keyword(Keyword::FROM) {
+                Some(self.parse_literal_string()?)
+            } else {
+                None
+            };
+            let all = self.parse_keyword(Keyword::ALL);
+            Ok(Statement::ShowBackups { location, all })
         } else {
             Ok(Statement::ShowVariable {
                 show_token,
@@ -20183,6 +20200,13 @@ impl<'a> Parser<'a> {
         let full = self.parse_keyword(Keyword::FULL);
 
         Ok(Statement::ValidateBackup { location, full })
+    }
+
+    /// Parse CANCEL BACKUP <operation_id>
+    pub fn parse_cancel(&self) -> Result<Statement, ParserError> {
+        self.expect_keyword(Keyword::BACKUP)?;
+        let operation_id = self.next_token().token.to_string();
+        Ok(Statement::CancelBackup { operation_id })
     }
 
     pub fn parse_rollback(&self) -> Result<Statement, ParserError> {

@@ -19,8 +19,6 @@
 //!
 //! Reference: <https://www.postgresql.org/docs/current/arrays.html>
 
-use crate::postgres_compat::common::*;
-
 #[test]
 fn test_array_constructor() {
     // https://www.postgresql.org/docs/current/arrays.html#ARRAYS-INPUT

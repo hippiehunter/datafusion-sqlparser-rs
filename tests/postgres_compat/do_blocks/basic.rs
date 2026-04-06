@@ -19,8 +19,6 @@
 //!
 //! Reference: <https://www.postgresql.org/docs/current/sql-do.html>
 
-use crate::postgres_compat::common::*;
-
 // =============================================================================
 // Basic DO Block Syntax
 // =============================================================================

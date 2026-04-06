@@ -48,11 +48,9 @@
 //!   - UNIQUE NULLS NOT DISTINCT
 
 use crate::standards::common::{one_statement_parses_to_std, verified_standard_stmt};
-use crate::verified_with_ast;
 use sqlparser::ast::{
-    ColumnDef, CreateTable, DataType, Expr, Function, FunctionArg, FunctionArgExpr,
-    FunctionArgumentList, FunctionArguments, NullsDistinctOption, ObjectName, Query, Select,
-    SelectItem, SetExpr, Statement, TableConstraint, UniqueConstraint,
+    CreateTable, DataType, Expr, Function, FunctionArg, FunctionArgExpr, FunctionArgumentList,
+    FunctionArguments, SelectItem, SetExpr, Statement,
 };
 
 /// Helper function to extract a function call from a SELECT statement

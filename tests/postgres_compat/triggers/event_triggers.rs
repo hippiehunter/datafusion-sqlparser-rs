@@ -21,8 +21,6 @@
 //!
 //! Reference: <https://www.postgresql.org/docs/current/sql-createeventtrigger.html>
 
-use crate::postgres_compat::common::*;
-
 // =============================================================================
 // Basic Event Trigger Syntax Tests
 // =============================================================================

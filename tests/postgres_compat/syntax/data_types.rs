@@ -19,9 +19,6 @@
 //!
 //! Reference: <https://www.postgresql.org/docs/current/datatype.html>
 
-use crate::postgres_compat::common::*;
-use sqlparser::ast::{DataType, Statement};
-
 #[test]
 fn test_serial_type() {
     // https://www.postgresql.org/docs/current/datatype-numeric.html#DATATYPE-SERIAL

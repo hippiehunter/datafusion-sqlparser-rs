@@ -19,8 +19,6 @@
 //!
 //! Reference: <https://www.postgresql.org/docs/current/functions-json.html>
 
-use crate::postgres_compat::common::*;
-
 #[test]
 fn test_json_arrow_operator() {
     // https://www.postgresql.org/docs/current/functions-json.html#FUNCTIONS-JSON-OP-TABLE

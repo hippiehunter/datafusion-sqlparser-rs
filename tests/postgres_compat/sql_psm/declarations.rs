@@ -19,8 +19,6 @@
 //!
 //! Reference: <https://www.postgresql.org/docs/current/plpgsql-declarations.html>
 
-use crate::postgres_compat::common::*;
-
 // =============================================================================
 // Basic Variable Declarations
 // =============================================================================

@@ -7352,11 +7352,11 @@ impl fmt::Display for Statement {
             }
             Statement::ShowBackups { location, all } => {
                 write!(f, "SHOW BACKUPS")?;
-                if *all {
-                    write!(f, " ALL")?;
-                }
                 if let Some(loc) = location {
                     write!(f, " FROM '{loc}'")?;
+                }
+                if *all {
+                    write!(f, " ALL")?;
                 }
                 Ok(())
             }

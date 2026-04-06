@@ -19,8 +19,6 @@
 //!
 //! Reference: <https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-ERROR-TRAPPING>
 
-use crate::postgres_compat::common::*;
-
 // =============================================================================
 // Basic Exception Handling
 // =============================================================================

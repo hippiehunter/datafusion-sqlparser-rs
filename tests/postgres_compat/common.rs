@@ -33,24 +33,15 @@
 //! - Operators: <https://www.postgresql.org/docs/current/sql-createoperator.html>
 
 use sqlparser::ast::{
-    ConditionalStatements, CreateFunction, CreateTrigger, Ident, ObjectName, ProcedureParam,
-    ProcedureSecurity, ProcedureSetConfig, Statement,
+    CreateFunction, CreateTrigger, Ident, ObjectName, ProcedureParam, ProcedureSecurity,
+    ProcedureSetConfig, Statement,
 };
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::{Parser, ParserError};
-use sqlparser::test_utils::TestedDialects;
 
 // =============================================================================
 // Dialect and Parsing Functions
 // =============================================================================
-
-/// Returns a TestedDialects configured for PostgreSQL compatibility testing.
-///
-/// Uses PostgreSqlDialect as the target since we're testing PostgreSQL-specific
-/// features and syntax extensions.
-pub fn pg_dialect() -> TestedDialects {
-    TestedDialects::new(vec![Box::new(PostgreSqlDialect {})])
-}
 
 /// Verifies that SQL parses and round-trips correctly using PostgreSqlDialect.
 ///
@@ -157,7 +148,6 @@ pub struct CreateProcedureExtract<'a> {
     pub security: &'a Option<ProcedureSecurity>,
     pub set_options: &'a Vec<ProcedureSetConfig>,
     pub has_as: bool,
-    pub body: &'a ConditionalStatements,
 }
 
 /// Extracts CreateProcedure fields from a Statement, panicking with a clear message if not found.
@@ -175,7 +165,6 @@ pub fn extract_create_procedure(stmt: &Statement) -> CreateProcedureExtract<'_> 
             security,
             set_options,
             has_as,
-            body,
             ..
         } => CreateProcedureExtract {
             or_alter: *or_alter,
@@ -185,7 +174,6 @@ pub fn extract_create_procedure(stmt: &Statement) -> CreateProcedureExtract<'_> 
             security,
             set_options,
             has_as: *has_as,
-            body,
         },
         other => panic!(
             "Expected Statement::CreateProcedure, got: {:?}",

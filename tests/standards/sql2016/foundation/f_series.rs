@@ -101,7 +101,6 @@ mod f021_basic_information_schema {
 
 #[cfg(test)]
 mod f031_basic_schema_manipulation {
-    use crate::verified_with_ast;
     use sqlparser::ast::{
         AlterTable, AlterTableOperation, CreateView, DataType, GrantObjects, ObjectType,
         Privileges, Statement,
@@ -504,7 +503,6 @@ mod f031_basic_schema_manipulation {
 #[cfg(test)]
 mod f041_basic_joined_table {
     use crate::standards::common::verified_standard_stmt;
-    use crate::verified_with_ast;
     use sqlparser::ast::{JoinConstraint, JoinOperator, Statement, TableFactor};
 
     #[test]
@@ -724,7 +722,6 @@ mod f041_basic_joined_table {
 #[cfg(test)]
 mod f051_basic_date_and_time {
     use crate::standards::common::verified_standard_stmt;
-    use crate::verified_with_ast;
     use sqlparser::ast::{DataType, Expr, Statement};
 
     #[test]
@@ -1280,7 +1277,6 @@ mod f081_union_except_in_views {
 
 #[cfg(test)]
 mod f131_grouped_operations {
-    use crate::verified_with_ast;
     use sqlparser::ast::{CreateView, Expr, GroupByExpr, JoinOperator, SelectItem, Statement};
 
     #[test]
@@ -1543,7 +1539,6 @@ mod f131_grouped_operations {
 #[cfg(test)]
 mod f201_cast_function {
     use crate::standards::common::verified_standard_stmt;
-    use crate::verified_with_ast;
     use sqlparser::ast::{DataType, Expr, Statement};
 
     #[test]
@@ -1712,7 +1707,6 @@ mod f221_explicit_defaults {
 #[cfg(test)]
 mod f261_case_expression {
     use crate::standards::common::verified_standard_stmt;
-    use crate::verified_with_ast;
     use sqlparser::ast::{Expr, Statement};
 
     #[test]
@@ -1910,7 +1904,6 @@ mod f261_case_expression {
 #[cfg(test)]
 mod f302_f305_intersect_except {
     use crate::standards::common::verified_standard_stmt;
-    use crate::verified_with_ast;
     use sqlparser::ast::{SetExpr, SetOperator, SetQuantifier, Statement};
 
     #[test]
@@ -2055,7 +2048,6 @@ mod f311_schema_definition {
 #[cfg(test)]
 mod f401_extended_joined_table {
     use crate::standards::common::verified_standard_stmt;
-    use crate::verified_with_ast;
     use sqlparser::ast::{
         BinaryOperator, Expr, JoinConstraint, JoinOperator, Statement, TableFactor,
     };
@@ -2294,7 +2286,6 @@ mod f401_extended_joined_table {
 
 #[cfg(test)]
 mod f471_scalar_subquery_values {
-    use crate::verified_with_ast;
     use sqlparser::ast::{Expr, Statement};
 
     #[test]
@@ -2583,7 +2574,6 @@ mod f501_features_views {
 #[cfg(test)]
 mod f591_derived_tables {
     use crate::standards::common::verified_standard_stmt;
-    use crate::verified_with_ast;
     use sqlparser::ast::{Statement, TableFactor};
 
     #[test]
@@ -2716,7 +2706,6 @@ mod f591_derived_tables {
 #[cfg(test)]
 mod f850_f869_order_fetch_offset {
     use crate::standards::common::verified_standard_stmt;
-    use crate::verified_with_ast;
     use sqlparser::ast::{OrderByKind, Statement};
 
     #[test]
@@ -2915,7 +2904,6 @@ mod f850_f869_order_fetch_offset {
 
 #[cfg(test)]
 mod f_series_integration_tests {
-    use crate::verified_with_ast;
     use sqlparser::ast::{
         BinaryOperator, CaseWhen, CreateTable, Expr, Fetch, GrantObjects, GroupByExpr,
         JoinConstraint, JoinOperator, Offset, OffsetRows, Privileges, SelectItem, SetExpr,

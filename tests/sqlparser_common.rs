@@ -36,7 +36,7 @@ use sqlparser::dialect::{Dialect, MsSqlDialect, MySqlDialect, PostgreSqlDialect}
 use sqlparser::keywords::{Keyword, ALL_KEYWORDS};
 use sqlparser::parser::{Parser, ParserError, ParserOptions};
 use sqlparser::tokenizer::Tokenizer;
-use sqlparser::tokenizer::{Location, Span};
+use sqlparser::tokenizer::{BorrowedToken, Location, Span};
 use test_utils::{
     all_dialects, all_dialects_where, all_dialects_with_options, alter_table_op, assert_eq_vec,
     call, expr_from_projection, join, number, only, table, table_alias, table_from_name,
@@ -51,7 +51,6 @@ use pretty_assertions::assert_eq;
 use sqlparser::ast::ColumnOption::Comment;
 use sqlparser::ast::DateTimeField::Seconds;
 use sqlparser::ast::Expr::{Identifier, UnaryOp};
-use sqlparser::ast::Value::Number;
 use sqlparser::test_utils::all_dialects_except;
 
 #[test]
@@ -607,8 +606,11 @@ fn parse_analyze() {
 
 #[test]
 fn parse_invalid_table_name() {
-    let ast = all_dialects().run_parser_method("db.public..customer", |parser| {
-        parser.parse_object_name(false)
+    let ast: Result<ObjectName, ParserError> =
+        all_dialects().run_parser_method("db.public..customer", |parser| {
+        let object_name = parser.parse_object_name(false)?;
+        parser.expect_token(&BorrowedToken::EOF)?;
+        Ok(object_name)
     });
     assert!(ast.is_err());
 }
@@ -1026,6 +1028,7 @@ fn parse_select_into() {
             temporary: false,
             unlogged: false,
             table: false,
+            strict: false,
             name: ObjectName::from(vec![Ident::new("table0")]),
             additional_targets: vec![],
         },
@@ -1053,6 +1056,7 @@ fn parse_select_into() {
             temporary: false,
             unlogged: false,
             table: false,
+            strict: false,
             name: ObjectName::from(vec![Ident::new("out_a")]),
             additional_targets: vec![ObjectName::from(vec![Ident::new("out_b")])],
         },
@@ -1069,6 +1073,7 @@ fn parse_select_into() {
             temporary: false,
             unlogged: false,
             table: false,
+            strict: false,
             name: ObjectName::from(vec![Ident::new("out_a")]),
             additional_targets: vec![ObjectName::from(vec![Ident::new("out_b")])],
         },
@@ -2371,7 +2376,6 @@ fn parse_between() {
 
 #[test]
 fn parse_between_with_expr() {
-    use self::BinaryOperator::*;
     let sql = "SELECT * FROM t WHERE 1 BETWEEN 1 + 2 AND 3 + 4 IS NULL";
     let select = verified_only_select(sql);
     assert!(matches!(
@@ -6547,7 +6551,7 @@ fn parse_parens() {
 fn parse_searched_case_expr() {
     let sql = "SELECT CASE WHEN bar IS NULL THEN 'null' WHEN bar = 0 THEN '=0' WHEN bar >= 0 THEN '>=0' ELSE '<0' END FROM foo";
     use self::BinaryOperator::*;
-    use self::Expr::{BinaryOp, Case, Identifier, IsNull};
+    use self::Expr::{BinaryOp, Case, Identifier};
     let select = verified_only_select(sql);
     assert_eq!(
         &Case {
@@ -7844,6 +7848,7 @@ fn parse_drop_table() {
         } => {
             assert!(!if_exists);
             assert_eq!(ObjectType::Table, object_type);
+            assert!(!temporary);
             assert_eq!(
                 vec!["foo"],
                 names.iter().map(ToString::to_string).collect::<Vec<_>>()
@@ -7866,6 +7871,7 @@ fn parse_drop_table() {
         } => {
             assert!(if_exists);
             assert_eq!(ObjectType::Table, object_type);
+            assert!(!temporary);
             assert_eq!(
                 vec!["foo", "bar"],
                 names.iter().map(ToString::to_string).collect::<Vec<_>>()
@@ -9924,6 +9930,35 @@ fn parse_show_functions() {
         Statement::ShowFunctions {
             show_token: AttachedToken::empty(),
             filter: Some(ShowStatementFilter::Like("pattern".into())),
+        }
+    );
+}
+
+#[test]
+fn parse_show_backups() {
+    assert_eq!(
+        verified_stmt("SHOW BACKUPS"),
+        Statement::ShowBackups {
+            location: None,
+            all: false,
+        }
+    );
+
+    assert_eq!(
+        verified_stmt("SHOW BACKUPS FROM 's3://bucket/base' ALL"),
+        Statement::ShowBackups {
+            location: Some("s3://bucket/base".into()),
+            all: true,
+        }
+    );
+}
+
+#[test]
+fn parse_cancel_backup() {
+    assert_eq!(
+        verified_stmt("CANCEL BACKUP op123"),
+        Statement::CancelBackup {
+            operation_id: "op123".into(),
         }
     );
 }

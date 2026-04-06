@@ -709,7 +709,6 @@ mod cursor_operations {
 
 mod for_statements {
     use super::*;
-    use sqlparser::ast::ForStatement;
 
     #[test]
     fn for_basic() {

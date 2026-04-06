@@ -25,8 +25,6 @@
 //! Currently, this statement is not implemented in the parser. These tests
 //! document the expected syntax and will guide implementation.
 
-use crate::postgres_compat::common::*;
-
 // =============================================================================
 // SECURITY LABEL Tests - All Currently Unimplemented
 // =============================================================================

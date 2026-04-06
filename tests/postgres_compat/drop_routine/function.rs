@@ -19,7 +19,6 @@
 //!
 //! Reference: <https://www.postgresql.org/docs/current/sql-dropfunction.html>
 
-use crate::postgres_compat::common::*;
 use sqlparser::ast::{DropBehavior, Statement};
 
 // =============================================================================

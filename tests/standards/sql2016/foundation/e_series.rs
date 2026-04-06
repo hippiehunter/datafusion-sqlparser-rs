@@ -42,7 +42,6 @@
 //! - E182: Host language binding
 
 use crate::standards::common::{one_statement_parses_to_std, verified_standard_stmt};
-use crate::verified_with_ast;
 use sqlparser::ast::{
     Action, Assignment, BinaryOperator, CascadeOption, CharacterLength, ColumnOption, CreateTable,
     DataType, Delete, ExactNumberInfo, Expr, GrantObjects, GroupByExpr, Insert, Privileges,

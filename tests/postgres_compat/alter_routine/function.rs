@@ -24,8 +24,6 @@
 //! ALTER FUNCTION is NOT implemented in the AST. All tests use `pg_expect_parse_error!`
 //! and are expected to fail until the feature is implemented.
 
-use crate::postgres_compat::common::*;
-
 // =============================================================================
 // ALTER FUNCTION ... RENAME TO
 // =============================================================================

@@ -32,10 +32,6 @@ use test_utils::*;
 #[macro_use]
 mod test_utils;
 
-fn pg() -> TestedDialects {
-    TestedDialects::new(vec![Box::new(PostgreSqlDialect {})])
-}
-
 fn pg_and_generic() -> TestedDialects {
     TestedDialects::new(vec![Box::new(PostgreSqlDialect {})])
 }

@@ -19,8 +19,6 @@
 //!
 //! Reference: <https://www.postgresql.org/docs/current/rangetypes.html>
 
-use crate::postgres_compat::common::*;
-
 #[test]
 fn test_int4range_constructor() {
     // https://www.postgresql.org/docs/current/rangetypes.html#RANGETYPES-CONSTRUCT

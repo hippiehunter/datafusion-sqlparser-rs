@@ -19,8 +19,6 @@
 //!
 //! Reference: <https://www.postgresql.org/docs/current/plpgsql-statements.html#PLPGSQL-STATEMENTS-EXECUTING-DYN>
 
-use crate::postgres_compat::common::*;
-
 // =============================================================================
 // Basic EXECUTE
 // =============================================================================

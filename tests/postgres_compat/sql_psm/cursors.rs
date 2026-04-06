@@ -19,8 +19,6 @@
 //!
 //! Reference: <https://www.postgresql.org/docs/current/plpgsql-cursors.html>
 
-use crate::postgres_compat::common::*;
-
 // =============================================================================
 // Cursor Declaration
 // =============================================================================

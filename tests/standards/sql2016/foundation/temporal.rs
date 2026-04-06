@@ -17,7 +17,7 @@
 
 //! SQL:2016 Temporal Table Tests (ISO/IEC 9075-2, Features T180-T187)
 
-use crate::standards::common::{one_statement_parses_to_std, verified_standard_stmt};
+use crate::standards::common::verified_standard_stmt;
 
 // ==================== T180: System-Versioned Tables ====================
 

@@ -15,16 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use sqlparser::dialect::{MySqlDialect, PostgreSqlDialect};
+use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
 
 fn prettify(sql: &str) -> String {
     let ast = Parser::parse_sql(&PostgreSqlDialect {}, sql).unwrap();
-    format!("{:#}", ast[0])
-}
-
-fn prettify_mysql(sql: &str) -> String {
-    let ast = Parser::parse_sql(&MySqlDialect {}, sql).unwrap();
     format!("{:#}", ast[0])
 }
 

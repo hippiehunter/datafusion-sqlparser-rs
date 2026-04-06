@@ -19,8 +19,6 @@
 //!
 //! Reference: <https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-RETURNING>
 
-use crate::postgres_compat::common::*;
-
 // =============================================================================
 // RETURN (single value)
 // =============================================================================

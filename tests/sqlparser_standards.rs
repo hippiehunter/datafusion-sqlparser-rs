@@ -46,7 +46,4 @@
 //! cargo test standards::pgq
 //! ```
 
-#[macro_use]
-mod test_utils;
-
 mod standards;

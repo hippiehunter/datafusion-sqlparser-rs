@@ -20,7 +20,6 @@
 //! Reference: <https://www.postgresql.org/docs/current/sql-createopclass.html>
 //! Reference: <https://www.postgresql.org/docs/current/sql-createopfamily.html>
 
-use crate::postgres_compat::common::*;
 use sqlparser::ast::Statement;
 
 // ============================================================================

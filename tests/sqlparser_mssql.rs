@@ -1935,6 +1935,9 @@ fn parse_create_table_with_valid_options() {
                 table_options: CreateTableOptions::With(with_options),
                 version: None,
                 system_versioning: None,
+                partition_by: None,
+                partition_of: None,
+                partition_bound: None,
             })
         );
     }
@@ -2071,6 +2074,9 @@ fn parse_create_table_with_identity_column() {
                 table_options: CreateTableOptions::None,
                 version: None,
                 system_versioning: None,
+                partition_by: None,
+                partition_of: None,
+                partition_bound: None,
             }),
         );
     }
@@ -2302,7 +2308,20 @@ fn parse_mssql_varbinary_max_length() {
 
 #[test]
 fn parse_mssql_table_identifier_with_default_schema() {
-    ms().verified_stmt("SELECT * FROM mydatabase..MyTable");
+    let select = ms().verified_only_select("SELECT * FROM mydatabase..MyTable");
+    if let TableFactor::Table { name, .. } = &only(select.from).relation {
+        assert_eq!(
+            name,
+            &ObjectName::from(vec![
+                Ident::new("mydatabase"),
+                Ident::new(""),
+                Ident::new("MyTable"),
+            ])
+        );
+        assert_eq!(name.to_string(), "mydatabase..MyTable");
+    } else {
+        panic!("expected table factor");
+    }
 }
 
 fn ms() -> TestedDialects {

@@ -20,7 +20,7 @@
 //! Reference: <https://www.postgresql.org/docs/current/sql-createprocedure.html>
 
 use crate::postgres_compat::common::*;
-use sqlparser::ast::{ArgMode, DataType, Statement};
+use sqlparser::ast::{ArgMode, Statement};
 
 // ============================================================================
 // Single Parameter Tests

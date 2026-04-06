@@ -19,7 +19,6 @@
 //!
 //! Reference: <https://www.postgresql.org/docs/current/sql-createoperator.html>
 
-use crate::postgres_compat::common::*;
 use sqlparser::ast::Statement;
 
 // ============================================================================

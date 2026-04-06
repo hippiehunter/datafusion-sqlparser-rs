@@ -19,8 +19,6 @@
 //!
 //! Reference: <https://www.postgresql.org/docs/current/sql-createaggregate.html>
 
-use crate::postgres_compat::common::*;
-
 // ============================================================================
 // Ordered-Set Aggregates
 // ============================================================================

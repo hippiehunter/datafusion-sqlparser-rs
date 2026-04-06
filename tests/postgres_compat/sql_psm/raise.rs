@@ -19,8 +19,6 @@
 //!
 //! Reference: <https://www.postgresql.org/docs/current/plpgsql-errors-and-messages.html>
 
-use crate::postgres_compat::common::*;
-
 // =============================================================================
 // RAISE Levels
 // =============================================================================
