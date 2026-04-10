@@ -1038,9 +1038,7 @@ impl<'a> Parser<'a> {
                     self.prev_token();
                     self.parse_unload()
                 }
-                Keyword::LOCK => {
-                    self.parse_pg_lock_table(next_token)
-                }
+                Keyword::LOCK => self.parse_pg_lock_table(next_token),
                 Keyword::RENAME => self.parse_rename(),
                 Keyword::LOAD => self.parse_load(),
                 // IMPORT FOREIGN SCHEMA is SQL/MED standard
@@ -1430,8 +1428,7 @@ impl<'a> Parser<'a> {
                     None => {
                         // Fallback: collect raw SQL tokens until LOOP keyword
                         let mut tokens = Vec::new();
-                        while !self.peek_keyword(Keyword::LOOP) && !self.peek_keyword(Keyword::DO)
-                        {
+                        while !self.peek_keyword(Keyword::LOOP) && !self.peek_keyword(Keyword::DO) {
                             if self.peek_token_ref().token == BorrowedToken::EOF {
                                 return Err(ParserError::ParserError(
                                     "Expected LOOP after FOR ... IN query".to_string(),
@@ -10172,13 +10169,12 @@ impl<'a> Parser<'a> {
 
         // parse optional column list (schema)
         // For PARTITION OF, this parses constraint overrides if present
-        let (columns, constraints) = if partition_of.is_some()
-            && self.peek_token().token != Token::LParen
-        {
-            (vec![], vec![])
-        } else {
-            self.parse_columns()?
-        };
+        let (columns, constraints) =
+            if partition_of.is_some() && self.peek_token().token != Token::LParen {
+                (vec![], vec![])
+            } else {
+                self.parse_columns()?
+            };
         let comment_after_column_def = None;
 
         // Parse PARTITION BY { RANGE | LIST | HASH } ( ... )
@@ -11705,16 +11701,19 @@ impl<'a> Parser<'a> {
                     self.peek_token(),
                 );
             }
-        } else if self.parse_keywords(&[Keyword::NO, Keyword::FORCE, Keyword::ROW, Keyword::LEVEL, Keyword::SECURITY]) {
+        } else if self.parse_keywords(&[
+            Keyword::NO,
+            Keyword::FORCE,
+            Keyword::ROW,
+            Keyword::LEVEL,
+            Keyword::SECURITY,
+        ]) {
             AlterTableOperation::NoForceRowLevelSecurity
         } else if self.parse_keyword(Keyword::FORCE) {
             if self.parse_keywords(&[Keyword::ROW, Keyword::LEVEL, Keyword::SECURITY]) {
                 AlterTableOperation::ForceRowLevelSecurity
             } else {
-                return self.expected(
-                    "ROW LEVEL SECURITY after FORCE",
-                    self.peek_token(),
-                );
+                return self.expected("ROW LEVEL SECURITY after FORCE", self.peek_token());
             }
         } else if self.parse_keyword(Keyword::DROP) {
             if self.parse_keywords(&[Keyword::IF, Keyword::EXISTS, Keyword::PARTITION]) {
@@ -11874,14 +11873,24 @@ impl<'a> Parser<'a> {
                     Keyword::MAIN,
                 ]);
                 match storage_keyword {
-                    Some(Keyword::PLAIN) => AlterColumnOperation::SetStorage(UserDefinedTypeStorage::Plain),
-                    Some(Keyword::EXTERNAL) => AlterColumnOperation::SetStorage(UserDefinedTypeStorage::External),
-                    Some(Keyword::EXTENDED) => AlterColumnOperation::SetStorage(UserDefinedTypeStorage::Extended),
-                    Some(Keyword::MAIN) => AlterColumnOperation::SetStorage(UserDefinedTypeStorage::Main),
-                    _ => return self.expected(
-                        "storage type (PLAIN, EXTERNAL, EXTENDED, or MAIN)",
-                        self.peek_token(),
-                    ),
+                    Some(Keyword::PLAIN) => {
+                        AlterColumnOperation::SetStorage(UserDefinedTypeStorage::Plain)
+                    }
+                    Some(Keyword::EXTERNAL) => {
+                        AlterColumnOperation::SetStorage(UserDefinedTypeStorage::External)
+                    }
+                    Some(Keyword::EXTENDED) => {
+                        AlterColumnOperation::SetStorage(UserDefinedTypeStorage::Extended)
+                    }
+                    Some(Keyword::MAIN) => {
+                        AlterColumnOperation::SetStorage(UserDefinedTypeStorage::Main)
+                    }
+                    _ => {
+                        return self.expected(
+                            "storage type (PLAIN, EXTERNAL, EXTENDED, or MAIN)",
+                            self.peek_token(),
+                        )
+                    }
                 }
             } else {
                 let message = if is_postgresql {
@@ -12039,6 +12048,11 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_alter(&self) -> Result<Statement, ParserError> {
+        if self.parse_keyword(Keyword::MATERIALIZED) {
+            self.expect_keyword(Keyword::VIEW)?;
+            return self.parse_alter_materialized_view();
+        }
+
         let object_type = self.expect_one_of_keywords(&[
             Keyword::VIEW,
             Keyword::TYPE,
@@ -12218,6 +12232,24 @@ impl<'a> Parser<'a> {
             query,
             with_options,
         })
+    }
+
+    pub fn parse_alter_materialized_view(&self) -> Result<Statement, ParserError> {
+        let name = self.parse_object_name(false)?;
+        let operation = if self.parse_keyword(Keyword::ENABLE) {
+            self.expect_keyword(Keyword::REWRITE)?;
+            AlterMaterializedViewOperation::EnableRewrite
+        } else if self.parse_keyword(Keyword::DISABLE) {
+            self.expect_keyword(Keyword::REWRITE)?;
+            AlterMaterializedViewOperation::DisableRewrite
+        } else {
+            return self.expected(
+                "ENABLE REWRITE or DISABLE REWRITE after ALTER MATERIALIZED VIEW",
+                self.peek_token(),
+            );
+        };
+
+        Ok(Statement::AlterMaterializedView { name, operation })
     }
 
     /// Parse a [Statement::AlterType]
@@ -18176,6 +18208,10 @@ impl<'a> Parser<'a> {
                 Some(GrantObjects::ExternalVolumes(
                     self.parse_comma_separated(|p| p.parse_object_name(false))?,
                 ))
+            } else if self.parse_keywords(&[Keyword::MATERIALIZED, Keyword::VIEW]) {
+                Some(GrantObjects::MaterializedViews(
+                    self.parse_comma_separated(|p| p.parse_object_name_inner(false, true))?,
+                ))
             } else {
                 let object_type = self.parse_one_of_keywords(&[
                     Keyword::SEQUENCE,
@@ -18353,6 +18389,9 @@ impl<'a> Parser<'a> {
             Ok(Action::Update {
                 columns: parse_columns(self)?,
             })
+        } else if self.parse_keyword(Keyword::USE) {
+            self.expect_keywords(&[Keyword::FOR, Keyword::REWRITE])?;
+            Ok(Action::UseForRewrite)
         } else if self.parse_keyword(Keyword::USAGE) {
             Ok(Action::Usage)
         } else if self.parse_keyword(Keyword::OWNERSHIP) {
@@ -19762,10 +19801,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse PostgreSQL `LOCK [ TABLE ] [ ONLY ] name [, ...] [ IN lockmode MODE ] [ NOWAIT ]`
-    fn parse_pg_lock_table(
-        &self,
-        lock_token: TokenWithSpan,
-    ) -> Result<Statement, ParserError> {
+    fn parse_pg_lock_table(&self, lock_token: TokenWithSpan) -> Result<Statement, ParserError> {
         // Optional TABLE keyword
         let _ = self.parse_keyword(Keyword::TABLE);
         // Optional ONLY keyword
@@ -19774,7 +19810,9 @@ impl<'a> Parser<'a> {
         let mut tables = vec![];
         loop {
             let name = self.parse_object_name(false)?;
-            let table_ident = name.0.last()
+            let table_ident = name
+                .0
+                .last()
                 .and_then(|p| p.as_ident().cloned())
                 .unwrap_or_else(|| Ident::new(name.to_string()));
             tables.push(LockTable {
@@ -20152,9 +20190,10 @@ impl<'a> Parser<'a> {
                 target_timestamp = Some(self.parse_literal_string()?);
             } else if self.parse_keyword(Keyword::LSN) {
                 let lsn_str = self.parse_literal_string()?;
-                target_lsn = Some(lsn_str.parse::<u64>().map_err(|e| {
-                    ParserError::ParserError(format!("invalid LSN value: {e}"))
-                })?);
+                target_lsn =
+                    Some(lsn_str.parse::<u64>().map_err(|e| {
+                        ParserError::ParserError(format!("invalid LSN value: {e}"))
+                    })?);
             } else {
                 return Err(ParserError::ParserError(
                     "expected TIMESTAMP or LSN after TO".to_string(),
@@ -21123,9 +21162,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse `PARTITION BY { RANGE | LIST | HASH } ( key_def, ... )`
-    fn parse_partition_by_clause(
-        &self,
-    ) -> Result<PartitionByClause, ParserError> {
+    fn parse_partition_by_clause(&self) -> Result<PartitionByClause, ParserError> {
         let strategy = if self.parse_keyword(Keyword::RANGE) {
             PartitionStrategy::Range
         } else if self.parse_keyword(Keyword::LIST) {

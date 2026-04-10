@@ -608,10 +608,10 @@ fn parse_analyze() {
 fn parse_invalid_table_name() {
     let ast: Result<ObjectName, ParserError> =
         all_dialects().run_parser_method("db.public..customer", |parser| {
-        let object_name = parser.parse_object_name(false)?;
-        parser.expect_token(&BorrowedToken::EOF)?;
-        Ok(object_name)
-    });
+            let object_name = parser.parse_object_name(false)?;
+            parser.expect_token(&BorrowedToken::EOF)?;
+            Ok(object_name)
+        });
     assert!(ast.is_err());
 }
 
@@ -4664,6 +4664,27 @@ fn parse_alter_view_with_columns() {
             assert_eq!(columns, vec![Ident::new("has"), Ident::new("cols")]);
             assert_eq!("SELECT 1, 2", query.to_string());
             assert_eq!(with_options, vec![]);
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn parse_alter_materialized_view_rewrite() {
+    let sql = "ALTER MATERIALIZED VIEW myschema.mv ENABLE REWRITE";
+    match verified_stmt(sql) {
+        Statement::AlterMaterializedView { name, operation } => {
+            assert_eq!("myschema.mv", name.to_string());
+            assert_eq!(AlterMaterializedViewOperation::EnableRewrite, operation);
+        }
+        _ => unreachable!(),
+    }
+
+    let sql = "ALTER MATERIALIZED VIEW mv DISABLE REWRITE";
+    match verified_stmt(sql) {
+        Statement::AlterMaterializedView { name, operation } => {
+            assert_eq!("mv", name.to_string());
+            assert_eq!(AlterMaterializedViewOperation::DisableRewrite, operation);
         }
         _ => unreachable!(),
     }
@@ -9055,6 +9076,27 @@ fn test_revoke() {
         }
         _ => unreachable!(),
     }
+
+    let sql6 = "GRANT USE FOR REWRITE ON MATERIALIZED VIEW mv_sales TO analyst";
+    match verified_stmt(sql6) {
+        Statement::Grant {
+            privileges,
+            objects,
+            grantees,
+            ..
+        } => match (privileges, objects) {
+            (
+                Privileges::Actions(actions),
+                Some(GrantObjects::MaterializedViews(materialized_views)),
+            ) => {
+                assert_eq!(vec![Action::UseForRewrite], actions);
+                assert_eq_vec(&["mv_sales"], &materialized_views);
+                assert_eq_vec(&["analyst"], &grantees);
+            }
+            _ => unreachable!(),
+        },
+        _ => unreachable!(),
+    }
 }
 
 #[test]
@@ -9079,6 +9121,24 @@ fn test_revoke_with_cascade() {
             assert_eq_vec(&["analyst"], &grantees);
             assert_eq!(cascade, Some(CascadeOption::Cascade));
             assert_eq!(None, granted_by);
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn test_revoke_use_for_rewrite_on_materialized_view() {
+    let sql = "REVOKE USE FOR REWRITE ON MATERIALIZED VIEW mv_sales FROM analyst";
+    match verified_stmt(sql) {
+        Statement::Revoke {
+            privileges,
+            objects: Some(GrantObjects::MaterializedViews(materialized_views)),
+            grantees,
+            ..
+        } => {
+            assert_eq!(Privileges::Actions(vec![Action::UseForRewrite]), privileges);
+            assert_eq_vec(&["mv_sales"], &materialized_views);
+            assert_eq_vec(&["analyst"], &grantees);
         }
         _ => unreachable!(),
     }

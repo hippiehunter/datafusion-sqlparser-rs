@@ -70,8 +70,8 @@ pub use self::ddl::{
     IdentityProperty, IdentityPropertyFormatKind, IdentityPropertyKind, IdentityPropertyOrder,
     IndexColumn, IndexOption, IndexType, KeyOrIndexDisplay, NullsDistinctOption, OperatorArgTypes,
     OperatorClassItem, OperatorPurpose, Owner, Partition, PartitionByClause, PartitionKeyDef,
-    PartitionKeyExpr, PartitionStrategy, ProcedureParam, ReferentialAction,
-    RenameTableNameKind, ReplicaIdentity, SplitPartitionTarget, TriggerObjectKind, Truncate,
+    PartitionKeyExpr, PartitionStrategy, ProcedureParam, ReferentialAction, RenameTableNameKind,
+    ReplicaIdentity, SplitPartitionTarget, TriggerObjectKind, Truncate,
     UserDefinedTypeCompositeAttributeDef, UserDefinedTypeInternalLength,
     UserDefinedTypeRangeOption, UserDefinedTypeRepresentation, UserDefinedTypeSqlDefinitionOption,
     UserDefinedTypeStorage, ViewColumnDef,
@@ -5145,6 +5145,15 @@ pub enum Statement {
         with_options: Vec<SqlOption>,
     },
     /// ```sql
+    /// ALTER MATERIALIZED VIEW
+    /// ```
+    AlterMaterializedView {
+        /// Materialized view name
+        #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
+        name: ObjectName,
+        operation: AlterMaterializedViewOperation,
+    },
+    /// ```sql
     /// ALTER TYPE
     /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-altertype.html)
     /// ```
@@ -6259,6 +6268,24 @@ impl From<ddl::Truncate> for Statement {
     }
 }
 
+/// An `ALTER MATERIALIZED VIEW` operation.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum AlterMaterializedViewOperation {
+    EnableRewrite,
+    DisableRewrite,
+}
+
+impl fmt::Display for AlterMaterializedViewOperation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AlterMaterializedViewOperation::EnableRewrite => f.write_str("ENABLE REWRITE"),
+            AlterMaterializedViewOperation::DisableRewrite => f.write_str("DISABLE REWRITE"),
+        }
+    }
+}
+
 /// ```sql
 /// {COPY | REVOKE} CURRENT GRANTS
 /// ```
@@ -6659,12 +6686,10 @@ impl fmt::Display for Statement {
                 }
 
                 if *has_as {
-                    let is_plpgsql = language
-                        .as_ref()
-                        .is_some_and(|l| {
-                            l.value.eq_ignore_ascii_case("plpgsql")
-                                || l.value.eq_ignore_ascii_case("pgsql")
-                        });
+                    let is_plpgsql = language.as_ref().is_some_and(|l| {
+                        l.value.eq_ignore_ascii_case("plpgsql")
+                            || l.value.eq_ignore_ascii_case("pgsql")
+                    });
                     if is_plpgsql {
                         write!(f, " AS $$ {body} $$")
                     } else {
@@ -6786,6 +6811,9 @@ impl fmt::Display for Statement {
                     write!(f, " ({})", display_comma_separated(columns))?;
                 }
                 write!(f, " AS {query}")
+            }
+            Statement::AlterMaterializedView { name, operation } => {
+                write!(f, "ALTER MATERIALIZED VIEW {name} {operation}")
             }
             Statement::AlterType(AlterType {
                 name, operation, ..
@@ -7337,7 +7365,10 @@ impl fmt::Display for Statement {
                 }
                 Ok(())
             }
-            Statement::RecoverPage { page_id, table_name } => {
+            Statement::RecoverPage {
+                page_id,
+                table_name,
+            } => {
                 write!(f, "RECOVER PAGE {page_id} FROM TABLE {table_name}")
             }
             Statement::ValidateBackup { location, full } => {
@@ -8290,6 +8321,7 @@ pub enum Action {
     Trigger,
     Truncate,
     Update { columns: Option<Vec<Ident>> },
+    UseForRewrite,
     Usage,
 }
 
@@ -8334,6 +8366,7 @@ impl fmt::Display for Action {
             Action::Trigger => f.write_str("TRIGGER")?,
             Action::Truncate => f.write_str("TRUNCATE")?,
             Action::Update { .. } => f.write_str("UPDATE")?,
+            Action::UseForRewrite => f.write_str("USE FOR REWRITE")?,
             Action::Usage => f.write_str("USAGE")?,
         };
         match self {
@@ -8470,6 +8503,8 @@ pub enum GrantObjects {
     Sequences(Vec<ObjectName>),
     /// Grant privileges on specific tables
     Tables(Vec<ObjectName>),
+    /// Grant privileges on specific materialized views
+    MaterializedViews(Vec<ObjectName>),
     /// Grant privileges on specific views
     Views(Vec<ObjectName>),
     /// Grant privileges on specific warehouses
@@ -8543,6 +8578,13 @@ impl fmt::Display for GrantObjects {
             }
             GrantObjects::Tables(tables) => {
                 write!(f, "{}", display_comma_separated(tables))
+            }
+            GrantObjects::MaterializedViews(materialized_views) => {
+                write!(
+                    f,
+                    "MATERIALIZED VIEW {}",
+                    display_comma_separated(materialized_views)
+                )
             }
             GrantObjects::Views(views) => {
                 write!(f, "VIEW {}", display_comma_separated(views))

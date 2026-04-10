@@ -348,6 +348,7 @@ impl Spanned for Statement {
                     .chain(core::iter::once(query.span()))
                     .chain(with_options.iter().map(|i| i.span())),
             ),
+            Statement::AlterMaterializedView { name, .. } => name.span(),
             // These statements need to be implemented
             Statement::AlterType(alter_type) => alter_type.token.0.span,
             Statement::AlterRole { token, .. } => token.0.span,
@@ -1264,21 +1265,15 @@ impl Spanned for AlterTableOperation {
             AlterTableOperation::SetOptionsParens { options } => {
                 union_spans(options.iter().map(|i| i.span()))
             }
-            AlterTableOperation::AttachPartition { partition_name, .. } => {
-                partition_name.span()
-            }
-            AlterTableOperation::DetachPartition { partition_name, .. } => {
-                partition_name.span()
-            }
-            AlterTableOperation::SplitPartition { partition_name, .. } => {
-                partition_name.span()
-            }
-            AlterTableOperation::MergePartitions { partitions, into } => {
-                union_spans(
-                    partitions.iter().map(|p| p.span())
-                        .chain(core::iter::once(into.span()))
-                )
-            }
+            AlterTableOperation::AttachPartition { partition_name, .. } => partition_name.span(),
+            AlterTableOperation::DetachPartition { partition_name, .. } => partition_name.span(),
+            AlterTableOperation::SplitPartition { partition_name, .. } => partition_name.span(),
+            AlterTableOperation::MergePartitions { partitions, into } => union_spans(
+                partitions
+                    .iter()
+                    .map(|p| p.span())
+                    .chain(core::iter::once(into.span())),
+            ),
         }
     }
 }

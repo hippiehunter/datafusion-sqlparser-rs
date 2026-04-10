@@ -899,6 +899,7 @@ define_keywords!(
     REPLICATION,
     REQUIRE,
     RESET,
+    REWRITE,
     RESIGNAL,
     RESOLVE,
     RESOURCE,
