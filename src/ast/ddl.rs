@@ -41,12 +41,12 @@ use crate::ast::{
         CheckConstraint, ForeignKeyConstraint, PrimaryKeyConstraint, TableConstraint,
         UniqueConstraint,
     },
-    ArgMode, AttachedToken, CommentDef, ConditionalStatements, CreateFunctionBody, PartitionBoundSpec,
+    ArgMode, AttachedToken, CommentDef, ConditionalStatements, CreateFunctionBody,
     CreateFunctionUsing, CreateTableLikeKind, CreateTableOptions, CreateViewParams, DataType, Expr,
     FunctionBehavior, FunctionCalledOnNull, FunctionDesc, FunctionDeterminismSpecifier,
     FunctionParallel, Ident, MySQLColumnPosition, ObjectName, OnCommit, OperateFunctionArg,
-    OrderByExpr, ProcedureSecurity, ProcedureSetConfig, Query, SequenceOptions, Spanned,
-    SqlDataAccess, SqlOption, TableVersion, TriggerEvent, TriggerExecBody, TriggerObject,
+    OrderByExpr, PartitionBoundSpec, ProcedureSecurity, ProcedureSetConfig, Query, SequenceOptions,
+    Spanned, SqlDataAccess, SqlOption, TableVersion, TriggerEvent, TriggerExecBody, TriggerObject,
     TriggerPeriod, TriggerReferencing, ValueWithSpan,
 };
 use crate::display_utils::{DisplayCommaSeparated, Indent, NewLine, SpaceOrNewline};
@@ -2746,13 +2746,9 @@ impl fmt::Display for CreateFunction {
             // (`:=` assignments, `..` integer ranges, alias declarations).
             // Without dollar-quoting, `AS BEGIN...END` is parsed as plain SQL
             // which doesn't handle these constructs.
-            let is_plpgsql = self
-                .language
-                .as_ref()
-                .is_some_and(|l| {
-                    l.value.eq_ignore_ascii_case("plpgsql")
-                        || l.value.eq_ignore_ascii_case("pgsql")
-                });
+            let is_plpgsql = self.language.as_ref().is_some_and(|l| {
+                l.value.eq_ignore_ascii_case("plpgsql") || l.value.eq_ignore_ascii_case("pgsql")
+            });
             let needs_dollar_quoting = is_plpgsql
                 || !bes.declarations.is_empty()
                 || bes.label.is_some()

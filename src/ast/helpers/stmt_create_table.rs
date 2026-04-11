@@ -24,12 +24,12 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "visitor")]
 use sqlparser_derive::{Visit, VisitMut};
 
+use crate::ast::ddl::PartitionByClause;
 use crate::ast::{
     ColumnDef, CommentDef, CreateTable, CreateTableLikeKind, CreateTableOptions,
     CreateTableSystemVersioning, ObjectName, OnCommit, PartitionBoundSpec, Query, Statement,
     TableConstraint, TableVersion,
 };
-use crate::ast::ddl::PartitionByClause;
 
 use crate::parser::ParserError;
 

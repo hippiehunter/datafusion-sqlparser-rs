@@ -3419,7 +3419,11 @@ impl fmt::Display for SelectInto {
         let table = if self.table { " TABLE" } else { "" };
         let strict = if self.strict { " STRICT" } else { "" };
 
-        write!(f, "INTO{}{}{}{} {}", temporary, unlogged, table, strict, self.name)?;
+        write!(
+            f,
+            "INTO{}{}{}{} {}",
+            temporary, unlogged, table, strict, self.name
+        )?;
         for target in &self.additional_targets {
             write!(f, ", {target}")?;
         }

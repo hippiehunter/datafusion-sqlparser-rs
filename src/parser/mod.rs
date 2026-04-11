@@ -12242,9 +12242,11 @@ impl<'a> Parser<'a> {
         } else if self.parse_keyword(Keyword::DISABLE) {
             self.expect_keyword(Keyword::REWRITE)?;
             AlterMaterializedViewOperation::DisableRewrite
+        } else if self.parse_keywords(&[Keyword::OWNER, Keyword::TO]) {
+            AlterMaterializedViewOperation::OwnerTo(self.parse_owner()?)
         } else {
             return self.expected(
-                "ENABLE REWRITE or DISABLE REWRITE after ALTER MATERIALIZED VIEW",
+                "ENABLE REWRITE, DISABLE REWRITE, or OWNER TO after ALTER MATERIALIZED VIEW",
                 self.peek_token(),
             );
         };
@@ -14613,6 +14615,7 @@ impl<'a> Parser<'a> {
         let mut verbose = false;
         let mut query_plan = false;
         let mut estimate = false;
+        let mut rewrite = false;
         let mut format = None;
         let mut options = None;
 
@@ -14625,6 +14628,8 @@ impl<'a> Parser<'a> {
             query_plan = true;
         } else if self.parse_keyword(Keyword::ESTIMATE) {
             estimate = true;
+        } else if self.parse_keyword(Keyword::REWRITE) {
+            rewrite = true;
         } else {
             analyze = self.parse_keyword(Keyword::ANALYZE);
             verbose = self.parse_keyword(Keyword::VERBOSE);
@@ -14644,6 +14649,7 @@ impl<'a> Parser<'a> {
                 verbose,
                 query_plan,
                 estimate,
+                rewrite,
                 statement: Box::new(statement),
                 format,
                 options,
@@ -18336,6 +18342,8 @@ impl<'a> Parser<'a> {
             Ok(Action::ReadSession)
 
         // Single-word privileges
+        } else if self.parse_keyword(Keyword::ALTER) {
+            Ok(Action::Alter)
         } else if self.parse_keyword(Keyword::APPLYBUDGET) {
             Ok(Action::ApplyBudget)
         } else if self.parse_keyword(Keyword::AUDIT) {
@@ -18370,6 +18378,8 @@ impl<'a> Parser<'a> {
             })
         } else if self.parse_keyword(Keyword::READ) {
             Ok(Action::Read)
+        } else if self.parse_keyword(Keyword::REFRESH) {
+            Ok(Action::Refresh)
         } else if self.parse_keyword(Keyword::REPLICATE) {
             Ok(Action::Replicate)
         } else if self.parse_keyword(Keyword::ROLE) {
@@ -20226,7 +20236,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// Parse VALIDATE BACKUP [FROM '<uri>'] [FULL]
+    /// Parse VALIDATE BACKUP [FROM '<uri>'] [FULL] [AT TIMESTAMP '<ts>']
     pub fn parse_validate(&self) -> Result<Statement, ParserError> {
         self.expect_keyword(Keyword::BACKUP)?;
 
@@ -20238,7 +20248,17 @@ impl<'a> Parser<'a> {
 
         let full = self.parse_keyword(Keyword::FULL);
 
-        Ok(Statement::ValidateBackup { location, full })
+        let target_timestamp = if self.parse_keywords(&[Keyword::AT, Keyword::TIMESTAMP]) {
+            Some(self.parse_literal_string()?)
+        } else {
+            None
+        };
+
+        Ok(Statement::ValidateBackup {
+            location,
+            full,
+            target_timestamp,
+        })
     }
 
     /// Parse CANCEL BACKUP <operation_id>

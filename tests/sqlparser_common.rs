@@ -4691,6 +4691,66 @@ fn parse_alter_materialized_view_rewrite() {
 }
 
 #[test]
+fn parse_alter_materialized_view_owner_to() {
+    let sql = "ALTER MATERIALIZED VIEW myschema.mv OWNER TO other_user";
+    match verified_stmt(sql) {
+        Statement::AlterMaterializedView { name, operation } => {
+            assert_eq!("myschema.mv", name.to_string());
+            assert_eq!(
+                AlterMaterializedViewOperation::OwnerTo(Owner::Ident(Ident::new("other_user"))),
+                operation
+            );
+        }
+        _ => unreachable!(),
+    }
+
+    let sql = "ALTER MATERIALIZED VIEW mv OWNER TO CURRENT_USER";
+    match verified_stmt(sql) {
+        Statement::AlterMaterializedView { name, operation } => {
+            assert_eq!("mv", name.to_string());
+            assert_eq!(
+                AlterMaterializedViewOperation::OwnerTo(Owner::CurrentUser),
+                operation
+            );
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn parse_explain_rewrite() {
+    let sql = "EXPLAIN REWRITE SELECT id, value FROM sales ORDER BY id";
+    match verified_stmt(sql) {
+        Statement::Explain {
+            describe_alias,
+            analyze,
+            verbose,
+            query_plan,
+            estimate,
+            rewrite,
+            statement,
+            format,
+            options,
+            ..
+        } => {
+            assert_eq!(describe_alias, DescribeAlias::Explain);
+            assert!(!analyze);
+            assert!(!verbose);
+            assert!(!query_plan);
+            assert!(!estimate);
+            assert!(rewrite);
+            assert!(format.is_none());
+            assert!(options.is_none());
+            assert_eq!(
+                "SELECT id, value FROM sales ORDER BY id",
+                statement.to_string()
+            );
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[test]
 fn parse_alter_table_add_column() {
     match alter_table_op(verified_stmt("ALTER TABLE tab ADD foo TEXT")) {
         AlterTableOperation::AddColumn { column_keyword, .. } => {

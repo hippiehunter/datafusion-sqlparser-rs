@@ -5713,11 +5713,12 @@ pub enum Statement {
         table_name: ObjectName,
     },
     /// ```sql
-    /// VALIDATE BACKUP [FROM '<s3_uri>'] [FULL]
+    /// VALIDATE BACKUP [FROM '<s3_uri>'] [FULL] [AT TIMESTAMP '<ts>']
     /// ```
     ValidateBackup {
         location: Option<String>,
         full: bool,
+        target_timestamp: Option<String>,
     },
     /// ```sql
     /// SHOW BACKUPS [FROM '<s3_uri>'] [ALL]
@@ -5976,6 +5977,8 @@ pub enum Statement {
         query_plan: bool,
         /// `EXPLAIN ESTIMATE`
         estimate: bool,
+        /// `EXPLAIN REWRITE`
+        rewrite: bool,
         /// A SQL query that specifies what to explain
         statement: Box<Statement>,
         /// Optional output format of explain
@@ -6275,6 +6278,7 @@ impl From<ddl::Truncate> for Statement {
 pub enum AlterMaterializedViewOperation {
     EnableRewrite,
     DisableRewrite,
+    OwnerTo(Owner),
 }
 
 impl fmt::Display for AlterMaterializedViewOperation {
@@ -6282,6 +6286,7 @@ impl fmt::Display for AlterMaterializedViewOperation {
         match self {
             AlterMaterializedViewOperation::EnableRewrite => f.write_str("ENABLE REWRITE"),
             AlterMaterializedViewOperation::DisableRewrite => f.write_str("DISABLE REWRITE"),
+            AlterMaterializedViewOperation::OwnerTo(owner) => write!(f, "OWNER TO {owner}"),
         }
     }
 }
@@ -6403,6 +6408,7 @@ impl fmt::Display for Statement {
                 analyze,
                 query_plan,
                 estimate,
+                rewrite,
                 statement,
                 format,
                 options,
@@ -6417,6 +6423,9 @@ impl fmt::Display for Statement {
                 }
                 if *estimate {
                     write!(f, "ESTIMATE ")?;
+                }
+                if *rewrite {
+                    write!(f, "REWRITE ")?;
                 }
 
                 if *verbose {
@@ -7371,13 +7380,20 @@ impl fmt::Display for Statement {
             } => {
                 write!(f, "RECOVER PAGE {page_id} FROM TABLE {table_name}")
             }
-            Statement::ValidateBackup { location, full } => {
+            Statement::ValidateBackup {
+                location,
+                full,
+                target_timestamp,
+            } => {
                 write!(f, "VALIDATE BACKUP")?;
                 if let Some(loc) = location {
                     write!(f, " FROM '{loc}'")?;
                 }
                 if *full {
                     write!(f, " FULL")?;
+                }
+                if let Some(ts) = target_timestamp {
+                    write!(f, " AT TIMESTAMP '{ts}'")?;
                 }
                 Ok(())
             }
@@ -8284,6 +8300,7 @@ impl fmt::Display for FetchPosition {
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub enum Action {
     AddSearchOptimization,
+    Alter,
     ApplyBudget,
     AttachListing,
     AttachPolicy,
@@ -8312,6 +8329,7 @@ pub enum Action {
     PurchaseDataExchangeListing,
     Read,
     ReadSession,
+    Refresh,
     References { columns: Option<Vec<Ident>> },
     Replicate,
     ResolveAll,
@@ -8329,6 +8347,7 @@ impl fmt::Display for Action {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Action::AddSearchOptimization => f.write_str("ADD SEARCH OPTIMIZATION")?,
+            Action::Alter => f.write_str("ALTER")?,
             Action::ApplyBudget => f.write_str("APPLYBUDGET")?,
             Action::AttachListing => f.write_str("ATTACH LISTING")?,
             Action::AttachPolicy => f.write_str("ATTACH POLICY")?,
@@ -8357,6 +8376,7 @@ impl fmt::Display for Action {
             Action::PurchaseDataExchangeListing => f.write_str("PURCHASE DATA EXCHANGE LISTING")?,
             Action::Read => f.write_str("READ")?,
             Action::ReadSession => f.write_str("READ SESSION")?,
+            Action::Refresh => f.write_str("REFRESH")?,
             Action::References { .. } => f.write_str("REFERENCES")?,
             Action::Replicate => f.write_str("REPLICATE")?,
             Action::ResolveAll => f.write_str("RESOLVE ALL")?,
