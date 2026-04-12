@@ -947,6 +947,7 @@ define_keywords!(
     SAMPLE,
     SAVEPOINT,
     SCALAR,
+    SCHEDULE,
     SCHEMA,
     SCHEMABINDING,
     SCHEMAS,

@@ -6018,6 +6018,15 @@ pub enum Statement {
         table_name: ObjectName,
     },
     /// ```sql
+    /// EXPLAIN MATERIALIZED VIEW view_name
+    /// ```
+    /// Returns MV metadata rows (state, maintenance mode, definition, etc.).
+    ExplainMaterializedView {
+        /// View name
+        #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
+        view_name: ObjectName,
+    },
+    /// ```sql
     /// [EXPLAIN | DESC | DESCRIBE]  <statement>
     /// ```
     Explain {
@@ -6336,6 +6345,9 @@ pub enum AlterMaterializedViewOperation {
     EnableRewrite,
     DisableRewrite,
     OwnerTo(Owner),
+    /// `ALTER MATERIALIZED VIEW name REFRESH SCHEDULE EVERY '...' [START AT '...'] [METHOD ...]`
+    /// or `ALTER MATERIALIZED VIEW name REFRESH SCHEDULE NONE`
+    RefreshSchedule(Option<MaterializedViewRefreshSchedule>),
 }
 
 impl fmt::Display for AlterMaterializedViewOperation {
@@ -6344,7 +6356,38 @@ impl fmt::Display for AlterMaterializedViewOperation {
             AlterMaterializedViewOperation::EnableRewrite => f.write_str("ENABLE REWRITE"),
             AlterMaterializedViewOperation::DisableRewrite => f.write_str("DISABLE REWRITE"),
             AlterMaterializedViewOperation::OwnerTo(owner) => write!(f, "OWNER TO {owner}"),
+            AlterMaterializedViewOperation::RefreshSchedule(None) => {
+                f.write_str("REFRESH SCHEDULE NONE")
+            }
+            AlterMaterializedViewOperation::RefreshSchedule(Some(sched)) => {
+                write!(f, "REFRESH SCHEDULE {sched}")
+            }
         }
+    }
+}
+
+/// Refresh schedule clause for materialized view CREATE and ALTER.
+///
+/// `REFRESH SCHEDULE EVERY '<interval>' [START AT '<timestamp>'] [METHOD FAST|COMPLETE]`
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct MaterializedViewRefreshSchedule {
+    pub every: Expr,
+    pub start_at: Option<Expr>,
+    pub method: Option<MaterializedViewRefreshMethod>,
+}
+
+impl fmt::Display for MaterializedViewRefreshSchedule {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "EVERY {}", self.every)?;
+        if let Some(start) = &self.start_at {
+            write!(f, " START AT {start}")?;
+        }
+        if let Some(method) = &self.method {
+            write!(f, " METHOD {method}")?;
+        }
+        Ok(())
     }
 }
 
@@ -6478,6 +6521,9 @@ impl fmt::Display for Statement {
                 }
 
                 write!(f, "{table_name}")
+            }
+            Statement::ExplainMaterializedView { view_name } => {
+                write!(f, "EXPLAIN MATERIALIZED VIEW {view_name}")
             }
             Statement::Explain {
                 explain_token: _,

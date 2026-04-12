@@ -8013,7 +8013,7 @@ impl<'a> Parser<'a> {
         }
 
         self.expect_keyword_is(Keyword::AS)?;
-        let query = self.parse_query()?;
+        let mut query = self.parse_query()?;
         // Optional `WITH [ CASCADED | LOCAL ] CHECK OPTION` is widely supported here.
 
         // Post-AS clauses for materialized views.
@@ -8022,6 +8022,46 @@ impl<'a> Parser<'a> {
         let mut late_options: Vec<SqlOption> = Vec::new();
 
         if materialized {
+            // The query parser may have consumed trailing `WITH (key = 'value', ...)`
+            // as table-level hints on the last FROM table factor. Key-value pairs
+            // with `=` are MV creation options, not table hints — extract them from
+            // with_hints and place them in late_options. Genuine table hints
+            // (identifiers, `<=` expressions) are left in place.
+            if let SetExpr::Select(ref mut select) = *query.body {
+                if let Some(last_table) = select.from.last_mut() {
+                    if let TableFactor::Table {
+                        ref mut with_hints, ..
+                    } = last_table.relation
+                    {
+                        let mut extracted = Vec::new();
+                        let mut remaining = Vec::new();
+                        for hint in with_hints.drain(..) {
+                            match &hint {
+                                Expr::BinaryOp {
+                                    left,
+                                    op: BinaryOperator::Eq,
+                                    right,
+                                } => {
+                                    if let Expr::Identifier(ident) = left.as_ref() {
+                                        extracted.push(SqlOption::KeyValue {
+                                            key: ident.clone(),
+                                            value: *right.clone(),
+                                        });
+                                    } else {
+                                        remaining.push(hint);
+                                    }
+                                }
+                                _ => remaining.push(hint),
+                            }
+                        }
+                        *with_hints = remaining;
+                        if !extracted.is_empty() {
+                            late_options = extracted;
+                        }
+                    }
+                }
+            }
+
             // Parse optional post-AS clauses in any order.
             // WITH DATA / WITH NO DATA
             if self.parse_keywords(&[Keyword::WITH, Keyword::NO, Keyword::DATA]) {
@@ -8046,6 +8086,15 @@ impl<'a> Parser<'a> {
             }
         }
 
+        // REFRESH SCHEDULE EVERY '<interval>' [START AT '<timestamp>'] [METHOD FAST|COMPLETE]
+        let refresh_schedule = if materialized
+            && self.parse_keywords(&[Keyword::REFRESH, Keyword::SCHEDULE])
+        {
+            Some(self.parse_mv_refresh_schedule()?)
+        } else {
+            None
+        };
+
         Ok(CreateView {
             or_alter,
             name,
@@ -8059,6 +8108,7 @@ impl<'a> Parser<'a> {
             with_data,
             schemabinding,
             late_options,
+            refresh_schedule,
         }
         .into())
     }
@@ -12281,9 +12331,17 @@ impl<'a> Parser<'a> {
             AlterMaterializedViewOperation::DisableRewrite
         } else if self.parse_keywords(&[Keyword::OWNER, Keyword::TO]) {
             AlterMaterializedViewOperation::OwnerTo(self.parse_owner()?)
+        } else if self.parse_keywords(&[Keyword::REFRESH, Keyword::SCHEDULE]) {
+            if self.parse_keyword(Keyword::NONE) {
+                AlterMaterializedViewOperation::RefreshSchedule(None)
+            } else {
+                AlterMaterializedViewOperation::RefreshSchedule(Some(
+                    self.parse_mv_refresh_schedule()?,
+                ))
+            }
         } else {
             return self.expected(
-                "ENABLE REWRITE, DISABLE REWRITE, or OWNER TO after ALTER MATERIALIZED VIEW",
+                "ENABLE REWRITE, DISABLE REWRITE, OWNER TO, or REFRESH SCHEDULE after ALTER MATERIALIZED VIEW",
                 self.peek_token(),
             );
         };
@@ -12309,6 +12367,34 @@ impl<'a> Parser<'a> {
         Ok(Statement::RefreshMaterializedView {
             name,
             concurrently,
+            method,
+        })
+    }
+
+    /// Parse `EVERY '<interval>' [START AT '<timestamp>'] [METHOD FAST|COMPLETE]`
+    /// for materialized view refresh schedules.
+    fn parse_mv_refresh_schedule(&self) -> Result<MaterializedViewRefreshSchedule, ParserError> {
+        self.expect_keyword(Keyword::EVERY)?;
+        let every = self.parse_expr()?;
+        let start_at = if self.parse_keywords(&[Keyword::START, Keyword::AT]) {
+            Some(self.parse_expr()?)
+        } else {
+            None
+        };
+        let method = if self.parse_keyword(Keyword::METHOD) {
+            if self.parse_keyword(Keyword::FAST) {
+                Some(MaterializedViewRefreshMethod::Fast)
+            } else if self.parse_keyword(Keyword::COMPLETE) {
+                Some(MaterializedViewRefreshMethod::Complete)
+            } else {
+                return self.expected("FAST or COMPLETE after METHOD", self.peek_token());
+            }
+        } else {
+            None
+        };
+        Ok(MaterializedViewRefreshSchedule {
+            every,
+            start_at,
             method,
         })
     }
@@ -14695,6 +14781,12 @@ impl<'a> Parser<'a> {
             if self.parse_keyword(Keyword::FORMAT) {
                 format = Some(self.parse_analyze_format_kind()?);
             }
+        }
+
+        // EXPLAIN MATERIALIZED VIEW name — returns MV metadata rows.
+        if self.parse_keywords(&[Keyword::MATERIALIZED, Keyword::VIEW]) {
+            let view_name = self.parse_object_name(false)?;
+            return Ok(Statement::ExplainMaterializedView { view_name });
         }
 
         match self.maybe_parse(|parser| parser.parse_statement())? {

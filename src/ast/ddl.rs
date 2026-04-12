@@ -46,8 +46,9 @@ use crate::ast::{
     FunctionBehavior, FunctionCalledOnNull, FunctionDesc, FunctionDeterminismSpecifier,
     FunctionParallel, Ident, MySQLColumnPosition, ObjectName, OnCommit, OperateFunctionArg,
     OrderByExpr, PartitionBoundSpec, ProcedureSecurity, ProcedureSetConfig, Query, SequenceOptions,
-    Spanned, SqlDataAccess, SqlOption, TableVersion, TriggerEvent, TriggerExecBody, TriggerObject,
-    TriggerPeriod, TriggerReferencing, ValueWithSpan,
+    MaterializedViewRefreshSchedule, Spanned, SqlDataAccess, SqlOption, TableVersion,
+    TriggerEvent, TriggerExecBody, TriggerObject, TriggerPeriod, TriggerReferencing,
+    ValueWithSpan,
 };
 use crate::display_utils::{DisplayCommaSeparated, Indent, NewLine, SpaceOrNewline};
 use crate::tokenizer::{Span, Token};
@@ -3227,6 +3228,8 @@ pub struct CreateView {
     /// Post-AS `WITH (key = value, ...)` options for materialized views
     /// (maintenance, refresh_policy, auto_rebuild, etc.).
     pub late_options: Vec<SqlOption>,
+    /// `REFRESH SCHEDULE EVERY '...' [START AT '...'] [METHOD ...]`
+    pub refresh_schedule: Option<MaterializedViewRefreshSchedule>,
 }
 
 impl fmt::Display for CreateView {
@@ -3281,6 +3284,9 @@ impl fmt::Display for CreateView {
         }
         if !self.late_options.is_empty() {
             write!(f, " WITH ({})", display_comma_separated(&self.late_options))?;
+        }
+        if let Some(sched) = &self.refresh_schedule {
+            write!(f, " REFRESH SCHEDULE {sched}")?;
         }
         Ok(())
     }
