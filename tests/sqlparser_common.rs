@@ -10127,6 +10127,29 @@ fn parse_show_backups() {
 }
 
 #[test]
+fn parse_show_backup_manifest() {
+    assert_eq!(
+        verified_stmt("SHOW BACKUP MANIFEST"),
+        Statement::ShowBackupManifest { location: None }
+    );
+
+    assert_eq!(
+        verified_stmt("SHOW BACKUP MANIFEST FROM 's3://bucket/base'"),
+        Statement::ShowBackupManifest {
+            location: Some("s3://bucket/base".into()),
+        }
+    );
+}
+
+#[test]
+fn parse_backup_status_bare_verb() {
+    assert_eq!(
+        verified_stmt("BACKUP STATUS"),
+        Statement::BackupStatusBareVerb
+    );
+}
+
+#[test]
 fn parse_cancel_backup() {
     assert_eq!(
         verified_stmt("CANCEL BACKUP op123"),

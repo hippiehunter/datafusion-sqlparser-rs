@@ -15750,6 +15750,13 @@ impl<'a> Parser<'a> {
             self.parse_show_charset(show_token, false)
         } else if self.parse_keyword(Keyword::CHARSET) {
             self.parse_show_charset(show_token, true)
+        } else if self.parse_keywords(&[Keyword::BACKUP, Keyword::MANIFEST]) {
+            let location = if self.parse_keyword(Keyword::FROM) {
+                Some(self.parse_literal_string()?)
+            } else {
+                None
+            };
+            Ok(Statement::ShowBackupManifest { location })
         } else if self.parse_keyword(Keyword::BACKUPS) {
             let location = if self.parse_keyword(Keyword::FROM) {
                 Some(self.parse_literal_string()?)
@@ -20176,6 +20183,10 @@ impl<'a> Parser<'a> {
 
     /// Parse BACKUP DATABASE [TO '<uri>'] [ESTIMATE] [INCREMENTAL]
     pub fn parse_backup(&self) -> Result<Statement, ParserError> {
+        if self.parse_keyword(Keyword::STATUS) {
+            return Ok(Statement::BackupStatusBareVerb);
+        }
+
         let object_type = if self.parse_keyword(Keyword::DATABASE) {
             None
         } else {

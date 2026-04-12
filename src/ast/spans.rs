@@ -413,6 +413,8 @@ impl Spanned for Statement {
             | Statement::RecoverPage { .. }
             | Statement::ValidateBackup { .. }
             | Statement::ShowBackups { .. }
+            | Statement::ShowBackupManifest { .. }
+            | Statement::BackupStatusBareVerb
             | Statement::CancelBackup { .. } => Span::empty(),
             Statement::CreateSchema {
                 create_token,

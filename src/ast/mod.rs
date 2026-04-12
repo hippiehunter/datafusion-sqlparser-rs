@@ -5743,6 +5743,16 @@ pub enum Statement {
         all: bool,
     },
     /// ```sql
+    /// SHOW BACKUP MANIFEST [FROM '<s3_uri>']
+    /// ```
+    ShowBackupManifest {
+        location: Option<String>,
+    },
+    /// ```sql
+    /// BACKUP STATUS
+    /// ```
+    BackupStatusBareVerb,
+    /// ```sql
     /// CANCEL BACKUP <operation_id>
     /// ```
     CancelBackup {
@@ -7457,6 +7467,16 @@ impl fmt::Display for Statement {
                     write!(f, " ALL")?;
                 }
                 Ok(())
+            }
+            Statement::ShowBackupManifest { location } => {
+                write!(f, "SHOW BACKUP MANIFEST")?;
+                if let Some(loc) = location {
+                    write!(f, " FROM '{loc}'")?;
+                }
+                Ok(())
+            }
+            Statement::BackupStatusBareVerb => {
+                write!(f, "BACKUP STATUS")
             }
             Statement::CancelBackup { operation_id } => {
                 write!(f, "CANCEL BACKUP {operation_id}")
