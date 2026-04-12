@@ -915,6 +915,7 @@ define_keywords!(
     RESULTSET,
     RESUME,
     RETAIN,
+    RETENTION,
     RETURN,
     RETURNED_SQLSTATE,
     RETURNING,

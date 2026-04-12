@@ -415,7 +415,8 @@ impl Spanned for Statement {
             | Statement::ShowBackups { .. }
             | Statement::ShowBackupManifest { .. }
             | Statement::BackupStatusBareVerb
-            | Statement::CancelBackup { .. } => Span::empty(),
+            | Statement::CancelBackup { .. }
+            | Statement::SetBackupAuditRetention { .. } => Span::empty(),
             Statement::CreateSchema {
                 create_token,
                 schema_name,

@@ -15506,6 +15506,70 @@ impl<'a> Parser<'a> {
         Ok(SetAssignment { scope, name, value })
     }
 
+    fn parse_backup_audit_retention_unit(&self) -> Option<DateTimeField> {
+        let keyword = self.parse_one_of_keywords(&[
+            Keyword::YEAR,
+            Keyword::YEARS,
+            Keyword::MONTH,
+            Keyword::MONTHS,
+            Keyword::WEEK,
+            Keyword::WEEKS,
+            Keyword::DAY,
+            Keyword::DAYS,
+            Keyword::HOUR,
+            Keyword::HOURS,
+            Keyword::MINUTE,
+            Keyword::MINUTES,
+            Keyword::SECOND,
+            Keyword::SECONDS,
+        ])?;
+
+        Some(match keyword {
+            Keyword::YEAR => DateTimeField::Year,
+            Keyword::YEARS => DateTimeField::Years,
+            Keyword::MONTH => DateTimeField::Month,
+            Keyword::MONTHS => DateTimeField::Months,
+            Keyword::WEEK => DateTimeField::Week(None),
+            Keyword::WEEKS => DateTimeField::Weeks,
+            Keyword::DAY => DateTimeField::Day,
+            Keyword::DAYS => DateTimeField::Days,
+            Keyword::HOUR => DateTimeField::Hour,
+            Keyword::HOURS => DateTimeField::Hours,
+            Keyword::MINUTE => DateTimeField::Minute,
+            Keyword::MINUTES => DateTimeField::Minutes,
+            Keyword::SECOND => DateTimeField::Second,
+            Keyword::SECONDS => DateTimeField::Seconds,
+            _ => return None,
+        })
+    }
+
+    fn parse_set_backup_audit_retention(
+        &self,
+        scope: Option<ContextModifier>,
+    ) -> Result<Option<Statement>, ParserError> {
+        if !self.parse_keywords(&[Keyword::BACKUP, Keyword::AUDIT, Keyword::RETENTION]) {
+            return Ok(None);
+        }
+        if scope.is_some() {
+            return Err(ParserError::ParserError(
+                "SET BACKUP AUDIT RETENTION does not support SESSION, LOCAL, or GLOBAL".to_string(),
+            ));
+        }
+        if !(self.consume_token(&BorrowedToken::Eq) || self.parse_keyword(Keyword::TO)) {
+            return self.expected("equals sign or TO", self.peek_token());
+        }
+        let value = if self.parse_keyword(Keyword::DEFAULT) {
+            BackupAuditRetentionValue::Default
+        } else {
+            BackupAuditRetentionValue::Duration {
+                value: self.parse_expr()?,
+                unit: self.parse_backup_audit_retention_unit(),
+            }
+        };
+
+        Ok(Some(Statement::SetBackupAuditRetention { value }))
+    }
+
     fn parse_set(&self) -> Result<Statement, ParserError> {
         let token = self.attached_token_from_current();
         let scope = self.parse_context_modifier();
@@ -15518,6 +15582,12 @@ impl<'a> Parser<'a> {
             self.maybe_parse(|parser| parser.parse_set_constraints())?
         {
             return Ok(set_constraints_stmt);
+        }
+
+        if let Some(set_backup_audit_retention_stmt) =
+            self.parse_set_backup_audit_retention(scope)?
+        {
+            return Ok(set_backup_audit_retention_stmt);
         }
 
         // Helper to wrap Set in SetStatement

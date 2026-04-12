@@ -7811,6 +7811,7 @@ fn parse_create_view() {
             materialized,
             options,
             params,
+            ..
         }) => {
             assert_eq!(or_alter, false);
             assert_eq!("myschema.myview", name.to_string());
@@ -7893,6 +7894,7 @@ fn parse_create_or_replace_view() {
             query,
             materialized,
             params,
+            ..
         }) => {
             assert_eq!(or_alter, false);
             assert_eq!("v", name.to_string());
@@ -7924,6 +7926,7 @@ fn parse_create_or_replace_materialized_view() {
             query,
             materialized,
             params,
+            ..
         }) => {
             assert_eq!(or_alter, false);
             assert_eq!("v", name.to_string());
@@ -7951,6 +7954,7 @@ fn parse_create_materialized_view() {
             materialized,
             options,
             params,
+            ..
         }) => {
             assert_eq!(or_alter, false);
             assert_eq!("myschema.myview", name.to_string());
@@ -10146,6 +10150,26 @@ fn parse_backup_status_bare_verb() {
     assert_eq!(
         verified_stmt("BACKUP STATUS"),
         Statement::BackupStatusBareVerb
+    );
+}
+
+#[test]
+fn parse_set_backup_audit_retention() {
+    assert_eq!(
+        verified_stmt("SET BACKUP AUDIT RETENTION TO 90 DAYS"),
+        Statement::SetBackupAuditRetention {
+            value: BackupAuditRetentionValue::Duration {
+                value: Expr::value(Value::Number("90".parse().unwrap(), false)),
+                unit: Some(DateTimeField::Days),
+            },
+        }
+    );
+
+    assert_eq!(
+        verified_stmt("SET BACKUP AUDIT RETENTION TO DEFAULT"),
+        Statement::SetBackupAuditRetention {
+            value: BackupAuditRetentionValue::Default,
+        }
     );
 }
 

@@ -4904,6 +4904,32 @@ impl fmt::Display for Analyze {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum BackupAuditRetentionValue {
+    Default,
+    Duration {
+        value: Expr,
+        unit: Option<DateTimeField>,
+    },
+}
+
+impl fmt::Display for BackupAuditRetentionValue {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            BackupAuditRetentionValue::Default => write!(f, "DEFAULT"),
+            BackupAuditRetentionValue::Duration { value, unit } => {
+                write!(f, "{value}")?;
+                if let Some(unit) = unit {
+                    write!(f, " {unit}")?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
 /// A top-level statement (SELECT, INSERT, CREATE, etc.)
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
@@ -4919,6 +4945,12 @@ pub enum Statement {
     /// ```
     Analyze(Analyze),
     Set(SetStatement),
+    /// ```sql
+    /// SET BACKUP AUDIT RETENTION TO {DEFAULT | <duration>}
+    /// ```
+    SetBackupAuditRetention {
+        value: BackupAuditRetentionValue,
+    },
     /// ```sql
     /// TRUNCATE
     /// ```
@@ -7480,6 +7512,9 @@ impl fmt::Display for Statement {
             }
             Statement::CancelBackup { operation_id } => {
                 write!(f, "CANCEL BACKUP {operation_id}")
+            }
+            Statement::SetBackupAuditRetention { value } => {
+                write!(f, "SET BACKUP AUDIT RETENTION TO {value}")
             }
             Statement::CreateSchema {
                 create_token: _,
