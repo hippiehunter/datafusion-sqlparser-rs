@@ -3209,6 +3209,8 @@ pub struct CreateView {
     pub or_alter: bool,
     pub or_replace: bool,
     pub materialized: bool,
+    /// True if `IF NOT EXISTS` was specified (materialized views only).
+    pub if_not_exists: bool,
     /// View name
     pub name: ObjectName,
     pub columns: Vec<ViewColumnDef>,
@@ -3216,6 +3218,15 @@ pub struct CreateView {
     pub options: CreateTableOptions,
     /// MySQL: Optional parameters for the view algorithm, definer, and security context
     pub params: Option<CreateViewParams>,
+    /// `WITH DATA` (default) or `WITH NO DATA` after the AS query.
+    /// None means unspecified (defaults to WITH DATA).
+    pub with_data: Option<bool>,
+    /// `WITH SCHEMABINDING` / `WITHOUT SCHEMABINDING` after the AS query.
+    /// None means unspecified (server default applies).
+    pub schemabinding: Option<bool>,
+    /// Post-AS `WITH (key = value, ...)` options for materialized views
+    /// (maintenance, refresh_policy, auto_rebuild, etc.).
+    pub late_options: Vec<SqlOption>,
 }
 
 impl fmt::Display for CreateView {
@@ -3231,9 +3242,14 @@ impl fmt::Display for CreateView {
         }
         write!(
             f,
-            "{materialized}VIEW {name}",
+            "{materialized}VIEW {if_not_exists}{name}",
             materialized = if self.materialized {
                 "MATERIALIZED "
+            } else {
+                ""
+            },
+            if_not_exists = if self.if_not_exists {
+                "IF NOT EXISTS "
             } else {
                 ""
             },
@@ -3251,6 +3267,21 @@ impl fmt::Display for CreateView {
         f.write_str(" AS")?;
         SpaceOrNewline.fmt(f)?;
         self.query.fmt(f)?;
+        if let Some(with_data) = self.with_data {
+            if with_data {
+                write!(f, " WITH DATA")?;
+            } else {
+                write!(f, " WITH NO DATA")?;
+            }
+        }
+        match self.schemabinding {
+            Some(true) => write!(f, " WITH SCHEMABINDING")?,
+            Some(false) => write!(f, " WITHOUT SCHEMABINDING")?,
+            None => {}
+        }
+        if !self.late_options.is_empty() {
+            write!(f, " WITH ({})", display_comma_separated(&self.late_options))?;
+        }
         Ok(())
     }
 }

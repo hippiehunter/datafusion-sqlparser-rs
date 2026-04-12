@@ -947,6 +947,7 @@ define_keywords!(
     SAVEPOINT,
     SCALAR,
     SCHEMA,
+    SCHEMABINDING,
     SCHEMAS,
     SCOPE,
     SCROLL,

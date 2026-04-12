@@ -7999,6 +7999,8 @@ impl<'a> Parser<'a> {
         let _secure = self.parse_keyword(Keyword::SECURE);
         let materialized = self.parse_keyword(Keyword::MATERIALIZED);
         self.expect_keyword_is(Keyword::VIEW)?;
+        // IF NOT EXISTS (materialized views)
+        let if_not_exists = self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
         let allow_unquoted_hyphen = false;
         let name = self.parse_object_name(allow_unquoted_hyphen)?;
         // Many dialects support `OR ALTER` right after `CREATE`, but we don't (yet).
@@ -8014,6 +8016,36 @@ impl<'a> Parser<'a> {
         let query = self.parse_query()?;
         // Optional `WITH [ CASCADED | LOCAL ] CHECK OPTION` is widely supported here.
 
+        // Post-AS clauses for materialized views.
+        let mut with_data: Option<bool> = None;
+        let mut schemabinding: Option<bool> = None;
+        let mut late_options: Vec<SqlOption> = Vec::new();
+
+        if materialized {
+            // Parse optional post-AS clauses in any order.
+            // WITH DATA / WITH NO DATA
+            if self.parse_keywords(&[Keyword::WITH, Keyword::NO, Keyword::DATA]) {
+                with_data = Some(false);
+            } else if self.parse_keywords(&[Keyword::WITH, Keyword::DATA]) {
+                with_data = Some(true);
+            }
+
+            // WITH SCHEMABINDING / WITHOUT SCHEMABINDING
+            if self.parse_keywords(&[Keyword::WITH, Keyword::SCHEMABINDING]) {
+                schemabinding = Some(true);
+            } else if self.parse_keywords(&[Keyword::WITHOUT, Keyword::SCHEMABINDING]) {
+                schemabinding = Some(false);
+            }
+
+            // WITH (key = value, ...) for maintenance/refresh options.
+            // Only parse if the WITH is followed by '(' — otherwise it could
+            // be another clause like WITH DATA that we already consumed.
+            let late = self.parse_options(Keyword::WITH)?;
+            if !late.is_empty() {
+                late_options = late;
+            }
+        }
+
         Ok(CreateView {
             or_alter,
             name,
@@ -8021,8 +8053,12 @@ impl<'a> Parser<'a> {
             query,
             materialized,
             or_replace,
+            if_not_exists,
             options,
             params: create_view_params,
+            with_data,
+            schemabinding,
+            late_options,
         }
         .into())
     }
