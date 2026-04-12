@@ -5154,6 +5154,21 @@ pub enum Statement {
         operation: AlterMaterializedViewOperation,
     },
     /// ```sql
+    /// REFRESH MATERIALIZED VIEW [ CONCURRENTLY ] name [ FAST | COMPLETE ]
+    /// ```
+    ///
+    /// PostgreSQL also accepts an optional `WITH [ NO ] DATA` suffix; that
+    /// form is not parsed yet.
+    RefreshMaterializedView {
+        /// Materialized view name.
+        #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
+        name: ObjectName,
+        /// `CONCURRENTLY` between `VIEW` and the name.
+        concurrently: bool,
+        /// Optional refresh method (Oracle/dbl-server extension).
+        method: Option<MaterializedViewRefreshMethod>,
+    },
+    /// ```sql
     /// ALTER TYPE
     /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-altertype.html)
     /// ```
@@ -6291,6 +6306,27 @@ impl fmt::Display for AlterMaterializedViewOperation {
     }
 }
 
+/// Refresh method suffix on `REFRESH MATERIALIZED VIEW` (Oracle / dbl-server
+/// extension to standard PostgreSQL syntax).
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum MaterializedViewRefreshMethod {
+    /// `FAST` — apply pending change-feed deltas only.
+    Fast,
+    /// `COMPLETE` — rebuild the entire materialized view from sources.
+    Complete,
+}
+
+impl fmt::Display for MaterializedViewRefreshMethod {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MaterializedViewRefreshMethod::Fast => f.write_str("FAST"),
+            MaterializedViewRefreshMethod::Complete => f.write_str("COMPLETE"),
+        }
+    }
+}
+
 /// ```sql
 /// {COPY | REVOKE} CURRENT GRANTS
 /// ```
@@ -6823,6 +6859,21 @@ impl fmt::Display for Statement {
             }
             Statement::AlterMaterializedView { name, operation } => {
                 write!(f, "ALTER MATERIALIZED VIEW {name} {operation}")
+            }
+            Statement::RefreshMaterializedView {
+                name,
+                concurrently,
+                method,
+            } => {
+                write!(f, "REFRESH MATERIALIZED VIEW ")?;
+                if *concurrently {
+                    write!(f, "CONCURRENTLY ")?;
+                }
+                write!(f, "{name}")?;
+                if let Some(method) = method {
+                    write!(f, " {method}")?;
+                }
+                Ok(())
             }
             Statement::AlterType(AlterType {
                 name, operation, ..

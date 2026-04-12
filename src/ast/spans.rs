@@ -349,6 +349,7 @@ impl Spanned for Statement {
                     .chain(with_options.iter().map(|i| i.span())),
             ),
             Statement::AlterMaterializedView { name, .. } => name.span(),
+            Statement::RefreshMaterializedView { name, .. } => name.span(),
             // These statements need to be implemented
             Statement::AlterType(alter_type) => alter_type.token.0.span,
             Statement::AlterRole { token, .. } => token.0.span,

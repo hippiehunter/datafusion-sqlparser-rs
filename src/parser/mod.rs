@@ -1012,6 +1012,7 @@ impl<'a> Parser<'a> {
                 Keyword::RELEASE => self.parse_release(),
                 Keyword::COMMIT => self.parse_commit(),
                 Keyword::CHECKPOINT => self.parse_checkpoint(),
+                Keyword::REFRESH => self.parse_refresh(),
                 Keyword::BACKUP => self.parse_backup(),
                 Keyword::RESTORE => self.parse_restore(),
                 Keyword::RECOVER => self.parse_recover(),
@@ -12252,6 +12253,28 @@ impl<'a> Parser<'a> {
         };
 
         Ok(Statement::AlterMaterializedView { name, operation })
+    }
+
+    /// Parse `REFRESH MATERIALIZED VIEW [ CONCURRENTLY ] name [ FAST | COMPLETE ]`.
+    ///
+    /// The `FAST` / `COMPLETE` suffix is an Oracle/dbl-server extension that
+    /// the standard PostgreSQL grammar does not support.
+    pub fn parse_refresh(&self) -> Result<Statement, ParserError> {
+        self.expect_keywords(&[Keyword::MATERIALIZED, Keyword::VIEW])?;
+        let concurrently = self.parse_keyword(Keyword::CONCURRENTLY);
+        let name = self.parse_object_name(false)?;
+        let method = if self.parse_keyword(Keyword::FAST) {
+            Some(MaterializedViewRefreshMethod::Fast)
+        } else if self.parse_keyword(Keyword::COMPLETE) {
+            Some(MaterializedViewRefreshMethod::Complete)
+        } else {
+            None
+        };
+        Ok(Statement::RefreshMaterializedView {
+            name,
+            concurrently,
+            method,
+        })
     }
 
     /// Parse a [Statement::AlterType]

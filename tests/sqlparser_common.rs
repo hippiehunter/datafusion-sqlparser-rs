@@ -4718,6 +4718,59 @@ fn parse_alter_materialized_view_owner_to() {
 }
 
 #[test]
+fn parse_refresh_materialized_view() {
+    let sql = "REFRESH MATERIALIZED VIEW myschema.mv";
+    match verified_stmt(sql) {
+        Statement::RefreshMaterializedView {
+            name,
+            concurrently,
+            method,
+        } => {
+            assert_eq!("myschema.mv", name.to_string());
+            assert!(!concurrently);
+            assert!(method.is_none());
+        }
+        _ => unreachable!(),
+    }
+
+    let sql = "REFRESH MATERIALIZED VIEW CONCURRENTLY mv";
+    match verified_stmt(sql) {
+        Statement::RefreshMaterializedView {
+            name,
+            concurrently,
+            method,
+        } => {
+            assert_eq!("mv", name.to_string());
+            assert!(concurrently);
+            assert!(method.is_none());
+        }
+        _ => unreachable!(),
+    }
+
+    let sql = "REFRESH MATERIALIZED VIEW mv COMPLETE";
+    match verified_stmt(sql) {
+        Statement::RefreshMaterializedView {
+            name,
+            concurrently,
+            method,
+        } => {
+            assert_eq!("mv", name.to_string());
+            assert!(!concurrently);
+            assert_eq!(Some(MaterializedViewRefreshMethod::Complete), method);
+        }
+        _ => unreachable!(),
+    }
+
+    let sql = "REFRESH MATERIALIZED VIEW mv FAST";
+    match verified_stmt(sql) {
+        Statement::RefreshMaterializedView { method, .. } => {
+            assert_eq!(Some(MaterializedViewRefreshMethod::Fast), method);
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[test]
 fn parse_explain_rewrite() {
     let sql = "EXPLAIN REWRITE SELECT id, value FROM sales ORDER BY id";
     match verified_stmt(sql) {
