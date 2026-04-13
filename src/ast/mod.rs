@@ -6018,6 +6018,22 @@ pub enum Statement {
         table_name: ObjectName,
     },
     /// ```sql
+    /// CREATE MATERIALIZED VIEW LOG ON table_name
+    /// ```
+    /// No-op retained for Oracle/Trifox compatibility.
+    CreateMaterializedViewLog {
+        #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
+        table_name: ObjectName,
+    },
+    /// ```sql
+    /// DROP MATERIALIZED VIEW LOG ON table_name
+    /// ```
+    /// No-op retained for Oracle/Trifox compatibility.
+    DropMaterializedViewLog {
+        #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
+        table_name: ObjectName,
+    },
+    /// ```sql
     /// EXPLAIN MATERIALIZED VIEW view_name
     /// ```
     /// Returns MV metadata rows (state, maintenance mode, definition, etc.).
@@ -6521,6 +6537,12 @@ impl fmt::Display for Statement {
                 }
 
                 write!(f, "{table_name}")
+            }
+            Statement::CreateMaterializedViewLog { table_name } => {
+                write!(f, "CREATE MATERIALIZED VIEW LOG ON {table_name}")
+            }
+            Statement::DropMaterializedViewLog { table_name } => {
+                write!(f, "DROP MATERIALIZED VIEW LOG ON {table_name}")
             }
             Statement::ExplainMaterializedView { view_name } => {
                 write!(f, "EXPLAIN MATERIALIZED VIEW {view_name}")

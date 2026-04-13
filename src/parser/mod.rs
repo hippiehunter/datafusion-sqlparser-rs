@@ -7999,6 +7999,16 @@ impl<'a> Parser<'a> {
         let _secure = self.parse_keyword(Keyword::SECURE);
         let materialized = self.parse_keyword(Keyword::MATERIALIZED);
         self.expect_keyword_is(Keyword::VIEW)?;
+
+        // CREATE MATERIALIZED VIEW LOG ON table_name — no-op, return empty
+        // statement so downstream can silently accept it.
+        if materialized && self.parse_keywords(&[Keyword::LOG, Keyword::ON]) {
+            let table_name = self.parse_object_name(false)?;
+            return Ok(Statement::CreateMaterializedViewLog {
+                table_name,
+            });
+        }
+
         // IF NOT EXISTS (materialized views)
         let if_not_exists = self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
         let allow_unquoted_hyphen = false;
@@ -9025,6 +9035,11 @@ impl<'a> Parser<'a> {
         } else if self.parse_keyword(Keyword::VIEW) {
             ObjectType::View
         } else if self.parse_keywords(&[Keyword::MATERIALIZED, Keyword::VIEW]) {
+            // DROP MATERIALIZED VIEW LOG ON table_name — no-op
+            if self.parse_keywords(&[Keyword::LOG, Keyword::ON]) {
+                let table_name = self.parse_object_name(false)?;
+                return Ok(Statement::DropMaterializedViewLog { table_name });
+            }
             ObjectType::MaterializedView
         } else if self.parse_keyword(Keyword::INDEX) {
             ObjectType::Index

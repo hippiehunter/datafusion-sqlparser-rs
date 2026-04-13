@@ -487,7 +487,9 @@ impl Spanned for Statement {
                 .union(&statement.span()),
             Statement::Kill { kill_token, .. } => kill_token.0.span,
             Statement::ExplainTable { explain_token, .. } => explain_token.0.span,
-            Statement::ExplainMaterializedView { .. } => Span::empty(),
+            Statement::CreateMaterializedViewLog { .. }
+            | Statement::DropMaterializedViewLog { .. }
+            | Statement::ExplainMaterializedView { .. } => Span::empty(),
             Statement::Explain { explain_token, .. } => explain_token.0.span,
             Statement::Savepoint {
                 savepoint_token,
