@@ -2719,6 +2719,16 @@ impl<'a> Parser<'a> {
             | Keyword::USER
                 if dialect_of!(self is PostgreSqlDialect) =>
             {
+                // PostgreSQL accepts both the bare keyword (`current_schema`)
+                // and a zero-arg function call spelling (`current_schema()`).
+                // Consume an empty `()` if present so the two spellings
+                // produce the same AST.
+                if self.peek_token_ref().token == BorrowedToken::LParen
+                    && self.peek_nth_token_ref(1).token == BorrowedToken::RParen
+                {
+                    self.advance_token();
+                    self.advance_token();
+                }
                 Ok(Some(Expr::Function(Function {
                     name: ObjectName::from(vec![self.word_to_ident(w.clone(), w_span)]),
                     uses_odbc_syntax: false,
@@ -12254,7 +12264,9 @@ impl<'a> Parser<'a> {
         let mut sequence_options = Vec::new();
         let mut owned_by: Option<ObjectName> = None;
 
-        // Parse sequence options
+        // Parse sequence options (RESTART, OWNED BY, plus the standard
+        // CREATE SEQUENCE options: INCREMENT, MINVALUE, MAXVALUE, START,
+        // CACHE, CYCLE).
         loop {
             if self.parse_keyword(Keyword::RESTART) {
                 let with = self.parse_keyword(Keyword::WITH);
@@ -12279,12 +12291,20 @@ impl<'a> Parser<'a> {
                     None
                 };
                 sequence_options.push(SequenceOptions::Restart { with, value });
-            } else if self.parse_keyword(Keyword::OWNED) {
+                continue;
+            }
+
+            if self.parse_keyword(Keyword::OWNED) {
                 self.expect_keyword(Keyword::BY)?;
                 owned_by = Some(self.parse_object_name(false)?);
-            } else {
+                continue;
+            }
+
+            let extra_options = self.parse_create_sequence_options()?;
+            if extra_options.is_empty() {
                 break;
             }
+            sequence_options.extend(extra_options);
         }
 
         Ok(Statement::AlterSequence {
@@ -16577,7 +16597,8 @@ impl<'a> Parser<'a> {
             // `SKIP CATCHUP`, `REQUIRE FRESH`) that would otherwise trip the
             // expression parser on the second word. When the next two tokens
             // match a known hint pair, fold them into a single canonical
-            // snake_case identifier; otherwise fall back to `parse_expr`.
+            // snake_case identifier and then continue into any trailing
+            // infix operators (e.g. `ALLOW STALE <= '5s'`).
             const MV_MULTIWORD_HINTS: &[(&str, &str, &str)] = &[
                 ("allow", "stale", "allow_stale"),
                 ("skip", "catchup", "skip_catchup"),
@@ -16600,7 +16621,22 @@ impl<'a> Parser<'a> {
                                 if a == *lhs && b == *rhs {
                                     p.next_token();
                                     p.next_token();
-                                    return Ok(Expr::Identifier(Ident::new(*repl)));
+                                    let mut expr = Expr::Identifier(Ident::new(*repl));
+                                    // Fold any trailing infix operators (e.g.
+                                    // `<= '5s'`) onto the synthetic identifier
+                                    // so the hint round-trips as a single
+                                    // expression.
+                                    loop {
+                                        let next_precedence = p.get_next_precedence()?;
+                                        if next_precedence == 0 {
+                                            break;
+                                        }
+                                        if BorrowedToken::Period == p.peek_token_ref().token {
+                                            break;
+                                        }
+                                        expr = p.parse_infix(expr, next_precedence)?;
+                                    }
+                                    return Ok(expr);
                                 }
                             }
                         }
