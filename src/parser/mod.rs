@@ -16349,45 +16349,6 @@ impl<'a> Parser<'a> {
         )
     }
 
-    /// Parse a single `WITH (...)` table hint expression. Recognizes the
-    /// Gantry materialized view direct-query multi-word hints
-    /// (`ALLOW STALE`, `SKIP CATCHUP`, `REQUIRE FRESH`) by consuming both
-    /// keyword tokens and producing an `Expr::Identifier` with the canonical
-    /// snake_case form. Falls back to `parse_expr` for any other hint.
-    pub fn parse_table_with_hint(&self) -> Result<Expr, ParserError> {
-        if let Some(replacement) = self.try_parse_mv_multiword_hint() {
-            // Consume the two non-whitespace tokens that matched.
-            self.next_token();
-            self.next_token();
-            return Ok(Expr::Identifier(Ident::new(replacement)));
-        }
-        self.parse_expr()
-    }
-
-    fn try_parse_mv_multiword_hint(&self) -> Option<&'static str> {
-        const HINTS: &[(&str, &str, &str)] = &[
-            ("allow", "stale", "allow_stale"),
-            ("skip", "catchup", "skip_catchup"),
-            ("require", "fresh", "require_fresh"),
-        ];
-        fn lowercase_word(token: &BorrowedToken<'_>) -> Option<String> {
-            match token {
-                BorrowedToken::Word(w) => Some(w.value.as_ref().to_ascii_lowercase()),
-                _ => None,
-            }
-        }
-        // peek_nth_token skips whitespace; (0) is the next non-WS token,
-        // (1) is the one after that.
-        let first_word = lowercase_word(&self.peek_nth_token(0).token)?;
-        let second_word = lowercase_word(&self.peek_nth_token(1).token)?;
-        for (a, b, replacement) in HINTS {
-            if first_word == *a && second_word == *b {
-                return Some(*replacement);
-            }
-        }
-        None
-    }
-
     /// A table name or a parenthesized subquery, followed by optional `[AS] alias`
     pub fn parse_table_factor(&self) -> Result<TableFactor, ParserError> {
         if self.parse_keyword(Keyword::LATERAL) {
@@ -16610,13 +16571,41 @@ impl<'a> Parser<'a> {
                 vec![]
             };
 
-            // MSSQL-specific table hints, also reused by Gantry materialized
-            // view direct-query hints (ALLOW STALE, SKIP CATCHUP, REQUIRE FRESH).
+            // MSSQL-style table hints inside `WITH (...)`. Each comma-separated
+            // entry is normally a free-form expression, but Gantry materialized
+            // view direct-query hints use multi-word identifiers (`ALLOW STALE`,
+            // `SKIP CATCHUP`, `REQUIRE FRESH`) that would otherwise trip the
+            // expression parser on the second word. When the next two tokens
+            // match a known hint pair, fold them into a single canonical
+            // snake_case identifier; otherwise fall back to `parse_expr`.
+            const MV_MULTIWORD_HINTS: &[(&str, &str, &str)] = &[
+                ("allow", "stale", "allow_stale"),
+                ("skip", "catchup", "skip_catchup"),
+                ("require", "fresh", "require_fresh"),
+            ];
             let mut with_hints = vec![];
             if self.parse_keyword(Keyword::WITH) {
                 if self.consume_token(&BorrowedToken::LParen) {
-                    with_hints =
-                        self.parse_comma_separated(Parser::parse_table_with_hint)?;
+                    with_hints = self.parse_comma_separated(|p| {
+                        let lowercase_word = |t: &BorrowedToken<'_>| match t {
+                            BorrowedToken::Word(w) => {
+                                Some(w.value.as_ref().to_ascii_lowercase())
+                            }
+                            _ => None,
+                        };
+                        let first = lowercase_word(&p.peek_nth_token(0).token);
+                        let second = lowercase_word(&p.peek_nth_token(1).token);
+                        if let (Some(a), Some(b)) = (first, second) {
+                            for (lhs, rhs, repl) in MV_MULTIWORD_HINTS {
+                                if a == *lhs && b == *rhs {
+                                    p.next_token();
+                                    p.next_token();
+                                    return Ok(Expr::Identifier(Ident::new(*repl)));
+                                }
+                            }
+                        }
+                        p.parse_expr()
+                    })?;
                     self.expect_token(&BorrowedToken::RParen)?;
                 } else {
                     // rewind, as WITH may belong to the next statement's CTE
