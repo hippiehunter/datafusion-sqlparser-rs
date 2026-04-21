@@ -4045,10 +4045,7 @@ fn parse_from_only() {
         "SELECT * FROM public.backup_ci",
     );
     // FROM ONLY unqualified
-    pg().one_statement_parses_to(
-        "SELECT * FROM ONLY backup_ci",
-        "SELECT * FROM backup_ci",
-    );
+    pg().one_statement_parses_to("SELECT * FROM ONLY backup_ci", "SELECT * FROM backup_ci");
     // DECLARE CURSOR with FROM ONLY
     pg().one_statement_parses_to(
         "DECLARE c CURSOR FOR SELECT id FROM ONLY public.t",
@@ -4116,6 +4113,28 @@ fn parse_current_functions() {
             within_group: vec![],
         }),
         expr_from_projection(&select.projection[3])
+    );
+}
+
+#[test]
+fn parse_qualified_current_schema_function() {
+    let select = pg().verified_only_select_with_canonical(
+        "SELECT pg_catalog.current_schema()",
+        "SELECT pg_catalog.current_schema",
+    );
+    assert_eq!(
+        &Expr::Function(Function {
+            name: ObjectName::from(vec![Ident::new("pg_catalog"), Ident::new("current_schema")]),
+            uses_odbc_syntax: false,
+            parameters: FunctionArguments::None,
+            args: FunctionArguments::None,
+            null_treatment: None,
+            nth_value_order: None,
+            filter: None,
+            over: None,
+            within_group: vec![],
+        }),
+        expr_from_projection(&select.projection[0])
     );
 }
 
