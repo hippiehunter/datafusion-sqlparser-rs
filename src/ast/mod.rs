@@ -1714,9 +1714,47 @@ impl fmt::Display for CastFormat {
     }
 }
 
+fn fmt_binary_or_nested_expr_iterative(expr: &Expr, f: &mut fmt::Formatter) -> fmt::Result {
+    enum Frame<'a> {
+        Expr(&'a Expr),
+        Operator(&'a BinaryOperator),
+        Str(&'static str),
+    }
+
+    let mut frames = vec![Frame::Expr(expr)];
+
+    while let Some(frame) = frames.pop() {
+        match frame {
+            Frame::Expr(expr) => match expr {
+                Expr::BinaryOp { left, op, right } => {
+                    frames.push(Frame::Expr(right));
+                    frames.push(Frame::Str(" "));
+                    frames.push(Frame::Operator(op));
+                    frames.push(Frame::Str(" "));
+                    frames.push(Frame::Expr(left));
+                }
+                Expr::Nested(inner) => {
+                    frames.push(Frame::Str(")"));
+                    frames.push(Frame::Expr(inner));
+                    frames.push(Frame::Str("("));
+                }
+                expr => expr.fmt(f)?,
+            },
+            Frame::Operator(op) => op.fmt(f)?,
+            Frame::Str(s) => f.write_str(s)?,
+        }
+    }
+
+    Ok(())
+}
+
 impl fmt::Display for Expr {
     #[cfg_attr(feature = "recursive-protection", recursive::recursive)]
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if matches!(self, Expr::BinaryOp { .. } | Expr::Nested(_)) {
+            return fmt_binary_or_nested_expr_iterative(self, f);
+        }
+
         match self {
             Expr::Identifier(s) => write!(f, "{s}"),
             Expr::Wildcard(_) => f.write_str("*"),
@@ -13464,6 +13502,34 @@ mod tests {
             ],
         ]);
         assert_eq!("GROUPING SETS ((a, b), (c, d))", format!("{grouping_sets}"));
+    }
+
+    #[test]
+    fn test_deep_binary_expr_display_does_not_overflow() {
+        let mut expr = Expr::Nested(Box::new(Expr::BinaryOp {
+            left: Box::new(Expr::Identifier(Ident::new("c0"))),
+            op: BinaryOperator::Eq,
+            right: Box::new(Expr::Identifier(Ident::new("v0"))),
+        }));
+
+        for i in 1..20_000 {
+            let next = Expr::Nested(Box::new(Expr::BinaryOp {
+                left: Box::new(Expr::Identifier(Ident::new(format!("c{i}")))),
+                op: BinaryOperator::Eq,
+                right: Box::new(Expr::Identifier(Ident::new(format!("v{i}")))),
+            }));
+            expr = Expr::Nested(Box::new(Expr::BinaryOp {
+                left: Box::new(expr),
+                op: BinaryOperator::And,
+                right: Box::new(next),
+            }));
+        }
+
+        let sql = expr.to_string();
+        assert!(sql.contains("c0 = v0"));
+        assert!(sql.contains("c19999 = v19999"));
+
+        std::mem::forget(expr);
     }
 
     #[test]
