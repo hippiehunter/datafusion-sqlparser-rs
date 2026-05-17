@@ -149,6 +149,8 @@ pub enum BinaryOperator {
     PGExp,
     /// Overlap operator, e.g. `a && b` (PostgreSQL-specific)
     PGOverlap,
+    /// Adjacent operator, e.g. `a -|- b` (PostgreSQL-specific)
+    PGAdjacent,
     /// String matches regular expression (case sensitively), e.g. `a ~ b` (PostgreSQL-specific)
     PGRegexMatch,
     /// String matches regular expression (case insensitively), e.g. `a ~* b` (PostgreSQL-specific)
@@ -366,6 +368,7 @@ impl fmt::Display for BinaryOperator {
             BinaryOperator::PGBitwiseShiftRight => f.write_str(">>"),
             BinaryOperator::PGExp => f.write_str("^"),
             BinaryOperator::PGOverlap => f.write_str("&&"),
+            BinaryOperator::PGAdjacent => f.write_str("-|-"),
             BinaryOperator::PGRegexMatch => f.write_str("~"),
             BinaryOperator::PGRegexIMatch => f.write_str("~*"),
             BinaryOperator::PGRegexNotMatch => f.write_str("!~"),

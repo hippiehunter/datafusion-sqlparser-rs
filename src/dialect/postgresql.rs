@@ -138,6 +138,7 @@ impl Dialect for PostgreSqlDialect {
             | BorrowedToken::QuestionPipe
             | BorrowedToken::ExclamationMark
             | BorrowedToken::Overlap
+            | BorrowedToken::Adjacent
             | BorrowedToken::CaretAt
             | BorrowedToken::StringConcat
             | BorrowedToken::Sharp

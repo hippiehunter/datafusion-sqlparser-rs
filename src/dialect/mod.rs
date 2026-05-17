@@ -690,6 +690,7 @@ pub trait Dialect: Debug + Any {
             | BorrowedToken::QuestionMarkDash
             | BorrowedToken::DoubleSharp
             | BorrowedToken::Overlap
+            | BorrowedToken::Adjacent
             | BorrowedToken::AmpersandLeftAngleBracket
             | BorrowedToken::AmpersandRightAngleBracket
             | BorrowedToken::QuestionMarkDashVerticalBar

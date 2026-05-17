@@ -169,6 +169,8 @@ pub enum BorrowedToken<'a> {
     ShiftRight,
     /// `&&`, an overlap operator in PostgreSQL
     Overlap,
+    /// `-|-`, an adjacent operator in PostgreSQL
+    Adjacent,
     /// Exclamation Mark `!` used for PostgreSQL factorial operator
     ExclamationMark,
     /// Double Exclamation Mark `!!` used for PostgreSQL prefix factorial operator
@@ -322,6 +324,7 @@ impl<'a> fmt::Display for BorrowedToken<'a> {
             BorrowedToken::ShiftLeft => f.write_str("<<"),
             BorrowedToken::ShiftRight => f.write_str(">>"),
             BorrowedToken::Overlap => f.write_str("&&"),
+            BorrowedToken::Adjacent => f.write_str("-|-"),
             BorrowedToken::PGSquareRoot => f.write_str("|/"),
             BorrowedToken::PGCubeRoot => f.write_str("||/"),
             BorrowedToken::AtDashAt => f.write_str("@-@"),
@@ -445,6 +448,7 @@ impl<'a> BorrowedToken<'a> {
             BorrowedToken::ShiftLeft => BorrowedToken::ShiftLeft,
             BorrowedToken::ShiftRight => BorrowedToken::ShiftRight,
             BorrowedToken::Overlap => BorrowedToken::Overlap,
+            BorrowedToken::Adjacent => BorrowedToken::Adjacent,
             BorrowedToken::ExclamationMark => BorrowedToken::ExclamationMark,
             BorrowedToken::DoubleExclamationMark => BorrowedToken::DoubleExclamationMark,
             BorrowedToken::AtSign => BorrowedToken::AtSign,
@@ -1446,6 +1450,15 @@ impl<'a> Tokenizer<'a> {
                             match chars.peek() {
                                 Some('>') => self.consume_for_binop(chars, "->>", Token::LongArrow),
                                 _ => self.start_binop(chars, "->", Token::Arrow),
+                            }
+                        }
+                        Some('|') => {
+                            let after_pipe = chars.peek_nth(1);
+                            if after_pipe == Some('-') {
+                                chars.next(); // consume '|'
+                                self.consume_for_binop(chars, "-|-", Token::Adjacent)
+                            } else {
+                                self.start_binop(chars, "-", Token::Minus)
                             }
                         }
                         // a regular '-' operator

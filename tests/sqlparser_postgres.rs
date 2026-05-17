@@ -2379,6 +2379,7 @@ fn parse_pg_binary_ops() {
         (">>", BinaryOperator::PGBitwiseShiftRight, pg_and_generic()),
         ("<<", BinaryOperator::PGBitwiseShiftLeft, pg_and_generic()),
         ("&&", BinaryOperator::PGOverlap, pg()),
+        ("-|-", BinaryOperator::PGAdjacent, pg()),
         ("^@", BinaryOperator::PGStartsWith, pg()),
     ];
 
@@ -2411,8 +2412,7 @@ fn parse_pg_custom_binary_ops() {
         "<<<->", // distance between arguments
         // hstore
         "#=", // Replace fields with matching values from hstore
-        // ranges
-        "-|-", // Is adjacent to
+        // ranges: -|- is now a native operator (PGAdjacent), not tested here
         // pg_similarity
         "~++", // L1 distance
         "~##", // Cosine Distance

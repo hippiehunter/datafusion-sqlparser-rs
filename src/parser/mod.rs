@@ -5078,6 +5078,9 @@ impl<'a> Parser<'a> {
             BorrowedToken::Overlap if dialect_is!(dialect is PostgreSqlDialect) => {
                 Some(BinaryOperator::PGOverlap)
             }
+            BorrowedToken::Adjacent if dialect_is!(dialect is PostgreSqlDialect) => {
+                Some(BinaryOperator::PGAdjacent)
+            }
             BorrowedToken::CaretAt if dialect_is!(dialect is PostgreSqlDialect) => {
                 Some(BinaryOperator::PGStartsWith)
             }
