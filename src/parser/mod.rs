@@ -2107,35 +2107,21 @@ impl<'a> Parser<'a> {
         let language = language_before.or(language_after);
 
         // Re-parse as SQL/PSM block if language is plpgsql/pgsql or not specified
-        let body = if let Some(ref lang) = language {
-            if Self::is_sql_psm_language(lang) {
-                if let Expr::Value(ValueWithSpan {
-                    value: Value::DollarQuotedString(ref dqs),
-                    ..
-                }) = body_expr
-                {
-                    let rewritten = Self::rewrite_sql_psm_for_integer_ranges(&dqs.value);
-                    let parsed_block = self.reparse_as_sql_psm_block(&rewritten)?;
-                    DoBody::Block(parsed_block)
-                } else {
-                    DoBody::RawBody(body_expr)
-                }
-            } else {
-                DoBody::RawBody(body_expr)
-            }
-        } else {
-            // Default to SQL/PSM block if no language specified
-            if let Expr::Value(ValueWithSpan {
-                value: Value::DollarQuotedString(ref dqs),
-                ..
-            }) = body_expr
-            {
-                let rewritten = Self::rewrite_sql_psm_for_integer_ranges(&dqs.value);
+        let should_reparse = match &language {
+            Some(lang) => Self::is_sql_psm_language(lang),
+            None => true,
+        };
+        let body = if should_reparse {
+            let raw = Self::extract_string_body(&body_expr);
+            if let Some(raw) = raw {
+                let rewritten = Self::rewrite_sql_psm_for_integer_ranges(&raw);
                 let parsed_block = self.reparse_as_sql_psm_block(&rewritten)?;
                 DoBody::Block(parsed_block)
             } else {
                 DoBody::RawBody(body_expr)
             }
+        } else {
+            DoBody::RawBody(body_expr)
         };
 
         Ok(Statement::Do(DoStatement {
@@ -6969,6 +6955,20 @@ impl<'a> Parser<'a> {
         lang.value.eq_ignore_ascii_case("plpgsql") || lang.value.eq_ignore_ascii_case("pgsql")
     }
 
+    fn extract_string_body(expr: &Expr) -> Option<String> {
+        match expr {
+            Expr::Value(ValueWithSpan {
+                value: Value::DollarQuotedString(ref dqs),
+                ..
+            }) => Some(dqs.value.clone()),
+            Expr::Value(ValueWithSpan {
+                value: Value::SingleQuotedString(ref s),
+                ..
+            }) => Some(s.clone()),
+            _ => None,
+        }
+    }
+
     /// Returns true when the provided token is a plain SQL identifier.
     fn is_simple_identifier(name: &str) -> bool {
         let mut chars = name.chars();
@@ -7499,16 +7499,18 @@ impl<'a> Parser<'a> {
             }
         }
 
-        // Re-parse dollar-quoted body if LANGUAGE is a SQL/PSM variant (plpgsql, pgsql)
+        // Re-parse string body if LANGUAGE is a SQL/PSM variant (plpgsql, pgsql)
         if let Some(ref lang) = body.language {
             if Self::is_sql_psm_language(lang) {
-                if let Some(CreateFunctionBody::AsBeforeOptions(Expr::Value(ValueWithSpan {
-                    value: Value::DollarQuotedString(ref dqs),
-                    ..
-                }))) = body.function_body
-                {
+                let body_str = match &body.function_body {
+                    Some(CreateFunctionBody::AsBeforeOptions(ref expr)) => {
+                        Self::extract_string_body(expr)
+                    }
+                    _ => None,
+                };
+                if let Some(raw_body) = body_str {
                     let rewritten_body =
-                        Self::rewrite_sql_psm_alias_declarations(&dqs.value, &args);
+                        Self::rewrite_sql_psm_alias_declarations(&raw_body, &args);
                     let rewritten_body = Self::rewrite_sql_psm_for_integer_ranges(&rewritten_body);
                     let parsed_block = self.reparse_as_sql_psm_block(&rewritten_body)?;
                     body.function_body = Some(CreateFunctionBody::AsBeginEnd(parsed_block));
