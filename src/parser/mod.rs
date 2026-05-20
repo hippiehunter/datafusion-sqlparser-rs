@@ -17407,16 +17407,19 @@ impl<'a> Parser<'a> {
             // Anonymous edge: just --> or <- or - or <->
             // Check for arrow patterns
             // Arrow might be tokenized as -> (single token) or as - > (two tokens)
-            let has_right = if self.consume_token(&BorrowedToken::Arrow) {
-                // Consumed -> as a single Arrow token
-                true
-            } else if self.consume_token(&BorrowedToken::Minus) {
-                // Consumed second - in -->, now check for >
-                self.consume_token(&BorrowedToken::Gt)
-            } else {
-                // Just a single - (undirected or left-directed)
-                false
-            };
+            let (has_right, arrow_quantifier) =
+                if let Some(quantifier) = self.consume_graph_edge_right_arrow_quantifier_suffix() {
+                    (true, Some(quantifier))
+                } else if self.consume_token(&BorrowedToken::Arrow) {
+                    // Consumed -> as a single Arrow token
+                    (true, None)
+                } else if self.consume_token(&BorrowedToken::Minus) {
+                    // Consumed second - in -->, now check for >
+                    (self.consume_token(&BorrowedToken::Gt), None)
+                } else {
+                    // Just a single - (undirected or left-directed)
+                    (false, None)
+                };
 
             let direction = match (has_left, has_right) {
                 (true, true) => EdgeDirection::Any,
@@ -17425,13 +17428,21 @@ impl<'a> Parser<'a> {
                 (false, false) => EdgeDirection::Undirected,
             };
 
+            let quantifier = if let Some(quantifier) = arrow_quantifier {
+                Some(quantifier)
+            } else if self.peek_is_edge_repetition_quantifier_start() {
+                Some(self.parse_edge_repetition_quantifier()?)
+            } else {
+                None
+            };
+
             return Ok(EdgePattern {
                 variable: None,
                 labels: vec![],
                 properties: vec![],
                 where_clause: None,
                 direction,
-                quantifier: None,
+                quantifier,
                 anonymous: true,
             });
         }
@@ -17465,20 +17476,7 @@ impl<'a> Parser<'a> {
         // Check if next token is quantifier or properties
         // Quantifier: {n} or {n,} or {,n} or {n,m} starts with { followed by number or comma
         // Properties: {prop: val} starts with { followed by identifier
-        let is_quantifier = if self.peek_token().token == BorrowedToken::LBrace {
-            // Look ahead to second token after {
-            let next_idx = self.index.get() + 1;
-            if next_idx < self.tokens.len() {
-                matches!(
-                    self.tokens[next_idx].token,
-                    BorrowedToken::Number(_, _) | BorrowedToken::Comma
-                )
-            } else {
-                false
-            }
-        } else {
-            false
-        };
+        let is_quantifier = self.peek_is_braced_edge_repetition_quantifier();
 
         // Parse optional quantifier (if it's detected as quantifier)
         let quantifier = if is_quantifier
@@ -17513,20 +17511,37 @@ impl<'a> Parser<'a> {
 
         // Check for arrow patterns: -> or <- or - or <->
         // The tokenizer may parse -> as a single Arrow token
-        let has_right = if self.consume_token(&BorrowedToken::Arrow) {
-            // Consumed -> as a single token
-            true
-        } else {
-            // Try to parse - and then >
-            self.expect_token(&BorrowedToken::Minus)?;
-            self.consume_token(&BorrowedToken::Gt)
-        };
+        let (has_right, arrow_quantifier) =
+            if let Some(quantifier) = self.consume_graph_edge_right_arrow_quantifier_suffix() {
+                (true, Some(quantifier))
+            } else if self.consume_token(&BorrowedToken::Arrow) {
+                // Consumed -> as a single token
+                (true, None)
+            } else {
+                // Try to parse - and then >
+                self.expect_token(&BorrowedToken::Minus)?;
+                (self.consume_token(&BorrowedToken::Gt), None)
+            };
 
         let direction = match (has_left, has_right) {
             (true, true) => EdgeDirection::Any,
             (true, false) => EdgeDirection::Left,
             (false, true) => EdgeDirection::Right,
             (false, false) => EdgeDirection::Undirected,
+        };
+
+        let quantifier = if let Some(arrow_quantifier) = arrow_quantifier {
+            if quantifier.is_some() {
+                return self.expected("at most one edge repetition quantifier", self.peek_token());
+            }
+            Some(arrow_quantifier)
+        } else if self.peek_is_edge_repetition_quantifier_start() {
+            if quantifier.is_some() {
+                return self.expected("at most one edge repetition quantifier", self.peek_token());
+            }
+            Some(self.parse_edge_repetition_quantifier()?)
+        } else {
+            quantifier
         };
 
         Ok(EdgePattern {
@@ -17629,6 +17644,42 @@ impl<'a> Parser<'a> {
         self.expect_token(&BorrowedToken::RParen)?;
 
         Ok(GraphColumnsClause { columns })
+    }
+
+    fn peek_is_edge_repetition_quantifier_start(&self) -> bool {
+        matches!(
+            self.peek_token().token,
+            BorrowedToken::Mul | BorrowedToken::Plus
+        ) || matches!(self.peek_token().token, BorrowedToken::Placeholder(s) if s == "?")
+            || self.peek_is_braced_edge_repetition_quantifier()
+    }
+
+    fn consume_graph_edge_right_arrow_quantifier_suffix(&self) -> Option<RepetitionQuantifier> {
+        let token = self.peek_token();
+        let BorrowedToken::CustomBinaryOperator(operator) = &token.token else {
+            return None;
+        };
+        let quantifier = match operator.strip_prefix("->")? {
+            "*" => RepetitionQuantifier::ZeroOrMore,
+            "+" => RepetitionQuantifier::OneOrMore,
+            "?" => RepetitionQuantifier::AtMostOne,
+            _ => return None,
+        };
+        self.next_token();
+        Some(quantifier)
+    }
+
+    fn peek_is_braced_edge_repetition_quantifier(&self) -> bool {
+        if self.peek_token().token != BorrowedToken::LBrace {
+            return false;
+        }
+
+        let next_idx = self.index.get() + 1;
+        next_idx < self.tokens.len()
+            && matches!(
+                self.tokens[next_idx].token,
+                BorrowedToken::Number(_, _) | BorrowedToken::Comma
+            )
     }
 
     /// Parse edge quantifier like *, +, ?, {n}, {n,m}, *n..m etc.

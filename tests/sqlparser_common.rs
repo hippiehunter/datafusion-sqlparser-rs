@@ -9774,6 +9774,79 @@ fn verified_expr(query: &str) -> Expr {
     all_dialects().verified_expr(query)
 }
 
+fn single_graph_table_edge(sql: &str) -> EdgePattern {
+    let mut statements = Parser::parse_sql(&PostgreSqlDialect {}, sql).unwrap();
+    assert_eq!(statements.len(), 1);
+    let Statement::Query(query) = statements.pop().unwrap() else {
+        panic!("expected query statement");
+    };
+    let select = query.body.as_select().expect("expected SELECT body");
+    assert_eq!(select.from.len(), 1);
+    let TableFactor::GraphTable { match_clause, .. } = &select.from[0].relation else {
+        panic!("expected GRAPH_TABLE relation");
+    };
+    assert_eq!(match_clause.patterns.len(), 1);
+    let GraphPatternExpr::Chain(elements) = &match_clause.patterns[0].expr else {
+        panic!("expected graph pattern chain");
+    };
+    let Some(GraphPatternElement::Edge(edge)) = elements
+        .iter()
+        .find(|element| matches!(element, GraphPatternElement::Edge(_)))
+    else {
+        panic!("expected edge pattern");
+    };
+    edge.clone()
+}
+
+#[test]
+fn parse_graph_table_edge_quantifier_suffixes() {
+    for (sql, expected) in [
+        (
+            "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[e:knows]->{1,3}(b) COLUMNS (a.name AS src))",
+            RepetitionQuantifier::Range(1, 3),
+        ),
+        (
+            "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[e:knows]->+(b) COLUMNS (a.name AS src))",
+            RepetitionQuantifier::OneOrMore,
+        ),
+        (
+            "SELECT * FROM GRAPH_TABLE (g MATCH ANY SHORTEST (a)-[e:knows]->{1,}(b) COLUMNS (a.name AS src))",
+            RepetitionQuantifier::AtLeast(1),
+        ),
+    ] {
+        let edge = single_graph_table_edge(sql);
+        assert_eq!(edge.quantifier, Some(expected));
+    }
+}
+
+#[test]
+fn parse_graph_table_edge_quantifier_suffix_preserves_edge_where() {
+    let edge = single_graph_table_edge(
+        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[e:knows WHERE e.weight > 0]->+(b) COLUMNS (a.name AS src))",
+    );
+
+    assert_eq!(edge.quantifier, Some(RepetitionQuantifier::OneOrMore));
+    assert!(
+        edge.where_clause.is_some(),
+        "expected edge-local WHERE clause to remain on the edge"
+    );
+}
+
+#[test]
+fn parse_graph_table_rejects_duplicate_edge_quantifier() {
+    let error = Parser::parse_sql(
+        &PostgreSqlDialect {},
+        "SELECT * FROM GRAPH_TABLE (g MATCH (a)-[e:knows+]->{1,3}(b) COLUMNS (a.name AS src))",
+    )
+    .unwrap_err()
+    .to_string();
+
+    assert!(
+        error.contains("at most one edge repetition quantifier"),
+        "unexpected duplicate quantifier error: {error}"
+    );
+}
+
 #[test]
 fn parse_offset_and_limit() {
     let sql = "SELECT foo FROM bar LIMIT 1 OFFSET 2";
