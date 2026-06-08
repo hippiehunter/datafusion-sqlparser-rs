@@ -127,9 +127,9 @@ mod dml;
 pub mod helpers;
 pub mod table_constraints;
 pub use table_constraints::{
-    CheckConstraint, ForeignKeyColumnOrPeriod, ForeignKeyConstraint, FullTextOrSpatialConstraint,
-    IndexConstraint, PeriodForDefinition, PeriodForName, PrimaryKeyConstraint, TableConstraint,
-    UniqueConstraint,
+    CheckConstraint, ExcludeConstraint, ExcludeConstraintElement, ForeignKeyColumnOrPeriod,
+    ForeignKeyConstraint, FullTextOrSpatialConstraint, IndexConstraint, PeriodForDefinition,
+    PeriodForName, PrimaryKeyConstraint, TableConstraint, UniqueConstraint,
 };
 mod operator;
 mod query;

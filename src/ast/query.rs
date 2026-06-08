@@ -1069,6 +1069,10 @@ pub enum TableFactor {
         /// For example, `SELECT * FROM generate_series(1, 10) WITH ORDINALITY AS t(a, b);`
         /// [WITH ORDINALITY](https://www.postgresql.org/docs/current/functions-srf.html), supported by Postgres.
         with_ordinality: bool,
+        /// PostgreSQL `ONLY` modifier: `FROM ONLY t` excludes rows from tables
+        /// that inherit from `t`.
+        /// See: <https://www.postgresql.org/docs/current/ddl-inherit.html>
+        only: bool,
         /// [Partition selection](https://dev.mysql.com/doc/refman/8.0/en/partitioning-selection.html), supported by MySQL.
         partitions: Vec<Ident>,
         /// Optional PartiQL JsonPath: <https://partiql.org/dql/from.html>
@@ -2347,10 +2351,14 @@ impl fmt::Display for TableFactor {
                 version,
                 partitions,
                 with_ordinality,
+                only,
                 json_path,
                 sample,
                 index_hints,
             } => {
+                if *only {
+                    write!(f, "ONLY ")?;
+                }
                 name.fmt(f)?;
                 if let Some(json_path) = json_path {
                     json_path.fmt(f)?;

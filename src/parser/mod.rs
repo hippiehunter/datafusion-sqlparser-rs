@@ -11415,6 +11415,31 @@ impl<'a> Parser<'a> {
                     .into(),
                 ))
             }
+            BorrowedToken::Word(w) if w.keyword == Keyword::EXCLUDE => {
+                // PostgreSQL exclusion constraint:
+                // EXCLUDE [USING <index_method>] (<column> WITH <operator> [, ...])
+                let index_type = if self.parse_keyword(Keyword::USING) {
+                    Some(self.parse_identifier()?)
+                } else {
+                    None
+                };
+                self.expect_token(&BorrowedToken::LParen)?;
+                let elements = self.parse_comma_separated(|p| {
+                    let column = p.parse_identifier()?;
+                    p.expect_keyword(Keyword::WITH)?;
+                    let operator = p.next_token().to_string();
+                    Ok(ExcludeConstraintElement { column, operator })
+                })?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                Ok(Some(
+                    ExcludeConstraint {
+                        name,
+                        index_type,
+                        elements,
+                    }
+                    .into(),
+                ))
+            }
             BorrowedToken::Word(w)
                 if (w.keyword == Keyword::INDEX || w.keyword == Keyword::KEY)
                     && dialect_of!(self is MySqlDialect)
@@ -16535,7 +16560,7 @@ impl<'a> Parser<'a> {
             // Consume ONLY when the next token looks like a table reference (identifier
             // or quoted string), but not when followed by '(' (function call syntax)
             // or a keyword like AS/JOIN (where ONLY is itself a table name).
-            if self.peek_keyword(Keyword::ONLY) {
+            let only = if self.peek_keyword(Keyword::ONLY) {
                 let consume = match &self.peek_nth_token(1).token {
                     BorrowedToken::LParen => false,
                     BorrowedToken::Word(w) => {
@@ -16546,10 +16571,12 @@ impl<'a> Parser<'a> {
                     BorrowedToken::DoubleQuotedString(_) => true,
                     _ => false,
                 };
-                if consume {
-                    let _ = self.parse_keyword(Keyword::ONLY);
-                }
-            }
+                // `parse_keyword` only consumes the token when it matches, so this
+                // both records the `ONLY` modifier and advances past it.
+                consume && self.parse_keyword(Keyword::ONLY)
+            } else {
+                false
+            };
             let name = self.parse_object_name(true)?;
 
             let json_path = match self.peek_token().token {
@@ -16668,6 +16695,7 @@ impl<'a> Parser<'a> {
                 version,
                 partitions,
                 with_ordinality,
+                only,
                 json_path,
                 sample,
                 index_hints,

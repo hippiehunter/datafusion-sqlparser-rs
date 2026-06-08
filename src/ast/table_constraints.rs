@@ -80,6 +80,11 @@ pub enum TableConstraint {
     ForeignKey(ForeignKeyConstraint),
     /// `[ CONSTRAINT <name> ] CHECK (<expr>) [[NOT] ENFORCED]`
     Check(CheckConstraint),
+    /// PostgreSQL [exclusion constraint][1]:
+    /// `[ CONSTRAINT <name> ] EXCLUDE [USING <index_method>] (<column> WITH <operator> [, ...])`
+    ///
+    /// [1]: https://www.postgresql.org/docs/current/ddl-constraints.html#DDL-CONSTRAINTS-EXCLUSION
+    Exclude(ExcludeConstraint),
     /// MySQLs [index definition][1] for index creation. Not present on ANSI so, for now, the usage
     /// is restricted to MySQL, as no other dialects that support this syntax were found.
     ///
@@ -130,6 +135,12 @@ impl From<CheckConstraint> for TableConstraint {
     }
 }
 
+impl From<ExcludeConstraint> for TableConstraint {
+    fn from(constraint: ExcludeConstraint) -> Self {
+        TableConstraint::Exclude(constraint)
+    }
+}
+
 impl From<IndexConstraint> for TableConstraint {
     fn from(constraint: IndexConstraint) -> Self {
         TableConstraint::Index(constraint)
@@ -155,6 +166,7 @@ impl fmt::Display for TableConstraint {
             TableConstraint::PrimaryKey(constraint) => constraint.fmt(f),
             TableConstraint::ForeignKey(constraint) => constraint.fmt(f),
             TableConstraint::Check(constraint) => constraint.fmt(f),
+            TableConstraint::Exclude(constraint) => constraint.fmt(f),
             TableConstraint::Index(constraint) => constraint.fmt(f),
             TableConstraint::FulltextOrSpatial(constraint) => constraint.fmt(f),
             TableConstraint::Period(constraint) => constraint.fmt(f),
@@ -195,6 +207,67 @@ impl crate::ast::Spanned for CheckConstraint {
         self.expr
             .span()
             .union_opt(&self.name.as_ref().map(|i| i.span))
+    }
+}
+
+/// PostgreSQL exclusion constraint:
+/// `[ CONSTRAINT <name> ] EXCLUDE [USING <index_method>] (<element> [, ...])`
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct ExcludeConstraint {
+    pub name: Option<Ident>,
+    /// Index access method, e.g. `gist` in `EXCLUDE USING gist (...)`.
+    pub index_type: Option<Ident>,
+    pub elements: Vec<ExcludeConstraintElement>,
+}
+
+impl fmt::Display for ExcludeConstraint {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use crate::ast::ddl::display_constraint_name;
+        write!(f, "{}EXCLUDE", display_constraint_name(&self.name))?;
+        if let Some(index_type) = &self.index_type {
+            write!(f, " USING {index_type}")?;
+        }
+        write!(f, " (")?;
+        for (i, element) in self.elements.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{element}")?;
+        }
+        write!(f, ")")
+    }
+}
+
+impl crate::ast::Spanned for ExcludeConstraint {
+    fn span(&self) -> Span {
+        self.name
+            .as_ref()
+            .map(|i| i.span)
+            .unwrap_or_else(Span::empty)
+    }
+}
+
+/// A single `<column> WITH <operator>` element of an exclusion constraint.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct ExcludeConstraintElement {
+    pub column: Ident,
+    /// The comparison operator, rendered as written (e.g. `=`, `&&`).
+    pub operator: String,
+}
+
+impl fmt::Display for ExcludeConstraintElement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} WITH {}", self.column, self.operator)
+    }
+}
+
+impl crate::ast::Spanned for ExcludeConstraintElement {
+    fn span(&self) -> Span {
+        self.column.span
     }
 }
 
