@@ -6402,6 +6402,22 @@ fn parse_varbit_datatype() {
 }
 
 #[test]
+fn parse_move_cursor_statement() {
+    // MOVE [ direction [ FROM | IN ] ] cursor_name — the statement keyword is
+    // consumed by the dispatch, like FETCH.
+    for sql in [
+        "MOVE FORWARD 10 FROM curs",
+        "MOVE FORWARD FROM curs",
+        "MOVE BACKWARD 2 IN curs",
+        "MOVE NEXT FROM curs",
+        "MOVE 5 FROM curs",
+    ] {
+        let stmt = pg().parse_sql_statements(sql).expect(sql).remove(0);
+        assert!(matches!(stmt, Statement::Move { .. }), "{sql}: {stmt:?}");
+    }
+}
+
+#[test]
 fn parse_variadic_function_args() {
     let stmt = pg().verified_stmt("SELECT concat_ws(',', VARIADIC ARRAY['a', 'b'])");
     match stmt {

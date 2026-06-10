@@ -10072,10 +10072,10 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// Parse MOVE statement for cursor positioning
+    /// Parse MOVE statement for cursor positioning. Like
+    /// [`Self::parse_fetch_statement`], the `MOVE` keyword has already been
+    /// consumed by the statement dispatch.
     pub fn parse_move(&self) -> Result<Statement, ParserError> {
-        self.expect_keyword(Keyword::MOVE)?;
-
         let direction = if self.parse_keyword(Keyword::NEXT) {
             FetchDirection::Next
         } else if self.parse_keyword(Keyword::PRIOR) {
