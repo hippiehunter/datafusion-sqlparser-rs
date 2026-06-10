@@ -564,6 +564,7 @@ impl Spanned for Statement {
             Statement::Exit(_) => Span::empty(),
             Statement::Continue(_) => Span::empty(),
             Statement::CreatePublication { .. } => Span::empty(),
+            Statement::AlterPublication { .. } => Span::empty(),
             Statement::DropPublication { .. } => Span::empty(),
             Statement::CreateSubscription { .. } => Span::empty(),
             Statement::DropSubscription { .. } => Span::empty(),
@@ -1270,6 +1271,10 @@ impl Spanned for AlterTableOperation {
             AlterTableOperation::Lock { .. } => Span::empty(),
             AlterTableOperation::ReplicaIdentity { .. } => Span::empty(),
             AlterTableOperation::ValidateConstraint { name } => name.span,
+            AlterTableOperation::EnableDegradedReads => Span::empty(),
+            AlterTableOperation::ClearDegraded => Span::empty(),
+            AlterTableOperation::ValidateConstraints => Span::empty(),
+            AlterTableOperation::SwapWith { target } => target.span(),
             AlterTableOperation::SetOptionsParens { options } => {
                 union_spans(options.iter().map(|i| i.span()))
             }
@@ -2279,6 +2284,7 @@ impl Spanned for FunctionArg {
                 operator: _,
             } => name.span.union(&arg.span()),
             FunctionArg::Unnamed(arg) => arg.span(),
+            FunctionArg::Variadic(arg) => arg.span(),
             FunctionArg::ExprNamed {
                 name,
                 arg,

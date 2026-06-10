@@ -103,7 +103,7 @@ pub enum ReplicaIdentity {
 impl fmt::Display for ReplicaIdentity {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ReplicaIdentity::None => f.write_str("NONE"),
+            ReplicaIdentity::None => f.write_str("NOTHING"),
             ReplicaIdentity::Full => f.write_str("FULL"),
             ReplicaIdentity::Default => f.write_str("DEFAULT"),
             ReplicaIdentity::Index(idx) => write!(f, "USING INDEX {idx}"),
@@ -290,6 +290,15 @@ pub enum AlterTableOperation {
     AutoIncrement { equals: bool, value: ValueWithSpan },
     /// `VALIDATE CONSTRAINT <name>`
     ValidateConstraint { name: Ident },
+    /// `ENABLE DEGRADED READS` (gantry admin extension)
+    EnableDegradedReads,
+    /// `CLEAR DEGRADED` (gantry admin extension)
+    ClearDegraded,
+    /// `VALIDATE CONSTRAINTS` — validate all constraints (gantry admin
+    /// extension; distinct from the singular `VALIDATE CONSTRAINT <name>`)
+    ValidateConstraints,
+    /// `SWAP WITH <target>` (gantry admin extension)
+    SwapWith { target: ObjectName },
     /// Arbitrary parenthesized `SET` options.
     ///
     /// Example:
@@ -670,6 +679,10 @@ impl fmt::Display for AlterTableOperation {
             AlterTableOperation::ValidateConstraint { name } => {
                 write!(f, "VALIDATE CONSTRAINT {name}")
             }
+            AlterTableOperation::EnableDegradedReads => write!(f, "ENABLE DEGRADED READS"),
+            AlterTableOperation::ClearDegraded => write!(f, "CLEAR DEGRADED"),
+            AlterTableOperation::ValidateConstraints => write!(f, "VALIDATE CONSTRAINTS"),
+            AlterTableOperation::SwapWith { target } => write!(f, "SWAP WITH {target}"),
             AlterTableOperation::SetOptionsParens { options } => {
                 write!(f, "SET ({})", display_comma_separated(options))
             }

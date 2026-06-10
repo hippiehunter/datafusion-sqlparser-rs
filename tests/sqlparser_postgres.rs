@@ -4040,17 +4040,11 @@ fn parse_declare() {
 #[test]
 fn parse_from_only() {
     // FROM ONLY schema.table — the pg_dump case
-    pg().one_statement_parses_to(
-        "SELECT * FROM ONLY public.backup_ci",
-        "SELECT * FROM public.backup_ci",
-    );
+    pg().verified_stmt("SELECT * FROM ONLY public.backup_ci");
     // FROM ONLY unqualified
-    pg().one_statement_parses_to("SELECT * FROM ONLY backup_ci", "SELECT * FROM backup_ci");
+    pg().verified_stmt("SELECT * FROM ONLY backup_ci");
     // DECLARE CURSOR with FROM ONLY
-    pg().one_statement_parses_to(
-        "DECLARE c CURSOR FOR SELECT id FROM ONLY public.t",
-        "DECLARE c CURSOR FOR SELECT id FROM public.t",
-    );
+    pg().verified_stmt("DECLARE c CURSOR FOR SELECT id FROM ONLY public.t");
 }
 
 #[test]
@@ -6408,6 +6402,61 @@ fn parse_varbit_datatype() {
 }
 
 #[test]
+fn parse_variadic_function_args() {
+    let stmt = pg().verified_stmt("SELECT concat_ws(',', VARIADIC ARRAY['a', 'b'])");
+    match stmt {
+        Statement::Query(query) => match *query.body {
+            SetExpr::Select(select) => match &select.projection[0] {
+                SelectItem::UnnamedExpr(Expr::Function(func)) => {
+                    let FunctionArguments::List(list) = &func.args else {
+                        panic!("expected arg list, got {:?}", func.args);
+                    };
+                    assert_eq!(list.args.len(), 2);
+                    assert!(matches!(list.args[1], FunctionArg::Variadic(_)));
+                }
+                other => panic!("expected function call, got {other:?}"),
+            },
+            other => panic!("expected SELECT, got {other:?}"),
+        },
+        other => panic!("expected query, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_function_call_expr_star_projection() {
+    // The PostgreSQL tablesync fetch_table_list discovery shape: a
+    // composite-valued function call expanded with `.*` in the select list.
+    let stmt = pg().verified_stmt(
+        "SELECT (pg_get_publication_tables(VARIADIC array_agg(pubname::TEXT))).* FROM pg_publication WHERE pubname IN ('p1', 'p2')",
+    );
+    match stmt {
+        Statement::Query(query) => match *query.body {
+            SetExpr::Select(select) => match &select.projection[0] {
+                SelectItem::QualifiedWildcard(SelectItemQualifiedWildcardKind::Expr(expr), _) => {
+                    let Expr::Nested(inner) = expr else {
+                        panic!("expected nested expr root, got {expr:?}");
+                    };
+                    let Expr::Function(func) = inner.as_ref() else {
+                        panic!("expected function call, got {inner:?}");
+                    };
+                    let FunctionArguments::List(list) = &func.args else {
+                        panic!("expected arg list, got {:?}", func.args);
+                    };
+                    assert!(matches!(list.args[0], FunctionArg::Variadic(_)));
+                }
+                other => panic!("expected expr-star qualified wildcard, got {other:?}"),
+            },
+            other => panic!("expected SELECT, got {other:?}"),
+        },
+        other => panic!("expected query, got {other:?}"),
+    }
+
+    // The identifier-chain forms must keep their existing parse shapes.
+    pg().verified_stmt("SELECT array_agg(t.*) FROM t");
+    pg().verified_stmt("SELECT t.* FROM t");
+}
+
+#[test]
 fn parse_alter_table_replica_identity() {
     match pg_and_generic().verified_stmt("ALTER TABLE foo REPLICA IDENTITY FULL") {
         Statement::AlterTable(AlterTable { operations, .. }) => {
@@ -6427,6 +6476,45 @@ fn parse_alter_table_replica_identity() {
                 operations,
                 vec![AlterTableOperation::ReplicaIdentity {
                     identity: ReplicaIdentity::Index("foo_idx".into())
+                }]
+            );
+        }
+        _ => unreachable!(),
+    }
+
+    match pg_and_generic().verified_stmt("ALTER TABLE foo REPLICA IDENTITY DEFAULT") {
+        Statement::AlterTable(AlterTable { operations, .. }) => {
+            assert_eq!(
+                operations,
+                vec![AlterTableOperation::ReplicaIdentity {
+                    identity: ReplicaIdentity::Default
+                }]
+            );
+        }
+        _ => unreachable!(),
+    }
+
+    // PostgreSQL's spelling is NOTHING; NONE is accepted as input but the
+    // canonical display form is NOTHING.
+    match pg_and_generic().verified_stmt("ALTER TABLE foo REPLICA IDENTITY NOTHING") {
+        Statement::AlterTable(AlterTable { operations, .. }) => {
+            assert_eq!(
+                operations,
+                vec![AlterTableOperation::ReplicaIdentity {
+                    identity: ReplicaIdentity::None
+                }]
+            );
+        }
+        _ => unreachable!(),
+    }
+    match pg_and_generic()
+        .one_statement_parses_to("ALTER TABLE foo REPLICA IDENTITY NONE", "ALTER TABLE foo REPLICA IDENTITY NOTHING")
+    {
+        Statement::AlterTable(AlterTable { operations, .. }) => {
+            assert_eq!(
+                operations,
+                vec![AlterTableOperation::ReplicaIdentity {
+                    identity: ReplicaIdentity::None
                 }]
             );
         }
@@ -7107,7 +7195,7 @@ fn parse_create_publication() {
             with_options,
         } => {
             assert_eq!(name, Ident::new("my_pub"));
-            assert!(matches!(for_object, PublicationForObject::AllTables));
+            assert!(matches!(for_object, Some(PublicationForObject::AllTables)));
             assert!(with_options.is_empty());
         }
         _ => panic!("Expected CreatePublication statement"),
@@ -7118,7 +7206,7 @@ fn parse_create_publication() {
     let stmt = pg_and_generic().verified_stmt(sql);
     match stmt {
         Statement::CreatePublication {
-            for_object: PublicationForObject::Tables(tables),
+            for_object: Some(PublicationForObject::Tables(tables)),
             ..
         } => {
             assert_eq!(tables.len(), 2);
@@ -7135,7 +7223,7 @@ fn parse_create_publication() {
     let stmt = pg_and_generic().verified_stmt(sql);
     match stmt {
         Statement::CreatePublication {
-            for_object: PublicationForObject::TablesInSchema(schemas),
+            for_object: Some(PublicationForObject::TablesInSchema(schemas)),
             ..
         } => {
             assert_eq!(schemas.len(), 2);
@@ -7150,7 +7238,7 @@ fn parse_create_publication() {
     let stmt = pg_and_generic().verified_stmt(sql);
     match stmt {
         Statement::CreatePublication {
-            for_object: PublicationForObject::Tables(tables),
+            for_object: Some(PublicationForObject::Tables(tables)),
             ..
         } => {
             assert_eq!(tables.len(), 2);
@@ -7173,7 +7261,7 @@ fn parse_create_publication() {
     let stmt = pg_and_generic().verified_stmt(sql);
     match stmt {
         Statement::CreatePublication {
-            for_object: PublicationForObject::Tables(tables),
+            for_object: Some(PublicationForObject::Tables(tables)),
             ..
         } => {
             assert_eq!(tables.len(), 2);

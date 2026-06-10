@@ -510,6 +510,17 @@ pub trait Dialect: Debug + Any {
         false
     }
 
+    /// Return true if the dialect supports PostgreSQL-style `VARIADIC <expr>`
+    /// function arguments, spreading an array across a variadic parameter.
+    ///
+    /// Example:
+    /// ```sql
+    /// SELECT concat_ws(',', VARIADIC ARRAY['a', 'b'])
+    /// ```
+    fn supports_variadic_function_args(&self) -> bool {
+        false
+    }
+
     /// Return true if the dialect supports "FROM-first" selects.
     ///
     /// Example:
@@ -1203,6 +1214,7 @@ pub trait Dialect: Debug + Any {
             supports_struct_literal: self.supports_struct_literal(),
             supports_empty_projections: self.supports_empty_projections(),
             supports_select_expr_star: self.supports_select_expr_star(),
+            supports_variadic_function_args: self.supports_variadic_function_args(),
             supports_from_first_select: self.supports_from_first_select(),
             supports_user_host_grantee: self.supports_user_host_grantee(),
             supports_match_against: self.supports_match_against(),
@@ -1303,6 +1315,7 @@ pub struct DialectFeatures {
     pub supports_struct_literal: bool,
     pub supports_empty_projections: bool,
     pub supports_select_expr_star: bool,
+    pub supports_variadic_function_args: bool,
     pub supports_from_first_select: bool,
     pub supports_user_host_grantee: bool,
     pub supports_match_against: bool,

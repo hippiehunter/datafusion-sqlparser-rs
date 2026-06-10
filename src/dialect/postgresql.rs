@@ -219,6 +219,13 @@ impl Dialect for PostgreSqlDialect {
         true
     }
 
+    /// Enables table version clauses on the PG path: SQL:2016 `FOR SYSTEM_TIME
+    /// ...` and the CockroachDB-style bare `AS OF SYSTEM TIME <expr>` that
+    /// gantry uses for time-travel reads (parsed in maybe_parse_table_version).
+    fn supports_timestamp_versioning(&self) -> bool {
+        true
+    }
+
     /// See <https://www.postgresql.org/docs/current/functions-json.html>
     ///
     /// Required to support the colon in:
@@ -246,6 +253,18 @@ impl Dialect for PostgreSqlDialect {
     /// SELECT from table_name
     /// ```
     fn supports_empty_projections(&self) -> bool {
+        true
+    }
+
+    /// PostgreSQL expands composite-valued expressions in the select list:
+    /// `SELECT (f(x)).* FROM t`
+    fn supports_select_expr_star(&self) -> bool {
+        true
+    }
+
+    /// PostgreSQL spreads an array across a variadic parameter:
+    /// `SELECT concat_ws(',', VARIADIC ARRAY['a', 'b'])`
+    fn supports_variadic_function_args(&self) -> bool {
         true
     }
 

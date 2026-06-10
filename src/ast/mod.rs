@@ -4554,6 +4554,37 @@ pub enum PublicationForObject {
     TablesInSchema(Vec<Ident>),
 }
 
+impl fmt::Display for PublicationForObject {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            PublicationForObject::AllTables => write!(f, "ALL TABLES"),
+            PublicationForObject::Tables(tables) => {
+                write!(f, "TABLE {}", display_comma_separated(tables))
+            }
+            PublicationForObject::TablesInSchema(schemas) => {
+                write!(f, "TABLES IN SCHEMA {}", display_comma_separated(schemas))
+            }
+        }
+    }
+}
+
+/// An action of an `ALTER PUBLICATION` statement.
+///
+/// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-alterpublication.html)
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum AlterPublicationAction {
+    /// `ADD <publication_object> [, ...]`
+    AddObjects(PublicationForObject),
+    /// `SET <publication_object> [, ...]` (replace the inclusion set)
+    SetObjects(PublicationForObject),
+    /// `DROP <publication_object> [, ...]`
+    DropObjects(PublicationForObject),
+    /// `SET ( param [= value] [, ...] )`
+    SetParameters(Vec<SqlOption>),
+}
+
 /// The event type for a PostgreSQL `CREATE RULE` statement.
 ///
 /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-createrule.html)
@@ -5377,10 +5408,24 @@ pub enum Statement {
     CreatePublication {
         /// Publication name
         name: Ident,
-        /// `FOR ALL TABLES`, `FOR TABLE ...`, or `FOR TABLES IN SCHEMA ...`
-        for_object: PublicationForObject,
+        /// `FOR ALL TABLES`, `FOR TABLE ...`, or `FOR TABLES IN SCHEMA ...`.
+        /// `None` when the publication is created with no `FOR` clause (an empty
+        /// publication that tables are later added to via `ALTER PUBLICATION`).
+        for_object: Option<PublicationForObject>,
         /// `WITH ( param = value, ... )`
         with_options: Vec<SqlOption>,
+    },
+    /// ```sql
+    /// ALTER PUBLICATION name { ADD | SET | DROP } <publication_object> [, ...]
+    /// ALTER PUBLICATION name SET ( param [= value] [, ...] )
+    /// ```
+    ///
+    /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-alterpublication.html)
+    AlterPublication {
+        /// Publication name
+        name: Ident,
+        /// The modification applied to the publication.
+        action: AlterPublicationAction,
     },
     /// ```sql
     /// DROP PUBLICATION [ IF EXISTS ] name [ CASCADE | RESTRICT ];
@@ -7157,25 +7202,24 @@ impl fmt::Display for Statement {
                 with_options,
             } => {
                 write!(f, "CREATE PUBLICATION {name}")?;
-                match for_object {
-                    PublicationForObject::AllTables => {
-                        write!(f, " FOR ALL TABLES")?;
-                    }
-                    PublicationForObject::Tables(tables) => {
-                        write!(f, " FOR TABLE {}", display_comma_separated(tables))?;
-                    }
-                    PublicationForObject::TablesInSchema(schemas) => {
-                        write!(
-                            f,
-                            " FOR TABLES IN SCHEMA {}",
-                            display_comma_separated(schemas)
-                        )?;
-                    }
+                if let Some(for_object) = for_object {
+                    write!(f, " FOR {for_object}")?;
                 }
                 if !with_options.is_empty() {
                     write!(f, " WITH ({})", display_comma_separated(with_options))?;
                 }
                 Ok(())
+            }
+            Statement::AlterPublication { name, action } => {
+                write!(f, "ALTER PUBLICATION {name} ")?;
+                match action {
+                    AlterPublicationAction::AddObjects(object) => write!(f, "ADD {object}"),
+                    AlterPublicationAction::SetObjects(object) => write!(f, "SET {object}"),
+                    AlterPublicationAction::DropObjects(object) => write!(f, "DROP {object}"),
+                    AlterPublicationAction::SetParameters(options) => {
+                        write!(f, "SET ({})", display_comma_separated(options))
+                    }
+                }
             }
             Statement::DropPublication {
                 if_exists,
@@ -9223,6 +9267,9 @@ pub enum FunctionArg {
         operator: FunctionArgOperator,
     },
     Unnamed(FunctionArgExpr),
+    /// PostgreSQL `VARIADIC <expr>`: the argument is an array spread across
+    /// the function's variadic parameter
+    Variadic(FunctionArgExpr),
     /// SQL:2016 PTF TABLE argument
     Table(PtfTableArg),
     /// SQL:2016 DESCRIPTOR argument
@@ -9245,6 +9292,7 @@ impl fmt::Display for FunctionArg {
                 operator,
             } => write!(f, "{name} {operator} {arg}"),
             FunctionArg::Unnamed(unnamed_arg) => write!(f, "{unnamed_arg}"),
+            FunctionArg::Variadic(arg) => write!(f, "VARIADIC {arg}"),
             FunctionArg::Table(table_arg) => write!(f, "{table_arg}"),
             FunctionArg::Descriptor(descriptor) => write!(f, "{descriptor}"),
             FunctionArg::Columns(columns) => {
@@ -10964,6 +11012,16 @@ pub enum CopyOption {
     ForceNull(Vec<Ident>),
     /// ENCODING 'encoding_name'
     Encoding(String),
+    /// ON_ERROR { stop | ignore } (PostgreSQL 17+)
+    OnError(Ident),
+    /// REJECT_LIMIT n (PostgreSQL 17+)
+    RejectLimit(u64),
+    /// MAX_REJECT_ROWS n (Gantry extension)
+    MaxRejectRows(u64),
+    /// LOG_VERBOSITY { default | verbose } (PostgreSQL 17+)
+    LogVerbosity(Ident),
+    /// DEFAULT 'default_string'
+    Default(String),
 }
 
 impl fmt::Display for CopyOption {
@@ -10985,6 +11043,13 @@ impl fmt::Display for CopyOption {
             }
             ForceNull(columns) => write!(f, "FORCE_NULL ({})", display_comma_separated(columns)),
             Encoding(name) => write!(f, "ENCODING '{}'", value::escape_single_quote_string(name)),
+            OnError(mode) => write!(f, "ON_ERROR {mode}"),
+            RejectLimit(n) => write!(f, "REJECT_LIMIT {n}"),
+            MaxRejectRows(n) => write!(f, "MAX_REJECT_ROWS {n}"),
+            LogVerbosity(level) => write!(f, "LOG_VERBOSITY {level}"),
+            Default(string) => {
+                write!(f, "DEFAULT '{}'", value::escape_single_quote_string(string))
+            }
         }
     }
 }

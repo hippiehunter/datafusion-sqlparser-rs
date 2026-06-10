@@ -3188,8 +3188,15 @@ impl<'a> Parser<'a> {
                 match &next_token.token {
                     BorrowedToken::Mul => {
                         // Postgres explicitly allows funcnm(tablenm.*) and the
-                        // function array_agg traverses this control flow
-                        if dialect_of!(self is PostgreSqlDialect) {
+                        // function array_agg traverses this control flow, but
+                        // only when the whole compound is an identifier chain.
+                        // For a non-identifier root such as `(f(x)).*` the `.*`
+                        // belongs to the select-item level (wildcard expansion
+                        // of a composite-valued expression), so leave it
+                        // unconsumed exactly like the non-Postgres path.
+                        if dialect_of!(self is PostgreSqlDialect)
+                            && Self::is_all_ident(&root, &chain)
+                        {
                             ending_wildcard = Some(self.next_token());
                         } else {
                             // Put back the consumed `.` tokens before exiting.
@@ -7499,22 +7506,30 @@ impl<'a> Parser<'a> {
             }
         }
 
-        // Re-parse string body if LANGUAGE is a SQL/PSM variant (plpgsql, pgsql)
-        if let Some(ref lang) = body.language {
-            if Self::is_sql_psm_language(lang) {
-                let body_str = match &body.function_body {
-                    Some(CreateFunctionBody::AsBeforeOptions(ref expr)) => {
-                        Self::extract_string_body(expr)
-                    }
-                    _ => None,
-                };
-                if let Some(raw_body) = body_str {
-                    let rewritten_body =
-                        Self::rewrite_sql_psm_alias_declarations(&raw_body, &args);
-                    let rewritten_body = Self::rewrite_sql_psm_for_integer_ranges(&rewritten_body);
-                    let parsed_block = self.reparse_as_sql_psm_block(&rewritten_body)?;
-                    body.function_body = Some(CreateFunctionBody::AsBeginEnd(parsed_block));
+        // Re-parse a string body as a SQL/PSM block when the language is a
+        // SQL/PSM variant (plpgsql, pgsql) or is absent. PostgreSQL defaults an
+        // unspecified language for a quoted body to PL/pgSQL; mirroring that here
+        // (as the CREATE PROCEDURE / DO paths already do) means a body written
+        // `AS 'BEGIN ... END'` reaches consumers as a structured AsBeginEnd block
+        // instead of an opaque AsBeforeOptions string. A `Some(non-PSM)` language
+        // (e.g. LANGUAGE sql/c) is intentionally left as AsBeforeOptions so the
+        // caller can reject it rather than have it coerced into a PSM block.
+        let should_reparse = match &body.language {
+            Some(lang) => Self::is_sql_psm_language(lang),
+            None => true,
+        };
+        if should_reparse {
+            let body_str = match &body.function_body {
+                Some(CreateFunctionBody::AsBeforeOptions(ref expr)) => {
+                    Self::extract_string_body(expr)
                 }
+                _ => None,
+            };
+            if let Some(raw_body) = body_str {
+                let rewritten_body = Self::rewrite_sql_psm_alias_declarations(&raw_body, &args);
+                let rewritten_body = Self::rewrite_sql_psm_for_integer_ranges(&rewritten_body);
+                let parsed_block = self.reparse_as_sql_psm_block(&rewritten_body)?;
+                body.function_body = Some(CreateFunctionBody::AsBeginEnd(parsed_block));
             }
         }
 
@@ -9229,43 +9244,12 @@ impl<'a> Parser<'a> {
     /// [PostgreSQL Documentation](https://www.postgresql.org/docs/current/sql-createpublication.html)
     fn parse_create_publication(&self) -> Result<Statement, ParserError> {
         let name = self.parse_identifier()?;
-        self.expect_keyword_is(Keyword::FOR)?;
-
-        let for_object = if self.parse_keywords(&[Keyword::ALL, Keyword::TABLES]) {
-            PublicationForObject::AllTables
-        } else if self.parse_keywords(&[Keyword::TABLES, Keyword::IN, Keyword::SCHEMA]) {
-            let schemas = self.parse_comma_separated(|p| p.parse_identifier())?;
-            PublicationForObject::TablesInSchema(schemas)
-        } else if self.parse_keyword(Keyword::TABLE) {
-            let tables = self.parse_comma_separated(|p| {
-                let name = p.parse_object_name(false)?;
-                let columns = if p.consume_token(&BorrowedToken::LParen) {
-                    let cols = p.parse_comma_separated(|p| p.parse_identifier())?;
-                    p.expect_token(&BorrowedToken::RParen)?;
-                    Some(cols)
-                } else {
-                    None
-                };
-                let row_filter = if p.parse_keyword(Keyword::WHERE) {
-                    p.expect_token(&BorrowedToken::LParen)?;
-                    let expr = p.parse_expr()?;
-                    p.expect_token(&BorrowedToken::RParen)?;
-                    Some(expr)
-                } else {
-                    None
-                };
-                Ok(PublicationTable {
-                    name,
-                    columns,
-                    row_filter,
-                })
-            })?;
-            PublicationForObject::Tables(tables)
+        // `FOR` is optional: `CREATE PUBLICATION name WITH (...)` creates an empty
+        // publication that tables are added to later via `ALTER PUBLICATION`.
+        let for_object = if self.parse_keyword(Keyword::FOR) {
+            Some(self.parse_publication_for_object()?)
         } else {
-            return self.expected(
-                "ALL TABLES, TABLE, or TABLES IN SCHEMA after FOR",
-                self.peek_token(),
-            );
+            None
         };
 
         let with_options = self.parse_options(Keyword::WITH)?;
@@ -9275,6 +9259,76 @@ impl<'a> Parser<'a> {
             for_object,
             with_options,
         })
+    }
+
+    /// Parse the publication object set following `FOR` (CREATE PUBLICATION) or
+    /// `ADD`/`SET`/`DROP` (ALTER PUBLICATION):
+    /// `ALL TABLES` | `TABLES IN SCHEMA s, ...` | `TABLE t [, ...]`.
+    fn parse_publication_for_object(&self) -> Result<PublicationForObject, ParserError> {
+        if self.parse_keywords(&[Keyword::ALL, Keyword::TABLES]) {
+            Ok(PublicationForObject::AllTables)
+        } else if self.parse_keywords(&[Keyword::TABLES, Keyword::IN, Keyword::SCHEMA]) {
+            let schemas = self.parse_comma_separated(|p| p.parse_identifier())?;
+            Ok(PublicationForObject::TablesInSchema(schemas))
+        } else if self.parse_keyword(Keyword::TABLE) {
+            let tables = self.parse_comma_separated(|p| p.parse_publication_table())?;
+            Ok(PublicationForObject::Tables(tables))
+        } else {
+            self.expected("ALL TABLES, TABLE, or TABLES IN SCHEMA", self.peek_token())
+        }
+    }
+
+    /// Parse a single publication table object:
+    /// `[ONLY] name [(col, ...)] [WHERE (expr)]`. `ONLY` (partition-inheritance
+    /// control) is accepted and ignored; publications treat the relation uniformly.
+    fn parse_publication_table(&self) -> Result<PublicationTable, ParserError> {
+        let _ = self.parse_keyword(Keyword::ONLY);
+        let name = self.parse_object_name(false)?;
+        let columns = if self.consume_token(&BorrowedToken::LParen) {
+            let cols = self.parse_comma_separated(|p| p.parse_identifier())?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            Some(cols)
+        } else {
+            None
+        };
+        let row_filter = if self.parse_keyword(Keyword::WHERE) {
+            self.expect_token(&BorrowedToken::LParen)?;
+            let expr = self.parse_expr()?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            Some(expr)
+        } else {
+            None
+        };
+        Ok(PublicationTable {
+            name,
+            columns,
+            row_filter,
+        })
+    }
+
+    /// ```sql
+    /// ALTER PUBLICATION name { ADD | SET | DROP } <publication_object> [, ...]
+    /// ALTER PUBLICATION name SET ( param [= value] [, ...] )
+    /// ```
+    fn parse_alter_publication(&self) -> Result<Statement, ParserError> {
+        let name = self.parse_identifier()?;
+        let action = if self.parse_keyword(Keyword::ADD) {
+            AlterPublicationAction::AddObjects(self.parse_publication_for_object()?)
+        } else if self.parse_keyword(Keyword::DROP) {
+            AlterPublicationAction::DropObjects(self.parse_publication_for_object()?)
+        } else if self.parse_keyword(Keyword::SET) {
+            if self.consume_token(&BorrowedToken::LParen) {
+                let options =
+                    self.parse_comma_separated0(Parser::parse_sql_option, BorrowedToken::RParen)?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                AlterPublicationAction::SetParameters(options)
+            } else {
+                AlterPublicationAction::SetObjects(self.parse_publication_for_object()?)
+            }
+        } else {
+            return self.expected("ADD, SET, or DROP", self.peek_token());
+        };
+        Ok(Statement::AlterPublication { name, action })
     }
 
     /// ```sql
@@ -9956,20 +10010,23 @@ impl<'a> Parser<'a> {
         } else if self.parse_keyword(Keyword::FORWARD) {
             if self.parse_keyword(Keyword::ALL) {
                 FetchDirection::ForwardAll
-            } else {
+            } else if matches!(self.peek_token_ref().token, BorrowedToken::Number(_, _)) {
                 FetchDirection::Forward {
-                    // TODO: Support optional
                     limit: Some(self.parse_number_value()?.value),
                 }
+            } else {
+                // `FORWARD` with no count (e.g. `FETCH FORWARD FROM cur`) means one row.
+                FetchDirection::Forward { limit: None }
             }
         } else if self.parse_keyword(Keyword::BACKWARD) {
             if self.parse_keyword(Keyword::ALL) {
                 FetchDirection::BackwardAll
-            } else {
+            } else if matches!(self.peek_token_ref().token, BorrowedToken::Number(_, _)) {
                 FetchDirection::Backward {
-                    // TODO: Support optional
                     limit: Some(self.parse_number_value()?.value),
                 }
+            } else {
+                FetchDirection::Backward { limit: None }
             }
         } else if self.parse_keyword(Keyword::ALL) {
             FetchDirection::All
@@ -10038,18 +10095,23 @@ impl<'a> Parser<'a> {
         } else if self.parse_keyword(Keyword::FORWARD) {
             if self.parse_keyword(Keyword::ALL) {
                 FetchDirection::ForwardAll
-            } else {
+            } else if matches!(self.peek_token_ref().token, BorrowedToken::Number(_, _)) {
                 FetchDirection::Forward {
                     limit: Some(self.parse_number_value()?.value),
                 }
+            } else {
+                // `MOVE FORWARD FROM cur` / `MOVE FORWARD IN cur` — no count, move one row.
+                FetchDirection::Forward { limit: None }
             }
         } else if self.parse_keyword(Keyword::BACKWARD) {
             if self.parse_keyword(Keyword::ALL) {
                 FetchDirection::BackwardAll
-            } else {
+            } else if matches!(self.peek_token_ref().token, BorrowedToken::Number(_, _)) {
                 FetchDirection::Backward {
                     limit: Some(self.parse_number_value()?.value),
                 }
+            } else {
+                FetchDirection::Backward { limit: None }
             }
         } else if self.parse_keyword(Keyword::ALL) {
             FetchDirection::All
@@ -11837,12 +11899,19 @@ impl<'a> Parser<'a> {
             } else if self.parse_keyword(Keyword::TRIGGER) {
                 let name = self.parse_identifier()?;
                 AlterTableOperation::EnableTrigger { name }
+            } else if self.parse_keywords(&[Keyword::DEGRADED, Keyword::READS]) {
+                AlterTableOperation::EnableDegradedReads
             } else {
                 return self.expected(
-                    "ALWAYS, REPLICA, ROW LEVEL SECURITY, RULE, or TRIGGER after ENABLE",
+                    "ALWAYS, REPLICA, ROW LEVEL SECURITY, RULE, TRIGGER, or DEGRADED READS after ENABLE",
                     self.peek_token(),
                 );
             }
+        } else if self.parse_keywords(&[Keyword::CLEAR, Keyword::DEGRADED]) {
+            AlterTableOperation::ClearDegraded
+        } else if self.parse_keywords(&[Keyword::SWAP, Keyword::WITH]) {
+            let target = self.parse_object_name(false)?;
+            AlterTableOperation::SwapWith { target }
         } else if self.parse_keywords(&[
             Keyword::NO,
             Keyword::FORCE,
@@ -12090,7 +12159,9 @@ impl<'a> Parser<'a> {
             let value = self.parse_number_value()?;
             AlterTableOperation::AutoIncrement { equals, value }
         } else if self.parse_keywords(&[Keyword::REPLICA, Keyword::IDENTITY]) {
-            let identity = if self.parse_keyword(Keyword::NONE) {
+            let identity = if self.parse_keyword(Keyword::NOTHING)
+                || self.parse_keyword(Keyword::NONE)
+            {
                 ReplicaIdentity::None
             } else if self.parse_keyword(Keyword::FULL) {
                 ReplicaIdentity::Full
@@ -12100,7 +12171,7 @@ impl<'a> Parser<'a> {
                 ReplicaIdentity::Index(self.parse_identifier()?)
             } else {
                 return self.expected(
-                    "NONE, FULL, DEFAULT, or USING INDEX index_name after REPLICA IDENTITY",
+                    "NOTHING, FULL, DEFAULT, or USING INDEX index_name after REPLICA IDENTITY",
                     self.peek_token(),
                 );
             };
@@ -12148,6 +12219,8 @@ impl<'a> Parser<'a> {
             self.expect_keyword(Keyword::INTO)?;
             let into = self.parse_object_name(false)?;
             AlterTableOperation::MergePartitions { partitions, into }
+        } else if self.parse_keywords(&[Keyword::VALIDATE, Keyword::CONSTRAINTS]) {
+            AlterTableOperation::ValidateConstraints
         } else if self.parse_keywords(&[Keyword::VALIDATE, Keyword::CONSTRAINT]) {
             let name = self.parse_identifier()?;
             AlterTableOperation::ValidateConstraint { name }
@@ -12203,6 +12276,7 @@ impl<'a> Parser<'a> {
             Keyword::DATABASE,
             Keyword::ROLE,
             Keyword::POLICY,
+            Keyword::PUBLICATION,
             Keyword::ICEBERG,
             Keyword::SCHEMA,
             Keyword::SYSTEM,
@@ -12241,6 +12315,7 @@ impl<'a> Parser<'a> {
             Keyword::DATABASE => self.parse_alter_database(),
             Keyword::ROLE => self.parse_alter_role(),
             Keyword::POLICY => self.parse_alter_policy(),
+            Keyword::PUBLICATION => self.parse_alter_publication(),
             Keyword::SYSTEM => self.parse_alter_system(),
             Keyword::USER => {
                 // Check if this is ALTER USER MAPPING
@@ -12729,6 +12804,11 @@ impl<'a> Parser<'a> {
             Keyword::FORCE_NOT_NULL,
             Keyword::FORCE_NULL,
             Keyword::ENCODING,
+            Keyword::ON_ERROR,
+            Keyword::REJECT_LIMIT,
+            Keyword::MAX_REJECT_ROWS,
+            Keyword::LOG_VERBOSITY,
+            Keyword::DEFAULT,
         ]) {
             Some(Keyword::FORMAT) => CopyOption::Format(self.parse_identifier()?),
             Some(Keyword::FREEZE) => CopyOption::Freeze(!matches!(
@@ -12753,6 +12833,11 @@ impl<'a> Parser<'a> {
                 CopyOption::ForceNull(self.parse_parenthesized_column_list(Mandatory, false)?)
             }
             Some(Keyword::ENCODING) => CopyOption::Encoding(self.parse_literal_string()?),
+            Some(Keyword::ON_ERROR) => CopyOption::OnError(self.parse_identifier()?),
+            Some(Keyword::REJECT_LIMIT) => CopyOption::RejectLimit(self.parse_literal_uint()?),
+            Some(Keyword::MAX_REJECT_ROWS) => CopyOption::MaxRejectRows(self.parse_literal_uint()?),
+            Some(Keyword::LOG_VERBOSITY) => CopyOption::LogVerbosity(self.parse_identifier()?),
+            Some(Keyword::DEFAULT) => CopyOption::Default(self.parse_literal_string()?),
             _ => self.expected("option", self.peek_token())?,
         };
         Ok(ret)
@@ -18041,6 +18126,13 @@ impl<'a> Parser<'a> {
     /// Parses a the timestamp version specifier (i.e. query historical data)
     pub fn maybe_parse_table_version(&self) -> Result<Option<TableVersion>, ParserError> {
         if self.features.supports_timestamp_versioning {
+            // CockroachDB-style bare `AS OF SYSTEM TIME <expr>` (used by gantry's
+            // time-travel reads). parse_keywords backtracks if the full run is
+            // not present, so a plain `<table> AS <alias>` is unaffected.
+            if self.parse_keywords(&[Keyword::AS, Keyword::OF, Keyword::SYSTEM, Keyword::TIME]) {
+                let expr = self.parse_expr()?;
+                return Ok(Some(TableVersion::ForSystemTimeAsOf(expr)));
+            }
             if self.parse_keywords(&[Keyword::FOR, Keyword::SYSTEM_TIME]) {
                 // SQL:2016 Temporal: FOR SYSTEM_TIME variants
                 if self.parse_keywords(&[Keyword::AS, Keyword::OF]) {
@@ -19380,6 +19472,13 @@ impl<'a> Parser<'a> {
         }
         if self.parse_keyword(Keyword::COLUMNS) {
             return Ok(FunctionArg::Columns(self.parse_ptf_columns()?));
+        }
+        // VARIADIC is a fully reserved word in PostgreSQL, so greedy
+        // consumption cannot shadow an identifier there.
+        if self.features.supports_variadic_function_args
+            && self.parse_keyword(Keyword::VARIADIC)
+        {
+            return Ok(FunctionArg::Variadic(self.parse_wildcard_expr()?.into()));
         }
 
         let arg = if self.features.supports_named_fn_args_with_expr_name {
