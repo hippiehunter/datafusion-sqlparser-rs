@@ -2389,6 +2389,38 @@ fn parse_pg_binary_ops() {
 }
 
 #[test]
+fn parse_pg_search_binary_ops() {
+    let cases = [
+        ("|||", BinaryOperator::PGSearchMatchAny),
+        ("&&&", BinaryOperator::PGSearchMatchAll),
+        ("@@@", BinaryOperator::PGSearchJsonMatch),
+    ];
+
+    for (operator, expected_operator) in cases {
+        let sql = format!("SELECT * FROM docs WHERE body {operator} 'alpha beta'");
+        let select = pg().verified_only_select(&sql);
+        assert_eq!(
+            select.selection,
+            Some(Expr::BinaryOp {
+                left: Box::new(Expr::Identifier(Ident {
+                    value: "body".into(),
+                    quote_style: None,
+                    span: Span::empty(),
+                })),
+                op: expected_operator,
+                right: Box::new(Expr::Value(
+                    (Value::SingleQuotedString("alpha beta".into())).with_empty_span()
+                ))
+            })
+        );
+        assert_eq!(
+            select.to_string(),
+            format!("SELECT * FROM docs WHERE body {operator} 'alpha beta'")
+        );
+    }
+}
+
+#[test]
 fn parse_pg_custom_binary_ops() {
     // Postgres supports declaring custom binary operators, using any character in the following set:
     //  + - * / < > = ~ ! @ # % ^ & | ` ?
@@ -2396,7 +2428,6 @@ fn parse_pg_custom_binary_ops() {
     // Here, we test the ones used by common extensions
     let operators = [
         // PostGIS
-        "&&&",   // n-D bounding boxes intersect
         "|=|",   //  distance between A and B trajectories at their closest point of approach
         "<<#>>", // n-D distance between A and B bounding boxes
         // PGroonga
@@ -6523,9 +6554,10 @@ fn parse_alter_table_replica_identity() {
         }
         _ => unreachable!(),
     }
-    match pg_and_generic()
-        .one_statement_parses_to("ALTER TABLE foo REPLICA IDENTITY NONE", "ALTER TABLE foo REPLICA IDENTITY NOTHING")
-    {
+    match pg_and_generic().one_statement_parses_to(
+        "ALTER TABLE foo REPLICA IDENTITY NONE",
+        "ALTER TABLE foo REPLICA IDENTITY NOTHING",
+    ) {
         Statement::AlterTable(AlterTable { operations, .. }) => {
             assert_eq!(
                 operations,

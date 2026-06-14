@@ -5099,6 +5099,15 @@ impl<'a> Parser<'a> {
             BorrowedToken::Question => Some(BinaryOperator::Question),
             BorrowedToken::QuestionAnd => Some(BinaryOperator::QuestionAnd),
             BorrowedToken::QuestionPipe => Some(BinaryOperator::QuestionPipe),
+            BorrowedToken::CustomBinaryOperator(s) if s == "|||" => {
+                Some(BinaryOperator::PGSearchMatchAny)
+            }
+            BorrowedToken::CustomBinaryOperator(s) if s == "&&&" => {
+                Some(BinaryOperator::PGSearchMatchAll)
+            }
+            BorrowedToken::CustomBinaryOperator(s) if s == "@@@" => {
+                Some(BinaryOperator::PGSearchJsonMatch)
+            }
             BorrowedToken::CustomBinaryOperator(s) => Some(BinaryOperator::Custom(s.clone())),
             BorrowedToken::DoubleSharp if self.features.supports_geometric_types => {
                 Some(BinaryOperator::DoubleHash)
@@ -8034,9 +8043,7 @@ impl<'a> Parser<'a> {
         // statement so downstream can silently accept it.
         if materialized && self.parse_keywords(&[Keyword::LOG, Keyword::ON]) {
             let table_name = self.parse_object_name(false)?;
-            return Ok(Statement::CreateMaterializedViewLog {
-                table_name,
-            });
+            return Ok(Statement::CreateMaterializedViewLog { table_name });
         }
 
         // IF NOT EXISTS (materialized views)
@@ -8127,13 +8134,12 @@ impl<'a> Parser<'a> {
         }
 
         // REFRESH SCHEDULE EVERY '<interval>' [START AT '<timestamp>'] [METHOD FAST|COMPLETE]
-        let refresh_schedule = if materialized
-            && self.parse_keywords(&[Keyword::REFRESH, Keyword::SCHEDULE])
-        {
-            Some(self.parse_mv_refresh_schedule()?)
-        } else {
-            None
-        };
+        let refresh_schedule =
+            if materialized && self.parse_keywords(&[Keyword::REFRESH, Keyword::SCHEDULE]) {
+                Some(self.parse_mv_refresh_schedule()?)
+            } else {
+                None
+            };
 
         Ok(CreateView {
             or_alter,
@@ -12159,22 +12165,21 @@ impl<'a> Parser<'a> {
             let value = self.parse_number_value()?;
             AlterTableOperation::AutoIncrement { equals, value }
         } else if self.parse_keywords(&[Keyword::REPLICA, Keyword::IDENTITY]) {
-            let identity = if self.parse_keyword(Keyword::NOTHING)
-                || self.parse_keyword(Keyword::NONE)
-            {
-                ReplicaIdentity::None
-            } else if self.parse_keyword(Keyword::FULL) {
-                ReplicaIdentity::Full
-            } else if self.parse_keyword(Keyword::DEFAULT) {
-                ReplicaIdentity::Default
-            } else if self.parse_keywords(&[Keyword::USING, Keyword::INDEX]) {
-                ReplicaIdentity::Index(self.parse_identifier()?)
-            } else {
-                return self.expected(
-                    "NOTHING, FULL, DEFAULT, or USING INDEX index_name after REPLICA IDENTITY",
-                    self.peek_token(),
-                );
-            };
+            let identity =
+                if self.parse_keyword(Keyword::NOTHING) || self.parse_keyword(Keyword::NONE) {
+                    ReplicaIdentity::None
+                } else if self.parse_keyword(Keyword::FULL) {
+                    ReplicaIdentity::Full
+                } else if self.parse_keyword(Keyword::DEFAULT) {
+                    ReplicaIdentity::Default
+                } else if self.parse_keywords(&[Keyword::USING, Keyword::INDEX]) {
+                    ReplicaIdentity::Index(self.parse_identifier()?)
+                } else {
+                    return self.expected(
+                        "NOTHING, FULL, DEFAULT, or USING INDEX index_name after REPLICA IDENTITY",
+                        self.peek_token(),
+                    );
+                };
 
             AlterTableOperation::ReplicaIdentity { identity }
         } else if self.parse_keywords(&[Keyword::ATTACH, Keyword::PARTITION]) {
@@ -16726,9 +16731,7 @@ impl<'a> Parser<'a> {
                 if self.consume_token(&BorrowedToken::LParen) {
                     with_hints = self.parse_comma_separated(|p| {
                         let lowercase_word = |t: &BorrowedToken<'_>| match t {
-                            BorrowedToken::Word(w) => {
-                                Some(w.value.as_ref().to_ascii_lowercase())
-                            }
+                            BorrowedToken::Word(w) => Some(w.value.as_ref().to_ascii_lowercase()),
                             _ => None,
                         };
                         let first = lowercase_word(&p.peek_nth_token(0).token);
@@ -19475,9 +19478,7 @@ impl<'a> Parser<'a> {
         }
         // VARIADIC is a fully reserved word in PostgreSQL, so greedy
         // consumption cannot shadow an identifier there.
-        if self.features.supports_variadic_function_args
-            && self.parse_keyword(Keyword::VARIADIC)
-        {
+        if self.features.supports_variadic_function_args && self.parse_keyword(Keyword::VARIADIC) {
             return Ok(FunctionArg::Variadic(self.parse_wildcard_expr()?.into()));
         }
 

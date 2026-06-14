@@ -1724,8 +1724,21 @@ impl<'a> Tokenizer<'a> {
                 '@' => {
                     chars.next();
                     match chars.peek() {
-                        Some('@') if self.features.supports_geometric_types => {
-                            self.consume_and_return(chars, Token::AtAt)
+                        Some('@') => {
+                            chars.next();
+                            match chars.peek() {
+                                Some('@') => {
+                                    chars.next();
+                                    Ok(Some(Token::CustomBinaryOperator("@@@".to_string())))
+                                }
+                                Some(' ') => Ok(Some(Token::AtAt)),
+                                Some(tch) if self.dialect.is_identifier_start('@') => {
+                                    let consumed_byte_len =
+                                        ch.len_utf8() + '@'.len_utf8() + tch.len_utf8();
+                                    self.tokenize_identifier_or_keyword(consumed_byte_len, chars)
+                                }
+                                _ => Ok(Some(Token::AtAt)),
+                            }
                         }
                         Some('-') if self.features.supports_geometric_types => {
                             chars.next();
@@ -1736,18 +1749,6 @@ impl<'a> Tokenizer<'a> {
                         }
                         Some('>') => self.consume_and_return(chars, Token::AtArrow),
                         Some('?') => self.consume_and_return(chars, Token::AtQuestion),
-                        Some('@') => {
-                            chars.next();
-                            match chars.peek() {
-                                Some(' ') => Ok(Some(Token::AtAt)),
-                                Some(tch) if self.dialect.is_identifier_start('@') => {
-                                    let consumed_byte_len =
-                                        ch.len_utf8() + '@'.len_utf8() + tch.len_utf8();
-                                    self.tokenize_identifier_or_keyword(consumed_byte_len, chars)
-                                }
-                                _ => Ok(Some(Token::AtAt)),
-                            }
-                        }
                         Some(' ') => Ok(Some(Token::AtSign)),
                         // We break on quotes here, because no dialect allows identifiers starting
                         // with @ and containing quotation marks (e.g. `@'foo'`) unless they are

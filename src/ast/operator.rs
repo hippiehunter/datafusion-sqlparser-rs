@@ -263,6 +263,12 @@ pub enum BinaryOperator {
     ///
     /// See <https://www.postgresql.org/docs/current/functions-json.html>.
     QuestionPipe,
+    /// The `|||` ParadeDB/pg_search text match disjunction operator.
+    PGSearchMatchAny,
+    /// The `&&&` ParadeDB/pg_search text match conjunction operator.
+    PGSearchMatchAll,
+    /// The `@@@` ParadeDB/pg_search json query operator.
+    PGSearchJsonMatch,
     /// PostgreSQL-specific custom operator.
     ///
     /// See [CREATE OPERATOR](https://www.postgresql.org/docs/current/sql-createoperator.html)
@@ -390,6 +396,9 @@ impl fmt::Display for BinaryOperator {
             BinaryOperator::Question => f.write_str("?"),
             BinaryOperator::QuestionAnd => f.write_str("?&"),
             BinaryOperator::QuestionPipe => f.write_str("?|"),
+            BinaryOperator::PGSearchMatchAny => f.write_str("|||"),
+            BinaryOperator::PGSearchMatchAll => f.write_str("&&&"),
+            BinaryOperator::PGSearchJsonMatch => f.write_str("@@@"),
             BinaryOperator::PGCustomBinaryOperator(idents) => {
                 write!(f, "OPERATOR({})", display_separated(idents, "."))
             }
