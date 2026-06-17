@@ -2535,6 +2535,8 @@ pub struct CreateDomain {
     pub collation: Option<Ident>,
     /// The default value of the domain.
     pub default: Option<Expr>,
+    /// Whether the domain is declared `NOT NULL`.
+    pub not_null: bool,
     /// The constraints of the domain.
     pub constraints: Vec<TableConstraint>,
 }
@@ -2547,6 +2549,7 @@ impl fmt::Display for CreateDomain {
             data_type,
             collation,
             default,
+            not_null,
             constraints,
         } = self;
         write!(f, "CREATE DOMAIN {name} AS {data_type}")?;
@@ -2555,6 +2558,9 @@ impl fmt::Display for CreateDomain {
         }
         if let Some(default) = default {
             write!(f, " DEFAULT {default}")?;
+        }
+        if *not_null {
+            write!(f, " NOT NULL")?;
         }
         if !constraints.is_empty() {
             write!(f, " {}", display_separated(constraints, " "))?;

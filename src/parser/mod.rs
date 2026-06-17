@@ -8480,8 +8480,17 @@ impl<'a> Parser<'a> {
             None
         };
         let mut constraints = Vec::new();
-        while let Some(constraint) = self.parse_optional_table_constraint()? {
-            constraints.push(constraint);
+        let mut not_null = false;
+        loop {
+            if self.parse_keywords(&[Keyword::NOT, Keyword::NULL]) {
+                not_null = true;
+            } else if self.parse_keyword(Keyword::NULL) {
+                not_null = false;
+            } else if let Some(constraint) = self.parse_optional_table_constraint()? {
+                constraints.push(constraint);
+            } else {
+                break;
+            }
         }
 
         Ok(Statement::CreateDomain(CreateDomain {
@@ -8490,6 +8499,7 @@ impl<'a> Parser<'a> {
             data_type,
             collation,
             default,
+            not_null,
             constraints,
         }))
     }
@@ -21049,6 +21059,16 @@ impl<'a> Parser<'a> {
             };
 
             self.expect_keyword_is(Keyword::THEN)?;
+
+            if self.parse_keyword(Keyword::DO) {
+                self.expect_keyword_is(Keyword::NOTHING)?;
+                clauses.push(MergeClause {
+                    clause_kind,
+                    predicate,
+                    action: MergeAction::DoNothing,
+                });
+                continue;
+            }
 
             let merge_clause = match self.parse_one_of_keywords(&[
                 Keyword::UPDATE,
