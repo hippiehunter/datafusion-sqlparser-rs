@@ -1102,17 +1102,30 @@ impl<'a> Parser<'a> {
                     self.prev_token();
                     if let Ok(Some(assignment)) = self.maybe_parse(|parser| {
                         let expr = parser.parse_expr()?;
-                        // Check if this is an assignment expression (target := value)
-                        if let Expr::BinaryOp {
-                            left,
-                            op: BinaryOperator::Assignment,
-                            right,
-                        } = expr
-                        {
-                            Ok(Statement::SqlPsmAssignment(SqlPsmAssignment {
-                                target: *left,
-                                value: *right,
-                            }))
+                        // Check if this is an assignment expression (target := value).
+                        // PL/pgSQL also spells assignment with a bare `=`, which the
+                        // expression parser produces as a BinaryOperator::Eq; at
+                        // statement-start position a `target = value` with an
+                        // identifier target is unambiguously an assignment (a bare
+                        // equality expression is not a valid statement here).
+                        if let Expr::BinaryOp { left, op, right } = expr {
+                            let is_assignment = matches!(op, BinaryOperator::Assignment)
+                                || (matches!(op, BinaryOperator::Eq)
+                                    && matches!(
+                                        left.as_ref(),
+                                        Expr::Identifier(_) | Expr::CompoundIdentifier(_)
+                                    ));
+                            if is_assignment {
+                                Ok(Statement::SqlPsmAssignment(SqlPsmAssignment {
+                                    target: *left,
+                                    value: *right,
+                                }))
+                            } else {
+                                parser_err!(
+                                    "Not a SQL/PSM assignment",
+                                    parser.peek_token().span.start
+                                )
+                            }
                         } else {
                             parser_err!("Not a SQL/PSM assignment", parser.peek_token().span.start)
                         }
