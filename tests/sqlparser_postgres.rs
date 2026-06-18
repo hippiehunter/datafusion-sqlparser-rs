@@ -5818,6 +5818,7 @@ fn parse_create_domain() {
     let canonical1 = "CREATE DOMAIN my_domain AS INTEGER CHECK (value > 0)";
     let expected = Statement::CreateDomain(CreateDomain {
         token: AttachedToken::empty(),
+        not_null: false,
         name: ObjectName::from(vec![Ident::new("my_domain")]),
         data_type: DataType::Integer(None),
         collation: None,
@@ -5840,6 +5841,7 @@ fn parse_create_domain() {
     let canonical2 = "CREATE DOMAIN my_domain AS INTEGER COLLATE \"en_US\" CHECK (value > 0)";
     let expected = Statement::CreateDomain(CreateDomain {
         token: AttachedToken::empty(),
+        not_null: false,
         name: ObjectName::from(vec![Ident::new("my_domain")]),
         data_type: DataType::Integer(None),
         collation: Some(Ident::with_quote('"', "en_US")),
@@ -5862,6 +5864,7 @@ fn parse_create_domain() {
     let canonical3 = "CREATE DOMAIN my_domain AS INTEGER DEFAULT 1 CHECK (value > 0)";
     let expected = Statement::CreateDomain(CreateDomain {
         token: AttachedToken::empty(),
+        not_null: false,
         name: ObjectName::from(vec![Ident::new("my_domain")]),
         data_type: DataType::Integer(None),
         collation: None,
@@ -5885,6 +5888,7 @@ fn parse_create_domain() {
         "CREATE DOMAIN my_domain AS INTEGER COLLATE \"en_US\" DEFAULT 1 CHECK (value > 0)";
     let expected = Statement::CreateDomain(CreateDomain {
         token: AttachedToken::empty(),
+        not_null: false,
         name: ObjectName::from(vec![Ident::new("my_domain")]),
         data_type: DataType::Integer(None),
         collation: Some(Ident::with_quote('"', "en_US")),
@@ -5908,6 +5912,7 @@ fn parse_create_domain() {
         "CREATE DOMAIN my_domain AS INTEGER CONSTRAINT my_constraint CHECK (value > 0)";
     let expected = Statement::CreateDomain(CreateDomain {
         token: AttachedToken::empty(),
+        not_null: false,
         name: ObjectName::from(vec![Ident::new("my_domain")]),
         data_type: DataType::Integer(None),
         collation: None,
