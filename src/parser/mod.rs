@@ -10355,26 +10355,21 @@ impl<'a> Parser<'a> {
     pub fn parse_create_extension(&self) -> Result<Statement, ParserError> {
         let if_not_exists = self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
         let name = self.parse_identifier()?;
+        let _ = self.parse_keyword(Keyword::WITH);
 
-        let (schema, version, cascade) = if self.parse_keyword(Keyword::WITH) {
-            let schema = if self.parse_keyword(Keyword::SCHEMA) {
-                Some(self.parse_identifier()?)
-            } else {
-                None
-            };
-
-            let version = if self.parse_keyword(Keyword::VERSION) {
-                Some(self.parse_identifier()?)
-            } else {
-                None
-            };
-
-            let cascade = self.parse_keyword(Keyword::CASCADE);
-
-            (schema, version, cascade)
+        let schema = if self.parse_keyword(Keyword::SCHEMA) {
+            Some(self.parse_identifier()?)
         } else {
-            (None, None, false)
+            None
         };
+
+        let version = if self.parse_keyword(Keyword::VERSION) {
+            Some(self.parse_identifier()?)
+        } else {
+            None
+        };
+
+        let cascade = self.parse_keyword(Keyword::CASCADE);
 
         Ok(CreateExtension {
             name,
@@ -23157,6 +23152,27 @@ mod tests {
     use crate::test_utils::{all_dialects, TestedDialects};
 
     use super::*;
+
+    #[test]
+    fn test_create_extension_bare_cascade() {
+        let statements = Parser::parse_sql(
+            &crate::dialect::PostgreSqlDialect {},
+            "CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE",
+        )
+        .expect("CREATE EXTENSION with bare CASCADE should parse");
+        assert_eq!(statements.len(), 1);
+
+        let crate::ast::Statement::CreateExtension(extension) = &statements[0] else {
+            panic!("expected CREATE EXTENSION, got {:?}", statements[0]);
+        };
+        assert_eq!(extension.name.value, "timescaledb");
+        assert!(extension.if_not_exists);
+        assert!(extension.cascade);
+        assert_eq!(
+            statements[0].to_string(),
+            "CREATE EXTENSION IF NOT EXISTS timescaledb WITH CASCADE"
+        );
+    }
 
     #[test]
     fn test_prev_index() {

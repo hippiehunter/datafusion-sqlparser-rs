@@ -793,6 +793,14 @@ fn parse_create_extension() {
     pg_and_generic().verified_stmt("CREATE EXTENSION extension_name WITH SCHEMA schema_name");
     pg_and_generic().verified_stmt("CREATE EXTENSION extension_name WITH VERSION version");
     pg_and_generic().verified_stmt("CREATE EXTENSION extension_name WITH CASCADE");
+    pg_and_generic().one_statement_parses_to(
+        "CREATE EXTENSION extension_name CASCADE",
+        "CREATE EXTENSION extension_name WITH CASCADE",
+    );
+    pg_and_generic().one_statement_parses_to(
+        "CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE",
+        "CREATE EXTENSION IF NOT EXISTS timescaledb WITH CASCADE",
+    );
     pg_and_generic().verified_stmt(
         "CREATE EXTENSION extension_name WITH SCHEMA schema_name VERSION version CASCADE",
     );
