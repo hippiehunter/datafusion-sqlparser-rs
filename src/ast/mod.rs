@@ -11483,6 +11483,8 @@ pub enum MergeAction {
     Update { assignments: Vec<Assignment> },
     /// A plain `DELETE` clause
     Delete,
+    /// A `DO NOTHING` clause (PostgreSQL) — the matched/not-matched row is skipped.
+    DoNothing,
 }
 
 impl Display for MergeAction {
@@ -11496,6 +11498,9 @@ impl Display for MergeAction {
             }
             MergeAction::Delete => {
                 write!(f, "DELETE")
+            }
+            MergeAction::DoNothing => {
+                write!(f, "DO NOTHING")
             }
         }
     }
