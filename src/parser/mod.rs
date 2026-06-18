@@ -6910,7 +6910,11 @@ impl<'a> Parser<'a> {
                     let _ = self.consume_token(&BorrowedToken::Eq);
                     owner = Some(self.parse_object_name(false)?);
                 }
-                _ => break,
+                _ => {
+                    if !self.parse_create_database_option()? {
+                        break;
+                    }
+                }
             }
             if with_options {
                 let _ = self.consume_token(&BorrowedToken::Comma);
@@ -6935,6 +6939,73 @@ impl<'a> Parser<'a> {
             comment: None,
             catalog_sync: None,
         })
+    }
+
+    /// Consume a single PostgreSQL `CREATE DATABASE` option clause
+    /// (`ENCODING [=] value`, `TEMPLATE [=] value`, `CONNECTION LIMIT [=] int`, etc.).
+    ///
+    /// The [`Statement::CreateDatabase`] AST has no fields for these options, so they
+    /// are parsed and discarded; this only exists so the statement parses successfully.
+    /// Returns `true` if an option was consumed, `false` if the next token is not an option.
+    fn parse_create_database_option(&self) -> Result<bool, ParserError> {
+        const STRING_OPTIONS: &[&str] = &[
+            "ENCODING",
+            "TEMPLATE",
+            "LC_COLLATE",
+            "LC_CTYPE",
+            "LOCALE",
+            "LOCALE_PROVIDER",
+            "TABLESPACE",
+            "STRATEGY",
+            "BUILTIN_LOCALE",
+            "ICU_LOCALE",
+            "ICU_RULES",
+        ];
+        const INT_OPTIONS: &[&str] = &["OID"];
+        const BOOL_OPTIONS: &[&str] = &["IS_TEMPLATE", "ALLOW_CONNECTIONS"];
+
+        let option = match self.peek_token().token {
+            BorrowedToken::Word(w) => w.value.to_ascii_uppercase(),
+            _ => return Ok(false),
+        };
+
+        // CONNECTION LIMIT [=] <int>
+        if option == "CONNECTION" {
+            self.advance_token();
+            self.expect_keyword(Keyword::LIMIT)?;
+            let _ = self.consume_token(&BorrowedToken::Eq);
+            let _ = self.parse_signed_integer()?;
+            return Ok(true);
+        }
+
+        if STRING_OPTIONS.contains(&option.as_str()) {
+            self.advance_token();
+            let _ = self.consume_token(&BorrowedToken::Eq);
+            // value may be a quoted string or an identifier (e.g. TEMPLATE template0)
+            if matches!(self.peek_token().token, BorrowedToken::SingleQuotedString(_)) {
+                let _ = self.parse_literal_string()?;
+            } else {
+                let _ = self.parse_identifier()?;
+            }
+            return Ok(true);
+        }
+
+        if INT_OPTIONS.contains(&option.as_str()) {
+            self.advance_token();
+            let _ = self.consume_token(&BorrowedToken::Eq);
+            let _ = self.parse_signed_integer()?;
+            return Ok(true);
+        }
+
+        if BOOL_OPTIONS.contains(&option.as_str()) {
+            self.advance_token();
+            let _ = self.consume_token(&BorrowedToken::Eq);
+            // value is true/false (parsed as a keyword/identifier)
+            let _ = self.parse_identifier()?;
+            return Ok(true);
+        }
+
+        Ok(false)
     }
 
     pub fn parse_optional_create_function_using(
@@ -10894,8 +10965,16 @@ impl<'a> Parser<'a> {
             None
         };
 
-        let name = self.parse_identifier()?;
+        // PostgreSQL allows an unnamed parameter that is just a type, e.g.
+        // `CREATE PROCEDURE p(int, text)`. Mirror `parse_function_arg`: parse a
+        // type, then peek for a following type — if present, the first token was
+        // actually the parameter name and the second token is the type.
+        let mut name = None;
+        let mut data_type = self.parse_data_type()?;
+        let data_type_idx = self.get_current_index();
 
+        // A trailing arg mode (`IN`/`OUT`/`INOUT` after the name) is only valid
+        // when the first token was a name, so detect it as a candidate "type".
         let trailing_mode = if leading_mode.is_none() {
             if self.parse_keyword(Keyword::IN) {
                 Some(ArgMode::In)
@@ -10910,8 +10989,39 @@ impl<'a> Parser<'a> {
             None
         };
 
+        let took_trailing_mode = trailing_mode.is_some();
+
+        // DEFAULT must not be consumed as a type (it parses as `DataType::Custom`).
+        fn parse_data_type_no_default(parser: &Parser) -> Result<DataType, ParserError> {
+            if parser.peek_keyword(Keyword::DEFAULT) {
+                parser_err!(
+                    "The DEFAULT keyword is not a type",
+                    parser.peek_token().span.start
+                )
+            } else {
+                parser.parse_data_type()
+            }
+        }
+
+        if took_trailing_mode {
+            // `name <mode> type`: the already-parsed `data_type` is the name.
+            let token = self.token_at(data_type_idx).clone();
+            if !matches!(token.token, BorrowedToken::Word(_)) {
+                return self.expected("a parameter name", token);
+            }
+            name = Some(Ident::new(token.to_string()));
+            data_type = self.parse_data_type()?;
+        } else if let Some(next_data_type) = self.maybe_parse(parse_data_type_no_default)? {
+            // `name type`: the first token was the name, the second is the type.
+            let token = self.token_at(data_type_idx);
+            if !matches!(token.token, BorrowedToken::Word(_)) {
+                return self.expected("a name or type", token.clone());
+            }
+            name = Some(Ident::new(token.to_string()));
+            data_type = next_data_type;
+        }
+
         let mode = leading_mode.or(trailing_mode);
-        let data_type = self.parse_data_type()?;
         let default =
             if self.consume_token(&BorrowedToken::Eq) || self.parse_keyword(Keyword::DEFAULT) {
                 Some(self.parse_expr()?)
@@ -10920,7 +11030,7 @@ impl<'a> Parser<'a> {
             };
 
         Ok(ProcedureParam {
-            name,
+            name: name.unwrap_or_else(|| Ident::new("")),
             data_type,
             mode,
             default,
