@@ -6982,7 +6982,10 @@ impl<'a> Parser<'a> {
             self.advance_token();
             let _ = self.consume_token(&BorrowedToken::Eq);
             // value may be a quoted string or an identifier (e.g. TEMPLATE template0)
-            if matches!(self.peek_token().token, BorrowedToken::SingleQuotedString(_)) {
+            if matches!(
+                self.peek_token().token,
+                BorrowedToken::SingleQuotedString(_)
+            ) {
                 let _ = self.parse_literal_string()?;
             } else {
                 let _ = self.parse_identifier()?;
@@ -20772,7 +20775,7 @@ impl<'a> Parser<'a> {
         Ok(Statement::Checkpoint { checkpoint_token })
     }
 
-    /// Parse BACKUP DATABASE [TO '<uri>'] [ESTIMATE] [INCREMENTAL]
+    /// Parse BACKUP DATABASE [TO '<uri>'] [ESTIMATE] [INCREMENTAL] [WITH (reset_pitr_chain)]
     pub fn parse_backup(&self) -> Result<Statement, ParserError> {
         if self.parse_keyword(Keyword::STATUS) {
             return Ok(Statement::BackupStatusBareVerb);
@@ -20792,13 +20795,72 @@ impl<'a> Parser<'a> {
 
         let estimate = self.parse_keyword(Keyword::ESTIMATE);
         let incremental = self.parse_keyword(Keyword::INCREMENTAL);
+        let reset_pitr_chain = self.parse_backup_reset_pitr_chain_option()?;
 
         Ok(Statement::Backup {
             object_type,
             location,
             estimate,
             incremental,
+            reset_pitr_chain,
         })
+    }
+
+    fn parse_backup_reset_pitr_chain_option(&self) -> Result<bool, ParserError> {
+        if !self.parse_keyword(Keyword::WITH) {
+            return Ok(false);
+        }
+
+        self.expect_token(&BorrowedToken::LParen)?;
+        let mut reset_pitr_chain = false;
+        let mut saw_reset_pitr_chain = false;
+
+        loop {
+            if self.consume_token(&BorrowedToken::RParen) {
+                if !saw_reset_pitr_chain {
+                    return Err(ParserError::ParserError(
+                        "expected BACKUP DATABASE option".to_string(),
+                    ));
+                }
+                break;
+            }
+
+            let option = self.parse_identifier()?;
+            if !option.value.eq_ignore_ascii_case("reset_pitr_chain") {
+                return Err(ParserError::ParserError(format!(
+                    "unsupported BACKUP DATABASE option: {}",
+                    option.value
+                )));
+            }
+            if saw_reset_pitr_chain {
+                return Err(ParserError::ParserError(
+                    "duplicate BACKUP DATABASE option: reset_pitr_chain".to_string(),
+                ));
+            }
+            saw_reset_pitr_chain = true;
+
+            reset_pitr_chain = if self.consume_token(&BorrowedToken::Eq) {
+                match self.parse_one_of_keywords(&[Keyword::TRUE, Keyword::FALSE]) {
+                    Some(Keyword::TRUE) => true,
+                    Some(Keyword::FALSE) => false,
+                    _ => {
+                        return Err(ParserError::ParserError(
+                            "expected TRUE or FALSE for reset_pitr_chain".to_string(),
+                        ));
+                    }
+                }
+            } else {
+                true
+            };
+
+            if self.consume_token(&BorrowedToken::Comma) {
+                continue;
+            }
+            self.expect_token(&BorrowedToken::RParen)?;
+            break;
+        }
+
+        Ok(reset_pitr_chain)
     }
 
     /// Parse RESTORE {DATABASE | TABLE <name>} [FROM '<uri>'] TO {TIMESTAMP '<ts>' | LSN <n>} [DRY RUN]

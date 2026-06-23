@@ -10235,6 +10235,59 @@ fn parse_backup_status_bare_verb() {
 }
 
 #[test]
+fn parse_backup_database_reset_pitr_chain() {
+    assert_eq!(
+        verified_stmt("BACKUP DATABASE WITH (reset_pitr_chain)"),
+        Statement::Backup {
+            object_type: None,
+            location: None,
+            estimate: false,
+            incremental: false,
+            reset_pitr_chain: true,
+        }
+    );
+
+    assert_eq!(
+        verified_stmt("BACKUP DATABASE WITH (reset_pitr_chain = true)"),
+        Statement::Backup {
+            object_type: None,
+            location: None,
+            estimate: false,
+            incremental: false,
+            reset_pitr_chain: true,
+        }
+    );
+
+    assert_eq!(
+        verified_stmt("BACKUP DATABASE WITH (reset_pitr_chain = false)"),
+        Statement::Backup {
+            object_type: None,
+            location: None,
+            estimate: false,
+            incremental: false,
+            reset_pitr_chain: false,
+        }
+    );
+
+    assert_eq!(
+        verified_stmt("BACKUP DATABASE TO 'file:///tmp/backup' WITH (reset_pitr_chain)"),
+        Statement::Backup {
+            object_type: None,
+            location: Some("file:///tmp/backup".into()),
+            estimate: false,
+            incremental: false,
+            reset_pitr_chain: true,
+        }
+    );
+
+    let err = parse_sql_statements("BACKUP DATABASE WITH ()").unwrap_err();
+    assert!(
+        err.to_string().contains("expected BACKUP DATABASE option"),
+        "{err}"
+    );
+}
+
+#[test]
 fn parse_set_backup_audit_retention() {
     assert_eq!(
         verified_stmt("SET BACKUP AUDIT RETENTION TO 90 DAYS"),

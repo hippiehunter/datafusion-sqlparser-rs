@@ -44,11 +44,10 @@ use crate::ast::{
     ArgMode, AttachedToken, CommentDef, ConditionalStatements, CreateFunctionBody,
     CreateFunctionUsing, CreateTableLikeKind, CreateTableOptions, CreateViewParams, DataType, Expr,
     FunctionBehavior, FunctionCalledOnNull, FunctionDesc, FunctionDeterminismSpecifier,
-    FunctionParallel, Ident, MySQLColumnPosition, ObjectName, OnCommit, OperateFunctionArg,
-    OrderByExpr, PartitionBoundSpec, ProcedureSecurity, ProcedureSetConfig, Query, SequenceOptions,
-    MaterializedViewRefreshSchedule, Spanned, SqlDataAccess, SqlOption, TableVersion,
-    TriggerEvent, TriggerExecBody, TriggerObject, TriggerPeriod, TriggerReferencing,
-    ValueWithSpan,
+    FunctionParallel, Ident, MaterializedViewRefreshSchedule, MySQLColumnPosition, ObjectName,
+    OnCommit, OperateFunctionArg, OrderByExpr, PartitionBoundSpec, ProcedureSecurity,
+    ProcedureSetConfig, Query, SequenceOptions, Spanned, SqlDataAccess, SqlOption, TableVersion,
+    TriggerEvent, TriggerExecBody, TriggerObject, TriggerPeriod, TriggerReferencing, ValueWithSpan,
 };
 use crate::display_utils::{DisplayCommaSeparated, Indent, NewLine, SpaceOrNewline};
 use crate::tokenizer::{Span, Token};

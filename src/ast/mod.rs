@@ -5807,7 +5807,7 @@ pub enum Statement {
         checkpoint_token: AttachedToken,
     },
     /// ```sql
-    /// BACKUP DATABASE [TO '<s3_uri>'] [ESTIMATE] [INCREMENTAL]
+    /// BACKUP DATABASE [TO '<s3_uri>'] [ESTIMATE] [INCREMENTAL] [WITH (reset_pitr_chain)]
     /// ```
     Backup {
         /// What to back up: DATABASE or a specific table name
@@ -5818,6 +5818,8 @@ pub enum Statement {
         estimate: bool,
         /// INCREMENTAL — incremental snapshot only
         incremental: bool,
+        /// reset_pitr_chain — acknowledge an archive coverage gap and seed a new PITR chain
+        reset_pitr_chain: bool,
     },
     /// ```sql
     /// RESTORE {DATABASE | TABLE <name>} [FROM '<s3_uri>']
@@ -7572,6 +7574,7 @@ impl fmt::Display for Statement {
                 location,
                 estimate,
                 incremental,
+                reset_pitr_chain,
             } => {
                 write!(f, "BACKUP")?;
                 if let Some(obj) = object_type {
@@ -7587,6 +7590,9 @@ impl fmt::Display for Statement {
                 }
                 if *incremental {
                     write!(f, " INCREMENTAL")?;
+                }
+                if *reset_pitr_chain {
+                    write!(f, " WITH (reset_pitr_chain)")?;
                 }
                 Ok(())
             }
