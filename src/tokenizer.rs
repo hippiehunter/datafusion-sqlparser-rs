@@ -1047,6 +1047,34 @@ impl<'a> Tokenizer<'a> {
         &mut self,
         buf: &mut Vec<TokenWithSpan<'a>>,
     ) -> Result<(), TokenizerError> {
+        self.tokenize_with_location_into_buf_internal(buf, false)
+    }
+
+    /// Tokenize for the SQL parser, omitting trivia that the grammar normally
+    /// skips. COPY statements retain the full token stream because their
+    /// inline payload parser consumes tabs, newlines, and spaces as data.
+    pub(crate) fn tokenize_for_parser(
+        &mut self,
+    ) -> Result<(Vec<TokenWithSpan<'a>>, bool), TokenizerError> {
+        let mut tokens = Vec::new();
+        self.tokenize_with_location_into_buf_internal(&mut tokens, true)?;
+
+        let includes_whitespace = tokens.iter().any(
+            |token| matches!(&token.token, BorrowedToken::Word(word) if word.keyword == Keyword::COPY),
+        );
+        if includes_whitespace {
+            tokens.clear();
+            self.tokenize_with_location_into_buf_internal(&mut tokens, false)?;
+        }
+
+        Ok((tokens, includes_whitespace))
+    }
+
+    fn tokenize_with_location_into_buf_internal(
+        &self,
+        buf: &mut Vec<TokenWithSpan<'a>>,
+        skip_whitespace: bool,
+    ) -> Result<(), TokenizerError> {
         let mut state = State {
             peekable: self.query.chars().peekable(),
             source: self.query,
@@ -1056,12 +1084,26 @@ impl<'a> Tokenizer<'a> {
         };
 
         let mut location = state.location();
-        while let Some(token) = self.next_token(&mut state, buf.last().map(|t| &t.token))? {
+        let whitespace = BorrowedToken::Whitespace(Whitespace::Space);
+        let mut skipped_whitespace = false;
+        loop {
+            let previous = if skipped_whitespace {
+                Some(&whitespace)
+            } else {
+                buf.last().map(|token| &token.token)
+            };
+            let Some(token) = self.next_token(&mut state, previous)? else {
+                break;
+            };
             let span = location.span_to(state.location());
-
-            buf.push(TokenWithSpan { token, span });
-
             location = state.location();
+
+            if skip_whitespace && matches!(token, BorrowedToken::Whitespace(_)) {
+                skipped_whitespace = true;
+                continue;
+            }
+            skipped_whitespace = false;
+            buf.push(TokenWithSpan { token, span });
         }
         Ok(())
     }

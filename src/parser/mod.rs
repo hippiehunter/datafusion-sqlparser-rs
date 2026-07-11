@@ -304,11 +304,16 @@ impl ErrorTracker {
 }
 
 /// RAII guard that pops context on drop
-pub struct ContextGuard<'a>(&'a ErrorTracker);
+pub struct ContextGuard<'a> {
+    tracker: &'a ErrorTracker,
+    active: bool,
+}
 
 impl Drop for ContextGuard<'_> {
     fn drop(&mut self) {
-        self.0.pop_context();
+        if self.active {
+            self.tracker.pop_context();
+        }
     }
 }
 
@@ -316,7 +321,6 @@ impl Drop for ContextGuard<'_> {
 /// Implementation [`RecursionCounter`] if std is available
 mod recursion {
     use std::cell::Cell;
-    use std::rc::Rc;
 
     use super::ParserError;
 
@@ -324,14 +328,10 @@ mod recursion {
     /// each call to [`RecursionCounter::try_decrease()`], when it reaches 0 an error will
     /// be returned.
     ///
-    /// Note: Uses an [`std::rc::Rc`] and [`std::cell::Cell`] in order to satisfy the Rust
-    /// borrow checker so the automatic [`DepthGuard`] decrement a
-    /// reference to the counter.
-    ///
     /// Note: when "recursive-protection" feature is enabled, this crate uses additional stack overflow protection
     /// for some of its recursive methods. See [`recursive::recursive`] for more information.
     pub(crate) struct RecursionCounter {
-        remaining_depth: Rc<Cell<usize>>,
+        remaining_depth: Cell<usize>,
     }
 
     impl RecursionCounter {
@@ -339,7 +339,7 @@ mod recursion {
         /// depth
         pub fn new(remaining_depth: usize) -> Self {
             Self {
-                remaining_depth: Rc::new(remaining_depth.into()),
+                remaining_depth: Cell::new(remaining_depth),
             }
         }
 
@@ -349,29 +349,29 @@ mod recursion {
         ///
         /// Returns a [`DepthGuard`] which will adds 1 to the
         /// remaining depth upon drop;
-        pub fn try_decrease(&self) -> Result<DepthGuard, ParserError> {
+        pub fn try_decrease(&self) -> Result<DepthGuard<'_>, ParserError> {
             let old_value = self.remaining_depth.get();
             // ran out of space
             if old_value == 0 {
                 Err(ParserError::RecursionLimitExceeded)
             } else {
                 self.remaining_depth.set(old_value - 1);
-                Ok(DepthGuard::new(Rc::clone(&self.remaining_depth)))
+                Ok(DepthGuard::new(&self.remaining_depth))
             }
         }
     }
 
     /// Guard that increases the remaining depth by 1 on drop
-    pub struct DepthGuard {
-        remaining_depth: Rc<Cell<usize>>,
+    pub struct DepthGuard<'a> {
+        remaining_depth: &'a Cell<usize>,
     }
 
-    impl DepthGuard {
-        fn new(remaining_depth: Rc<Cell<usize>>) -> Self {
+    impl<'a> DepthGuard<'a> {
+        fn new(remaining_depth: &'a Cell<usize>) -> Self {
             Self { remaining_depth }
         }
     }
-    impl Drop for DepthGuard {
+    impl Drop for DepthGuard<'_> {
         fn drop(&mut self) {
             let old_value = self.remaining_depth.get();
             self.remaining_depth.set(old_value + 1);
@@ -581,6 +581,8 @@ enum ParserState {
 pub struct Parser<'a> {
     /// The tokens
     tokens: Vec<TokenWithSpan<'a>>,
+    /// Whether the token stream contains whitespace/comment trivia.
+    tokens_include_whitespace: bool,
     /// The index of the first unprocessed token in [`Parser::tokens`].
     index: Cell<usize>,
     /// The current state of the parser.
@@ -597,6 +599,9 @@ pub struct Parser<'a> {
     recursion_counter: RecursionCounter,
     /// Tracks the furthest error position for better error messages.
     error_tracker: ErrorTracker,
+    /// Build rich diagnostics. Successful full-statement parsing disables
+    /// this and retries with it enabled only when the fast pass fails.
+    detailed_errors: Cell<bool>,
 }
 
 impl<'a> Parser<'a> {
@@ -619,6 +624,7 @@ impl<'a> Parser<'a> {
         let features = dialect.features();
         Self {
             tokens: vec![],
+            tokens_include_whitespace: false,
             index: Cell::new(0),
             state: Cell::new(ParserState::Normal),
             dialect,
@@ -626,6 +632,7 @@ impl<'a> Parser<'a> {
             recursion_counter: RecursionCounter::new(DEFAULT_REMAINING_DEPTH),
             options: ParserOptions::new().with_trailing_commas(dialect.supports_trailing_commas()),
             error_tracker: ErrorTracker::new(),
+            detailed_errors: Cell::new(true),
         }
     }
 
@@ -635,8 +642,14 @@ impl<'a> Parser<'a> {
     /// This is used to provide helpful context in error messages like
     /// "in SELECT clause" or "in WHERE clause".
     fn enter_context(&self, ctx: ParseContext) -> ContextGuard<'_> {
-        self.error_tracker.push_context(ctx);
-        ContextGuard(&self.error_tracker)
+        let active = self.detailed_errors.get();
+        if active {
+            self.error_tracker.push_context(ctx);
+        }
+        ContextGuard {
+            tracker: &self.error_tracker,
+            active,
+        }
     }
 
     /// Check if the current token is a typo of the expected keyword.
@@ -668,6 +681,10 @@ impl<'a> Parser<'a> {
     /// than positional errors. We are conservative about replacement to avoid
     /// breaking existing error message expectations.
     fn build_best_error<T>(&self, fallback: ParserError) -> Result<T, ParserError> {
+        if !self.detailed_errors.get() {
+            return Err(fallback);
+        }
+
         // Check if the fallback is a generic "Expected" error that should be replaced
         // We're very conservative: only replace errors about keywords (words with letters)
         // Preserve errors about tokens, punctuation, and descriptive phrases
@@ -777,7 +794,19 @@ impl<'a> Parser<'a> {
     }
 
     /// Reset this parser to parse the specified token stream
-    pub fn with_tokens_with_locations(mut self, tokens: Vec<TokenWithSpan<'a>>) -> Self {
+    pub fn with_tokens_with_locations(self, tokens: Vec<TokenWithSpan<'a>>) -> Self {
+        let tokens_include_whitespace = tokens
+            .iter()
+            .any(|token| matches!(token.token, BorrowedToken::Whitespace(_)));
+        self.with_tokens_with_locations_and_whitespace(tokens, tokens_include_whitespace)
+    }
+
+    fn with_tokens_with_locations_and_whitespace(
+        mut self,
+        tokens: Vec<TokenWithSpan<'a>>,
+        tokens_include_whitespace: bool,
+    ) -> Self {
+        self.tokens_include_whitespace = tokens_include_whitespace;
         self.tokens = tokens;
         self.index = Cell::new(0);
         self.error_tracker.reset();
@@ -805,10 +834,10 @@ impl<'a> Parser<'a> {
     /// See example on [`Parser::new()`] for an example
     pub fn try_with_sql(self, sql: &'a str) -> Result<Self, ParserError> {
         debug!("Parsing sql '{sql}'...");
-        let tokens = Tokenizer::new(self.dialect, sql)
+        let (tokens, tokens_include_whitespace) = Tokenizer::new(self.dialect, sql)
             .with_unescape(self.options.unescape)
-            .tokenize_with_location()?;
-        Ok(self.with_tokens_with_locations(tokens))
+            .tokenize_for_parser()?;
+        Ok(self.with_tokens_with_locations_and_whitespace(tokens, tokens_include_whitespace))
     }
 
     /// Parse potentially multiple statements
@@ -827,6 +856,26 @@ impl<'a> Parser<'a> {
     /// # }
     /// ```
     pub fn parse_statements(&self) -> Result<Vec<Statement>, ParserError> {
+        let start_index = self.index.get();
+        let start_state = self.state.get();
+        let previous_detailed_errors = self.detailed_errors.replace(false);
+        let result = self.parse_statements_inner();
+        self.detailed_errors.set(previous_detailed_errors);
+
+        if result.is_ok()
+            || !previous_detailed_errors
+            || matches!(&result, Err(ParserError::RecursionLimitExceeded))
+        {
+            return result;
+        }
+
+        self.index.set(start_index);
+        self.state.set(start_state);
+        self.error_tracker.reset();
+        self.parse_statements_inner()
+    }
+
+    fn parse_statements_inner(&self) -> Result<Vec<Statement>, ParserError> {
         let mut stmts = Vec::new();
         let mut expecting_statement_delimiter = false;
         loop {
@@ -2542,7 +2591,10 @@ impl<'a> Parser<'a> {
         debug!("parsing expr");
         let mut expr = self.parse_prefix()?;
 
-        expr = self.parse_compound_expr(expr, Vec::with_capacity(4))?;
+        // Most expressions do not contain compound field or subscript access.
+        // Let the vector allocate on the first actual access instead of paying
+        // for an unused allocation on every expression.
+        expr = self.parse_compound_expr(expr, Vec::new())?;
 
         debug!("prefix: {expr:?}");
         loop {
@@ -5870,6 +5922,16 @@ impl<'a> Parser<'a> {
     ///
     /// See [`Self::peek_token`] for an example.
     pub fn peek_tokens_with_location<const N: usize>(&self) -> [TokenWithSpan<'_>; N] {
+        if !self.tokens_include_whitespace {
+            let index = self.index.get();
+            return core::array::from_fn(|offset| {
+                self.tokens
+                    .get(index + offset)
+                    .cloned()
+                    .unwrap_or_else(TokenWithSpan::new_eof)
+            });
+        }
+
         let mut index = self.index.get();
         core::array::from_fn(|_| loop {
             let token = self.tokens.get(index);
@@ -5893,6 +5955,13 @@ impl<'a> Parser<'a> {
     ///
     /// See [`Self::peek_tokens`] for an example.
     pub fn peek_tokens_ref<const N: usize>(&self) -> [&TokenWithSpan<'_>; N] {
+        if !self.tokens_include_whitespace {
+            let index = self.index.get();
+            return core::array::from_fn(|offset| {
+                self.tokens.get(index + offset).unwrap_or(&EOF_TOKEN)
+            });
+        }
+
         let mut index = self.index.get();
         core::array::from_fn(|_| loop {
             let token = self.tokens.get(index);
@@ -5916,6 +5985,10 @@ impl<'a> Parser<'a> {
     /// Return nth non-whitespace token that has not yet been processed
     pub fn peek_nth_token_ref(&self, mut n: usize) -> &TokenWithSpan<'a> {
         let mut index = self.index.get();
+        if !self.tokens_include_whitespace {
+            return self.tokens.get(index + n).unwrap_or(&EOF_TOKEN);
+        }
+
         loop {
             index += 1;
             match self.tokens.get(index - 1) {
@@ -5987,6 +6060,11 @@ impl<'a> Parser<'a> {
     ///
     /// See [`Self::get_current_token`] to get the current token after advancing
     pub fn advance_token(&self) {
+        if !self.tokens_include_whitespace {
+            self.index.set(self.index.get() + 1);
+            return;
+        }
+
         loop {
             self.index.set(self.index.get() + 1);
             match self.tokens.get(self.index.get() - 1) {
@@ -6035,6 +6113,12 @@ impl<'a> Parser<'a> {
     ///
     // TODO rename to backup_token and deprecate prev_token?
     pub fn prev_token(&self) {
+        if !self.tokens_include_whitespace {
+            assert!(self.index.get() > 0);
+            self.index.set(self.index.get() - 1);
+            return;
+        }
+
         loop {
             assert!(self.index.get() > 0);
             self.index.set(self.index.get() - 1);
@@ -6051,6 +6135,9 @@ impl<'a> Parser<'a> {
 
     /// Report `found` was encountered instead of `expected`
     pub fn expected<T>(&self, expected: &str, found: TokenWithSpan) -> Result<T, ParserError> {
+        if !self.detailed_errors.get() {
+            return Err(ParserError::ParserError(String::new()));
+        }
         self.error_tracker.record(
             self.index.get(),
             ExpectedItem::Category(expected.to_string()),
@@ -6063,6 +6150,9 @@ impl<'a> Parser<'a> {
 
     /// report `found` was encountered instead of `expected`
     pub fn expected_ref<T>(&self, expected: &str, found: &TokenWithSpan) -> Result<T, ParserError> {
+        if !self.detailed_errors.get() {
+            return Err(ParserError::ParserError(String::new()));
+        }
         self.error_tracker.record(
             self.index.get(),
             ExpectedItem::Category(expected.to_string()),
@@ -6075,6 +6165,9 @@ impl<'a> Parser<'a> {
 
     /// Report that the token at `index` was found instead of `expected`.
     pub fn expected_at<T>(&self, expected: &str, index: usize) -> Result<T, ParserError> {
+        if !self.detailed_errors.get() {
+            return Err(ParserError::ParserError(String::new()));
+        }
         let found = self.tokens.get(index).unwrap_or(&EOF_TOKEN);
         self.error_tracker
             .record(index, ExpectedItem::Category(expected.to_string()));
@@ -6186,6 +6279,8 @@ impl<'a> Parser<'a> {
     pub fn expect_one_of_keywords(&self, keywords: &[Keyword]) -> Result<Keyword, ParserError> {
         if let Some(keyword) = self.parse_one_of_keywords(keywords) {
             Ok(keyword)
+        } else if !self.detailed_errors.get() {
+            Err(ParserError::ParserError(String::new()))
         } else {
             let keywords: Vec<String> = keywords.iter().map(|x| format!("{x:?}")).collect();
             self.expected_ref(
@@ -6202,6 +6297,8 @@ impl<'a> Parser<'a> {
     pub fn expect_keyword(&self, expected: Keyword) -> Result<TokenWithSpan<'_>, ParserError> {
         if self.parse_keyword(expected) {
             Ok(self.get_current_token().clone())
+        } else if !self.detailed_errors.get() {
+            Err(ParserError::ParserError(String::new()))
         } else {
             self.error_tracker
                 .record(self.index.get(), ExpectedItem::Keyword(expected));
@@ -6218,6 +6315,8 @@ impl<'a> Parser<'a> {
     pub fn expect_keyword_is(&self, expected: Keyword) -> Result<(), ParserError> {
         if self.parse_keyword(expected) {
             Ok(())
+        } else if !self.detailed_errors.get() {
+            Err(ParserError::ParserError(String::new()))
         } else {
             self.error_tracker
                 .record(self.index.get(), ExpectedItem::Keyword(expected));
@@ -6278,6 +6377,8 @@ impl<'a> Parser<'a> {
     ) -> Result<TokenWithSpan<'_>, ParserError> {
         if self.peek_token_ref() == expected {
             Ok(self.next_token())
+        } else if !self.detailed_errors.get() {
+            Err(ParserError::ParserError(String::new()))
         } else {
             self.error_tracker
                 .record(self.index.get(), ExpectedItem::Token(expected.to_string()));
@@ -13358,6 +13459,9 @@ impl<'a> Parser<'a> {
                 //    be followed immediately by a word/number, ie.
                 //    without any whitespace in between
                 let next_token = self.next_token_no_skip().unwrap_or(&EOF_TOKEN).clone();
+                if !self.tokens_include_whitespace && span.end != next_token.span.start {
+                    return self.expected("placeholder", next_token);
+                }
                 let ident = match next_token.token {
                     BorrowedToken::Word(w) => Ok(self.word_to_ident(w, next_token.span)),
                     BorrowedToken::Number(w, false) => Ok(Ident::with_span(next_token.span, w)),
@@ -14457,11 +14561,15 @@ impl<'a> Parser<'a> {
     }
 
     fn word_to_ident(&self, word: Word<'a>, span: Span) -> Ident {
-        let mut ident = word.into_ident(span);
-        ident.value = self
+        let quote_style = word.quote_style;
+        let value = self
             .dialect
-            .canonicalize_identifier(&ident.value, ident.quote_style);
-        ident
+            .canonicalize_identifier(word.value.as_ref(), quote_style);
+        Ident {
+            value,
+            quote_style,
+            span,
+        }
     }
 
     /// Parse a simple one-word identifier (possibly quoted, possibly a keyword)
@@ -19613,7 +19721,12 @@ impl<'a> Parser<'a> {
             return Ok(FunctionArg::Variadic(self.parse_wildcard_expr()?.into()));
         }
 
-        let arg = if self.features.supports_named_fn_args_with_expr_name {
+        // Parsing an arbitrary expression speculatively and then rewinding if
+        // no named-argument operator follows makes nested ordinary function
+        // calls exponential. Only take that speculative path when a supported
+        // operator exists at the current argument's top level.
+        let has_named_operator = self.has_function_named_arg_operator();
+        let arg = if self.features.supports_named_fn_args_with_expr_name && has_named_operator {
             self.maybe_parse(|p| {
                 let name = p.parse_expr()?;
                 let operator = p.parse_function_named_arg_operator()?;
@@ -19624,7 +19737,7 @@ impl<'a> Parser<'a> {
                     operator,
                 })
             })?
-        } else {
+        } else if has_named_operator {
             self.maybe_parse(|p| {
                 let name = p.parse_identifier()?;
                 let operator = p.parse_function_named_arg_operator()?;
@@ -19635,11 +19748,66 @@ impl<'a> Parser<'a> {
                     operator,
                 })
             })?
+        } else {
+            None
         };
         if let Some(arg) = arg {
             return Ok(arg);
         }
         Ok(FunctionArg::Unnamed(self.parse_wildcard_expr()?.into()))
+    }
+
+    fn has_function_named_arg_operator(&self) -> bool {
+        let mut offset = 0;
+        let mut depth = 0usize;
+        loop {
+            let token = &self.peek_nth_token_ref(offset).token;
+            match token {
+                BorrowedToken::LParen | BorrowedToken::LBracket | BorrowedToken::LBrace => {
+                    depth += 1;
+                }
+                BorrowedToken::RParen | BorrowedToken::RBracket | BorrowedToken::RBrace => {
+                    if depth == 0 {
+                        return false;
+                    }
+                    depth -= 1;
+                }
+                BorrowedToken::Comma if depth == 0 => return false,
+                BorrowedToken::Word(word) if depth == 0 && word.keyword == Keyword::VALUE => {
+                    return true;
+                }
+                BorrowedToken::RArrow
+                    if depth == 0 && self.features.supports_named_fn_args_with_rarrow_operator =>
+                {
+                    return true;
+                }
+                BorrowedToken::Eq
+                    if depth == 0 && self.features.supports_named_fn_args_with_eq_operator =>
+                {
+                    return true;
+                }
+                BorrowedToken::Assignment
+                    if depth == 0
+                        && self
+                            .features
+                            .supports_named_fn_args_with_assignment_operator =>
+                {
+                    return true;
+                }
+                // A leading colon is a placeholder prefix rather than a named
+                // argument separator (for example `f(:value)`).
+                BorrowedToken::Colon
+                    if depth == 0
+                        && offset != 0
+                        && self.features.supports_named_fn_args_with_colon_operator =>
+                {
+                    return true;
+                }
+                BorrowedToken::EOF => return false,
+                _ => {}
+            }
+            offset += 1;
+        }
     }
 
     fn parse_function_named_arg_operator(&self) -> Result<FunctionArgOperator, ParserError> {

@@ -610,17 +610,17 @@ pub trait Dialect: Debug + Any {
             };
         }
 
-        let token = parser.peek_token();
+        let token = parser.peek_token_ref();
         debug!("get_next_precedence_full() {token:?}");
-        match token.token {
+        match &token.token {
             BorrowedToken::Word(w) if w.keyword == Keyword::OR => Ok(p!(Or)),
             BorrowedToken::Word(w) if w.keyword == Keyword::AND => Ok(p!(And)),
             BorrowedToken::Word(w) if w.keyword == Keyword::XOR => Ok(p!(Xor)),
 
             BorrowedToken::Word(w) if w.keyword == Keyword::AT => {
                 match (
-                    parser.peek_nth_token(1).token,
-                    parser.peek_nth_token(2).token,
+                    &parser.peek_nth_token_ref(1).token,
+                    &parser.peek_nth_token_ref(2).token,
                 ) {
                     (BorrowedToken::Word(w), BorrowedToken::Word(w2))
                         if w.keyword == Keyword::TIME && w2.keyword == Keyword::ZONE =>
@@ -632,7 +632,7 @@ pub trait Dialect: Debug + Any {
             }
 
             BorrowedToken::Word(w) if w.keyword == Keyword::NOT => {
-                match parser.peek_nth_token(1).token {
+                match &parser.peek_nth_token_ref(1).token {
                     // The precedence of NOT varies depending on keyword that
                     // follows it. If it is followed by IN, BETWEEN, or LIKE,
                     // it takes on the precedence of those tokens. Otherwise, it
