@@ -19,7 +19,8 @@ use core::cmp::{Eq, Ord, Ordering, PartialEq, PartialOrd};
 use core::fmt::{self, Debug, Formatter};
 use core::hash::{Hash, Hasher};
 
-use crate::tokenizer::TokenWithSpan;
+use crate::keywords::Keyword;
+use crate::tokenizer::{BorrowedToken, Span, TokenWithSpan};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -27,12 +28,13 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "visitor")]
 use sqlparser_derive::{Visit, VisitMut};
 
-/// A wrapper over [`TokenWithSpan`]s that ignores the token and source
-/// location in comparisons and hashing.
+/// A compact source span attached to an AST node.
 ///
-/// This type is used when the token and location is not relevant for semantics,
-/// but is still needed for accurate source location tracking, for example, in
-/// the nodes in the [ast](crate::ast) module.
+/// The full parser token is intentionally discarded: AST consumers use its
+/// location and, for a few dialect renderers, its compact keyword tag. Keeping
+/// strings and the full token enum inflated every node containing an
+/// attachment. This type still accepts [`TokenWithSpan`] through `From` at
+/// parser construction boundaries.
 ///
 /// Note: **All** `AttachedTokens` are equal.
 ///
@@ -54,7 +56,7 @@ use sqlparser_derive::{Visit, VisitMut};
 /// );
 ///
 /// assert_ne!(tok1, tok2); // token with locations are *not* equal
-/// assert_eq!(AttachedToken(tok1), AttachedToken(tok2)); // attached tokens are
+/// assert_eq!(AttachedToken::from(tok1), AttachedToken::from(tok2)); // attached tokens are
 /// ```
 ///
 /// Different token, different location are equal 🤯
@@ -74,18 +76,18 @@ use sqlparser_derive::{Visit, VisitMut};
 /// );
 ///
 /// assert_ne!(tok1, tok2); // token with locations are *not* equal
-/// assert_eq!(AttachedToken(tok1), AttachedToken(tok2)); // attached tokens are
+/// assert_eq!(AttachedToken::from(tok1), AttachedToken::from(tok2)); // attached tokens are
 /// ```
 /// // period @ line 2, column 20
 #[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct AttachedToken(pub TokenWithSpan<'static>);
+pub struct AttachedToken(pub Span, pub Option<Keyword>);
 
 impl AttachedToken {
     /// Return a new Empty AttachedToken
     pub fn empty() -> Self {
-        AttachedToken(TokenWithSpan::new_eof())
+        AttachedToken(Span::empty(), None)
     }
 }
 
@@ -93,6 +95,15 @@ impl AttachedToken {
 impl Debug for AttachedToken {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+impl fmt::Display for AttachedToken {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self.1 {
+            Some(keyword) => keyword.fmt(f),
+            None => Ok(()),
+        }
     }
 }
 
@@ -123,14 +134,28 @@ impl Hash for AttachedToken {
     }
 }
 
-impl From<TokenWithSpan<'static>> for AttachedToken {
-    fn from(value: TokenWithSpan<'static>) -> Self {
-        AttachedToken(value)
+impl<'a> From<TokenWithSpan<'a>> for AttachedToken {
+    fn from(value: TokenWithSpan<'a>) -> Self {
+        let keyword = match &value.token {
+            BorrowedToken::Word(word) => Some(word.keyword),
+            _ => None,
+        };
+        AttachedToken(value.span, keyword)
+    }
+}
+
+impl<'a> From<&TokenWithSpan<'a>> for AttachedToken {
+    fn from(value: &TokenWithSpan<'a>) -> Self {
+        let keyword = match &value.token {
+            BorrowedToken::Word(word) => Some(word.keyword),
+            _ => None,
+        };
+        AttachedToken(value.span, keyword)
     }
 }
 
 impl From<AttachedToken> for TokenWithSpan<'static> {
     fn from(value: AttachedToken) -> Self {
-        value.0
+        TokenWithSpan::new(BorrowedToken::EOF, value.0)
     }
 }

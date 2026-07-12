@@ -22,6 +22,7 @@ use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criteri
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
 use sqlparser::tokenizer::Tokenizer;
+use sqlparser::ParsedSql;
 use sqlparser_bench::postgres_corpus::{postgres_corpus, Family, QueryCase, Tier};
 
 fn bytes(cases: &[&QueryCase]) -> u64 {
@@ -126,6 +127,47 @@ fn parser_prepare(c: &mut Criterion) {
                             Parser::new(&dialect)
                                 .try_with_sql(black_box(&case.sql))
                                 .unwrap(),
+                        );
+                    }
+                });
+            },
+        );
+    }
+    group.finish();
+}
+
+fn document(c: &mut Criterion) {
+    let corpus = postgres_corpus();
+    let workload = corpus
+        .iter()
+        .filter(|case| case.family != Family::Scaling)
+        .collect::<Vec<_>>();
+    let dialect = PostgreSqlDialect {};
+
+    let mut group = c.benchmark_group("postgres/document/macro");
+    group.throughput(Throughput::Bytes(bytes(&workload)));
+    group.bench_function("workload", |b| {
+        b.iter(|| {
+            for case in &workload {
+                black_box(ParsedSql::parse(&dialect, black_box(case.sql.as_str())).unwrap());
+            }
+        });
+    });
+
+    for family in Family::ALL {
+        let subset = corpus
+            .iter()
+            .filter(|case| case.family == family)
+            .collect::<Vec<_>>();
+        group.throughput(Throughput::Bytes(bytes(&subset)));
+        group.bench_with_input(
+            BenchmarkId::new("family", family.as_str()),
+            &subset,
+            |b, subset| {
+                b.iter(|| {
+                    for case in subset {
+                        black_box(
+                            ParsedSql::parse(&dialect, black_box(case.sql.as_str())).unwrap(),
                         );
                     }
                 });
@@ -257,6 +299,6 @@ criterion_group! {
         .sample_size(40)
         .noise_threshold(0.02)
         .significance_level(0.05);
-    targets = end_to_end, parser_prepare, public_tokenizer, parser_core, sentinels, scaling_curves
+    targets = end_to_end, document, parser_prepare, public_tokenizer, parser_core, sentinels, scaling_curves
 }
 criterion_main!(benches);

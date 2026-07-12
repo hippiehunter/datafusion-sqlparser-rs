@@ -33,6 +33,9 @@ use crate::keywords::Keyword;
 use crate::parser::{Parser, ParserError};
 use crate::tokenizer::BorrowedToken;
 
+#[cfg(not(feature = "std"))]
+use alloc::{borrow::ToOwned, string::String};
+
 /// A [`Dialect`] for [PostgreSQL](https://www.postgresql.org/)
 #[derive(Debug)]
 pub struct PostgreSqlDialect {}

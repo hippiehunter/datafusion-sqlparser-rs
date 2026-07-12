@@ -18,9 +18,9 @@
 //! AST types specific to CREATE/ALTER variants of [`Statement`](crate::ast::Statement)
 //! (commonly referred to as Data Definition Language, or DDL)
 
+use crate::ast::Box;
 #[cfg(not(feature = "std"))]
 use alloc::{
-    boxed::Box,
     format,
     string::{String, ToString},
     vec,

@@ -16,7 +16,9 @@
 // under the License.
 
 #[cfg(not(feature = "std"))]
-use alloc::{boxed::Box, vec::Vec};
+use alloc::vec::Vec;
+
+use crate::ast::Box;
 
 use helpers::attached_token::AttachedToken;
 #[cfg(feature = "serde")]
@@ -39,15 +41,15 @@ use crate::{
 #[cfg_attr(feature = "visitor", visit(with = "visit_query"))]
 pub struct Query {
     /// WITH (common table expressions, or CTEs)
-    pub with: Option<With>,
+    pub with: Option<Box<With>>,
     /// SELECT or UNION / EXCEPT / INTERSECT
     pub body: Box<SetExpr>,
     /// ORDER BY
     pub order_by: Option<OrderBy>,
     /// `LIMIT ... OFFSET ... | LIMIT <offset>, <limit>`
-    pub limit_clause: Option<LimitClause>,
+    pub limit_clause: Option<Box<LimitClause>>,
     /// `FETCH { FIRST | NEXT } <N> [ PERCENT ] { ROW | ROWS } | { ONLY | WITH TIES }`
-    pub fetch: Option<Fetch>,
+    pub fetch: Option<Box<Fetch>>,
     /// `FOR { UPDATE | SHARE } [ OF table_name ] [ SKIP LOCKED | NOWAIT ]`
     pub locks: Vec<LockClause>,
     /// `FOR XML { RAW | AUTO | EXPLICIT | PATH } [ , ELEMENTS ]`
@@ -107,10 +109,10 @@ pub enum SetExpr {
         right: Box<SetExpr>,
     },
     Values(Values),
-    Insert(Statement),
-    Update(Statement),
-    Delete(Statement),
-    Merge(Statement),
+    Insert(Box<Statement>),
+    Update(Box<Statement>),
+    Delete(Box<Statement>),
+    Merge(Box<Statement>),
     Table(Box<Table>),
 }
 
@@ -266,7 +268,7 @@ pub struct Select {
     /// `SELECT [DISTINCT] ...`
     pub distinct: Option<Distinct>,
     /// MSSQL syntax: `TOP (<N>) [ PERCENT ] [ WITH TIES ]`
-    pub top: Option<Top>,
+    pub top: Option<Box<Top>>,
     /// Whether the top was located before `ALL`/`DISTINCT`
     pub top_before_distinct: bool,
     /// projection expressions
@@ -276,15 +278,15 @@ pub struct Select {
     /// FROM
     pub from: Vec<TableWithJoins>,
     /// WHERE
-    pub selection: Option<Expr>,
+    pub selection: Option<Box<Expr>>,
     /// GROUP BY
     pub group_by: GroupByExpr,
     /// HAVING
-    pub having: Option<Expr>,
+    pub having: Option<Box<Expr>>,
     /// WINDOW AS
     pub named_window: Vec<NamedWindowDefinition>,
     /// STARTING WITH .. CONNECT BY
-    pub connect_by: Option<ConnectBy>,
+    pub connect_by: Option<Box<ConnectBy>>,
     /// Was this a FROM-first query?
     pub flavor: SelectFlavor,
 }
@@ -1064,7 +1066,7 @@ pub enum TableFactor {
         with_hints: Vec<Expr>,
         /// Optional version qualifier to facilitate table time-travel, as
         /// supported by MSSQL.
-        version: Option<TableVersion>,
+        version: Option<Box<TableVersion>>,
         //  Optional table function modifier to generate the ordinality for column.
         /// For example, `SELECT * FROM generate_series(1, 10) WITH ORDINALITY AS t(a, b);`
         /// [WITH ORDINALITY](https://www.postgresql.org/docs/current/functions-srf.html), supported by Postgres.
@@ -1274,7 +1276,7 @@ pub enum TableFactor {
         /// The name of the graph
         graph_name: ObjectName,
         /// The MATCH clause with patterns, optional WHERE, and COLUMNS
-        match_clause: GraphMatchClause,
+        match_clause: Box<GraphMatchClause>,
         /// The alias for the table
         alias: Option<TableAlias>,
     },
@@ -2969,7 +2971,7 @@ pub enum JoinOperator {
     /// whose timestamp columns do not match exactly.
     ///
     AsOf {
-        match_condition: Expr,
+        match_condition: Box<Expr>,
         constraint: JoinConstraint,
     },
     /// STRAIGHT_JOIN (non-standard)
@@ -2982,7 +2984,7 @@ pub enum JoinOperator {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub enum JoinConstraint {
-    On(Expr),
+    On(Box<Expr>),
     Using(Vec<ObjectName>),
     Natural,
     None,

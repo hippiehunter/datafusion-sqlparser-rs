@@ -30,11 +30,17 @@ use alloc::{
     vec::Vec,
 };
 use core::fmt::Debug;
+#[cfg(feature = "std")]
+use std::boxed::Box;
 
 use crate::dialect::*;
 use crate::parser::{Parser, ParserError};
 use crate::tokenizer::{Token, Tokenizer};
 use crate::{ast::*, parser::ParserOptions};
+
+fn ast_box_into_inner<T>(value: crate::ast::Box<T>) -> T {
+    crate::arena::AstBox::into_inner(value)
+}
 
 #[cfg(test)]
 use pretty_assertions::assert_eq;
@@ -273,7 +279,7 @@ impl TestedDialects {
     /// string (is not modified after a serialization round-trip).
     pub fn verified_query(&self, sql: &str) -> Query {
         match self.verified_stmt(sql) {
-            Statement::Query(query) => *query,
+            Statement::Query(query) => ast_box_into_inner(query),
             _ => panic!("Expected Query"),
         }
     }
@@ -283,7 +289,7 @@ impl TestedDialects {
     /// sql string.
     pub fn verified_query_with_canonical(&self, query: &str, canonical: &str) -> Query {
         match self.one_statement_parses_to(query, canonical) {
-            Statement::Query(query) => *query,
+            Statement::Query(query) => ast_box_into_inner(query),
             _ => panic!("Expected Query"),
         }
     }
@@ -292,8 +298,8 @@ impl TestedDialects {
     /// re-serializing the parse result produces the same `sql`
     /// string (is not modified after a serialization round-trip).
     pub fn verified_only_select(&self, query: &str) -> Select {
-        match *self.verified_query(query).body {
-            SetExpr::Select(s) => *s,
+        match ast_box_into_inner(self.verified_query(query).body) {
+            SetExpr::Select(s) => ast_box_into_inner(s),
             _ => panic!("Expected SetExpr::Select"),
         }
     }
@@ -307,11 +313,11 @@ impl TestedDialects {
     ///    `canonical` sql string
     pub fn verified_only_select_with_canonical(&self, query: &str, canonical: &str) -> Select {
         let q = match self.one_statement_parses_to(query, canonical) {
-            Statement::Query(query) => *query,
+            Statement::Query(query) => ast_box_into_inner(query),
             _ => panic!("Expected Query"),
         };
-        match *q.body {
-            SetExpr::Select(s) => *s,
+        match ast_box_into_inner(q.body) {
+            SetExpr::Select(s) => ast_box_into_inner(s),
             _ => panic!("Expected SetExpr::Select"),
         }
     }

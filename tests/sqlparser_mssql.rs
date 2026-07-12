@@ -27,6 +27,7 @@ use sqlparser::keywords::Keyword;
 use sqlparser::tokenizer::{Location, Span, Token, TokenWithSpan, Word};
 use test_utils::*;
 
+use sqlparser::ast::AstBox as Box;
 use sqlparser::ast::DataType::{Int, Text, Varbinary};
 use sqlparser::ast::DeclareAssignment::MsSqlAssignment;
 use sqlparser::ast::Value::SingleQuotedString;
@@ -68,9 +69,12 @@ fn parse_table_time_travel() {
                 alias: None,
                 args: None,
                 with_hints: vec![],
-                version: Some(TableVersion::ForSystemTimeAsOf(Expr::Value(
-                    (Value::SingleQuotedString(version)).with_empty_span()
-                ))),
+                version: Some(
+                    TableVersion::ForSystemTimeAsOf(Expr::Value(
+                        (Value::SingleQuotedString(version)).with_empty_span(),
+                    ))
+                    .into(),
+                ),
                 partitions: vec![],
                 with_ordinality: false,
                 only: false,
@@ -1618,7 +1622,7 @@ fn test_mssql_while_statement() {
             end_label: None,
             has_do_keyword: false,
             while_block: Some(ConditionalStatementBlock {
-                start_token: AttachedToken(TokenWithSpan {
+                start_token: AttachedToken::from(TokenWithSpan {
                     token: Token::Word(Word {
                         value: "WHILE".to_string().into(),
                         quote_style: None,
@@ -2331,13 +2335,13 @@ fn parse_mssql_table_identifier_with_default_schema() {
 }
 
 fn ms() -> TestedDialects {
-    TestedDialects::new(vec![Box::new(MsSqlDialect {})])
+    TestedDialects::new(vec![std::boxed::Box::new(MsSqlDialect {})])
 }
 
 // MS SQL dialect with support for optional semi-colon statement delimiters
 fn tsql() -> TestedDialects {
     TestedDialects::new_with_options(
-        vec![Box::new(MsSqlDialect {})],
+        vec![std::boxed::Box::new(MsSqlDialect {})],
         ParserOptions {
             trailing_commas: false,
             unescape: true,
@@ -2347,7 +2351,7 @@ fn tsql() -> TestedDialects {
 }
 
 fn ms_and_generic() -> TestedDialects {
-    TestedDialects::new(vec![Box::new(MsSqlDialect {})])
+    TestedDialects::new(vec![std::boxed::Box::new(MsSqlDialect {})])
 }
 
 #[test]

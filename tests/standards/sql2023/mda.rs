@@ -169,7 +169,7 @@ fn mda_e01_simple_1d_constructor() {
     let stmt = verified_standard_stmt("SELECT MDARRAY[x(0:2)] [0, 1, 2]");
     match stmt {
         Statement::Query(query) => {
-            if let sqlparser::ast::SetExpr::Select(select) = *query.body {
+            if let sqlparser::ast::SetExpr::Select(select) = query.body.as_ref() {
                 match &select.projection[0] {
                     SelectItem::UnnamedExpr(Expr::MdArray(MdArray { dimensions, values })) => {
                         // Check dimension
@@ -195,7 +195,7 @@ fn mda_e02_2d_constructor() {
     let stmt = verified_standard_stmt("SELECT MDARRAY[x(1:2), y(1:2)] [1, 2, 5, 6]");
     match stmt {
         Statement::Query(query) => {
-            if let sqlparser::ast::SetExpr::Select(select) = *query.body {
+            if let sqlparser::ast::SetExpr::Select(select) = query.body.as_ref() {
                 match &select.projection[0] {
                     SelectItem::UnnamedExpr(Expr::MdArray(MdArray { dimensions, values })) => {
                         assert_eq!(dimensions.len(), 2);
@@ -217,7 +217,7 @@ fn mda_e03_open_upper_bound() {
     let stmt = verified_standard_stmt("SELECT MDARRAY[x(0:*)] [1, 2, 3]");
     match stmt {
         Statement::Query(query) => {
-            if let sqlparser::ast::SetExpr::Select(select) = *query.body {
+            if let sqlparser::ast::SetExpr::Select(select) = query.body.as_ref() {
                 match &select.projection[0] {
                     SelectItem::UnnamedExpr(Expr::MdArray(MdArray { dimensions, .. })) => {
                         assert_eq!(dimensions.len(), 1);
@@ -238,7 +238,7 @@ fn mda_e04_open_lower_bound() {
     let stmt = verified_standard_stmt("SELECT MDARRAY[x(*:10)] [1, 2, 3]");
     match stmt {
         Statement::Query(query) => {
-            if let sqlparser::ast::SetExpr::Select(select) = *query.body {
+            if let sqlparser::ast::SetExpr::Select(select) = query.body.as_ref() {
                 match &select.projection[0] {
                     SelectItem::UnnamedExpr(Expr::MdArray(MdArray { dimensions, .. })) => {
                         assert_eq!(dimensions.len(), 1);
@@ -259,7 +259,7 @@ fn mda_e05_dimensions_without_bounds() {
     let stmt = verified_standard_stmt("SELECT MDARRAY[x, y] [1, 2, 3, 4]");
     match stmt {
         Statement::Query(query) => {
-            if let sqlparser::ast::SetExpr::Select(select) = *query.body {
+            if let sqlparser::ast::SetExpr::Select(select) = query.body.as_ref() {
                 match &select.projection[0] {
                     SelectItem::UnnamedExpr(Expr::MdArray(MdArray { dimensions, values })) => {
                         assert_eq!(dimensions.len(), 2);
@@ -286,7 +286,7 @@ fn mda_e06_empty_constructor() {
     let stmt = verified_standard_stmt("SELECT MDARRAY[x(0:0)] []");
     match stmt {
         Statement::Query(query) => {
-            if let sqlparser::ast::SetExpr::Select(select) = *query.body {
+            if let sqlparser::ast::SetExpr::Select(select) = query.body.as_ref() {
                 match &select.projection[0] {
                     SelectItem::UnnamedExpr(Expr::MdArray(MdArray { dimensions, values })) => {
                         assert_eq!(dimensions.len(), 1);
@@ -307,7 +307,7 @@ fn mda_e07_3d_constructor() {
         verified_standard_stmt("SELECT MDARRAY[x(0:1), y(0:1), z(0:1)] [1, 2, 3, 4, 5, 6, 7, 8]");
     match stmt {
         Statement::Query(query) => {
-            if let sqlparser::ast::SetExpr::Select(select) = *query.body {
+            if let sqlparser::ast::SetExpr::Select(select) = query.body.as_ref() {
                 match &select.projection[0] {
                     SelectItem::UnnamedExpr(Expr::MdArray(MdArray { dimensions, values })) => {
                         assert_eq!(dimensions.len(), 3);
@@ -327,7 +327,7 @@ fn mda_e08_expression_bounds() {
     let stmt = verified_standard_stmt("SELECT MDARRAY[x(1:10)] [1, 2, 3]");
     match stmt {
         Statement::Query(query) => {
-            if let sqlparser::ast::SetExpr::Select(select) = *query.body {
+            if let sqlparser::ast::SetExpr::Select(select) = query.body.as_ref() {
                 match &select.projection[0] {
                     SelectItem::UnnamedExpr(Expr::MdArray(MdArray { dimensions, .. })) => {
                         assert_eq!(dimensions.len(), 1);

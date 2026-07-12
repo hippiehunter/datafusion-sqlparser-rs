@@ -16,9 +16,10 @@
 // under the License.
 
 //! SQL Abstract Syntax Tree (AST) types
+pub use crate::arena::AstBox;
+pub(crate) use crate::arena::AstBox as Box;
 #[cfg(not(feature = "std"))]
 use alloc::{
-    boxed::Box,
     format,
     string::{String, ToString},
     vec,
@@ -39,10 +40,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "visitor")]
 use sqlparser_derive::{Visit, VisitMut};
 
-use crate::{
-    display_utils::SpaceOrNewline,
-    tokenizer::{Span, Token},
-};
+use crate::{display_utils::SpaceOrNewline, tokenizer::Span};
 use crate::{
     display_utils::{Indent, NewLine},
     keywords::Keyword,
@@ -2749,7 +2747,7 @@ impl fmt::Display for CaseStatement {
             match_expr,
             when_blocks,
             else_block,
-            end_case_token: AttachedToken(end),
+            end_case_token,
         } = self;
 
         write!(f, "CASE")?;
@@ -2768,10 +2766,8 @@ impl fmt::Display for CaseStatement {
 
         write!(f, " END")?;
 
-        if let Token::Word(w) = &end.token {
-            if w.keyword == Keyword::CASE {
-                write!(f, " CASE")?;
-            }
+        if end_case_token.1 == Some(Keyword::CASE) {
+            write!(f, " CASE")?;
         }
 
         Ok(())
@@ -2825,8 +2821,8 @@ impl fmt::Display for IfStatement {
             write!(f, " {else_block}")?;
         }
 
-        if let Some(AttachedToken(end_token)) = end_token {
-            write!(f, " END {end_token}")?;
+        if end_token.is_some() {
+            write!(f, " END IF")?;
         }
 
         Ok(())
@@ -3501,7 +3497,7 @@ impl ConditionalStatementBlock {
 impl fmt::Display for ConditionalStatementBlock {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let ConditionalStatementBlock {
-            start_token: AttachedToken(start_token),
+            start_token,
             condition,
             then_token,
             conditional_statements,
@@ -3734,12 +3730,12 @@ pub struct BeginEndStatements {
 impl fmt::Display for BeginEndStatements {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let BeginEndStatements {
-            begin_token: AttachedToken(begin_token),
+            begin_token,
             label,
             declarations,
             statements,
             exception_handlers,
-            end_token: AttachedToken(end_token),
+            end_token,
             end_label,
         } = self;
 
@@ -3753,7 +3749,7 @@ impl fmt::Display for BeginEndStatements {
             }
             write!(f, " ")?;
         }
-        if begin_token.token != Token::EOF {
+        if begin_token.1.is_some() {
             write!(f, "{begin_token}")?;
         }
         if !statements.is_empty() {
@@ -3766,7 +3762,7 @@ impl fmt::Display for BeginEndStatements {
                 write!(f, " {}", handler)?;
             }
         }
-        if end_token.token != Token::EOF {
+        if end_token.1.is_some() {
             write!(f, " {end_token}")?;
         }
         if let Some(end_label) = end_label {
@@ -4090,7 +4086,7 @@ pub struct DoStatement {
 impl fmt::Display for DoStatement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let DoStatement {
-            token: AttachedToken(token),
+            token,
             language,
             body,
         } = self;

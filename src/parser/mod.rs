@@ -12,10 +12,10 @@
 
 //! SQL Parser
 
+use crate::arena::AstBox as Box;
 #[cfg(not(feature = "std"))]
 use alloc::{
     borrow::Cow,
-    boxed::Box,
     format,
     string::{String, ToString},
     vec,
@@ -51,6 +51,10 @@ use core::cell::{Cell, RefCell};
 use sqlparser::parser::ParserState::ColumnDefinition;
 
 mod alter;
+
+fn box_into_inner<T>(value: Box<T>) -> T {
+    Box::into_inner(value)
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParserError {
@@ -1166,8 +1170,8 @@ impl<'a> Parser<'a> {
                                     ));
                             if is_assignment {
                                 Ok(Statement::SqlPsmAssignment(SqlPsmAssignment {
-                                    target: *left,
-                                    value: *right,
+                                    target: box_into_inner(left),
+                                    value: box_into_inner(right),
                                 }))
                             } else {
                                 parser_err!(
@@ -1222,11 +1226,11 @@ impl<'a> Parser<'a> {
         }
 
         Ok(Statement::Case(CaseStatement {
-            case_token: AttachedToken(case_token.to_static()),
+            case_token: AttachedToken::from(case_token),
             match_expr,
             when_blocks,
             else_block,
-            end_case_token: AttachedToken(end_case_token.to_static()),
+            end_case_token: AttachedToken::from(end_case_token),
         }))
     }
 
@@ -1275,7 +1279,7 @@ impl<'a> Parser<'a> {
             if_block,
             elseif_blocks,
             else_block,
-            end_token: Some(AttachedToken(end_token.to_static())),
+            end_token: Some(AttachedToken::from(end_token)),
         }))
     }
 
@@ -1332,12 +1336,12 @@ impl<'a> Parser<'a> {
             let end_token = self.expect_keyword(Keyword::END)?;
 
             ConditionalStatements::BeginEnd(BeginEndStatements {
-                begin_token: AttachedToken(begin_token.to_static()),
+                begin_token: AttachedToken::from(begin_token),
                 label: None,
                 declarations: vec![],
                 statements,
                 exception_handlers: None,
-                end_token: AttachedToken(end_token.to_static()),
+                end_token: AttachedToken::from(end_token),
                 end_label: None,
             })
         } else {
@@ -1349,7 +1353,7 @@ impl<'a> Parser<'a> {
         };
 
         let while_block = ConditionalStatementBlock {
-            start_token: AttachedToken(while_token.to_static()),
+            start_token: AttachedToken::from(while_token),
             condition: Some(condition),
             then_token: None,
             conditional_statements,
@@ -1651,22 +1655,27 @@ impl<'a> Parser<'a> {
         let loop_name = self.parse_identifier()?;
 
         // Check for optional SLICE number
-        let slice =
-            if self.parse_keyword(Keyword::SLICE) {
-                let slice_expr = self.parse_number_value()?;
-                match slice_expr.value {
-                    Value::Number(n, _) => Some(n.parse::<u32>().map_err(|_| {
+        let slice = if self.parse_keyword(Keyword::SLICE) {
+            let slice_expr = self.parse_number_value()?;
+            match slice_expr.value {
+                Value::Number(n, _) => {
+                    #[cfg(feature = "bigdecimal")]
+                    let slice = n.to_string().parse::<u32>();
+                    #[cfg(not(feature = "bigdecimal"))]
+                    let slice = n.parse::<u32>();
+                    Some(slice.map_err(|_| {
                         ParserError::ParserError("Invalid SLICE number".to_string())
-                    })?),
-                    _ => {
-                        return Err(ParserError::ParserError(
-                            "SLICE requires an integer literal".to_string(),
-                        ));
-                    }
+                    })?)
                 }
-            } else {
-                None
-            };
+                _ => {
+                    return Err(ParserError::ParserError(
+                        "SLICE requires an integer literal".to_string(),
+                    ));
+                }
+            }
+        } else {
+            None
+        };
 
         // Expect IN ARRAY
         self.expect_keyword_is(Keyword::IN)?;
@@ -1864,7 +1873,7 @@ impl<'a> Parser<'a> {
             }
             _ => {
                 let expr = self.parse_expr()?;
-                then_token = Some(AttachedToken(
+                then_token = Some(AttachedToken::from(
                     self.expect_keyword(Keyword::THEN)?.to_static(),
                 ));
                 Some(expr)
@@ -1874,7 +1883,7 @@ impl<'a> Parser<'a> {
         let conditional_statements = self.parse_conditional_statements(terminal_keywords)?;
 
         Ok(ConditionalStatementBlock {
-            start_token: AttachedToken(start_token.to_static()),
+            start_token: AttachedToken::from(start_token),
             condition,
             then_token,
             conditional_statements,
@@ -1928,17 +1937,17 @@ impl<'a> Parser<'a> {
 
             if at_terminal {
                 ConditionalStatements::BeginEnd(BeginEndStatements {
-                    begin_token: AttachedToken(begin_token.to_static()),
+                    begin_token: AttachedToken::from(begin_token),
                     label: None,
                     declarations: vec![],
                     statements,
                     exception_handlers,
-                    end_token: AttachedToken(end_token.to_static()),
+                    end_token: AttachedToken::from(end_token),
                     end_label: None,
                 })
             } else {
                 let mut sequence = vec![Statement::LabeledBlock(LabeledBlock {
-                    token: AttachedToken(begin_token.to_static()),
+                    token: AttachedToken::from(begin_token),
                     label: None,
                     statements,
                     exception: exception_handlers,
@@ -2131,7 +2140,7 @@ impl<'a> Parser<'a> {
         };
 
         Ok(Statement::Perform(PerformStatement {
-            query: Box::new(*query),
+            query: Box::new(box_into_inner(query)),
         }))
     }
 
@@ -2538,7 +2547,7 @@ impl<'a> Parser<'a> {
                             BorrowedToken::Mul => {
                                 return Ok(Expr::QualifiedWildcard(
                                     ObjectName::from(id_parts),
-                                    AttachedToken(next_token.to_static()),
+                                    AttachedToken::from(next_token),
                                 ));
                             }
                             _ => {
@@ -2550,7 +2559,7 @@ impl<'a> Parser<'a> {
                 }
             }
             BorrowedToken::Mul => {
-                return Ok(Expr::Wildcard(AttachedToken(next_token.to_static())));
+                return Ok(Expr::Wildcard(AttachedToken::from(next_token)));
             }
             _ => (),
         };
@@ -3294,7 +3303,7 @@ impl<'a> Parser<'a> {
                         // `foo.(bar.baz)` (i.e. a root with an access chain with
                         // 1 entry`).
                         Expr::CompoundFieldAccess { root, access_chain } => {
-                            chain.push(AccessExpr::Dot(*root));
+                            chain.push(AccessExpr::Dot(box_into_inner(root)));
                             chain.extend(access_chain);
                         }
                         Expr::CompoundIdentifier(parts) => chain
@@ -3320,7 +3329,7 @@ impl<'a> Parser<'a> {
             };
             Ok(Expr::QualifiedWildcard(
                 ObjectName::from(Self::exprs_to_idents(root, chain)?),
-                AttachedToken(wildcard_token.to_static()),
+                AttachedToken::from(wildcard_token),
             ))
         } else if self.maybe_parse_outer_join_operator() {
             if !Self::is_all_ident(&root, &chain) {
@@ -3413,7 +3422,7 @@ impl<'a> Parser<'a> {
 
             let token_start = root.span().start;
             let mut idents = Self::exprs_to_idents(root, Vec::with_capacity(4))?;
-            match *inner_expr {
+            match box_into_inner(inner_expr) {
                 Expr::CompoundIdentifier(suffix) => idents.extend(suffix),
                 Expr::Identifier(suffix) => idents.push(suffix),
                 _ => {
@@ -3868,7 +3877,7 @@ impl<'a> Parser<'a> {
 
     pub fn parse_case_expr(&self) -> Result<Expr, ParserError> {
         let current_token = self.get_current_token().clone();
-        let case_token = AttachedToken(current_token.to_static());
+        let case_token = AttachedToken::from(current_token);
         let mut operand = None;
         if !self.parse_keyword(Keyword::WHEN) {
             operand = Some(Box::new(self.parse_expr()?));
@@ -3889,7 +3898,7 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
-        let end_token = AttachedToken(self.expect_keyword(Keyword::END)?.to_static());
+        let end_token = AttachedToken::from(self.expect_keyword(Keyword::END)?);
         Ok(Expr::Case {
             case_token,
             end_token,
@@ -6089,7 +6098,7 @@ impl<'a> Parser<'a> {
     /// This is a convenience method that clones and converts the current
     /// token to a `'static` lifetime, wrapping it in an `AttachedToken`.
     fn attached_token_from_current(&self) -> AttachedToken {
-        AttachedToken(self.get_current_token().clone().to_static())
+        AttachedToken::from(self.get_current_token())
     }
 
     /// Returns a reference to the previous token
@@ -6330,7 +6339,7 @@ impl<'a> Parser<'a> {
     ///
     /// This is useful for capturing keyword tokens for span tracking in AST nodes.
     pub fn expect_keyword_token(&self, expected: Keyword) -> Result<AttachedToken, ParserError> {
-        Ok(AttachedToken(self.expect_keyword(expected)?.to_static()))
+        Ok(AttachedToken::from(self.expect_keyword(expected)?))
     }
 
     /// If the current and subsequent tokens exactly match the `keywords`
@@ -7473,12 +7482,12 @@ impl<'a> Parser<'a> {
         };
 
         Ok(BeginEndStatements {
-            begin_token: AttachedToken(begin_token.to_static()),
+            begin_token: AttachedToken::from(begin_token),
             label,
             declarations,
             statements,
             exception_handlers,
-            end_token: AttachedToken(end_token.to_static()),
+            end_token: AttachedToken::from(end_token),
             end_label,
         })
     }
@@ -7543,12 +7552,12 @@ impl<'a> Parser<'a> {
                     let statements = self.parse_statement_list(&[Keyword::END])?;
                     let end_token = self.expect_keyword(Keyword::END)?;
                     body.function_body = Some(CreateFunctionBody::AsBeginEnd(BeginEndStatements {
-                        begin_token: AttachedToken(begin_token.to_static()),
+                        begin_token: AttachedToken::from(begin_token),
                         label: None,
                         declarations: vec![],
                         statements,
                         exception_handlers: None,
-                        end_token: AttachedToken(end_token.to_static()),
+                        end_token: AttachedToken::from(end_token),
                         end_label: None,
                     }));
                 } else {
@@ -7690,12 +7699,12 @@ impl<'a> Parser<'a> {
                 let statements = self.parse_statement_list(&[Keyword::END])?;
                 let end_token = self.expect_keyword(Keyword::END)?;
                 body.function_body = Some(CreateFunctionBody::AsBeginEnd(BeginEndStatements {
-                    begin_token: AttachedToken(begin_token.to_static()),
+                    begin_token: AttachedToken::from(begin_token),
                     label: None,
                     declarations: vec![],
                     statements,
                     exception_handlers: None,
-                    end_token: AttachedToken(end_token.to_static()),
+                    end_token: AttachedToken::from(end_token),
                     end_label: None,
                 }));
             } else {
@@ -7810,12 +7819,12 @@ impl<'a> Parser<'a> {
             let end_token = self.expect_keyword(Keyword::END)?;
 
             Some(CreateFunctionBody::AsBeginEnd(BeginEndStatements {
-                begin_token: AttachedToken(begin_token.to_static()),
+                begin_token: AttachedToken::from(begin_token),
                 label: None,
                 declarations: vec![],
                 statements,
                 exception_handlers: None,
-                end_token: AttachedToken(end_token.to_static()),
+                end_token: AttachedToken::from(end_token),
                 end_label: None,
             }))
         } else if self.parse_keyword(Keyword::RETURN) {
@@ -8266,7 +8275,7 @@ impl<'a> Parser<'a> {
                 if let Some(last_table) = select.from.last_mut() {
                     if let TableFactor::Table {
                         ref mut with_hints, ..
-                    } = last_table.relation
+                    } = &mut last_table.relation
                     {
                         let mut extracted = Vec::new();
                         let mut remaining = Vec::new();
@@ -8280,7 +8289,7 @@ impl<'a> Parser<'a> {
                                     if let Expr::Identifier(ident) = left.as_ref() {
                                         extracted.push(SqlOption::KeyValue {
                                             key: ident.clone(),
-                                            value: *right.clone(),
+                                            value: box_into_inner(right.clone()),
                                         });
                                     } else {
                                         remaining.push(hint);
@@ -8713,7 +8722,7 @@ impl<'a> Parser<'a> {
 
     /// Parse CREATE PROPERTY GRAPH statement (SQL/PGQ)
     fn parse_create_property_graph(&self, or_replace: bool) -> Result<Statement, ParserError> {
-        let token = AttachedToken(self.get_current_token().clone().to_static());
+        let token = AttachedToken::from(self.get_current_token());
         let if_not_exists = self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
         let name = self.parse_object_name(false)?;
 
@@ -9762,7 +9771,7 @@ impl<'a> Parser<'a> {
 
     /// Parse DROP PROPERTY GRAPH statement (SQL/PGQ)
     fn parse_drop_property_graph(&self) -> Result<Statement, ParserError> {
-        let token = AttachedToken(self.get_current_token().clone().to_static());
+        let token = AttachedToken::from(self.get_current_token());
         let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
         let name = self.parse_object_name(false)?;
         let drop_behavior = self.parse_optional_drop_behavior();
@@ -12676,7 +12685,7 @@ impl<'a> Parser<'a> {
             if_exists,
             only,
             operations,
-            end_token: AttachedToken(end_token.to_static()),
+            end_token: AttachedToken::from(end_token),
         }
         .into())
     }
@@ -15044,14 +15053,16 @@ impl<'a> Parser<'a> {
         &self,
         delete_token: TokenWithSpan,
     ) -> Result<Box<SetExpr>, ParserError> {
-        Ok(Box::new(SetExpr::Delete(self.parse_delete(delete_token)?)))
+        Ok(Box::new(SetExpr::Delete(Box::new(
+            self.parse_delete(delete_token)?,
+        ))))
     }
 
     /// Parse a MERGE statement, returning a `Box`ed SetExpr
     ///
     /// This is used to reduce the size of the stack frames in debug builds
     fn parse_merge_setexpr_boxed(&self) -> Result<Box<SetExpr>, ParserError> {
-        Ok(Box::new(SetExpr::Merge(self.parse_merge()?)))
+        Ok(Box::new(SetExpr::Merge(Box::new(self.parse_merge()?))))
     }
 
     pub fn parse_delete(&self, delete_token: TokenWithSpan) -> Result<Statement, ParserError> {
@@ -15107,7 +15118,7 @@ impl<'a> Parser<'a> {
         };
 
         Ok(Statement::Delete(Delete {
-            delete_token: delete_token.to_static().into(),
+            delete_token: delete_token.into(),
             tables,
             from: if with_from_keyword {
                 FromTable::WithFromKeyword(from)
@@ -15234,13 +15245,13 @@ impl<'a> Parser<'a> {
             let search = self.parse_cte_search_clause()?;
             let cycle = self.parse_cte_cycle_clause()?;
 
-            Some(With {
-                with_token: with_token.to_static().into(),
+            Some(Box::new(With {
+                with_token: with_token.into(),
                 recursive,
                 cte_tables,
                 search,
                 cycle,
-            })
+            }))
         } else {
             None
         };
@@ -15293,10 +15304,10 @@ impl<'a> Parser<'a> {
 
             let order_by = self.parse_optional_order_by()?;
 
-            let limit_clause = self.parse_optional_limit_clause()?;
+            let limit_clause = self.parse_optional_limit_clause()?.map(Box::new);
 
             let fetch = if self.parse_keyword(Keyword::FETCH) {
-                Some(self.parse_fetch()?)
+                Some(Box::new(self.parse_fetch()?))
             } else {
                 None
             };
@@ -15454,7 +15465,7 @@ impl<'a> Parser<'a> {
                 query,
                 from: None,
                 materialized: is_materialized,
-                closing_paren_token: closing_paren_token.to_static().into(),
+                closing_paren_token: closing_paren_token.into(),
             }
         } else {
             let columns = self.parse_table_alias_column_defs()?;
@@ -15482,7 +15493,7 @@ impl<'a> Parser<'a> {
                 query,
                 from: None,
                 materialized: is_materialized,
-                closing_paren_token: closing_paren_token.to_static().into(),
+                closing_paren_token: closing_paren_token.into(),
             }
         };
         if self.parse_keyword(Keyword::FROM) {
@@ -15684,7 +15695,7 @@ impl<'a> Parser<'a> {
             let from = self.parse_table_with_joins()?;
             if !self.peek_keyword(Keyword::SELECT) {
                 return Ok(Select {
-                    select_token: AttachedToken(from_token.to_static()),
+                    select_token: AttachedToken::from(from_token),
                     distinct: None,
                     top: None,
                     top_before_distinct: false,
@@ -15707,12 +15718,12 @@ impl<'a> Parser<'a> {
         let mut top_before_distinct = false;
         let mut top = None;
         if self.features.supports_top_before_distinct && self.parse_keyword(Keyword::TOP) {
-            top = Some(self.parse_top()?);
+            top = Some(Box::new(self.parse_top()?));
             top_before_distinct = true;
         }
         let distinct = self.parse_all_or_distinct()?;
         if !self.features.supports_top_before_distinct && self.parse_keyword(Keyword::TOP) {
-            top = Some(self.parse_top()?);
+            top = Some(Box::new(self.parse_top()?));
         }
 
         let projection =
@@ -15742,7 +15753,7 @@ impl<'a> Parser<'a> {
         };
 
         let selection = if self.parse_keyword(Keyword::WHERE) {
-            Some(self.parse_expr()?)
+            Some(Box::new(self.parse_expr()?))
         } else {
             None
         };
@@ -15752,7 +15763,7 @@ impl<'a> Parser<'a> {
             .unwrap_or_else(|| GroupByExpr::Expressions(vec![], vec![]));
 
         let having = if self.parse_keyword(Keyword::HAVING) {
-            Some(self.parse_expr()?)
+            Some(Box::new(self.parse_expr()?))
         } else {
             None
         };
@@ -15769,7 +15780,7 @@ impl<'a> Parser<'a> {
                 .is_some()
         {
             self.prev_token();
-            Some(self.parse_connect_by()?)
+            Some(Box::new(self.parse_connect_by()?))
         } else {
             None
         };
@@ -15780,7 +15791,7 @@ impl<'a> Parser<'a> {
         }
 
         Ok(Select {
-            select_token: AttachedToken(select_token.to_static()),
+            select_token: AttachedToken::from(select_token),
             distinct,
             top,
             top_before_distinct,
@@ -16549,7 +16560,7 @@ impl<'a> Parser<'a> {
 
     fn parse_joins(&self) -> Result<Vec<Join>, ParserError> {
         let _guard = self.enter_context(ParseContext::JoinClause);
-        let mut joins = Vec::with_capacity(4);
+        let mut joins = Vec::new();
         loop {
             let global = self.parse_keyword(Keyword::GLOBAL);
             let join = if self.parse_keyword(Keyword::CROSS) {
@@ -16592,7 +16603,7 @@ impl<'a> Parser<'a> {
                     relation,
                     global,
                     join_operator: JoinOperator::AsOf {
-                        match_condition,
+                        match_condition: Box::new(match_condition),
                         constraint: self.parse_join_constraint(false)?,
                     },
                 }
@@ -16924,7 +16935,7 @@ impl<'a> Parser<'a> {
             };
 
             // Parse potential version qualifier
-            let version = self.maybe_parse_table_version()?;
+            let version = self.maybe_parse_table_version()?.map(Box::new);
 
             // Postgres, MSSQL: table-valued functions:
             let args = if self.consume_token(&BorrowedToken::LParen) {
@@ -17323,7 +17334,7 @@ impl<'a> Parser<'a> {
 
         Ok(TableFactor::GraphTable {
             graph_name,
-            match_clause,
+            match_clause: Box::new(match_clause),
             alias,
         })
     }
@@ -18655,7 +18666,7 @@ impl<'a> Parser<'a> {
             Ok(JoinConstraint::Natural)
         } else if self.parse_keyword(Keyword::ON) {
             let constraint = self.parse_expr()?;
-            Ok(JoinConstraint::On(constraint))
+            Ok(JoinConstraint::On(Box::new(constraint)))
         } else if self.parse_keyword(Keyword::USING) {
             let columns = self.parse_parenthesized_qualified_column_list(Mandatory, false)?;
             Ok(JoinConstraint::Using(columns))
@@ -19296,7 +19307,9 @@ impl<'a> Parser<'a> {
         &self,
         insert_token: TokenWithSpan,
     ) -> Result<Box<SetExpr>, ParserError> {
-        Ok(Box::new(SetExpr::Insert(self.parse_insert(insert_token)?)))
+        Ok(Box::new(SetExpr::Insert(Box::new(
+            self.parse_insert(insert_token)?,
+        ))))
     }
 
     /// Parse an INSERT statement
@@ -19451,7 +19464,7 @@ impl<'a> Parser<'a> {
         };
 
         Ok(Statement::Insert(Insert {
-            insert_token: insert_token.to_static().into(),
+            insert_token: insert_token.into(),
             table: table_object,
             table_alias,
             ignore,
@@ -19498,7 +19511,9 @@ impl<'a> Parser<'a> {
         &self,
         update_token: TokenWithSpan,
     ) -> Result<Box<SetExpr>, ParserError> {
-        Ok(Box::new(SetExpr::Update(self.parse_update(update_token)?)))
+        Ok(Box::new(SetExpr::Update(Box::new(
+            self.parse_update(update_token)?,
+        ))))
     }
 
     pub fn parse_update(&self, update_token: TokenWithSpan) -> Result<Statement, ParserError> {
@@ -19550,7 +19565,7 @@ impl<'a> Parser<'a> {
             None
         };
         Ok(Update {
-            update_token: update_token.to_static().into(),
+            update_token: update_token.into(),
             table,
             for_portion_of,
             assignments,
@@ -20173,10 +20188,10 @@ impl<'a> Parser<'a> {
         match self.parse_wildcard_expr()? {
             Expr::QualifiedWildcard(prefix, token) => Ok(SelectItem::QualifiedWildcard(
                 SelectItemQualifiedWildcardKind::ObjectName(prefix),
-                self.parse_wildcard_additional_options(token.0)?,
+                self.parse_wildcard_additional_options_attached(token)?,
             )),
             Expr::Wildcard(token) => Ok(SelectItem::Wildcard(
-                self.parse_wildcard_additional_options(token.0)?,
+                self.parse_wildcard_additional_options_attached(token)?,
             )),
             Expr::Identifier(v) if v.value.to_lowercase() == "from" && v.quote_style.is_none() => {
                 parser_err!(
@@ -20191,14 +20206,14 @@ impl<'a> Parser<'a> {
             } if self.features.supports_eq_alias_assignment
                 && matches!(left.as_ref(), Expr::Identifier(_)) =>
             {
-                let Expr::Identifier(alias) = *left else {
+                let Expr::Identifier(alias) = box_into_inner(left) else {
                     return parser_err!(
                         "BUG: expected identifier expression as alias",
                         self.peek_token().span.start
                     );
                 };
                 Ok(SelectItem::ExprWithAlias {
-                    expr: *right,
+                    expr: box_into_inner(right),
                     alias,
                 })
             }
@@ -20230,6 +20245,13 @@ impl<'a> Parser<'a> {
         &self,
         wildcard_token: TokenWithSpan,
     ) -> Result<WildcardAdditionalOptions, ParserError> {
+        self.parse_wildcard_additional_options_attached(wildcard_token.into())
+    }
+
+    fn parse_wildcard_additional_options_attached(
+        &self,
+        wildcard_token: AttachedToken,
+    ) -> Result<WildcardAdditionalOptions, ParserError> {
         let opt_ilike = None;
         let opt_except = if self.features.supports_select_wildcard_except {
             self.parse_optional_select_item_except()?
@@ -20240,7 +20262,7 @@ impl<'a> Parser<'a> {
         let opt_rename = None;
 
         Ok(WildcardAdditionalOptions {
-            wildcard_token: wildcard_token.to_static().into(),
+            wildcard_token,
             opt_ilike,
             opt_except,
             opt_rename,
@@ -20641,7 +20663,7 @@ impl<'a> Parser<'a> {
         // Optional NOWAIT
         let _ = self.parse_keyword(Keyword::NOWAIT);
         Ok(Statement::LockTables {
-            lock_token: AttachedToken(lock_token.to_static()),
+            lock_token: AttachedToken::from(lock_token),
             tables,
         })
     }
@@ -21342,7 +21364,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_unload(&self) -> Result<Statement, ParserError> {
-        let unload_token = AttachedToken(self.expect_keyword(Keyword::UNLOAD)?.to_static());
+        let unload_token = AttachedToken::from(self.expect_keyword(Keyword::UNLOAD)?);
         self.expect_token(&BorrowedToken::LParen)?;
         let (query, query_text) = if matches!(
             self.peek_token().token,
@@ -23909,7 +23931,7 @@ mod tests {
             }
         }
 
-        let dialect = TestedDialects::new(vec![Box::new(MySqlDialect {})]);
+        let dialect = TestedDialects::new(vec![std::boxed::Box::new(MySqlDialect {})]);
 
         test_parse_table_constraint!(
             dialect,
@@ -24041,7 +24063,7 @@ mod tests {
 
     #[test]
     fn test_parse_multipart_identifier_positive() {
-        let dialect = TestedDialects::new(vec![Box::new(PostgreSqlDialect {})]);
+        let dialect = TestedDialects::new(vec![std::boxed::Box::new(PostgreSqlDialect {})]);
 
         // parse multipart with quotes
         // PostgreSqlDialect canonicalizes unquoted identifiers to lowercase

@@ -64,7 +64,7 @@ fn t860_01_json_dot_notation_simple() {
     );
     match stmt {
         Statement::Query(query) => {
-            if let sqlparser::ast::SetExpr::Select(select) = *query.body {
+            if let sqlparser::ast::SetExpr::Select(select) = query.body.as_ref() {
                 assert_eq!(select.projection.len(), 1);
                 match &select.projection[0] {
                     SelectItem::UnnamedExpr(Expr::CompoundIdentifier(idents)) => {
@@ -92,7 +92,7 @@ fn t860_02_json_dot_notation_nested() {
     );
     match stmt {
         Statement::Query(query) => {
-            if let sqlparser::ast::SetExpr::Select(select) = *query.body {
+            if let sqlparser::ast::SetExpr::Select(select) = query.body.as_ref() {
                 match &select.projection[0] {
                     SelectItem::UnnamedExpr(Expr::CompoundIdentifier(idents)) => {
                         assert_eq!(idents.len(), 4);
@@ -118,7 +118,7 @@ fn t860_03_json_dot_notation_deep_nesting() {
     );
     match stmt {
         Statement::Query(query) => {
-            if let sqlparser::ast::SetExpr::Select(select) = *query.body {
+            if let sqlparser::ast::SetExpr::Select(select) = query.body.as_ref() {
                 match &select.projection[0] {
                     SelectItem::UnnamedExpr(Expr::CompoundIdentifier(idents)) => {
                         assert_eq!(idents.len(), 6);
@@ -142,7 +142,7 @@ fn t861_01_json_array_subscript_basic() {
     );
     match stmt {
         Statement::Query(query) => {
-            if let sqlparser::ast::SetExpr::Select(select) = *query.body {
+            if let sqlparser::ast::SetExpr::Select(select) = query.body.as_ref() {
                 match &select.projection[0] {
                     SelectItem::UnnamedExpr(Expr::CompoundFieldAccess { root, access_chain }) => {
                         // Root should be identifier "t"
@@ -175,7 +175,7 @@ fn t861_02_json_array_subscript_nested() {
     );
     match stmt {
         Statement::Query(query) => {
-            if let sqlparser::ast::SetExpr::Select(select) = *query.body {
+            if let sqlparser::ast::SetExpr::Select(select) = query.body.as_ref() {
                 match &select.projection[0] {
                     SelectItem::UnnamedExpr(Expr::CompoundFieldAccess { access_chain, .. }) => {
                         // Should have 4 access elements: .data, .items, [0], .name
@@ -204,7 +204,7 @@ fn t861_03_json_array_multiple_subscripts() {
     );
     match stmt {
         Statement::Query(query) => {
-            if let sqlparser::ast::SetExpr::Select(select) = *query.body {
+            if let sqlparser::ast::SetExpr::Select(select) = query.body.as_ref() {
                 match &select.projection[0] {
                     SelectItem::UnnamedExpr(Expr::CompoundFieldAccess { access_chain, .. }) => {
                         // Should have 3 access elements: .matrix, [0], [1]
@@ -254,7 +254,7 @@ fn t863_01_json_combined_access() {
     );
     match stmt {
         Statement::Query(query) => {
-            if let sqlparser::ast::SetExpr::Select(select) = *query.body {
+            if let sqlparser::ast::SetExpr::Select(select) = query.body.as_ref() {
                 match &select.projection[0] {
                     SelectItem::UnnamedExpr(Expr::CompoundFieldAccess { access_chain, .. }) => {
                         // Should have complex chain: .data, .list, [0], .field, .nested, [1]
@@ -304,7 +304,7 @@ fn t865_01_json_bigint_method() {
     );
     match stmt {
         Statement::Query(query) => {
-            if let sqlparser::ast::SetExpr::Select(select) = *query.body {
+            if let sqlparser::ast::SetExpr::Select(select) = query.body.as_ref() {
                 match &select.projection[0] {
                     SelectItem::UnnamedExpr(Expr::Function(func)) => {
                         // Function name should be compound: t.data.id.bigint

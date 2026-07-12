@@ -30,7 +30,7 @@ use sqlparser::test_utils::TestedDialects;
 /// Uses PostgreSqlDialect as the primary target since standards compliance
 /// should work across all dialects without dialect-specific extensions.
 pub fn standard_dialect() -> TestedDialects {
-    TestedDialects::new(vec![Box::new(PostgreSqlDialect {})])
+    TestedDialects::new(vec![std::boxed::Box::new(PostgreSqlDialect {})])
 }
 
 /// Verifies that SQL parses and round-trips correctly using PostgreSqlDialect.

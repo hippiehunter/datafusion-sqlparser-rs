@@ -22,6 +22,7 @@
 use helpers::attached_token::AttachedToken;
 use matches::assert_matches;
 
+use sqlparser::ast::AstBox as Box;
 use sqlparser::ast::MysqlInsertPriority::{Delayed, HighPriority, LowPriority};
 use sqlparser::ast::*;
 use sqlparser::dialect::MySqlDialect;
@@ -34,11 +35,11 @@ use test_utils::*;
 mod test_utils;
 
 fn mysql() -> TestedDialects {
-    TestedDialects::new(vec![Box::new(MySqlDialect {})])
+    TestedDialects::new(vec![std::boxed::Box::new(MySqlDialect {})])
 }
 
 fn mysql_and_generic() -> TestedDialects {
-    TestedDialects::new(vec![Box::new(MySqlDialect {})])
+    TestedDialects::new(vec![std::boxed::Box::new(MySqlDialect {})])
 }
 
 #[test]
@@ -1449,7 +1450,7 @@ fn parse_quote_identifiers() {
 fn parse_escaped_quote_identifiers_with_escape() {
     let sql = "SELECT `quoted `` identifier`";
     assert_eq!(
-        TestedDialects::new(vec![Box::new(MySqlDialect {})]).verified_stmt(sql),
+        TestedDialects::new(vec![std::boxed::Box::new(MySqlDialect {})]).verified_stmt(sql),
         Statement::Query(Box::new(Query {
             with: None,
             body: Box::new(SetExpr::Select(Box::new(Select {
@@ -1485,7 +1486,7 @@ fn parse_escaped_quote_identifiers_with_no_escape() {
     let sql = "SELECT `quoted `` identifier`";
     assert_eq!(
         TestedDialects::new_with_options(
-            vec![Box::new(MySqlDialect {})],
+            vec![std::boxed::Box::new(MySqlDialect {})],
             ParserOptions {
                 trailing_commas: false,
                 unescape: false,
@@ -1527,7 +1528,7 @@ fn parse_escaped_quote_identifiers_with_no_escape() {
 fn parse_escaped_backticks_with_escape() {
     let sql = "SELECT ```quoted identifier```";
     assert_eq!(
-        TestedDialects::new(vec![Box::new(MySqlDialect {})]).verified_stmt(sql),
+        TestedDialects::new(vec![std::boxed::Box::new(MySqlDialect {})]).verified_stmt(sql),
         Statement::Query(Box::new(Query {
             with: None,
             body: Box::new(SetExpr::Select(Box::new(Select {
@@ -1564,7 +1565,7 @@ fn parse_escaped_backticks_with_no_escape() {
     let sql = "SELECT ```quoted identifier```";
     assert_eq!(
         TestedDialects::new_with_options(
-            vec![Box::new(MySqlDialect {})],
+            vec![std::boxed::Box::new(MySqlDialect {})],
             ParserOptions::new().with_unescape(false)
         )
         .verified_stmt(sql),
@@ -1614,23 +1615,23 @@ fn parse_unterminated_escape() {
 fn check_roundtrip_of_escaped_string() {
     let options = ParserOptions::new().with_unescape(false);
 
-    TestedDialects::new_with_options(vec![Box::new(MySqlDialect {})], options.clone())
+    TestedDialects::new_with_options(vec![std::boxed::Box::new(MySqlDialect {})], options.clone())
         .verified_stmt(r"SELECT 'I\'m fine'");
-    TestedDialects::new_with_options(vec![Box::new(MySqlDialect {})], options.clone())
+    TestedDialects::new_with_options(vec![std::boxed::Box::new(MySqlDialect {})], options.clone())
         .verified_stmt(r#"SELECT 'I''m fine'"#);
-    TestedDialects::new_with_options(vec![Box::new(MySqlDialect {})], options.clone())
+    TestedDialects::new_with_options(vec![std::boxed::Box::new(MySqlDialect {})], options.clone())
         .verified_stmt(r"SELECT 'I\\\'m fine'");
-    TestedDialects::new_with_options(vec![Box::new(MySqlDialect {})], options.clone())
+    TestedDialects::new_with_options(vec![std::boxed::Box::new(MySqlDialect {})], options.clone())
         .verified_stmt(r"SELECT 'I\\\'m fine'");
-    TestedDialects::new_with_options(vec![Box::new(MySqlDialect {})], options.clone())
+    TestedDialects::new_with_options(vec![std::boxed::Box::new(MySqlDialect {})], options.clone())
         .verified_stmt(r#"SELECT "I\"m fine""#);
-    TestedDialects::new_with_options(vec![Box::new(MySqlDialect {})], options.clone())
+    TestedDialects::new_with_options(vec![std::boxed::Box::new(MySqlDialect {})], options.clone())
         .verified_stmt(r#"SELECT "I""m fine""#);
-    TestedDialects::new_with_options(vec![Box::new(MySqlDialect {})], options.clone())
+    TestedDialects::new_with_options(vec![std::boxed::Box::new(MySqlDialect {})], options.clone())
         .verified_stmt(r#"SELECT "I\\\"m fine""#);
-    TestedDialects::new_with_options(vec![Box::new(MySqlDialect {})], options.clone())
+    TestedDialects::new_with_options(vec![std::boxed::Box::new(MySqlDialect {})], options.clone())
         .verified_stmt(r#"SELECT "I\\\"m fine""#);
-    TestedDialects::new_with_options(vec![Box::new(MySqlDialect {})], options.clone())
+    TestedDialects::new_with_options(vec![std::boxed::Box::new(MySqlDialect {})], options.clone())
         .verified_stmt(r#"SELECT "I'm ''fine''""#);
 }
 
@@ -2384,7 +2385,7 @@ fn parse_select_with_numeric_prefix_column_name() {
 fn parse_qualified_identifiers_with_numeric_prefix() {
     // Case 1: Qualified column name that starts with digits.
     match mysql().verified_stmt("SELECT t.15to29 FROM my_table AS t") {
-        Statement::Query(q) => match *q.body {
+        Statement::Query(q) => match q.body.as_ref() {
             SetExpr::Select(s) => match s.projection.last() {
                 Some(SelectItem::UnnamedExpr(Expr::CompoundIdentifier(parts))) => {
                     assert_eq!(&[Ident::new("t"), Ident::new("15to29")], &parts[..]);
@@ -2398,7 +2399,7 @@ fn parse_qualified_identifiers_with_numeric_prefix() {
 
     // Case 2: Qualified column name that starts with digits and on its own represents a number.
     match mysql().verified_stmt("SELECT t.15e29 FROM my_table AS t") {
-        Statement::Query(q) => match *q.body {
+        Statement::Query(q) => match q.body.as_ref() {
             SetExpr::Select(s) => match s.projection.last() {
                 Some(SelectItem::UnnamedExpr(Expr::CompoundIdentifier(parts))) => {
                     assert_eq!(&[Ident::new("t"), Ident::new("15e29")], &parts[..]);
@@ -2416,7 +2417,7 @@ fn parse_qualified_identifiers_with_numeric_prefix() {
         .unwrap()
         .pop()
     {
-        Some(Statement::Query(q)) => match *q.body {
+        Some(Statement::Query(q)) => match q.body.as_ref() {
             SetExpr::Select(s) => match s.projection.last() {
                 Some(SelectItem::UnnamedExpr(Expr::Value(ValueWithSpan { value, .. }))) => {
                     assert_eq!(&number("15e29"), value);
@@ -2430,7 +2431,7 @@ fn parse_qualified_identifiers_with_numeric_prefix() {
 
     // Case 4: Quoted simple identifier.
     match mysql().verified_stmt("SELECT `15e29` FROM my_table") {
-        Statement::Query(q) => match *q.body {
+        Statement::Query(q) => match q.body.as_ref() {
             SetExpr::Select(s) => match s.projection.last() {
                 Some(SelectItem::UnnamedExpr(Expr::Identifier(name))) => {
                     assert_eq!(&Ident::with_quote('`', "15e29"), name);
@@ -2444,7 +2445,7 @@ fn parse_qualified_identifiers_with_numeric_prefix() {
 
     // Case 5: Quoted compound identifier.
     match mysql().verified_stmt("SELECT t.`15e29` FROM my_table AS t") {
-        Statement::Query(q) => match *q.body {
+        Statement::Query(q) => match q.body.as_ref() {
             SetExpr::Select(s) => match s.projection.last() {
                 Some(SelectItem::UnnamedExpr(Expr::CompoundIdentifier(parts))) => {
                     assert_eq!(
@@ -2461,7 +2462,7 @@ fn parse_qualified_identifiers_with_numeric_prefix() {
 
     // Case 6: Multi-level compound identifiers.
     match mysql().verified_stmt("SELECT 1db.1table.1column") {
-        Statement::Query(q) => match *q.body {
+        Statement::Query(q) => match q.body.as_ref() {
             SetExpr::Select(s) => match s.projection.last() {
                 Some(SelectItem::UnnamedExpr(Expr::CompoundIdentifier(parts))) => {
                     assert_eq!(
@@ -2482,7 +2483,7 @@ fn parse_qualified_identifiers_with_numeric_prefix() {
 
     // Case 7: Multi-level compound quoted identifiers.
     match mysql().verified_stmt("SELECT `1`.`2`.`3`") {
-        Statement::Query(q) => match *q.body {
+        Statement::Query(q) => match q.body.as_ref() {
             SetExpr::Select(s) => match s.projection.last() {
                 Some(SelectItem::UnnamedExpr(Expr::CompoundIdentifier(parts))) => {
                     assert_eq!(
@@ -2618,17 +2619,20 @@ fn parse_update_with_joins() {
                             index_hints: vec![],
                         },
                         global: false,
-                        join_operator: JoinOperator::Join(JoinConstraint::On(Expr::BinaryOp {
-                            left: Box::new(Expr::CompoundIdentifier(vec![
-                                Ident::new("o"),
-                                Ident::new("customer_id")
-                            ])),
-                            op: BinaryOperator::Eq,
-                            right: Box::new(Expr::CompoundIdentifier(vec![
-                                Ident::new("c"),
-                                Ident::new("id")
-                            ]))
-                        })),
+                        join_operator: JoinOperator::Join(JoinConstraint::On(
+                            Expr::BinaryOp {
+                                left: Box::new(Expr::CompoundIdentifier(vec![
+                                    Ident::new("o"),
+                                    Ident::new("customer_id")
+                                ])),
+                                op: BinaryOperator::Eq,
+                                right: Box::new(Expr::CompoundIdentifier(vec![
+                                    Ident::new("c"),
+                                    Ident::new("id")
+                                ]))
+                            }
+                            .into()
+                        )),
                     }]
                 },
                 table
@@ -4058,8 +4062,8 @@ fn parse_cast_integers() {
 fn parse_match_against_with_alias() {
     let sql = "SELECT tbl.ProjectID FROM surveys.tbl1 AS tbl WHERE MATCH (tbl.ReferenceID) AGAINST ('AAA' IN BOOLEAN MODE)";
     match mysql().verified_stmt(sql) {
-        Statement::Query(query) => match *query.body {
-            SetExpr::Select(select) => match select.selection {
+        Statement::Query(query) => match query.body.as_ref() {
+            SetExpr::Select(select) => match select.selection.as_deref() {
                 Some(Expr::MatchAgainst {
                     columns,
                     match_value,
@@ -4067,13 +4071,13 @@ fn parse_match_against_with_alias() {
                 }) => {
                     assert_eq!(
                         columns,
-                        vec![ObjectName::from(vec![
+                        &vec![ObjectName::from(vec![
                             Ident::new("tbl"),
                             Ident::new("ReferenceID")
                         ])]
                     );
-                    assert_eq!(match_value, Value::SingleQuotedString("AAA".to_owned()));
-                    assert_eq!(opt_search_modifier, Some(SearchModifier::InBooleanMode));
+                    assert_eq!(match_value, &Value::SingleQuotedString("AAA".to_owned()));
+                    assert_eq!(opt_search_modifier, &Some(SearchModifier::InBooleanMode));
                 }
                 _ => unreachable!(),
             },
@@ -4131,15 +4135,18 @@ fn test_variable_assignment_using_colon_equal() {
 
             assert_eq!(
                 select.selection,
-                Some(Expr::BinaryOp {
-                    left: Box::new(Expr::Identifier(Ident {
-                        value: "id".to_string(),
-                        quote_style: None,
-                        span: Span::empty(),
-                    })),
-                    op: BinaryOperator::Eq,
-                    right: Box::new(Expr::Value((test_utils::number("1")).with_empty_span())),
-                })
+                Some(
+                    Expr::BinaryOp {
+                        left: Box::new(Expr::Identifier(Ident {
+                            value: "id".to_string(),
+                            quote_style: None,
+                            span: Span::empty(),
+                        })),
+                        op: BinaryOperator::Eq,
+                        right: Box::new(Expr::Value((test_utils::number("1")).with_empty_span())),
+                    }
+                    .into()
+                )
             );
         }
         _ => panic!("Unexpected statement {stmt}"),

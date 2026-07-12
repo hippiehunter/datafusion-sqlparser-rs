@@ -33,7 +33,7 @@ use test_utils::*;
 mod test_utils;
 
 fn pg_and_generic() -> TestedDialects {
-    TestedDialects::new(vec![Box::new(PostgreSqlDialect {})])
+    TestedDialects::new(vec![std::boxed::Box::new(PostgreSqlDialect {})])
 }
 
 // ============================================================================

@@ -36,7 +36,7 @@ use crate::parser::{Parser, ParserError};
 use crate::tokenizer::BorrowedToken;
 
 #[cfg(not(feature = "std"))]
-use alloc::boxed::Box;
+use alloc::{borrow::ToOwned, boxed::Box, string::String};
 
 /// Convenience check if a [`Parser`] uses a certain dialect.
 ///

@@ -858,7 +858,7 @@ mod f051_basic_date_and_time {
             |stmt: Statement| {
                 if let Statement::Query(q) = stmt {
                     if let sqlparser::ast::SetExpr::Select(select) = q.body.as_ref() {
-                        if let Some(Expr::BinaryOp { right, .. }) = &select.selection {
+                        if let Some(Expr::BinaryOp { right, .. }) = select.selection.as_deref() {
                             if let Expr::TypedString(ts) = right.as_ref() {
                                 assert!(
                                     matches!(ts.data_type, DataType::Date),
@@ -875,7 +875,7 @@ mod f051_basic_date_and_time {
             |stmt: Statement| {
                 if let Statement::Query(q) = stmt {
                     if let sqlparser::ast::SetExpr::Select(select) = q.body.as_ref() {
-                        if let Some(Expr::BinaryOp { right, .. }) = &select.selection {
+                        if let Some(Expr::BinaryOp { right, .. }) = select.selection.as_deref() {
                             if let Expr::TypedString(ts) = right.as_ref() {
                                 assert!(
                                     matches!(ts.data_type, DataType::Timestamp(_, _)),
@@ -892,7 +892,7 @@ mod f051_basic_date_and_time {
             |stmt: Statement| {
                 if let Statement::Query(q) = stmt {
                     if let sqlparser::ast::SetExpr::Select(select) = q.body.as_ref() {
-                        if let Some(Expr::BinaryOp { right, .. }) = &select.selection {
+                        if let Some(Expr::BinaryOp { right, .. }) = select.selection.as_deref() {
                             if let Expr::TypedString(ts) = right.as_ref() {
                                 assert!(
                                     matches!(ts.data_type, DataType::Time(_, _)),
@@ -989,7 +989,7 @@ mod f051_basic_date_and_time {
             |stmt: Statement| {
                 if let Statement::Query(q) = stmt {
                     if let sqlparser::ast::SetExpr::Select(select) = q.body.as_ref() {
-                        if let Some(Expr::BinaryOp { right, .. }) = &select.selection {
+                        if let Some(Expr::BinaryOp { right, .. }) = select.selection.as_deref() {
                             if let Expr::Function(func) = right.as_ref() {
                                 assert_eq!(
                                     func.name.to_string().to_uppercase(),
@@ -2106,7 +2106,7 @@ mod f401_extended_joined_table {
                             &select.from[0].joins[0].join_operator
                         {
                             // Verify complex ON condition with AND
-                            if let Expr::BinaryOp { op, .. } = expr {
+                            if let Expr::BinaryOp { op, .. } = expr.as_ref() {
                                 assert_eq!(op, &BinaryOperator::And);
                             } else {
                                 panic!("Expected AND in ON condition");
@@ -2127,7 +2127,7 @@ mod f401_extended_joined_table {
                             &select.from[0].joins[0].join_operator
                         {
                             // Verify complex ON condition with OR
-                            if let Expr::BinaryOp { op, .. } = expr {
+                            if let Expr::BinaryOp { op, .. } = expr.as_ref() {
                                 assert_eq!(op, &BinaryOperator::Or);
                             } else {
                                 panic!("Expected OR in ON condition");
@@ -2348,7 +2348,7 @@ mod f471_scalar_subquery_values {
                     if let sqlparser::ast::SetExpr::Select(select) = q.body.as_ref() {
                         assert!(select.selection.is_some(), "Expected WHERE clause");
                         // WHERE clause should contain a comparison with subquery
-                        if let Some(Expr::BinaryOp { right, .. }) = &select.selection {
+                        if let Some(Expr::BinaryOp { right, .. }) = select.selection.as_deref() {
                             if let Expr::Subquery(_) = right.as_ref() {
                                 // Scalar subquery confirmed in WHERE clause
                             } else {
@@ -2366,7 +2366,7 @@ mod f471_scalar_subquery_values {
             |stmt: Statement| {
                 if let Statement::Query(q) = stmt {
                     if let sqlparser::ast::SetExpr::Select(select) = q.body.as_ref() {
-                        if let Some(Expr::BinaryOp { right, .. }) = &select.selection {
+                        if let Some(Expr::BinaryOp { right, .. }) = select.selection.as_deref() {
                             if let Expr::Subquery(subquery) = right.as_ref() {
                                 // Verify the subquery has its own WHERE clause
                                 if let sqlparser::ast::SetExpr::Select(sub_select) =
@@ -2476,7 +2476,7 @@ mod f471_scalar_subquery_values {
                 if let Statement::Query(q) = stmt {
                     if let sqlparser::ast::SetExpr::Select(select) = q.body.as_ref() {
                         // WHERE clause should have BinaryOp with subquery
-                        if let Some(Expr::BinaryOp { left, .. }) = &select.selection {
+                        if let Some(Expr::BinaryOp { left, .. }) = select.selection.as_deref() {
                             if let Expr::Subquery(_) = left.as_ref() {
                                 // Scalar subquery confirmed in comparison
                             } else {
@@ -2501,7 +2501,7 @@ mod f471_scalar_subquery_values {
                     if let sqlparser::ast::SetExpr::Select(select) = q.body.as_ref() {
                         assert!(select.having.is_some(), "Expected HAVING clause");
                         // HAVING clause should contain a comparison with subquery
-                        if let Some(Expr::BinaryOp { right, .. }) = &select.having {
+                        if let Some(Expr::BinaryOp { right, .. }) = select.having.as_deref() {
                             if let Expr::Subquery(subquery) = right.as_ref() {
                                 // Verify the subquery contains a derived table
                                 if let sqlparser::ast::SetExpr::Select(sub_select) =
@@ -2823,7 +2823,7 @@ mod f850_f869_order_fetch_offset {
         // F861: OFFSET n ROWS
         verified_with_ast!("SELECT * FROM t OFFSET 10 ROWS", |stmt: Statement| {
             if let Statement::Query(q) = stmt {
-                if let Some(limit_clause) = &q.limit_clause {
+                if let Some(limit_clause) = q.limit_clause.as_deref() {
                     if let sqlparser::ast::LimitClause::LimitOffset { offset, .. } = limit_clause {
                         assert!(offset.is_some(), "Expected OFFSET clause");
                     }
@@ -2841,7 +2841,7 @@ mod f850_f869_order_fetch_offset {
             |stmt: Statement| {
                 if let Statement::Query(q) = stmt {
                     // Check OFFSET
-                    if let Some(limit_clause) = &q.limit_clause {
+                    if let Some(limit_clause) = q.limit_clause.as_deref() {
                         if let sqlparser::ast::LimitClause::LimitOffset { offset, .. } =
                             limit_clause
                         {
@@ -2942,9 +2942,9 @@ mod f_series_integration_tests {
 
                         // Verify FETCH FIRST clause
                         assert!(q.fetch.is_some());
-                        if let Some(Fetch { quantity: Some(quantity), .. }) = &q.fetch {
+                        if let Some(Fetch { quantity: Some(quantity), .. }) = q.fetch.as_deref() {
                             if let Expr::Value(ValueWithSpan { value: Value::Number(n, _), .. }) = quantity {
-                                assert_eq!(n, "10");
+                                assert_eq!(n.to_string(), "10");
                             }
                         }
                     }
@@ -3012,16 +3012,18 @@ mod f_series_integration_tests {
                     assert!(q.order_by.is_some());
 
                     // Verify OFFSET in limit_clause
-                    if let Some(sqlparser::ast::LimitClause::LimitOffset { offset: Some(offset), .. }) = &q.limit_clause {
+                    if let Some(sqlparser::ast::LimitClause::LimitOffset { offset: Some(offset), .. }) =
+                        q.limit_clause.as_deref()
+                    {
                         if let Offset { value: Expr::Value(ValueWithSpan { value: Value::Number(n, _), .. }), rows: OffsetRows::Rows } = offset {
-                            assert_eq!(n, "10");
+                            assert_eq!(n.to_string(), "10");
                         }
                     }
 
                     // Verify FETCH
                     assert!(q.fetch.is_some());
-                    if let Some(Fetch { quantity: Some(Expr::Value(ValueWithSpan { value: Value::Number(n, _), .. })), .. }) = &q.fetch {
-                        assert_eq!(n, "20");
+                    if let Some(Fetch { quantity: Some(Expr::Value(ValueWithSpan { value: Value::Number(n, _), .. })), .. }) = q.fetch.as_deref() {
+                        assert_eq!(n.to_string(), "20");
                     }
                 }
             }
@@ -3222,7 +3224,7 @@ mod f_series_integration_tests {
                             }
 
                             // Verify compound ON condition with AND
-                            if let Expr::BinaryOp { op, .. } = expr {
+                            if let Expr::BinaryOp { op, .. } = expr.as_ref() {
                                 assert_eq!(op, &BinaryOperator::And);
                             }
                         } else {
@@ -3236,7 +3238,7 @@ mod f_series_integration_tests {
                             }
 
                             // Verify compound ON condition with AND
-                            if let Expr::BinaryOp { op, .. } = expr {
+                            if let Expr::BinaryOp { op, .. } = expr.as_ref() {
                                 assert_eq!(op, &BinaryOperator::And);
                             }
                         }
@@ -3257,8 +3259,8 @@ mod f_series_integration_tests {
 
                         // Verify FETCH
                         assert!(q.fetch.is_some());
-                        if let Some(Fetch { quantity: Some(Expr::Value(ValueWithSpan { value: Value::Number(n, _), .. })), .. }) = &q.fetch {
-                            assert_eq!(n, "50");
+                        if let Some(Fetch { quantity: Some(Expr::Value(ValueWithSpan { value: Value::Number(n, _), .. })), .. }) = q.fetch.as_deref() {
+                            assert_eq!(n.to_string(), "50");
                         }
                     }
                 }

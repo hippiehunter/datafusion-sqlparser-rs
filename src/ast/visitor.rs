@@ -23,6 +23,7 @@ use alloc::borrow::Cow;
 use std::borrow::Cow;
 
 use crate::ast::helpers::attached_token::AttachedToken;
+use crate::ast::Box;
 use crate::ast::{Expr, ObjectName, Query, Statement, TableFactor, Value};
 use core::ops::ControlFlow;
 
@@ -921,9 +922,9 @@ mod tests {
                     "ORDER BY EMPID"
                 ),
                 vec![
-                    "PRE: STATEMENT: SELECT * FROM monthly_sales PIVOT(SUM(a.amount) FOR a.MONTH IN ('JAN', 'FEB', 'MAR', 'APR')) AS p (c, d) ORDER BY EMPID",
-                    "PRE: QUERY: SELECT * FROM monthly_sales PIVOT(SUM(a.amount) FOR a.MONTH IN ('JAN', 'FEB', 'MAR', 'APR')) AS p (c, d) ORDER BY EMPID",
-                    "PRE: TABLE FACTOR: monthly_sales PIVOT(SUM(a.amount) FOR a.MONTH IN ('JAN', 'FEB', 'MAR', 'APR')) AS p (c, d)",
+                    "PRE: STATEMENT: SELECT * FROM monthly_sales PIVOT(SUM(a.amount) FOR a.month IN ('JAN', 'FEB', 'MAR', 'APR')) AS p (c, d) ORDER BY empid",
+                    "PRE: QUERY: SELECT * FROM monthly_sales PIVOT(SUM(a.amount) FOR a.month IN ('JAN', 'FEB', 'MAR', 'APR')) AS p (c, d) ORDER BY empid",
+                    "PRE: TABLE FACTOR: monthly_sales PIVOT(SUM(a.amount) FOR a.month IN ('JAN', 'FEB', 'MAR', 'APR')) AS p (c, d)",
                     "PRE: TABLE FACTOR: monthly_sales",
                     "PRE: RELATION: monthly_sales",
                     "POST: RELATION: monthly_sales",
@@ -932,8 +933,8 @@ mod tests {
                     "PRE: EXPR: a.amount",
                     "POST: EXPR: a.amount",
                     "POST: EXPR: SUM(a.amount)",
-                    "PRE: EXPR: a.MONTH",
-                    "POST: EXPR: a.MONTH",
+                    "PRE: EXPR: a.month",
+                    "POST: EXPR: a.month",
                     "PRE: EXPR: 'JAN'",
                     "POST: EXPR: 'JAN'",
                     "PRE: EXPR: 'FEB'",
@@ -942,11 +943,11 @@ mod tests {
                     "POST: EXPR: 'MAR'",
                     "PRE: EXPR: 'APR'",
                     "POST: EXPR: 'APR'",
-                    "POST: TABLE FACTOR: monthly_sales PIVOT(SUM(a.amount) FOR a.MONTH IN ('JAN', 'FEB', 'MAR', 'APR')) AS p (c, d)",
-                    "PRE: EXPR: EMPID",
-                    "POST: EXPR: EMPID",
-                    "POST: QUERY: SELECT * FROM monthly_sales PIVOT(SUM(a.amount) FOR a.MONTH IN ('JAN', 'FEB', 'MAR', 'APR')) AS p (c, d) ORDER BY EMPID",
-                    "POST: STATEMENT: SELECT * FROM monthly_sales PIVOT(SUM(a.amount) FOR a.MONTH IN ('JAN', 'FEB', 'MAR', 'APR')) AS p (c, d) ORDER BY EMPID",
+                    "POST: TABLE FACTOR: monthly_sales PIVOT(SUM(a.amount) FOR a.month IN ('JAN', 'FEB', 'MAR', 'APR')) AS p (c, d)",
+                    "PRE: EXPR: empid",
+                    "POST: EXPR: empid",
+                    "POST: QUERY: SELECT * FROM monthly_sales PIVOT(SUM(a.amount) FOR a.month IN ('JAN', 'FEB', 'MAR', 'APR')) AS p (c, d) ORDER BY empid",
+                    "POST: STATEMENT: SELECT * FROM monthly_sales PIVOT(SUM(a.amount) FOR a.month IN ('JAN', 'FEB', 'MAR', 'APR')) AS p (c, d) ORDER BY empid",
                 ]
             ),
             (
@@ -1047,8 +1048,8 @@ mod visit_mut_tests {
                 ),
                 concat!(
                     "SELECT * FROM monthly_sales ",
-                    "PIVOT(SUM(a.amount) FOR a.MONTH IN ('REDACTED_1', 'REDACTED_2', 'REDACTED_3', 'REDACTED_4')) AS p (c, d) ",
-                    "ORDER BY EMPID"
+                    "PIVOT(SUM(a.amount) FOR a.month IN ('REDACTED_1', 'REDACTED_2', 'REDACTED_3', 'REDACTED_4')) AS p (c, d) ",
+                    "ORDER BY empid"
                 ),
             ),
         ];

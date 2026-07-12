@@ -164,6 +164,7 @@ extern crate alloc;
 #[cfg(test)]
 extern crate pretty_assertions;
 
+pub mod arena;
 pub mod ast;
 #[macro_use]
 pub mod dialect;
@@ -171,6 +172,9 @@ mod display_utils;
 pub mod keywords;
 pub mod parser;
 pub mod tokenizer;
+
+#[cfg(feature = "std")]
+pub use arena::{AstArenaStats, ParsedSql, StatementHandle};
 
 #[doc(hidden)]
 // This is required to make utilities accessible by both the crate-internal

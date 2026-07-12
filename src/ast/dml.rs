@@ -16,7 +16,9 @@
 // under the License.
 
 #[cfg(not(feature = "std"))]
-use alloc::{boxed::Box, format, string::ToString, vec::Vec};
+use alloc::{format, string::ToString, vec::Vec};
+
+use crate::ast::Box;
 
 use core::fmt::{self, Display};
 #[cfg(feature = "serde")]

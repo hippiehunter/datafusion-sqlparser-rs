@@ -848,7 +848,7 @@ mod e051_basic_query_specification {
                 if let SetExpr::Select(select) = query.body.as_ref() {
                     assert!(select.having.is_some(), "Expected HAVING clause");
                     // Verify it's a binary AND operation
-                    if let Some(Expr::BinaryOp { op, .. }) = &select.having {
+                    if let Some(Expr::BinaryOp { op, .. }) = select.having.as_deref() {
                         assert_eq!(*op, BinaryOperator::And);
                     }
                 }
@@ -1055,7 +1055,7 @@ mod e061_basic_predicates {
         verified_with_ast!("SELECT * FROM t WHERE a = 1", |stmt: Statement| {
             if let Statement::Query(query) = stmt {
                 if let SetExpr::Select(select) = query.body.as_ref() {
-                    if let Some(Expr::BinaryOp { op, .. }) = &select.selection {
+                    if let Some(Expr::BinaryOp { op, .. }) = select.selection.as_deref() {
                         assert!(matches!(op, BinaryOperator::Eq));
                     } else {
                         panic!("Expected BinaryOp expression");
@@ -1067,7 +1067,7 @@ mod e061_basic_predicates {
         verified_with_ast!("SELECT * FROM t WHERE b <> 2", |stmt: Statement| {
             if let Statement::Query(query) = stmt {
                 if let SetExpr::Select(select) = query.body.as_ref() {
-                    if let Some(Expr::BinaryOp { op, .. }) = &select.selection {
+                    if let Some(Expr::BinaryOp { op, .. }) = select.selection.as_deref() {
                         assert!(matches!(op, BinaryOperator::NotEq));
                     } else {
                         panic!("Expected BinaryOp expression");
@@ -1079,7 +1079,7 @@ mod e061_basic_predicates {
         verified_with_ast!("SELECT * FROM t WHERE c < 3", |stmt: Statement| {
             if let Statement::Query(query) = stmt {
                 if let SetExpr::Select(select) = query.body.as_ref() {
-                    if let Some(Expr::BinaryOp { op, .. }) = &select.selection {
+                    if let Some(Expr::BinaryOp { op, .. }) = select.selection.as_deref() {
                         assert!(matches!(op, BinaryOperator::Lt));
                     } else {
                         panic!("Expected BinaryOp expression");
@@ -1091,7 +1091,7 @@ mod e061_basic_predicates {
         verified_with_ast!("SELECT * FROM t WHERE d > 4", |stmt: Statement| {
             if let Statement::Query(query) = stmt {
                 if let SetExpr::Select(select) = query.body.as_ref() {
-                    if let Some(Expr::BinaryOp { op, .. }) = &select.selection {
+                    if let Some(Expr::BinaryOp { op, .. }) = select.selection.as_deref() {
                         assert!(matches!(op, BinaryOperator::Gt));
                     } else {
                         panic!("Expected BinaryOp expression");
@@ -1103,7 +1103,7 @@ mod e061_basic_predicates {
         verified_with_ast!("SELECT * FROM t WHERE e <= 5", |stmt: Statement| {
             if let Statement::Query(query) = stmt {
                 if let SetExpr::Select(select) = query.body.as_ref() {
-                    if let Some(Expr::BinaryOp { op, .. }) = &select.selection {
+                    if let Some(Expr::BinaryOp { op, .. }) = select.selection.as_deref() {
                         assert!(matches!(op, BinaryOperator::LtEq));
                     } else {
                         panic!("Expected BinaryOp expression");
@@ -1115,7 +1115,7 @@ mod e061_basic_predicates {
         verified_with_ast!("SELECT * FROM t WHERE f >= 6", |stmt: Statement| {
             if let Statement::Query(query) = stmt {
                 if let SetExpr::Select(select) = query.body.as_ref() {
-                    if let Some(Expr::BinaryOp { op, .. }) = &select.selection {
+                    if let Some(Expr::BinaryOp { op, .. }) = select.selection.as_deref() {
                         assert!(matches!(op, BinaryOperator::GtEq));
                     } else {
                         panic!("Expected BinaryOp expression");
@@ -1133,7 +1133,7 @@ mod e061_basic_predicates {
             |stmt: Statement| {
                 if let Statement::Query(query) = stmt {
                     if let SetExpr::Select(select) = query.body.as_ref() {
-                        if let Some(Expr::Between { negated, .. }) = &select.selection {
+                        if let Some(Expr::Between { negated, .. }) = select.selection.as_deref() {
                             assert!(!negated, "Expected BETWEEN, not NOT BETWEEN");
                         } else {
                             panic!("Expected Between expression");
@@ -1148,7 +1148,7 @@ mod e061_basic_predicates {
             |stmt: Statement| {
                 if let Statement::Query(query) = stmt {
                     if let SetExpr::Select(select) = query.body.as_ref() {
-                        if let Some(Expr::Between { negated, .. }) = &select.selection {
+                        if let Some(Expr::Between { negated, .. }) = select.selection.as_deref() {
                             assert!(*negated, "Expected NOT BETWEEN");
                         } else {
                             panic!("Expected Between expression");
@@ -1169,7 +1169,7 @@ mod e061_basic_predicates {
         verified_with_ast!("SELECT * FROM t WHERE a IN (1, 2, 3)", |stmt: Statement| {
             if let Statement::Query(query) = stmt {
                 if let SetExpr::Select(select) = query.body.as_ref() {
-                    if let Some(Expr::InList { negated, list, .. }) = &select.selection {
+                    if let Some(Expr::InList { negated, list, .. }) = select.selection.as_deref() {
                         assert!(!negated, "Expected IN, not NOT IN");
                         assert_eq!(list.len(), 3);
                     } else {
@@ -1184,7 +1184,9 @@ mod e061_basic_predicates {
             |stmt: Statement| {
                 if let Statement::Query(query) = stmt {
                     if let SetExpr::Select(select) = query.body.as_ref() {
-                        if let Some(Expr::InList { negated, list, .. }) = &select.selection {
+                        if let Some(Expr::InList { negated, list, .. }) =
+                            select.selection.as_deref()
+                        {
                             assert!(*negated, "Expected NOT IN");
                             assert_eq!(list.len(), 4);
                         } else {
@@ -1213,7 +1215,7 @@ mod e061_basic_predicates {
                             negated,
                             escape_char,
                             ..
-                        }) = &select.selection
+                        }) = select.selection.as_deref()
                         {
                             assert!(!negated, "Expected LIKE, not NOT LIKE");
                             assert!(escape_char.is_none(), "Expected no ESCAPE clause");
@@ -1230,7 +1232,7 @@ mod e061_basic_predicates {
             |stmt: Statement| {
                 if let Statement::Query(query) = stmt {
                     if let SetExpr::Select(select) = query.body.as_ref() {
-                        if let Some(Expr::Like { negated, .. }) = &select.selection {
+                        if let Some(Expr::Like { negated, .. }) = select.selection.as_deref() {
                             assert!(!negated, "Expected LIKE, not NOT LIKE");
                         } else {
                             panic!("Expected Like expression");
@@ -1249,7 +1251,7 @@ mod e061_basic_predicates {
             |stmt: Statement| {
                 if let Statement::Query(query) = stmt {
                     if let SetExpr::Select(select) = query.body.as_ref() {
-                        if let Some(Expr::Like { negated, .. }) = &select.selection {
+                        if let Some(Expr::Like { negated, .. }) = select.selection.as_deref() {
                             assert!(*negated, "Expected NOT LIKE");
                         } else {
                             panic!("Expected Like expression");
@@ -1272,7 +1274,7 @@ mod e061_basic_predicates {
                             negated,
                             escape_char,
                             ..
-                        }) = &select.selection
+                        }) = select.selection.as_deref()
                         {
                             assert!(!negated, "Expected LIKE, not NOT LIKE");
                             assert!(escape_char.is_some(), "Expected ESCAPE clause");
@@ -1289,7 +1291,7 @@ mod e061_basic_predicates {
             |stmt: Statement| {
                 if let Statement::Query(query) = stmt {
                     if let SetExpr::Select(select) = query.body.as_ref() {
-                        if let Some(Expr::Like { escape_char, .. }) = &select.selection {
+                        if let Some(Expr::Like { escape_char, .. }) = select.selection.as_deref() {
                             assert!(escape_char.is_some(), "Expected ESCAPE clause");
                         } else {
                             panic!("Expected Like expression");
@@ -1304,7 +1306,7 @@ mod e061_basic_predicates {
             |stmt: Statement| {
                 if let Statement::Query(query) = stmt {
                     if let SetExpr::Select(select) = query.body.as_ref() {
-                        if let Some(Expr::Like { escape_char, .. }) = &select.selection {
+                        if let Some(Expr::Like { escape_char, .. }) = select.selection.as_deref() {
                             assert!(escape_char.is_some(), "Expected ESCAPE clause");
                         } else {
                             panic!("Expected Like expression");
@@ -1321,7 +1323,7 @@ mod e061_basic_predicates {
         verified_with_ast!("SELECT * FROM t WHERE a IS NULL", |stmt: Statement| {
             if let Statement::Query(query) = stmt {
                 if let SetExpr::Select(select) = query.body.as_ref() {
-                    if let Some(Expr::IsNull { .. }) = &select.selection {
+                    if let Some(Expr::IsNull { .. }) = select.selection.as_deref() {
                         // IS NULL predicate found
                     } else {
                         panic!("Expected IsNull expression");
@@ -1333,7 +1335,7 @@ mod e061_basic_predicates {
         verified_with_ast!("SELECT * FROM t WHERE b IS NOT NULL", |stmt: Statement| {
             if let Statement::Query(query) = stmt {
                 if let SetExpr::Select(select) = query.body.as_ref() {
-                    if let Some(Expr::IsNotNull { .. }) = &select.selection {
+                    if let Some(Expr::IsNotNull { .. }) = select.selection.as_deref() {
                         // IS NOT NULL predicate found
                     } else {
                         panic!("Expected IsNotNull expression");
@@ -1358,7 +1360,7 @@ mod e061_basic_predicates {
                             compare_op,
                             is_some,
                             ..
-                        }) = &select.selection
+                        }) = select.selection.as_deref()
                         {
                             assert!(matches!(compare_op, BinaryOperator::Gt));
                             assert!(!is_some, "Expected ANY, not SOME");
@@ -1375,7 +1377,7 @@ mod e061_basic_predicates {
             |stmt: Statement| {
                 if let Statement::Query(query) = stmt {
                     if let SetExpr::Select(select) = query.body.as_ref() {
-                        if let Some(Expr::AllOp { compare_op, .. }) = &select.selection {
+                        if let Some(Expr::AllOp { compare_op, .. }) = select.selection.as_deref() {
                             assert!(matches!(compare_op, BinaryOperator::Lt));
                         } else {
                             panic!("Expected AllOp expression");
@@ -1394,7 +1396,7 @@ mod e061_basic_predicates {
                             compare_op,
                             is_some,
                             ..
-                        }) = &select.selection
+                        }) = select.selection.as_deref()
                         {
                             assert!(matches!(compare_op, BinaryOperator::Eq));
                             assert!(*is_some, "Expected SOME");
@@ -1423,7 +1425,7 @@ mod e061_basic_predicates {
             |stmt: Statement| {
                 if let Statement::Query(query) = stmt {
                     if let SetExpr::Select(select) = query.body.as_ref() {
-                        if let Some(Expr::Exists { negated, .. }) = &select.selection {
+                        if let Some(Expr::Exists { negated, .. }) = select.selection.as_deref() {
                             assert!(!negated, "Expected EXISTS, not NOT EXISTS");
                         } else {
                             panic!("Expected Exists expression");
@@ -1441,7 +1443,7 @@ mod e061_basic_predicates {
             |stmt: Statement| {
                 if let Statement::Query(query) = stmt {
                     if let SetExpr::Select(select) = query.body.as_ref() {
-                        if let Some(Expr::Exists { negated, .. }) = &select.selection {
+                        if let Some(Expr::Exists { negated, .. }) = select.selection.as_deref() {
                             assert!(*negated, "Expected NOT EXISTS");
                         } else {
                             panic!("Expected Exists expression");
@@ -1460,7 +1462,8 @@ mod e061_basic_predicates {
             |stmt: Statement| {
                 if let Statement::Query(query) = stmt {
                     if let SetExpr::Select(select) = query.body.as_ref() {
-                        if let Some(Expr::BinaryOp { op, right, .. }) = &select.selection {
+                        if let Some(Expr::BinaryOp { op, right, .. }) = select.selection.as_deref()
+                        {
                             assert!(matches!(op, BinaryOperator::Eq));
                             assert!(matches!(right.as_ref(), Expr::Subquery(_)));
                         } else {
@@ -1476,7 +1479,8 @@ mod e061_basic_predicates {
             |stmt: Statement| {
                 if let Statement::Query(query) = stmt {
                     if let SetExpr::Select(select) = query.body.as_ref() {
-                        if let Some(Expr::BinaryOp { op, right, .. }) = &select.selection {
+                        if let Some(Expr::BinaryOp { op, right, .. }) = select.selection.as_deref()
+                        {
                             assert!(matches!(op, BinaryOperator::Gt));
                             assert!(matches!(right.as_ref(), Expr::Subquery(_)));
                         } else {
@@ -1500,7 +1504,8 @@ mod e061_basic_predicates {
             |stmt: Statement| {
                 if let Statement::Query(query) = stmt {
                     if let SetExpr::Select(select) = query.body.as_ref() {
-                        if let Some(Expr::InSubquery { negated, .. }) = &select.selection {
+                        if let Some(Expr::InSubquery { negated, .. }) = select.selection.as_deref()
+                        {
                             assert!(!negated, "Expected IN, not NOT IN");
                         } else {
                             panic!("Expected InSubquery expression");
@@ -1519,7 +1524,8 @@ mod e061_basic_predicates {
             |stmt: Statement| {
                 if let Statement::Query(query) = stmt {
                     if let SetExpr::Select(select) = query.body.as_ref() {
-                        if let Some(Expr::InSubquery { negated, .. }) = &select.selection {
+                        if let Some(Expr::InSubquery { negated, .. }) = select.selection.as_deref()
+                        {
                             assert!(*negated, "Expected NOT IN");
                         } else {
                             panic!("Expected InSubquery expression");
@@ -1540,7 +1546,7 @@ mod e061_basic_predicates {
                     if let SetExpr::Select(select) = query.body.as_ref() {
                         if let Some(Expr::AnyOp {
                             compare_op, right, ..
-                        }) = &select.selection
+                        }) = select.selection.as_deref()
                         {
                             assert!(matches!(compare_op, BinaryOperator::Gt));
                             assert!(matches!(right.as_ref(), Expr::Subquery(_)));
@@ -1559,7 +1565,7 @@ mod e061_basic_predicates {
                     if let SetExpr::Select(select) = query.body.as_ref() {
                         if let Some(Expr::AllOp {
                             compare_op, right, ..
-                        }) = &select.selection
+                        }) = select.selection.as_deref()
                         {
                             assert!(matches!(compare_op, BinaryOperator::Lt));
                             assert!(matches!(right.as_ref(), Expr::Subquery(_)));
@@ -1580,7 +1586,8 @@ mod e061_basic_predicates {
             |stmt: Statement| {
                 if let Statement::Query(query) = stmt {
                     if let SetExpr::Select(select) = query.body.as_ref() {
-                        if let Some(Expr::BinaryOp { op, right, .. }) = &select.selection {
+                        if let Some(Expr::BinaryOp { op, right, .. }) = select.selection.as_deref()
+                        {
                             assert!(matches!(op, BinaryOperator::Gt));
                             assert!(matches!(right.as_ref(), Expr::Subquery(_)));
                         } else {
@@ -1603,7 +1610,7 @@ mod e061_basic_predicates {
             |stmt: Statement| {
                 if let Statement::Query(query) = stmt {
                     if let SetExpr::Select(select) = query.body.as_ref() {
-                        if let Some(Expr::BinaryOp { op, .. }) = &select.selection {
+                        if let Some(Expr::BinaryOp { op, .. }) = select.selection.as_deref() {
                             assert!(matches!(op, BinaryOperator::And));
                         } else {
                             panic!("Expected BinaryOp with AND");
@@ -1616,7 +1623,7 @@ mod e061_basic_predicates {
         verified_with_ast!("SELECT * FROM t WHERE a = 1 OR b = 2", |stmt: Statement| {
             if let Statement::Query(query) = stmt {
                 if let SetExpr::Select(select) = query.body.as_ref() {
-                    if let Some(Expr::BinaryOp { op, .. }) = &select.selection {
+                    if let Some(Expr::BinaryOp { op, .. }) = select.selection.as_deref() {
                         assert!(matches!(op, BinaryOperator::Or));
                     } else {
                         panic!("Expected BinaryOp with OR");
@@ -1628,7 +1635,7 @@ mod e061_basic_predicates {
         verified_with_ast!("SELECT * FROM t WHERE NOT a = 1", |stmt: Statement| {
             if let Statement::Query(query) = stmt {
                 if let SetExpr::Select(select) = query.body.as_ref() {
-                    if let Some(Expr::UnaryOp { .. }) = &select.selection {
+                    if let Some(Expr::UnaryOp { .. }) = select.selection.as_deref() {
                         // NOT operator creates UnaryOp
                     } else {
                         panic!("Expected UnaryOp with NOT");

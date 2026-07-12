@@ -18,8 +18,9 @@
 //! Key-value options for SQL statements.
 //! See [this page](https://docs.snowflake.com/en/sql-reference/commands-data-loading) for more details.
 
+use crate::ast::Box;
 #[cfg(not(feature = "std"))]
-use alloc::{boxed::Box, string::String, vec::Vec};
+use alloc::{string::String, vec::Vec};
 use core::fmt;
 use core::fmt::Formatter;
 

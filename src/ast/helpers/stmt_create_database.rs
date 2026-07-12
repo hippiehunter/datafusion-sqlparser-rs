@@ -16,7 +16,7 @@
 // under the License.
 
 #[cfg(not(feature = "std"))]
-use alloc::{format, string::String, vec::Vec};
+use alloc::{format, string::String};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -129,7 +129,9 @@ impl CreateDatabaseBuilder {
 
     pub fn build(self) -> Statement {
         Statement::CreateDatabase {
-            create_token: AttachedToken(TokenWithSpan::wrap(Token::make_word("CREATE", None))),
+            create_token: AttachedToken::from(TokenWithSpan::wrap(Token::make_word(
+                "CREATE", None,
+            ))),
             db_name: self.db_name,
             if_not_exists: self.if_not_exists,
             managed_location: self.managed_location,

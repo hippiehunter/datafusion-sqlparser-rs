@@ -139,7 +139,7 @@ impl Dialect for MsSqlDialect {
             // Keywords already consumed, capture CREATE token by going back then forward
             parser.prev_token(); // back to TRIGGER
             parser.prev_token(); // back to CREATE
-            let create_token = AttachedToken(parser.next_token().to_static()); // consume CREATE, get token
+            let create_token = AttachedToken::from(parser.next_token()); // consume CREATE, get token
             parser.next_token(); // consume TRIGGER
             Some(self.parse_create_trigger(parser, create_token, false))
         } else if parser.parse_keywords(&[
@@ -153,7 +153,7 @@ impl Dialect for MsSqlDialect {
             parser.prev_token(); // back to ALTER
             parser.prev_token(); // back to OR
             parser.prev_token(); // back to CREATE
-            let create_token = AttachedToken(parser.next_token().to_static()); // consume CREATE, get token
+            let create_token = AttachedToken::from(parser.next_token()); // consume CREATE, get token
             parser.next_token(); // consume OR
             parser.next_token(); // consume ALTER
             parser.next_token(); // consume TRIGGER
@@ -181,23 +181,23 @@ impl MsSqlDialect {
             let statements = self.parse_statement_list(parser, Some(Keyword::END))?;
             let end_token = parser.expect_keyword(Keyword::END)?;
             ConditionalStatementBlock {
-                start_token: AttachedToken(if_token.to_static()),
+                start_token: AttachedToken::from(if_token),
                 condition: Some(condition),
                 then_token: None,
                 conditional_statements: ConditionalStatements::BeginEnd(BeginEndStatements {
-                    begin_token: AttachedToken(begin_token.to_static()),
+                    begin_token: AttachedToken::from(begin_token),
                     label: None,
                     declarations: vec![],
                     statements,
                     exception_handlers: None,
-                    end_token: AttachedToken(end_token.to_static()),
+                    end_token: AttachedToken::from(end_token),
                     end_label: None,
                 }),
             }
         } else {
             let stmt = parser.parse_statement()?;
             ConditionalStatementBlock {
-                start_token: AttachedToken(if_token.to_static()),
+                start_token: AttachedToken::from(if_token),
                 condition: Some(condition),
                 then_token: None,
                 conditional_statements: ConditionalStatements::Sequence {
@@ -221,23 +221,23 @@ impl MsSqlDialect {
                 let statements = self.parse_statement_list(parser, Some(Keyword::END))?;
                 let end_token = parser.expect_keyword(Keyword::END)?;
                 else_block = Some(ConditionalStatementBlock {
-                    start_token: AttachedToken(else_token.to_static()),
+                    start_token: AttachedToken::from(else_token),
                     condition: None,
                     then_token: None,
                     conditional_statements: ConditionalStatements::BeginEnd(BeginEndStatements {
-                        begin_token: AttachedToken(begin_token.to_static()),
+                        begin_token: AttachedToken::from(begin_token),
                         label: None,
                         declarations: vec![],
                         statements,
                         exception_handlers: None,
-                        end_token: AttachedToken(end_token.to_static()),
+                        end_token: AttachedToken::from(end_token),
                         end_label: None,
                     }),
                 });
             } else {
                 let stmt = parser.parse_statement()?;
                 else_block = Some(ConditionalStatementBlock {
-                    start_token: AttachedToken(else_token.to_static()),
+                    start_token: AttachedToken::from(else_token),
                     condition: None,
                     then_token: None,
                     conditional_statements: ConditionalStatements::Sequence {

@@ -15,9 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#[cfg(not(feature = "std"))]
-use alloc::boxed::Box;
-
 use crate::{
     ast::{AttachedToken, BinaryOperator, Expr, LockTable, LockTableType, Statement},
     dialect::Dialect,
@@ -94,9 +91,9 @@ impl Dialect for MySqlDialect {
         // Parse DIV as an operator
         if parser.parse_keyword(Keyword::DIV) {
             Some(Ok(Expr::BinaryOp {
-                left: Box::new(expr.clone()),
+                left: crate::ast::Box::new(expr.clone()),
                 op: BinaryOperator::MyIntegerDivide,
-                right: Box::new(parser.parse_expr().unwrap()),
+                right: crate::ast::Box::new(parser.parse_expr().unwrap()),
             }))
         } else {
             None
@@ -188,7 +185,7 @@ impl Dialect for MySqlDialect {
 fn parse_lock_tables(parser: &Parser, lock_token: TokenWithSpan) -> Result<Statement, ParserError> {
     let tables = parser.parse_comma_separated(parse_lock_table)?;
     Ok(Statement::LockTables {
-        lock_token: AttachedToken(lock_token.to_static()),
+        lock_token: AttachedToken::from(lock_token),
         tables,
     })
 }
@@ -233,6 +230,6 @@ fn parse_unlock_tables(
     unlock_token: TokenWithSpan,
 ) -> Result<Statement, ParserError> {
     Ok(Statement::UnlockTables {
-        unlock_token: AttachedToken(unlock_token.to_static()),
+        unlock_token: AttachedToken::from(unlock_token),
     })
 }

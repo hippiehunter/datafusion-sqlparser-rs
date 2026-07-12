@@ -159,7 +159,7 @@ mod t612_advanced_olap {
             |stmt: Statement| {
                 match stmt {
                     Statement::Query(query) => {
-                        if let sqlparser::ast::SetExpr::Select(select) = *query.body {
+                        if let sqlparser::ast::SetExpr::Select(select) = query.body.as_ref() {
                             let projection = &select.projection[0];
                             if let sqlparser::ast::SelectItem::UnnamedExpr(Expr::Function(func)) =
                                 projection
@@ -182,7 +182,7 @@ mod t612_advanced_olap {
                                                 ..
                                             }) = &**expr
                                             {
-                                                assert_eq!(n, "10");
+                                                assert_eq!(n.to_string(), "10");
                                             } else {
                                                 panic!("Expected numeric value for PRECEDING");
                                             }
@@ -199,7 +199,7 @@ mod t612_advanced_olap {
                                                 ..
                                             }) = &**expr
                                             {
-                                                assert_eq!(n, "10");
+                                                assert_eq!(n.to_string(), "10");
                                             } else {
                                                 panic!("Expected numeric value for FOLLOWING");
                                             }
@@ -307,7 +307,7 @@ mod t613_sampling {
             |stmt: Statement| {
                 match stmt {
                     Statement::Query(query) => {
-                        if let sqlparser::ast::SetExpr::Select(select) = *query.body {
+                        if let sqlparser::ast::SetExpr::Select(select) = query.body.as_ref() {
                             // Verify we have a FROM clause with table sample
                             let table_with_joins = &select.from[0];
                             if let sqlparser::ast::TableFactor::Table { sample, .. } =
@@ -329,7 +329,7 @@ mod t613_sampling {
                                         ..
                                     }) = &quantity.value
                                     {
-                                        assert_eq!(n, "10");
+                                        assert_eq!(n.to_string(), "10");
                                     } else {
                                         panic!("Expected numeric value for sample quantity");
                                     }
@@ -359,7 +359,7 @@ mod t613_sampling {
             |stmt: Statement| {
                 match stmt {
                     Statement::Query(query) => {
-                        if let sqlparser::ast::SetExpr::Select(select) = *query.body {
+                        if let sqlparser::ast::SetExpr::Select(select) = query.body.as_ref() {
                             // Verify we have a FROM clause with table sample
                             let table_with_joins = &select.from[0];
                             if let sqlparser::ast::TableFactor::Table { sample, .. } =
@@ -381,7 +381,7 @@ mod t613_sampling {
                                         ..
                                     }) = &quantity.value
                                     {
-                                        assert_eq!(n, "5");
+                                        assert_eq!(n.to_string(), "5");
                                     } else {
                                         panic!("Expected numeric value for sample quantity");
                                     }

@@ -29,6 +29,7 @@ use helpers::attached_token::AttachedToken;
 use matches::assert_matches;
 use sqlparser::ast::helpers::key_value_options::*;
 use sqlparser::ast::helpers::key_value_options::{KeyValueOptions, KeyValueOptionsDelimiter};
+use sqlparser::ast::AstBox as Box;
 use sqlparser::ast::SelectItem::UnnamedExpr;
 use sqlparser::ast::TableFactor::{Pivot, Unpivot};
 use sqlparser::ast::*;
@@ -152,14 +153,14 @@ fn parse_insert_values() {
                 for (index, column) in columns.iter().enumerate() {
                     assert_eq!(column, &Ident::new(expected_columns[index].clone()));
                 }
-                match *source.body {
+                match source.body.as_ref() {
                     SetExpr::Values(Values {
                         rows,
                         value_keyword,
                         ..
                     }) => {
                         assert_eq!(rows.as_slice(), expected_rows);
-                        assert!(value_keyword == expected_value_keyword);
+                        assert!(*value_keyword == expected_value_keyword);
                     }
                     _ => unreachable!(),
                 }
@@ -331,7 +332,7 @@ fn parse_insert_select_from_returning() {
             ..
         }) => {
             assert_eq!("table1", table_name.to_string());
-            assert!(matches!(*source.body, SetExpr::Select(_)));
+            assert!(matches!(source.body.as_ref(), SetExpr::Select(_)));
             assert_eq!(
                 returning,
                 vec![SelectItem::UnnamedExpr(Expr::Identifier(Ident::new("id"))),]
@@ -400,8 +401,8 @@ fn parse_update() {
 fn parse_update_set_from() {
     let sql = "UPDATE t1 SET name = t2.name FROM (SELECT name, id FROM t1 GROUP BY id) AS t2 WHERE t1.id = t2.id";
     let dialects = TestedDialects::new(vec![
-        Box::new(PostgreSqlDialect {}),
-        Box::new(MsSqlDialect {}),
+        std::boxed::Box::new(PostgreSqlDialect {}),
+        std::boxed::Box::new(MsSqlDialect {}),
     ]);
     let stmt = dialects.verified_stmt(sql);
     assert_eq!(
@@ -459,17 +460,20 @@ fn parse_update_set_from() {
                 },
                 joins: vec![]
             }])),
-            selection: Some(Expr::BinaryOp {
-                left: Box::new(Expr::CompoundIdentifier(vec![
-                    Ident::new("t1"),
-                    Ident::new("id")
-                ])),
-                op: BinaryOperator::Eq,
-                right: Box::new(Expr::CompoundIdentifier(vec![
-                    Ident::new("t2"),
-                    Ident::new("id")
-                ])),
-            }),
+            selection: Some(
+                Expr::BinaryOp {
+                    left: Box::new(Expr::CompoundIdentifier(vec![
+                        Ident::new("t1"),
+                        Ident::new("id")
+                    ])),
+                    op: BinaryOperator::Eq,
+                    right: Box::new(Expr::CompoundIdentifier(vec![
+                        Ident::new("t2"),
+                        Ident::new("id")
+                    ])),
+                }
+                .into()
+            ),
             returning: None,
             returning_into: None,
             limit: None,
@@ -863,7 +867,10 @@ fn parse_simple_select() {
         offset: None,
         limit_by: vec![],
     };
-    assert_eq!(Some(expected_limit_clause), select.limit_clause);
+    assert_eq!(
+        Some(expected_limit_clause),
+        select.limit_clause.map(Box::into_owned)
+    );
 }
 
 #[test]
@@ -887,7 +894,10 @@ fn parse_limit_is_not_an_alias() {
         offset: None,
         limit_by: vec![],
     };
-    assert_eq!(Some(expected_limit_clause), ast.limit_clause);
+    assert_eq!(
+        Some(expected_limit_clause),
+        ast.limit_clause.map(Box::into_owned)
+    );
 
     let ast = verified_query("SELECT 1 LIMIT 5");
     let expected_limit_clause = LimitClause::LimitOffset {
@@ -895,7 +905,10 @@ fn parse_limit_is_not_an_alias() {
         offset: None,
         limit_by: vec![],
     };
-    assert_eq!(Some(expected_limit_clause), ast.limit_clause);
+    assert_eq!(
+        Some(expected_limit_clause),
+        ast.limit_clause.map(Box::into_owned)
+    );
 }
 
 #[test]
@@ -944,28 +957,34 @@ fn parse_outer_join_operator() {
     let select = dialects.verified_only_select("SELECT 1 FROM T WHERE a = b (+)");
     assert_eq!(
         select.selection,
-        Some(Expr::BinaryOp {
-            left: Box::new(Expr::Identifier(Ident::new("a"))),
-            op: BinaryOperator::Eq,
-            right: Box::new(Expr::OuterJoin(Box::new(Expr::Identifier(Ident::new("b")))))
-        })
+        Some(
+            Expr::BinaryOp {
+                left: Box::new(Expr::Identifier(Ident::new("a"))),
+                op: BinaryOperator::Eq,
+                right: Box::new(Expr::OuterJoin(Box::new(Expr::Identifier(Ident::new("b")))))
+            }
+            .into()
+        )
     );
 
     let select = dialects.verified_only_select("SELECT 1 FROM T WHERE t1.c1 = t2.c2.d3 (+)");
     assert_eq!(
         select.selection,
-        Some(Expr::BinaryOp {
-            left: Box::new(Expr::CompoundIdentifier(vec![
-                Ident::new("t1"),
-                Ident::new("c1")
-            ])),
-            op: BinaryOperator::Eq,
-            right: Box::new(Expr::OuterJoin(Box::new(Expr::CompoundIdentifier(vec![
-                Ident::new("t2"),
-                Ident::new("c2"),
-                Ident::new("d3"),
-            ]))))
-        })
+        Some(
+            Expr::BinaryOp {
+                left: Box::new(Expr::CompoundIdentifier(vec![
+                    Ident::new("t1"),
+                    Ident::new("c1")
+                ])),
+                op: BinaryOperator::Eq,
+                right: Box::new(Expr::OuterJoin(Box::new(Expr::CompoundIdentifier(vec![
+                    Ident::new("t2"),
+                    Ident::new("c2"),
+                    Ident::new("d3"),
+                ]))))
+            }
+            .into()
+        )
     );
 
     let res = dialects.parse_sql_statements("SELECT 1 FROM T WHERE 1 = 2 (+)");
@@ -1295,19 +1314,19 @@ fn parse_null_in_select() {
 fn parse_exponent_in_select() -> Result<(), ParserError> {
     // all dialects
     let dialects = TestedDialects::new(vec![
-        Box::new(MsSqlDialect {}),
-        Box::new(MySqlDialect {}),
-        Box::new(PostgreSqlDialect {}),
+        std::boxed::Box::new(MsSqlDialect {}),
+        std::boxed::Box::new(MySqlDialect {}),
+        std::boxed::Box::new(PostgreSqlDialect {}),
     ]);
     let sql = "SELECT 10e-20, 1e3, 1e+3, 1e3a, 1e, 0.5e2";
     let mut select = dialects.parse_sql_statements(sql)?;
 
     let select = match select.pop().unwrap() {
-        Statement::Query(inner) => *inner,
+        Statement::Query(inner) => Box::into_owned(inner),
         _ => panic!("Expected: Query"),
     };
-    let select = match *select.body {
-        SetExpr::Select(inner) => *inner,
+    let select = match select.body.as_ref() {
+        SetExpr::Select(inner) => inner.as_ref(),
         _ => panic!("Expected: SetExpr::Select"),
     };
 
@@ -1362,7 +1381,7 @@ fn parse_escaped_single_quote_string_predicate_with_escape() {
                 (Value::SingleQuotedString("Jim's salary".to_string())).with_empty_span()
             )),
         }),
-        ast.selection,
+        ast.selection.map(Box::into_owned),
     );
 }
 
@@ -1373,7 +1392,7 @@ fn parse_escaped_single_quote_string_predicate_with_no_escape() {
                WHERE salary <> 'Jim''s salary'";
 
     let ast = TestedDialects::new_with_options(
-        vec![Box::new(MySqlDialect {})],
+        vec![std::boxed::Box::new(MySqlDialect {})],
         ParserOptions::new()
             .with_trailing_commas(true)
             .with_unescape(false),
@@ -1388,7 +1407,7 @@ fn parse_escaped_single_quote_string_predicate_with_no_escape() {
                 (Value::SingleQuotedString("Jim''s salary".to_string())).with_empty_span()
             )),
         }),
-        ast.selection,
+        ast.selection.map(Box::into_owned),
     );
 }
 
@@ -1502,11 +1521,11 @@ fn parse_mod() {
 }
 
 fn pg_and_generic() -> TestedDialects {
-    TestedDialects::new(vec![Box::new(PostgreSqlDialect {})])
+    TestedDialects::new(vec![std::boxed::Box::new(PostgreSqlDialect {})])
 }
 
 fn ms_and_generic() -> TestedDialects {
-    TestedDialects::new(vec![Box::new(MsSqlDialect {})])
+    TestedDialects::new(vec![std::boxed::Box::new(MsSqlDialect {})])
 }
 
 #[test]
@@ -1544,8 +1563,8 @@ fn parse_json_ops_without_colon() {
 #[test]
 fn parse_json_object() {
     let dialects = TestedDialects::new(vec![
-        Box::new(MsSqlDialect {}),
-        Box::new(PostgreSqlDialect {}),
+        std::boxed::Box::new(MsSqlDialect {}),
+        std::boxed::Box::new(PostgreSqlDialect {}),
     ]);
     let select = dialects.verified_only_select("SELECT JSON_OBJECT('name' : 'value', 'type' : 1)");
     match expr_from_projection(&select.projection[0]) {
@@ -2031,7 +2050,7 @@ fn parse_ilike() {
                 escape_char: None,
                 any: false,
             },
-            select.selection.unwrap()
+            Box::into_owned(select.selection.unwrap())
         );
 
         // Test with escape char
@@ -2050,7 +2069,7 @@ fn parse_ilike() {
                 escape_char: Some(Value::SingleQuotedString('^'.to_string())),
                 any: false,
             },
-            select.selection.unwrap()
+            Box::into_owned(select.selection.unwrap())
         );
 
         // This statement tests that ILIKE and NOT ILIKE have the same precedence.
@@ -2061,7 +2080,7 @@ fn parse_ilike() {
         );
         let select = verified_only_select(sql);
         assert!(matches!(
-            select.selection.unwrap(),
+            Box::into_owned(select.selection.unwrap()),
             Expr::IsNull { expr, .. } if matches!(*expr, Expr::ILike { negated: n, .. } if n == negated)
         ));
     }
@@ -2087,7 +2106,7 @@ fn parse_like() {
                 escape_char: None,
                 any: false,
             },
-            select.selection.unwrap()
+            Box::into_owned(select.selection.unwrap())
         );
 
         // Test with escape char
@@ -2106,7 +2125,7 @@ fn parse_like() {
                 escape_char: Some(Value::SingleQuotedString('^'.to_string())),
                 any: false,
             },
-            select.selection.unwrap()
+            Box::into_owned(select.selection.unwrap())
         );
 
         // This statement tests that LIKE and NOT LIKE have the same precedence.
@@ -2117,7 +2136,7 @@ fn parse_like() {
         );
         let select = verified_only_select(sql);
         assert!(matches!(
-            select.selection.unwrap(),
+            Box::into_owned(select.selection.unwrap()),
             Expr::IsNull { expr, .. } if matches!(*expr, Expr::Like { negated: n, .. } if n == negated)
         ));
     }
@@ -2142,7 +2161,7 @@ fn parse_similar_to() {
                 )),
                 escape_char: None,
             },
-            select.selection.unwrap()
+            Box::into_owned(select.selection.unwrap())
         );
 
         // Test with escape char
@@ -2160,7 +2179,7 @@ fn parse_similar_to() {
                 )),
                 escape_char: Some(Value::SingleQuotedString('^'.to_string())),
             },
-            select.selection.unwrap()
+            Box::into_owned(select.selection.unwrap())
         );
 
         let sql = &format!(
@@ -2177,7 +2196,7 @@ fn parse_similar_to() {
                 )),
                 escape_char: Some(Value::Null),
             },
-            select.selection.unwrap()
+            Box::into_owned(select.selection.unwrap())
         );
 
         // This statement tests that SIMILAR TO and NOT SIMILAR TO have the same precedence.
@@ -2187,7 +2206,7 @@ fn parse_similar_to() {
         );
         let select = verified_only_select(sql);
         assert!(matches!(
-            select.selection.unwrap(),
+            Box::into_owned(select.selection.unwrap()),
             Expr::IsNull { expr, .. } if matches!(*expr, Expr::SimilarTo { negated: n, .. } if n == negated)
         ));
     }
@@ -2212,7 +2231,7 @@ fn parse_in_list() {
                 ],
                 negated,
             },
-            select.selection.unwrap()
+            Box::into_owned(select.selection.unwrap())
         );
     }
     chk(false);
@@ -2229,7 +2248,7 @@ fn parse_in_subquery() {
             subquery: Box::new(verified_query("SELECT segm FROM bar")),
             negated: false,
         },
-        select.selection.unwrap()
+        Box::into_owned(select.selection.unwrap())
     );
 }
 
@@ -2245,7 +2264,7 @@ fn parse_in_union() {
             )),
             negated: false,
         },
-        select.selection.unwrap()
+        Box::into_owned(select.selection.unwrap())
     );
 }
 
@@ -2263,7 +2282,7 @@ fn parse_in_unnest() {
                 array_expr: Box::new(verified_expr("expr")),
                 negated,
             },
-            select.selection.unwrap()
+            Box::into_owned(select.selection.unwrap())
         );
     }
     chk(false);
@@ -2371,7 +2390,7 @@ fn parse_between() {
                 low: Box::new(Expr::value(number("25"))),
                 high: Box::new(Expr::value(number("32"))),
             },
-            select.selection.unwrap()
+            Box::into_owned(select.selection.unwrap())
         );
     }
     chk(false);
@@ -2383,7 +2402,7 @@ fn parse_between_with_expr() {
     let sql = "SELECT * FROM t WHERE 1 BETWEEN 1 + 2 AND 3 + 4 IS NULL";
     let select = verified_only_select(sql);
     assert!(matches!(
-        select.selection.unwrap(),
+        Box::into_owned(select.selection.unwrap()),
         Expr::IsNull { expr, .. } if matches!(*expr, Expr::Between { negated: false, .. })
     ));
 
@@ -2409,7 +2428,7 @@ fn parse_between_with_expr() {
                 high: Box::new(Expr::value(number("2"))),
             }),
         },
-        select.selection.unwrap(),
+        Box::into_owned(select.selection.unwrap()),
     )
 }
 
@@ -2524,7 +2543,10 @@ fn parse_select_order_by_limit() {
         offset: None,
         limit_by: vec![],
     };
-    assert_eq!(Some(expected_limit_clause), select.limit_clause);
+    assert_eq!(
+        Some(expected_limit_clause),
+        select.limit_clause.map(Box::into_owned)
+    );
 }
 
 #[test]
@@ -2609,7 +2631,10 @@ fn parse_select_order_by_nulls_order() {
         offset: None,
         limit_by: vec![],
     };
-    assert_eq!(Some(expected_limit_clause), select.limit_clause);
+    assert_eq!(
+        Some(expected_limit_clause),
+        select.limit_clause.map(Box::into_owned)
+    );
 }
 
 #[test]
@@ -2714,25 +2739,28 @@ fn parse_select_having() {
     let sql = "SELECT foo FROM bar GROUP BY foo HAVING COUNT(*) > 1";
     let select = verified_only_select(sql);
     assert_eq!(
-        Some(Expr::BinaryOp {
-            left: Box::new(Expr::Function(Function {
-                name: ObjectName::from(vec![Ident::new("COUNT")]),
-                uses_odbc_syntax: false,
-                parameters: FunctionArguments::None,
-                args: FunctionArguments::List(FunctionArgumentList {
-                    duplicate_treatment: None,
-                    args: vec![FunctionArg::Unnamed(FunctionArgExpr::Wildcard)],
-                    clauses: vec![],
-                }),
-                null_treatment: None,
-                nth_value_order: None,
-                filter: None,
-                over: None,
-                within_group: vec![]
-            })),
-            op: BinaryOperator::Gt,
-            right: Box::new(Expr::value(number("1"))),
-        }),
+        Some(
+            Expr::BinaryOp {
+                left: Box::new(Expr::Function(Function {
+                    name: ObjectName::from(vec![Ident::new("COUNT")]),
+                    uses_odbc_syntax: false,
+                    parameters: FunctionArguments::None,
+                    args: FunctionArguments::List(FunctionArgumentList {
+                        duplicate_treatment: None,
+                        args: vec![FunctionArg::Unnamed(FunctionArgExpr::Wildcard)],
+                        clauses: vec![],
+                    }),
+                    null_treatment: None,
+                    nth_value_order: None,
+                    filter: None,
+                    over: None,
+                    within_group: vec![]
+                })),
+                op: BinaryOperator::Gt,
+                right: Box::new(Expr::value(number("1"))),
+            }
+            .into()
+        ),
         select.having
     );
 
@@ -3182,8 +3210,8 @@ fn parse_listagg() {
 #[test]
 fn parse_array_agg_func() {
     let supported_dialects = TestedDialects::new(vec![
-        Box::new(PostgreSqlDialect {}),
-        Box::new(MsSqlDialect {}),
+        std::boxed::Box::new(PostgreSqlDialect {}),
+        std::boxed::Box::new(MsSqlDialect {}),
     ]);
 
     for sql in [
@@ -3200,8 +3228,8 @@ fn parse_array_agg_func() {
 #[test]
 fn parse_agg_with_order_by() {
     let supported_dialects = TestedDialects::new(vec![
-        Box::new(PostgreSqlDialect {}),
-        Box::new(MsSqlDialect {}),
+        std::boxed::Box::new(PostgreSqlDialect {}),
+        std::boxed::Box::new(MsSqlDialect {}),
     ]);
 
     for sql in [
@@ -3217,8 +3245,8 @@ fn parse_agg_with_order_by() {
 #[test]
 fn parse_window_rank_function() {
     let supported_dialects = TestedDialects::new(vec![
-        Box::new(PostgreSqlDialect {}),
-        Box::new(MsSqlDialect {}),
+        std::boxed::Box::new(PostgreSqlDialect {}),
+        std::boxed::Box::new(MsSqlDialect {}),
     ]);
 
     for sql in [
@@ -3231,7 +3259,7 @@ fn parse_window_rank_function() {
         supported_dialects.verified_stmt(sql);
     }
 
-    let supported_dialects_nulls = TestedDialects::new(vec![Box::new(MsSqlDialect {})]);
+    let supported_dialects_nulls = TestedDialects::new(vec![std::boxed::Box::new(MsSqlDialect {})]);
 
     for sql in [
         "SELECT column1, column2, FIRST_VALUE(column2) IGNORE NULLS OVER (PARTITION BY column1 ORDER BY column2 NULLS LAST) AS column2_first FROM t1",
@@ -3247,7 +3275,7 @@ fn parse_window_rank_function() {
 
 #[test]
 fn test_compound_expr() {
-    let supported_dialects = TestedDialects::new(vec![Box::new(PostgreSqlDialect {})]);
+    let supported_dialects = TestedDialects::new(vec![std::boxed::Box::new(PostgreSqlDialect {})]);
     let sqls = [
         "SELECT abc[1].f1 FROM t",
         "SELECT abc[1].f1.f2 FROM t",
@@ -3292,7 +3320,7 @@ fn test_double_value() {
             if let Statement::Query(query) =
                 dialects.one_statement_parses_to(&format!("SELECT {expr}"), "")
             {
-                if let SetExpr::Select(select) = *query.body {
+                if let SetExpr::Select(select) = query.body.as_ref() {
                     assert_eq!(expected[i], select.projection[0]);
                 } else {
                     panic!("Expected a SELECT statement");
@@ -3889,7 +3917,9 @@ fn parse_create_table_column_constraint_characteristics() {
 #[test]
 fn parse_create_table_hive_array() {
     // Parsing [] type arrays
-    let dialects = TestedDialects::new(vec![Box::new(PostgreSqlDialect {}) as Box<dyn Dialect>]);
+    let dialects = TestedDialects::new(vec![
+        std::boxed::Box::new(PostgreSqlDialect {}) as std::boxed::Box<dyn Dialect>
+    ]);
     let angle_bracket_syntax = false;
 
     let sql = format!(
@@ -3938,8 +3968,8 @@ fn parse_create_table_hive_array() {
 
     // Test with unclosed array type - should fail
     let dialects = TestedDialects::new(vec![
-        Box::new(PostgreSqlDialect {}),
-        Box::new(MySqlDialect {}),
+        std::boxed::Box::new(PostgreSqlDialect {}),
+        std::boxed::Box::new(MySqlDialect {}),
     ]);
     let sql = "CREATE TABLE IF NOT EXISTS something (name int, val array<int)";
 
@@ -3954,7 +3984,7 @@ fn parse_array_type_postfix_syntax() {
     // SQL standard ARRAY type suffix: "INTEGER ARRAY"
     // Note: The display output normalizes to "INTEGER[]" format
     // Use dialects that support [] array syntax in display
-    let dialects = TestedDialects::new(vec![Box::new(PostgreSqlDialect {})]);
+    let dialects = TestedDialects::new(vec![std::boxed::Box::new(PostgreSqlDialect {})]);
 
     let sql = "CREATE TABLE t (arr INTEGER ARRAY)";
     let expected = "CREATE TABLE t (arr INTEGER[])";
@@ -4245,7 +4275,7 @@ fn parse_create_table_with_on_delete_on_update_2in_any_order() -> Result<(), Par
 
 #[test]
 fn parse_create_table_with_options() {
-    let generic = TestedDialects::new(vec![Box::new(PostgreSqlDialect {})]);
+    let generic = TestedDialects::new(vec![std::boxed::Box::new(PostgreSqlDialect {})]);
 
     let sql = "CREATE TABLE t (c INT) WITH (foo = 'bar', a = 123)";
     match generic.verified_stmt(sql) {
@@ -4826,7 +4856,7 @@ fn parse_alter_table_add_column() {
 
 #[test]
 fn parse_alter_table_add_column_if_not_exists() {
-    let dialects = TestedDialects::new(vec![Box::new(PostgreSqlDialect {})]);
+    let dialects = TestedDialects::new(vec![std::boxed::Box::new(PostgreSqlDialect {})]);
 
     match alter_table_op(dialects.verified_stmt("ALTER TABLE tab ADD IF NOT EXISTS foo TEXT")) {
         AlterTableOperation::AddColumn { if_not_exists, .. } => {
@@ -5381,8 +5411,8 @@ fn parse_window_functions() {
 #[test]
 fn parse_named_window_functions() {
     let supported_dialects = TestedDialects::new(vec![
-        Box::new(PostgreSqlDialect {}),
-        Box::new(MySqlDialect {}),
+        std::boxed::Box::new(PostgreSqlDialect {}),
+        std::boxed::Box::new(MySqlDialect {}),
     ]);
 
     let sql = "SELECT row_number() OVER (w ORDER BY dt DESC), \
@@ -6198,59 +6228,64 @@ fn parse_interval_and_or_xor() {
                 }])),
                 joins: vec![],
             }],
-            selection: Some(Expr::BinaryOp {
-                left: Box::new(Expr::BinaryOp {
-                    left: Box::new(Expr::Identifier(Ident {
-                        value: "d3_date".to_string(),
-                        quote_style: None,
-                        span: Span::empty(),
-                    })),
-                    op: BinaryOperator::Gt,
-                    right: Box::new(Expr::BinaryOp {
+            selection: Some(
+                Expr::BinaryOp {
+                    left: Box::new(Expr::BinaryOp {
                         left: Box::new(Expr::Identifier(Ident {
-                            value: "d1_date".to_string(),
+                            value: "d3_date".to_string(),
                             quote_style: None,
                             span: Span::empty(),
                         })),
-                        op: BinaryOperator::Plus,
-                        right: Box::new(Expr::Interval(Interval {
-                            value: Box::new(Expr::Value(
-                                (Value::SingleQuotedString("5 days".to_string())).with_empty_span(),
-                            )),
-                            leading_field: None,
-                            leading_precision: None,
-                            last_field: None,
-                            fractional_seconds_precision: None,
-                        })),
+                        op: BinaryOperator::Gt,
+                        right: Box::new(Expr::BinaryOp {
+                            left: Box::new(Expr::Identifier(Ident {
+                                value: "d1_date".to_string(),
+                                quote_style: None,
+                                span: Span::empty(),
+                            })),
+                            op: BinaryOperator::Plus,
+                            right: Box::new(Expr::Interval(Interval {
+                                value: Box::new(Expr::Value(
+                                    (Value::SingleQuotedString("5 days".to_string()))
+                                        .with_empty_span(),
+                                )),
+                                leading_field: None,
+                                leading_precision: None,
+                                last_field: None,
+                                fractional_seconds_precision: None,
+                            })),
+                        }),
                     }),
-                }),
-                op: BinaryOperator::And,
-                right: Box::new(Expr::BinaryOp {
-                    left: Box::new(Expr::Identifier(Ident {
-                        value: "d2_date".to_string(),
-                        quote_style: None,
-                        span: Span::empty(),
-                    })),
-                    op: BinaryOperator::Gt,
+                    op: BinaryOperator::And,
                     right: Box::new(Expr::BinaryOp {
                         left: Box::new(Expr::Identifier(Ident {
-                            value: "d1_date".to_string(),
+                            value: "d2_date".to_string(),
                             quote_style: None,
                             span: Span::empty(),
                         })),
-                        op: BinaryOperator::Plus,
-                        right: Box::new(Expr::Interval(Interval {
-                            value: Box::new(Expr::Value(
-                                (Value::SingleQuotedString("3 days".to_string())).with_empty_span(),
-                            )),
-                            leading_field: None,
-                            leading_precision: None,
-                            last_field: None,
-                            fractional_seconds_precision: None,
-                        })),
+                        op: BinaryOperator::Gt,
+                        right: Box::new(Expr::BinaryOp {
+                            left: Box::new(Expr::Identifier(Ident {
+                                value: "d1_date".to_string(),
+                                quote_style: None,
+                                span: Span::empty(),
+                            })),
+                            op: BinaryOperator::Plus,
+                            right: Box::new(Expr::Interval(Interval {
+                                value: Box::new(Expr::Value(
+                                    (Value::SingleQuotedString("3 days".to_string()))
+                                        .with_empty_span(),
+                                )),
+                                leading_field: None,
+                                leading_precision: None,
+                                last_field: None,
+                                fractional_seconds_precision: None,
+                            })),
+                        }),
                     }),
-                }),
-            }),
+                }
+                .into(),
+            ),
             group_by: GroupByExpr::Expressions(vec![], vec![]),
             having: None,
             named_window: vec![],
@@ -6523,7 +6558,7 @@ fn parse_unnest_in_from_clause() {
         let select = dialects.verified_only_select(sql);
         assert_eq!(select.from, want);
     }
-    let dialects = TestedDialects::new(vec![Box::new(PostgreSqlDialect {})]);
+    let dialects = TestedDialects::new(vec![std::boxed::Box::new(PostgreSqlDialect {})]);
     // 1. both Alias and WITH OFFSET clauses.
     chk(
         "expr",
@@ -6842,11 +6877,14 @@ fn parse_cross_join_constraint() {
 
     test_constraint(
         "SELECT * FROM t1 CROSS JOIN t2 ON a = b",
-        JoinConstraint::On(Expr::BinaryOp {
-            left: Box::new(Expr::Identifier(Ident::new("a"))),
-            op: BinaryOperator::Eq,
-            right: Box::new(Expr::Identifier(Ident::new("b"))),
-        }),
+        JoinConstraint::On(
+            Expr::BinaryOp {
+                left: Box::new(Expr::Identifier(Ident::new("a"))),
+                op: BinaryOperator::Eq,
+                right: Box::new(Expr::Identifier(Ident::new("b"))),
+            }
+            .into(),
+        ),
     );
     test_constraint(
         "SELECT * FROM t1 CROSS JOIN t2 USING(a)",
@@ -6877,11 +6915,14 @@ fn parse_joins_on() {
                 index_hints: vec![],
             },
             global,
-            join_operator: f(JoinConstraint::On(Expr::BinaryOp {
-                left: Box::new(Expr::Identifier("c1".into())),
-                op: BinaryOperator::Eq,
-                right: Box::new(Expr::Identifier("c2".into())),
-            })),
+            join_operator: f(JoinConstraint::On(
+                Expr::BinaryOp {
+                    left: Box::new(Expr::Identifier("c1".into())),
+                    op: BinaryOperator::Eq,
+                    right: Box::new(Expr::Identifier("c2".into())),
+                }
+                .into(),
+            )),
         }
     }
     // Test parsing of aliases
@@ -7357,24 +7398,33 @@ fn parse_recursive_cte() {
 fn parse_cte_in_data_modification_statements() {
     match verified_stmt("WITH x AS (SELECT 1) UPDATE t SET bar = (SELECT * FROM x)") {
         Statement::Query(query) => {
-            assert_eq!(query.with.unwrap().to_string(), "WITH x AS (SELECT 1)");
-            assert!(matches!(*query.body, SetExpr::Update(_)));
+            assert_eq!(
+                query.with.as_ref().unwrap().to_string(),
+                "WITH x AS (SELECT 1)"
+            );
+            assert!(matches!(query.body.as_ref(), SetExpr::Update(_)));
         }
         other => panic!("Expected: UPDATE, got: {other:?}"),
     }
 
     match verified_stmt("WITH t (x) AS (SELECT 9) DELETE FROM q WHERE id IN (SELECT x FROM t)") {
         Statement::Query(query) => {
-            assert_eq!(query.with.unwrap().to_string(), "WITH t (x) AS (SELECT 9)");
-            assert!(matches!(*query.body, SetExpr::Delete(_)));
+            assert_eq!(
+                query.with.as_ref().unwrap().to_string(),
+                "WITH t (x) AS (SELECT 9)"
+            );
+            assert!(matches!(query.body.as_ref(), SetExpr::Delete(_)));
         }
         other => panic!("Expected: DELETE, got: {other:?}"),
     }
 
     match verified_stmt("WITH x AS (SELECT 42) INSERT INTO t SELECT foo FROM x") {
         Statement::Query(query) => {
-            assert_eq!(query.with.unwrap().to_string(), "WITH x AS (SELECT 42)");
-            assert!(matches!(*query.body, SetExpr::Insert(_)));
+            assert_eq!(
+                query.with.as_ref().unwrap().to_string(),
+                "WITH x AS (SELECT 42)"
+            );
+            assert!(matches!(query.body.as_ref(), SetExpr::Insert(_)));
         }
         other => panic!("Expected: INSERT, got: {other:?}"),
     }
@@ -7614,9 +7664,9 @@ fn parse_trim() {
 
     //keep standard TRIM syntax failing with multiple args
     let all_expected_snowflake = TestedDialects::new(vec![
-        Box::new(PostgreSqlDialect {}),
-        Box::new(MsSqlDialect {}),
-        Box::new(MySqlDialect {}),
+        std::boxed::Box::new(PostgreSqlDialect {}),
+        std::boxed::Box::new(MsSqlDialect {}),
+        std::boxed::Box::new(MySqlDialect {}),
     ]);
 
     assert_eq!(
@@ -7637,7 +7687,7 @@ fn parse_exists_subquery() {
             negated: false,
             subquery: Box::new(expected_inner.clone()),
         },
-        select.selection.unwrap(),
+        Box::into_owned(select.selection.unwrap()),
     );
 
     let sql = "SELECT * FROM t WHERE NOT EXISTS (SELECT 1)";
@@ -7647,7 +7697,7 @@ fn parse_exists_subquery() {
             negated: true,
             subquery: Box::new(expected_inner),
         },
-        select.selection.unwrap(),
+        Box::into_owned(select.selection.unwrap()),
     );
 
     verified_stmt("SELECT * FROM t WHERE EXISTS (WITH u AS (SELECT 1) SELECT * FROM u)");
@@ -8102,21 +8152,24 @@ fn parse_offset() {
         limit_by: vec![],
     });
     let ast = dialects.verified_query("SELECT foo FROM bar OFFSET 2 ROWS");
-    assert_eq!(&ast.limit_clause, expected_limit_clause);
+    assert_eq!(ast.limit_clause.as_deref(), expected_limit_clause.as_ref());
     let ast = dialects.verified_query("SELECT foo FROM bar WHERE foo = 4 OFFSET 2 ROWS");
-    assert_eq!(&ast.limit_clause, expected_limit_clause);
+    assert_eq!(ast.limit_clause.as_deref(), expected_limit_clause.as_ref());
     let ast = dialects.verified_query("SELECT foo FROM bar ORDER BY baz OFFSET 2 ROWS");
-    assert_eq!(&ast.limit_clause, expected_limit_clause);
+    assert_eq!(ast.limit_clause.as_deref(), expected_limit_clause.as_ref());
     let ast =
         dialects.verified_query("SELECT foo FROM bar WHERE foo = 4 ORDER BY baz OFFSET 2 ROWS");
-    assert_eq!(&ast.limit_clause, expected_limit_clause);
+    assert_eq!(ast.limit_clause.as_deref(), expected_limit_clause.as_ref());
     let ast =
         dialects.verified_query("SELECT foo FROM (SELECT * FROM bar OFFSET 2 ROWS) OFFSET 2 ROWS");
-    assert_eq!(&ast.limit_clause, expected_limit_clause);
-    match *ast.body {
-        SetExpr::Select(s) => match only(s.from).relation {
+    assert_eq!(ast.limit_clause.as_deref(), expected_limit_clause.as_ref());
+    match ast.body.as_ref() {
+        SetExpr::Select(s) => match only(s.from.clone()).relation {
             TableFactor::Derived { subquery, .. } => {
-                assert_eq!(&subquery.limit_clause, expected_limit_clause);
+                assert_eq!(
+                    subquery.limit_clause.as_deref(),
+                    expected_limit_clause.as_ref()
+                );
             }
             _ => panic!("Test broke"),
         },
@@ -8131,7 +8184,10 @@ fn parse_offset() {
         limit_by: vec![],
     };
     let ast = dialects.verified_query("SELECT 'foo' OFFSET 0 ROWS");
-    assert_eq!(ast.limit_clause, Some(expected_limit_clause));
+    assert_eq!(
+        ast.limit_clause.map(Box::into_owned),
+        Some(expected_limit_clause)
+    );
     let expected_limit_clause = LimitClause::LimitOffset {
         limit: None,
         offset: Some(Offset {
@@ -8141,7 +8197,10 @@ fn parse_offset() {
         limit_by: vec![],
     };
     let ast = dialects.verified_query("SELECT 'foo' OFFSET 1 ROW");
-    assert_eq!(ast.limit_clause, Some(expected_limit_clause));
+    assert_eq!(
+        ast.limit_clause.map(Box::into_owned),
+        Some(expected_limit_clause)
+    );
     let expected_limit_clause = LimitClause::LimitOffset {
         limit: None,
         offset: Some(Offset {
@@ -8151,7 +8210,10 @@ fn parse_offset() {
         limit_by: vec![],
     };
     let ast = dialects.verified_query("SELECT 'foo' OFFSET 2");
-    assert_eq!(ast.limit_clause, Some(expected_limit_clause));
+    assert_eq!(
+        ast.limit_clause.map(Box::into_owned),
+        Some(expected_limit_clause)
+    );
 }
 
 #[test]
@@ -8162,27 +8224,30 @@ fn parse_fetch() {
         quantity: Some(Expr::value(number("2"))),
     });
     let ast = verified_query("SELECT foo FROM bar FETCH FIRST 2 ROWS ONLY");
-    assert_eq!(ast.fetch, fetch_first_two_rows_only);
+    assert_eq!(ast.fetch.as_deref(), fetch_first_two_rows_only.as_ref());
     let ast = verified_query("SELECT 'foo' FETCH FIRST 2 ROWS ONLY");
-    assert_eq!(ast.fetch, fetch_first_two_rows_only);
+    assert_eq!(ast.fetch.as_deref(), fetch_first_two_rows_only.as_ref());
     let ast = verified_query("SELECT foo FROM bar FETCH FIRST ROWS ONLY");
     assert_eq!(
-        ast.fetch,
-        Some(Fetch {
-            with_ties: false,
-            percent: false,
-            quantity: None,
-        })
+        ast.fetch.map(Box::into_owned),
+        Some(
+            Fetch {
+                with_ties: false,
+                percent: false,
+                quantity: None,
+            }
+            .into()
+        )
     );
     let ast = verified_query("SELECT foo FROM bar WHERE foo = 4 FETCH FIRST 2 ROWS ONLY");
-    assert_eq!(ast.fetch, fetch_first_two_rows_only);
+    assert_eq!(ast.fetch.as_deref(), fetch_first_two_rows_only.as_ref());
     let ast = verified_query("SELECT foo FROM bar ORDER BY baz FETCH FIRST 2 ROWS ONLY");
-    assert_eq!(ast.fetch, fetch_first_two_rows_only);
+    assert_eq!(ast.fetch.as_deref(), fetch_first_two_rows_only.as_ref());
     let ast = verified_query(
         "SELECT foo FROM bar WHERE foo = 4 ORDER BY baz FETCH FIRST 2 ROWS WITH TIES",
     );
     assert_eq!(
-        ast.fetch,
+        ast.fetch.map(Box::into_owned),
         Some(Fetch {
             with_ties: true,
             percent: false,
@@ -8191,7 +8256,7 @@ fn parse_fetch() {
     );
     let ast = verified_query("SELECT foo FROM bar FETCH FIRST 50 PERCENT ROWS ONLY");
     assert_eq!(
-        ast.fetch,
+        ast.fetch.map(Box::into_owned),
         Some(Fetch {
             with_ties: false,
             percent: true,
@@ -8209,16 +8274,19 @@ fn parse_fetch() {
         }),
         limit_by: vec![],
     });
-    assert_eq!(ast.limit_clause, expected_limit_clause);
-    assert_eq!(ast.fetch, fetch_first_two_rows_only);
+    assert_eq!(ast.limit_clause.as_deref(), expected_limit_clause.as_ref());
+    assert_eq!(ast.fetch.as_deref(), fetch_first_two_rows_only.as_ref());
     let ast = verified_query(
         "SELECT foo FROM (SELECT * FROM bar FETCH FIRST 2 ROWS ONLY) FETCH FIRST 2 ROWS ONLY",
     );
-    assert_eq!(ast.fetch, fetch_first_two_rows_only);
-    match *ast.body {
-        SetExpr::Select(s) => match only(s.from).relation {
+    assert_eq!(ast.fetch.as_deref(), fetch_first_two_rows_only.as_ref());
+    match ast.body.as_ref() {
+        SetExpr::Select(s) => match only(s.from.clone()).relation {
             TableFactor::Derived { subquery, .. } => {
-                assert_eq!(subquery.fetch, fetch_first_two_rows_only);
+                assert_eq!(
+                    subquery.fetch.as_deref(),
+                    fetch_first_two_rows_only.as_ref()
+                );
             }
             _ => panic!("Test broke"),
         },
@@ -8233,13 +8301,19 @@ fn parse_fetch() {
         }),
         limit_by: vec![],
     });
-    assert_eq!(&ast.limit_clause, expected_limit_clause);
-    assert_eq!(ast.fetch, fetch_first_two_rows_only);
-    match *ast.body {
-        SetExpr::Select(s) => match only(s.from).relation {
+    assert_eq!(ast.limit_clause.as_deref(), expected_limit_clause.as_ref());
+    assert_eq!(ast.fetch.as_deref(), fetch_first_two_rows_only.as_ref());
+    match ast.body.as_ref() {
+        SetExpr::Select(s) => match only(s.from.clone()).relation {
             TableFactor::Derived { subquery, .. } => {
-                assert_eq!(&subquery.limit_clause, expected_limit_clause);
-                assert_eq!(subquery.fetch, fetch_first_two_rows_only);
+                assert_eq!(
+                    subquery.limit_clause.as_deref(),
+                    expected_limit_clause.as_ref()
+                );
+                assert_eq!(
+                    subquery.fetch.as_deref(),
+                    fetch_first_two_rows_only.as_ref()
+                );
             }
             _ => panic!("Test broke"),
         },
@@ -8285,9 +8359,9 @@ fn lateral_derived() {
         let join = &from.joins[0];
         assert_eq!(
             join.join_operator,
-            JoinOperator::Left(JoinConstraint::On(Expr::Value(
-                (test_utils::number("1")).with_empty_span()
-            )))
+            JoinOperator::Left(JoinConstraint::On(
+                Expr::Value((test_utils::number("1")).with_empty_span()).into()
+            ))
         );
         if let TableFactor::Derived {
             lateral,
@@ -9685,20 +9759,23 @@ fn test_lock_nonblock() {
 #[test]
 fn test_placeholder() {
     let dialects = TestedDialects::new(vec![
-        Box::new(PostgreSqlDialect {}),
-        Box::new(MsSqlDialect {}),
+        std::boxed::Box::new(PostgreSqlDialect {}),
+        std::boxed::Box::new(MsSqlDialect {}),
     ]);
     let sql = "SELECT * FROM student WHERE id = $Id1";
     let ast = dialects.verified_only_select(sql);
     assert_eq!(
         ast.selection,
-        Some(Expr::BinaryOp {
-            left: Box::new(Expr::Identifier(Ident::new("id"))),
-            op: BinaryOperator::Eq,
-            right: Box::new(Expr::Value(
-                (Value::Placeholder("$Id1".into())).with_empty_span()
-            )),
-        })
+        Some(
+            Expr::BinaryOp {
+                left: Box::new(Expr::Identifier(Ident::new("id"))),
+                op: BinaryOperator::Eq,
+                right: Box::new(Expr::Value(
+                    (Value::Placeholder("$Id1".into())).with_empty_span()
+                )),
+            }
+            .into()
+        )
     );
 
     let ast = dialects.verified_query("SELECT * FROM student LIMIT $1 OFFSET $2");
@@ -9712,24 +9789,30 @@ fn test_placeholder() {
         }),
         limit_by: vec![],
     };
-    assert_eq!(ast.limit_clause, Some(expected_limit_clause));
+    assert_eq!(
+        ast.limit_clause.map(Box::into_owned),
+        Some(expected_limit_clause)
+    );
 
     let dialects = TestedDialects::new(vec![
         // Note: `?` is for jsonb operators in PostgreSqlDialect
-        // Box::new(PostgreSqlDialect {}),
-        Box::new(MsSqlDialect {}),
+        // std::boxed::Box::new(PostgreSqlDialect {}),
+        std::boxed::Box::new(MsSqlDialect {}),
     ]);
     let sql = "SELECT * FROM student WHERE id = ?";
     let ast = dialects.verified_only_select(sql);
     assert_eq!(
         ast.selection,
-        Some(Expr::BinaryOp {
-            left: Box::new(Expr::Identifier(Ident::new("id"))),
-            op: BinaryOperator::Eq,
-            right: Box::new(Expr::Value(
-                (Value::Placeholder("?".into())).with_empty_span()
-            )),
-        })
+        Some(
+            Expr::BinaryOp {
+                left: Box::new(Expr::Identifier(Ident::new("id"))),
+                op: BinaryOperator::Eq,
+                right: Box::new(Expr::Value(
+                    (Value::Placeholder("?".into())).with_empty_span()
+                )),
+            }
+            .into()
+        )
     );
 
     let sql = "SELECT $fromage_français, :x, ?123";
@@ -9867,7 +9950,7 @@ fn parse_offset_and_limit() {
         limit_by: vec![],
     });
     let ast = verified_query(sql);
-    assert_eq!(ast.limit_clause, expected_limit_clause);
+    assert_eq!(ast.limit_clause.map(Box::into_owned), expected_limit_clause);
 
     // different order is OK
     one_statement_parses_to("SELECT foo FROM bar OFFSET 2 LIMIT 1", sql);
@@ -9895,7 +9978,10 @@ fn parse_offset_and_limit() {
         }),
         limit_by: vec![],
     };
-    assert_eq!(ast.limit_clause, Some(expected_limit_clause),);
+    assert_eq!(
+        ast.limit_clause.map(Box::into_owned),
+        Some(expected_limit_clause),
+    );
 
     // OFFSET without LIMIT
     verified_stmt("SELECT foo FROM bar OFFSET 2");
@@ -10626,7 +10712,7 @@ fn parse_escaped_string_with_unescape() {
         // do not roundtrip through Display -> parse.
         let stmts = dialects.parse_sql_statements(sql).unwrap();
         match &stmts[0] {
-            Statement::Query(query) => match &*query.body {
+            Statement::Query(query) => match query.body.as_ref() {
                 SetExpr::Select(value) => {
                     let expr = expr_from_projection(only(&value.projection));
                     assert_eq!(
@@ -10673,13 +10759,13 @@ fn parse_escaped_string_with_unescape() {
 fn parse_escaped_string_without_unescape() {
     fn assert_mysql_query_value(sql: &str, quoted: &str) {
         let stmt = TestedDialects::new_with_options(
-            vec![Box::new(MySqlDialect {})],
+            vec![std::boxed::Box::new(MySqlDialect {})],
             ParserOptions::new().with_unescape(false),
         )
         .one_statement_parses_to(sql, "");
 
         match stmt {
-            Statement::Query(query) => match *query.body {
+            Statement::Query(query) => match query.body.as_ref() {
                 SetExpr::Select(value) => {
                     let expr = expr_from_projection(only(&value.projection));
                     assert_eq!(
@@ -11266,15 +11352,15 @@ fn make_where_clause(num: usize) -> String {
 #[test]
 fn parse_non_latin_identifiers() {
     let supported_dialects = TestedDialects::new(vec![
-        Box::new(PostgreSqlDialect {}),
-        Box::new(MsSqlDialect {}),
-        Box::new(MySqlDialect {}),
+        std::boxed::Box::new(PostgreSqlDialect {}),
+        std::boxed::Box::new(MsSqlDialect {}),
+        std::boxed::Box::new(MySqlDialect {}),
     ]);
     supported_dialects.verified_stmt("SELECT a.説明 FROM test.public.inter01 AS a");
     supported_dialects.verified_stmt("SELECT a.説明 FROM inter01 AS a, inter01_transactions AS b WHERE a.説明 = b.取引 GROUP BY a.説明");
     supported_dialects.verified_stmt("SELECT 説明, hühnervögel, garçon, Москва, 東京 FROM inter01");
 
-    let supported_dialects = TestedDialects::new(vec![Box::new(MsSqlDialect {})]);
+    let supported_dialects = TestedDialects::new(vec![std::boxed::Box::new(MsSqlDialect {})]);
     assert!(supported_dialects
         .parse_sql_statements("SELECT 💝 FROM table1")
         .is_err());
@@ -11928,7 +12014,7 @@ fn test_release_savepoint() {
 
 #[test]
 fn test_comment_hash_syntax() {
-    let dialects = TestedDialects::new(vec![Box::new(MySqlDialect {})]);
+    let dialects = TestedDialects::new(vec![std::boxed::Box::new(MySqlDialect {})]);
     let sql = r#"
     # comment
     SELECT a, b, c # , d, e
@@ -12007,22 +12093,25 @@ fn parse_connect_by() {
         group_by: GroupByExpr::Expressions(vec![], vec![]),
         having: None,
         named_window: vec![],
-        connect_by: Some(ConnectBy {
-            condition: Expr::BinaryOp {
-                left: Box::new(Expr::Identifier(Ident::new("title"))),
-                op: BinaryOperator::Eq,
-                right: Box::new(Expr::Value(
-                    Value::SingleQuotedString("president".to_owned()).with_empty_span(),
-                )),
-            },
-            relationships: vec![Expr::BinaryOp {
-                left: Box::new(Expr::Identifier(Ident::new("manager_id"))),
-                op: BinaryOperator::Eq,
-                right: Box::new(Expr::Prior(Box::new(Expr::Identifier(Ident::new(
-                    "employee_id",
-                ))))),
-            }],
-        }),
+        connect_by: Some(
+            ConnectBy {
+                condition: Expr::BinaryOp {
+                    left: Box::new(Expr::Identifier(Ident::new("title"))),
+                    op: BinaryOperator::Eq,
+                    right: Box::new(Expr::Value(
+                        Value::SingleQuotedString("president".to_owned()).with_empty_span(),
+                    )),
+                },
+                relationships: vec![Expr::BinaryOp {
+                    left: Box::new(Expr::Identifier(Ident::new("manager_id"))),
+                    op: BinaryOperator::Eq,
+                    right: Box::new(Expr::Prior(Box::new(Expr::Identifier(Ident::new(
+                        "employee_id",
+                    ))))),
+                }],
+            }
+            .into(),
+        ),
         flavor: SelectFlavor::Standard,
     };
 
@@ -12076,30 +12165,36 @@ fn parse_connect_by() {
                 joins: vec![],
             }],
             into: None,
-            selection: Some(Expr::BinaryOp {
-                left: Box::new(Expr::Identifier(Ident::new("employee_id"))),
-                op: BinaryOperator::NotEq,
-                right: Box::new(Expr::value(number("42"))),
-            }),
+            selection: Some(
+                Expr::BinaryOp {
+                    left: Box::new(Expr::Identifier(Ident::new("employee_id"))),
+                    op: BinaryOperator::NotEq,
+                    right: Box::new(Expr::value(number("42"))),
+                }
+                .into()
+            ),
             group_by: GroupByExpr::Expressions(vec![], vec![]),
             having: None,
             named_window: vec![],
-            connect_by: Some(ConnectBy {
-                condition: Expr::BinaryOp {
-                    left: Box::new(Expr::Identifier(Ident::new("title"))),
-                    op: BinaryOperator::Eq,
-                    right: Box::new(Expr::Value(
-                        (Value::SingleQuotedString("president".to_owned(),)).with_empty_span()
-                    )),
-                },
-                relationships: vec![Expr::BinaryOp {
-                    left: Box::new(Expr::Identifier(Ident::new("manager_id"))),
-                    op: BinaryOperator::Eq,
-                    right: Box::new(Expr::Prior(Box::new(Expr::Identifier(Ident::new(
-                        "employee_id",
-                    ))))),
-                }],
-            }),
+            connect_by: Some(
+                ConnectBy {
+                    condition: Expr::BinaryOp {
+                        left: Box::new(Expr::Identifier(Ident::new("title"))),
+                        op: BinaryOperator::Eq,
+                        right: Box::new(Expr::Value(
+                            (Value::SingleQuotedString("president".to_owned(),)).with_empty_span()
+                        )),
+                    },
+                    relationships: vec![Expr::BinaryOp {
+                        left: Box::new(Expr::Identifier(Ident::new("manager_id"))),
+                        op: BinaryOperator::Eq,
+                        right: Box::new(Expr::Prior(Box::new(Expr::Identifier(Ident::new(
+                            "employee_id",
+                        ))))),
+                    }],
+                }
+                .into()
+            ),
             flavor: SelectFlavor::Standard,
         }
     );
@@ -12132,7 +12227,8 @@ fn test_selective_aggregation() {
     // Only PostgreSQL supports FILTER during aggregation.
     // PG canonicalizes unquoted identifiers to lowercase.
     let testing_dialects = all_dialects_where(|d| d.supports_filter_during_aggregation());
-    let expected_dialects: Vec<Box<dyn Dialect>> = vec![Box::new(PostgreSqlDialect {})];
+    let expected_dialects: Vec<std::boxed::Box<dyn Dialect>> =
+        vec![std::boxed::Box::new(PostgreSqlDialect {})];
     assert_eq!(testing_dialects.dialects.len(), expected_dialects.len());
     expected_dialects
         .into_iter()
@@ -12268,7 +12364,7 @@ fn test_xmltable() {
 
 #[test]
 fn parse_sized_list() {
-    let dialects = TestedDialects::new(vec![Box::new(PostgreSqlDialect {})]);
+    let dialects = TestedDialects::new(vec![std::boxed::Box::new(PostgreSqlDialect {})]);
     let sql = r#"CREATE TABLE embeddings (data FLOAT[1536])"#;
     dialects.verified_stmt(sql);
     let sql = r#"CREATE TABLE embeddings (data FLOAT[1536][3])"#;
@@ -12279,7 +12375,7 @@ fn parse_sized_list() {
 
 #[test]
 fn insert_into_with_parentheses() {
-    let dialects = TestedDialects::new(vec![Box::new(PostgreSqlDialect {})]);
+    let dialects = TestedDialects::new(vec![std::boxed::Box::new(PostgreSqlDialect {})]);
     dialects.verified_stmt("INSERT INTO t1 (id, name) (SELECT t2.id, t2.name FROM t2)");
     dialects.verified_stmt("INSERT INTO t1 (SELECT t2.id, t2.name FROM t2)");
     dialects.verified_stmt(r#"INSERT INTO t1 ("select", name) (SELECT t2.name FROM t2)"#);
@@ -12305,7 +12401,7 @@ fn parse_odbc_scalar_function() {
 
     // Testing invalid SQL with any-one dialect is intentional.
     // Depending on dialect flags the error message may be different.
-    let pg = TestedDialects::new(vec![Box::new(PostgreSqlDialect {})]);
+    let pg = TestedDialects::new(vec![std::boxed::Box::new(PostgreSqlDialect {})]);
     assert_eq!(
         pg.parse_sql_statements("SELECT {fn2 my_func()}")
             .unwrap_err()
@@ -12471,7 +12567,7 @@ fn parse_explain_with_option_list() {
     // Only PostgreSQL supports EXPLAIN with utility options.
     // PG canonicalizes unquoted identifiers to lowercase.
     run_explain_analyze(
-        TestedDialects::new(vec![Box::new(PostgreSqlDialect {})]),
+        TestedDialects::new(vec![std::boxed::Box::new(PostgreSqlDialect {})]),
         "EXPLAIN (analyze false, verbose true) SELECT sqrt(id) FROM foo",
         false,
         false,
@@ -12489,7 +12585,7 @@ fn parse_explain_with_option_list() {
     );
 
     run_explain_analyze(
-        TestedDialects::new(vec![Box::new(PostgreSqlDialect {})]),
+        TestedDialects::new(vec![std::boxed::Box::new(PostgreSqlDialect {})]),
         "EXPLAIN (analyze on, verbose off) SELECT sqrt(id) FROM foo",
         false,
         false,
@@ -12507,7 +12603,7 @@ fn parse_explain_with_option_list() {
     );
 
     run_explain_analyze(
-        TestedDialects::new(vec![Box::new(PostgreSqlDialect {})]),
+        TestedDialects::new(vec![std::boxed::Box::new(PostgreSqlDialect {})]),
         r#"EXPLAIN (format1 text, format2 'JSON', format3 "XML", format4 yaml) SELECT sqrt(id) FROM foo"#,
         false,
         false,
@@ -12535,7 +12631,7 @@ fn parse_explain_with_option_list() {
     );
 
     run_explain_analyze(
-        TestedDialects::new(vec![Box::new(PostgreSqlDialect {})]),
+        TestedDialects::new(vec![std::boxed::Box::new(PostgreSqlDialect {})]),
         r#"EXPLAIN (num1 10, num2 +10.1, num3 -10.2) SELECT sqrt(id) FROM foo"#,
         false,
         false,
@@ -12596,7 +12692,7 @@ fn parse_explain_with_option_list() {
         },
     ];
     run_explain_analyze(
-        TestedDialects::new(vec![Box::new(PostgreSqlDialect {})]),
+        TestedDialects::new(vec![std::boxed::Box::new(PostgreSqlDialect {})]),
         "EXPLAIN (analyze, verbose true, wal off, format yaml, user_def_num -100.1) SELECT sqrt(id) FROM foo",
         false,
         false,
@@ -13349,7 +13445,7 @@ fn parse_composite_access_expr() {
 
     assert_eq!(stmt.projection[0], SelectItem::UnnamedExpr(expr.clone()));
     assert!(matches!(
-        stmt.selection.unwrap(),
+        Box::into_owned(stmt.selection.unwrap()),
         Expr::IsNotNull { expr: inner, .. } if *inner == expr
     ));
 
@@ -14146,7 +14242,7 @@ fn test_geometric_binary_operators() {
 #[test]
 fn parse_array_type_def_with_brackets() {
     // Only PostgreSQL supports this; PG canonicalizes unquoted identifiers to lowercase.
-    let dialects = TestedDialects::new(vec![Box::new(PostgreSqlDialect {})]);
+    let dialects = TestedDialects::new(vec![std::boxed::Box::new(PostgreSqlDialect {})]);
     dialects.verified_stmt("SELECT x::INT[]");
     dialects.verified_stmt("SELECT string_to_array('1,2,3', ',')::INT[3]");
 }
@@ -14542,8 +14638,8 @@ SELECT * FROM tbl2
 fn test_identifier_unicode_support() {
     let sql = r#"SELECT phoneǤЖשचᎯ⻩☯♜🦄⚛🀄ᚠ⌛🌀 AS tbl FROM customers"#;
     let dialects = TestedDialects::new(vec![
-        Box::new(MySqlDialect {}),
-        Box::new(PostgreSqlDialect {}),
+        std::boxed::Box::new(MySqlDialect {}),
+        std::boxed::Box::new(PostgreSqlDialect {}),
     ]);
     let _ = dialects.verified_stmt(sql);
 }
@@ -14552,8 +14648,8 @@ fn test_identifier_unicode_support() {
 fn test_identifier_unicode_start() {
     let sql = r#"SELECT 💝phone AS 💝 FROM customers"#;
     let dialects = TestedDialects::new(vec![
-        Box::new(MySqlDialect {}),
-        Box::new(PostgreSqlDialect {}),
+        std::boxed::Box::new(MySqlDialect {}),
+        std::boxed::Box::new(PostgreSqlDialect {}),
     ]);
     let _ = dialects.verified_stmt(sql);
 }
@@ -15128,7 +15224,7 @@ fn test_parse_set_session_authorization() {
 #[test]
 fn parse_create_function_psm_begin_end() {
     // SQL:2016 PSM BEGIN...END block without AS prefix
-    let dialects = TestedDialects::new(vec![Box::new(PostgreSqlDialect {})]);
+    let dialects = TestedDialects::new(vec![std::boxed::Box::new(PostgreSqlDialect {})]);
 
     // Simple function with BEGIN...END block (no AS prefix, SQL:2016 style)
     // Note: The Display impl normalizes to "AS BEGIN...END" for compatibility with MSSQL

@@ -26,6 +26,7 @@ use helpers::attached_token::AttachedToken;
 use sqlparser::tokenizer::Span;
 use test_utils::*;
 
+use sqlparser::ast::AstBox as Box;
 use sqlparser::ast::*;
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::ParserError;
@@ -1937,7 +1938,7 @@ fn parse_prepare() {
                 Expr::Identifier("a2".into()),
                 Expr::Identifier("a3".into()),
             ]];
-            match &*source.body {
+            match source.body.as_ref() {
                 SetExpr::Values(Values { rows, .. }) => {
                     assert_eq!(rows.as_slice(), &expected_values)
                 }
@@ -2409,17 +2410,20 @@ fn parse_pg_search_binary_ops() {
         let select = pg().verified_only_select(&sql);
         assert_eq!(
             select.selection,
-            Some(Expr::BinaryOp {
-                left: Box::new(Expr::Identifier(Ident {
-                    value: "body".into(),
-                    quote_style: None,
-                    span: Span::empty(),
-                })),
-                op: expected_operator,
-                right: Box::new(Expr::Value(
-                    (Value::SingleQuotedString("alpha beta".into())).with_empty_span()
-                ))
-            })
+            Some(
+                Expr::BinaryOp {
+                    left: Box::new(Expr::Identifier(Ident {
+                        value: "body".into(),
+                        quote_style: None,
+                        span: Span::empty(),
+                    })),
+                    op: expected_operator,
+                    right: Box::new(Expr::Value(
+                        (Value::SingleQuotedString("alpha beta".into())).with_empty_span()
+                    ))
+                }
+                .into()
+            )
         );
         assert_eq!(
             select.to_string(),
@@ -3608,7 +3612,7 @@ fn test_json() {
                 (Value::SingleQuotedString("{\"a\": 1}".to_string())).with_empty_span()
             )),
         },
-        select.selection.unwrap(),
+        Box::into_owned(select.selection.unwrap()),
     );
 
     let sql = "SELECT info FROM orders WHERE '{\"a\": 1}' <@ info";
@@ -3621,7 +3625,7 @@ fn test_json() {
             op: BinaryOperator::ArrowAt,
             right: Box::new(Expr::Identifier(Ident::new("info"))),
         },
-        select.selection.unwrap(),
+        Box::into_owned(select.selection.unwrap()),
     );
 
     let sql = "SELECT info #- ARRAY['a', 'b'] FROM orders";
@@ -3651,7 +3655,7 @@ fn test_json() {
                 (Value::SingleQuotedString("$.a".to_string())).with_empty_span()
             ),),
         },
-        select.selection.unwrap(),
+        Box::into_owned(select.selection.unwrap()),
     );
 
     let sql = "SELECT info FROM orders WHERE info @@ '$.a'";
@@ -3664,7 +3668,7 @@ fn test_json() {
                 (Value::SingleQuotedString("$.a".to_string())).with_empty_span()
             ),),
         },
-        select.selection.unwrap(),
+        Box::into_owned(select.selection.unwrap()),
     );
 
     let sql = r#"SELECT info FROM orders WHERE info ? 'b'"#;
@@ -3677,7 +3681,7 @@ fn test_json() {
                 (Value::SingleQuotedString("b".to_string())).with_empty_span()
             )),
         },
-        select.selection.unwrap(),
+        Box::into_owned(select.selection.unwrap()),
     );
 
     let sql = r#"SELECT info FROM orders WHERE info ?& ARRAY['b', 'c']"#;
@@ -3694,7 +3698,7 @@ fn test_json() {
                 named: true
             }))
         },
-        select.selection.unwrap(),
+        Box::into_owned(select.selection.unwrap()),
     );
 
     let sql = r#"SELECT info FROM orders WHERE info ?| ARRAY['b', 'c']"#;
@@ -3711,7 +3715,7 @@ fn test_json() {
                 named: true
             }))
         },
-        select.selection.unwrap(),
+        Box::into_owned(select.selection.unwrap()),
     );
 }
 
@@ -3959,11 +3963,11 @@ fn parse_on_commit() {
 }
 
 fn pg() -> TestedDialects {
-    TestedDialects::new(vec![Box::new(PostgreSqlDialect {})])
+    TestedDialects::new(vec![std::boxed::Box::new(PostgreSqlDialect {})])
 }
 
 fn pg_and_generic() -> TestedDialects {
-    TestedDialects::new(vec![Box::new(PostgreSqlDialect {})])
+    TestedDialects::new(vec![std::boxed::Box::new(PostgreSqlDialect {})])
 }
 
 #[test]
@@ -4202,21 +4206,24 @@ fn parse_custom_operator() {
     let select = pg().verified_only_select(sql);
     assert_eq!(
         select.selection,
-        Some(Expr::BinaryOp {
-            left: Box::new(Expr::Identifier(Ident {
-                value: "relname".into(),
-                quote_style: None,
-                span: Span::empty(),
-            })),
-            op: BinaryOperator::PGCustomBinaryOperator(vec![
-                "database".into(),
-                "pg_catalog".into(),
-                "~".into()
-            ]),
-            right: Box::new(Expr::Value(
-                (Value::SingleQuotedString("^(table)$".into())).with_empty_span()
-            ))
-        })
+        Some(
+            Expr::BinaryOp {
+                left: Box::new(Expr::Identifier(Ident {
+                    value: "relname".into(),
+                    quote_style: None,
+                    span: Span::empty(),
+                })),
+                op: BinaryOperator::PGCustomBinaryOperator(vec![
+                    "database".into(),
+                    "pg_catalog".into(),
+                    "~".into()
+                ]),
+                right: Box::new(Expr::Value(
+                    (Value::SingleQuotedString("^(table)$".into())).with_empty_span()
+                ))
+            }
+            .into()
+        )
     );
 
     // operator with a schema
@@ -4224,17 +4231,20 @@ fn parse_custom_operator() {
     let select = pg().verified_only_select(sql);
     assert_eq!(
         select.selection,
-        Some(Expr::BinaryOp {
-            left: Box::new(Expr::Identifier(Ident {
-                value: "relname".into(),
-                quote_style: None,
-                span: Span::empty(),
-            })),
-            op: BinaryOperator::PGCustomBinaryOperator(vec!["pg_catalog".into(), "~".into()]),
-            right: Box::new(Expr::Value(
-                (Value::SingleQuotedString("^(table)$".into())).with_empty_span()
-            ))
-        })
+        Some(
+            Expr::BinaryOp {
+                left: Box::new(Expr::Identifier(Ident {
+                    value: "relname".into(),
+                    quote_style: None,
+                    span: Span::empty(),
+                })),
+                op: BinaryOperator::PGCustomBinaryOperator(vec!["pg_catalog".into(), "~".into()]),
+                right: Box::new(Expr::Value(
+                    (Value::SingleQuotedString("^(table)$".into())).with_empty_span()
+                ))
+            }
+            .into()
+        )
     );
 
     // custom operator without a schema
@@ -4242,17 +4252,20 @@ fn parse_custom_operator() {
     let select = pg().verified_only_select(sql);
     assert_eq!(
         select.selection,
-        Some(Expr::BinaryOp {
-            left: Box::new(Expr::Identifier(Ident {
-                value: "relname".into(),
-                quote_style: None,
-                span: Span::empty(),
-            })),
-            op: BinaryOperator::PGCustomBinaryOperator(vec!["~".into()]),
-            right: Box::new(Expr::Value(
-                (Value::SingleQuotedString("^(table)$".into())).with_empty_span()
-            ))
-        })
+        Some(
+            Expr::BinaryOp {
+                left: Box::new(Expr::Identifier(Ident {
+                    value: "relname".into(),
+                    quote_style: None,
+                    span: Span::empty(),
+                })),
+                op: BinaryOperator::PGCustomBinaryOperator(vec!["~".into()]),
+                right: Box::new(Expr::Value(
+                    (Value::SingleQuotedString("^(table)$".into())).with_empty_span()
+                ))
+            }
+            .into()
+        )
     );
 }
 
@@ -5069,7 +5082,7 @@ fn parse_dollar_quoted_string() {
     let stmt = pg().parse_sql_statements(sql).unwrap();
 
     let projection = match stmt.first().unwrap() {
-        Statement::Query(query) => match &*query.body {
+        Statement::Query(query) => match query.body.as_ref() {
             SetExpr::Select(select) => &select.projection,
             _ => unreachable!(),
         },
@@ -5391,11 +5404,14 @@ fn parse_join_constraint_unnest_alias() {
                 with_ordinality: false,
             },
             global: false,
-            join_operator: JoinOperator::Join(JoinConstraint::On(Expr::BinaryOp {
-                left: Box::new(Expr::Identifier("c1".into())),
-                op: BinaryOperator::Eq,
-                right: Box::new(Expr::Identifier("c2".into())),
-            })),
+            join_operator: JoinOperator::Join(JoinConstraint::On(
+                Expr::BinaryOp {
+                    left: Box::new(Expr::Identifier("c1".into())),
+                    op: BinaryOperator::Eq,
+                    right: Box::new(Expr::Identifier("c2".into())),
+                }
+                .into()
+            )),
         }]
     );
 }
@@ -6465,7 +6481,7 @@ fn parse_move_cursor_statement() {
 fn parse_variadic_function_args() {
     let stmt = pg().verified_stmt("SELECT concat_ws(',', VARIADIC ARRAY['a', 'b'])");
     match stmt {
-        Statement::Query(query) => match *query.body {
+        Statement::Query(query) => match query.body.as_ref() {
             SetExpr::Select(select) => match &select.projection[0] {
                 SelectItem::UnnamedExpr(Expr::Function(func)) => {
                     let FunctionArguments::List(list) = &func.args else {
@@ -6490,7 +6506,7 @@ fn parse_function_call_expr_star_projection() {
         "SELECT (pg_get_publication_tables(VARIADIC array_agg(pubname::TEXT))).* FROM pg_publication WHERE pubname IN ('p1', 'p2')",
     );
     match stmt {
-        Statement::Query(query) => match *query.body {
+        Statement::Query(query) => match query.body.as_ref() {
             SetExpr::Select(select) => match &select.projection[0] {
                 SelectItem::QualifiedWildcard(SelectItemQualifiedWildcardKind::Expr(expr), _) => {
                     let Expr::Nested(inner) = expr else {

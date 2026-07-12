@@ -17,6 +17,7 @@
 
 //! SQL Abstract Syntax Tree (AST) types for table constraints
 
+use crate::ast::Box;
 use crate::ast::{
     display_comma_separated, display_separated, ConstraintCharacteristics,
     ConstraintReferenceMatchKind, Expr, Ident, IndexColumn, IndexOption, IndexType,
@@ -26,7 +27,7 @@ use crate::tokenizer::Span;
 use core::fmt;
 
 #[cfg(not(feature = "std"))]
-use alloc::{boxed::Box, vec::Vec};
+use alloc::{string::String, vec::Vec};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};

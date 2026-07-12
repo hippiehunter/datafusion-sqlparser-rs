@@ -38,8 +38,8 @@ path = "src/lib.rs"
 
 [features]
 default = ["std", "recursive-protection"]
-std = []
-recursive-protection = ["std", "recursive"]
+std = ["dep:recursive"]
+recursive-protection = ["std"]
 # Enable JSON output in the `cli` example:
 json_example = ["serde_json", "serde"]
 visitor = ["sqlparser_derive"]

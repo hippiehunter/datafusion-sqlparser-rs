@@ -56,7 +56,7 @@ use sqlparser::ast::{
 /// Helper function to extract a function call from a SELECT statement
 fn extract_function_from_select(stmt: Statement) -> Function {
     if let Statement::Query(q) = stmt {
-        if let SetExpr::Select(sel) = *q.body {
+        if let SetExpr::Select(sel) = q.body.as_ref() {
             if let Some(SelectItem::UnnamedExpr(Expr::Function(func))) = sel.projection.first() {
                 return func.clone();
             }
@@ -211,9 +211,9 @@ fn t054_05_greatest_least_in_where() {
         "SELECT * FROM t WHERE GREATEST(a, b, c) > 10",
         |stmt: Statement| {
             if let Statement::Query(q) = stmt {
-                if let SetExpr::Select(sel) = *q.body {
-                    if let Some(Expr::BinaryOp { left, .. }) = sel.selection {
-                        if let Expr::Function(func) = *left {
+                if let SetExpr::Select(sel) = q.body.as_ref() {
+                    if let Some(Expr::BinaryOp { left, .. }) = sel.selection.as_deref() {
+                        if let Expr::Function(func) = left.as_ref() {
                             assert_eq!(func.name.to_string(), "greatest");
                             let args = get_function_args(&func);
                             assert_eq!(args.len(), 3);
@@ -230,9 +230,9 @@ fn t054_05_greatest_least_in_where() {
         "SELECT * FROM t WHERE LEAST(x, y) < threshold",
         |stmt: Statement| {
             if let Statement::Query(q) = stmt {
-                if let SetExpr::Select(sel) = *q.body {
-                    if let Some(Expr::BinaryOp { left, .. }) = sel.selection {
-                        if let Expr::Function(func) = *left {
+                if let SetExpr::Select(sel) = q.body.as_ref() {
+                    if let Some(Expr::BinaryOp { left, .. }) = sel.selection.as_deref() {
+                        if let Expr::Function(func) = left.as_ref() {
                             assert_eq!(func.name.to_string(), "least");
                             let args = get_function_args(&func);
                             assert_eq!(args.len(), 2);
@@ -419,7 +419,7 @@ fn t056_01_trim_multi_char_leading() {
     // TRIM is parsed as Expr::Trim, not a function
     verified_with_ast!("SELECT TRIM(LEADING 'abc' FROM name)", |stmt: Statement| {
         if let Statement::Query(q) = stmt {
-            if let SetExpr::Select(sel) = *q.body {
+            if let SetExpr::Select(sel) = q.body.as_ref() {
                 if let Some(SelectItem::UnnamedExpr(Expr::Trim {
                     trim_where,
                     trim_what,
@@ -442,7 +442,7 @@ fn t056_01_trim_multi_char_leading() {
         "SELECT TRIM(LEADING '0x' FROM hex_value)",
         |stmt: Statement| {
             if let Statement::Query(q) = stmt {
-                if let SetExpr::Select(sel) = *q.body {
+                if let SetExpr::Select(sel) = q.body.as_ref() {
                     if let Some(SelectItem::UnnamedExpr(Expr::Trim {
                         trim_where,
                         trim_what,
@@ -470,7 +470,7 @@ fn t056_02_trim_multi_char_trailing() {
         "SELECT TRIM(TRAILING 'xyz' FROM name)",
         |stmt: Statement| {
             if let Statement::Query(q) = stmt {
-                if let SetExpr::Select(sel) = *q.body {
+                if let SetExpr::Select(sel) = q.body.as_ref() {
                     if let Some(SelectItem::UnnamedExpr(Expr::Trim {
                         trim_where,
                         trim_what,
@@ -498,7 +498,7 @@ fn t056_03_trim_multi_char_both() {
         "SELECT TRIM(BOTH '[]' FROM bracketed_value)",
         |stmt: Statement| {
             if let Statement::Query(q) = stmt {
-                if let SetExpr::Select(sel) = *q.body {
+                if let SetExpr::Select(sel) = q.body.as_ref() {
                     if let Some(SelectItem::UnnamedExpr(Expr::Trim {
                         trim_where,
                         trim_what,
@@ -842,7 +842,7 @@ fn t626_02_any_value_group_by() {
         "SELECT category, ANY_VALUE(name), COUNT(*) FROM products GROUP BY category",
         |stmt: Statement| {
             if let Statement::Query(q) = stmt {
-                if let SetExpr::Select(sel) = *q.body {
+                if let SetExpr::Select(sel) = q.body.as_ref() {
                     assert_eq!(sel.projection.len(), 3);
                     // Second item should be ANY_VALUE
                     if let SelectItem::UnnamedExpr(Expr::Function(func)) = &sel.projection[1] {
@@ -861,7 +861,7 @@ fn t626_02_any_value_group_by() {
         "SELECT department, ANY_VALUE(description) FROM employees GROUP BY department",
         |stmt: Statement| {
             if let Statement::Query(q) = stmt {
-                if let SetExpr::Select(sel) = *q.body {
+                if let SetExpr::Select(sel) = q.body.as_ref() {
                     assert_eq!(sel.projection.len(), 2);
                     // Second item should be ANY_VALUE
                     if let SelectItem::UnnamedExpr(Expr::Function(func)) = &sel.projection[1] {
@@ -880,7 +880,7 @@ fn t626_03_any_value_complex() {
         "SELECT region, ANY_VALUE(city), ANY_VALUE(country), COUNT(*) FROM locations GROUP BY region",
         |stmt: Statement| {
             if let Statement::Query(q) = stmt {
-                if let SetExpr::Select(sel) = *q.body {
+                if let SetExpr::Select(sel) = q.body.as_ref() {
                     assert_eq!(sel.projection.len(), 4);
                     // Second and third items should be ANY_VALUE
                     if let SelectItem::UnnamedExpr(Expr::Function(func)) = &sel.projection[1] {
@@ -914,7 +914,7 @@ fn t626_04_any_value_with_having() {
         "SELECT department, ANY_VALUE(name) FROM employees GROUP BY department HAVING COUNT(*) > 5",
         |stmt: Statement| {
             if let Statement::Query(q) = stmt {
-                if let SetExpr::Select(sel) = *q.body {
+                if let SetExpr::Select(sel) = q.body.as_ref() {
                     assert_eq!(sel.projection.len(), 2);
                     // Second item should be ANY_VALUE
                     if let SelectItem::UnnamedExpr(Expr::Function(func)) = &sel.projection[1] {

@@ -18,7 +18,7 @@
 //! Test the ability for dialects to override parsing
 
 use sqlparser::{
-    ast::{AttachedToken, BinaryOperator, Expr, Statement, Value},
+    ast::{AstBox as Box, AttachedToken, BinaryOperator, Expr, Statement, Value},
     dialect::Dialect,
     keywords::Keyword,
     parser::{Parser, ParserError},
