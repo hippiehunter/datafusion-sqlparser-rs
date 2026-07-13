@@ -3347,6 +3347,10 @@ pub struct Top {
     /// MSSQL only.
     pub percent: bool,
     pub quantity: Option<TopQuantity>,
+    /// Synergy/Trifox `SKIP n`, semantically equivalent to `OFFSET n`.
+    pub skip: Option<TopQuantity>,
+    /// Preserve whether `SKIP` appeared before `TOP` for lossless formatting.
+    pub skip_before_top: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
@@ -3359,8 +3363,25 @@ pub enum TopQuantity {
     Constant(u64),
 }
 
+impl Top {
+    pub(crate) fn empty() -> Self {
+        Self {
+            with_ties: false,
+            percent: false,
+            quantity: None,
+            skip: None,
+            skip_before_top: false,
+        }
+    }
+}
+
 impl fmt::Display for Top {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.skip_before_top {
+            if let Some(skip) = &self.skip {
+                write!(f, "SKIP {skip} ")?;
+            }
+        }
         let extension = if self.with_ties { " WITH TIES" } else { "" };
         if let Some(ref quantity) = self.quantity {
             let percent = if self.percent { " PERCENT" } else { "" };
@@ -3370,8 +3391,25 @@ impl fmt::Display for Top {
                     write!(f, "TOP {quantity}{percent}{extension}")
                 }
             }
-        } else {
+        } else if self.skip.is_none() {
             write!(f, "TOP{extension}")
+        } else {
+            Ok(())
+        }?;
+        if !self.skip_before_top {
+            if let Some(skip) = &self.skip {
+                write!(f, " SKIP {skip}")?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Display for TopQuantity {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            TopQuantity::Expr(quantity) => write!(f, "({quantity})"),
+            TopQuantity::Constant(quantity) => write!(f, "{quantity}"),
         }
     }
 }

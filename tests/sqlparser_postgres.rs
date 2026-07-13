@@ -7681,3 +7681,14 @@ fn parse_drop_text_search() {
     pg_and_generic().verified_stmt("DROP TEXT SEARCH TEMPLATE my_template");
     pg_and_generic().verified_stmt("DROP TEXT SEARCH TEMPLATE IF EXISTS my_template RESTRICT");
 }
+
+#[test]
+fn parse_synergy_skip_and_top_prefixes() {
+    for sql in [
+        "SELECT SKIP 25 id FROM plants ORDER BY id",
+        "SELECT SKIP 10 TOP 5 id FROM customers ORDER BY id",
+        "SELECT TOP 5 SKIP 10 * FROM customers ORDER BY id",
+    ] {
+        pg().one_statement_parses_to(sql, sql);
+    }
+}

@@ -15722,8 +15722,22 @@ impl<'a> Parser<'a> {
             top_before_distinct = true;
         }
         let distinct = self.parse_all_or_distinct()?;
-        if !self.features.supports_top_before_distinct && self.parse_keyword(Keyword::TOP) {
-            top = Some(Box::new(self.parse_top()?));
+        if !self.features.supports_top_before_distinct {
+            if self.parse_keyword(Keyword::SKIP) {
+                let skip = self.parse_top_quantity()?;
+                if self.parse_keyword(Keyword::TOP) {
+                    top = Some(Box::new(self.parse_top()?));
+                }
+                let top = top.get_or_insert_with(|| Box::new(Top::empty()));
+                top.skip = Some(skip);
+                top.skip_before_top = true;
+            } else if self.parse_keyword(Keyword::TOP) {
+                top = Some(Box::new(self.parse_top()?));
+                if self.parse_keyword(Keyword::SKIP) {
+                    top.as_mut().expect("TOP was just parsed").skip =
+                        Some(self.parse_top_quantity()?);
+                }
+            }
         }
 
         let projection =
@@ -20517,18 +20531,7 @@ impl<'a> Parser<'a> {
     /// Parse a TOP clause, MSSQL equivalent of LIMIT,
     /// that follows after `SELECT [DISTINCT]`.
     pub fn parse_top(&self) -> Result<Top, ParserError> {
-        let quantity = if self.consume_token(&BorrowedToken::LParen) {
-            let quantity = self.parse_expr()?;
-            self.expect_token(&BorrowedToken::RParen)?;
-            Some(TopQuantity::Expr(quantity))
-        } else {
-            let next_token = self.next_token();
-            let quantity = match next_token.token {
-                BorrowedToken::Number(s, _) => Self::parse::<u64>(s, next_token.span.start)?,
-                _ => self.expected("literal int", next_token)?,
-            };
-            Some(TopQuantity::Constant(quantity))
-        };
+        let quantity = Some(self.parse_top_quantity()?);
 
         let percent = self.parse_keyword(Keyword::PERCENT);
 
@@ -20538,7 +20541,24 @@ impl<'a> Parser<'a> {
             with_ties,
             percent,
             quantity,
+            skip: None,
+            skip_before_top: false,
         })
+    }
+
+    fn parse_top_quantity(&self) -> Result<TopQuantity, ParserError> {
+        if self.consume_token(&BorrowedToken::LParen) {
+            let quantity = self.parse_expr()?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            Ok(TopQuantity::Expr(quantity))
+        } else {
+            let next_token = self.next_token();
+            let quantity = match next_token.token {
+                BorrowedToken::Number(s, _) => Self::parse::<u64>(s, next_token.span.start)?,
+                _ => self.expected("literal int", next_token)?,
+            };
+            Ok(TopQuantity::Constant(quantity))
+        }
     }
 
     /// Parse a LIMIT clause
