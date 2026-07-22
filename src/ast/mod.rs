@@ -5839,16 +5839,19 @@ pub enum Statement {
     },
     /// ```sql
     /// RESTORE {DATABASE | TABLE <name>} [FROM '<s3_uri>']
-    ///     TO {TIMESTAMP '<ts>' | LSN <n>} [DRY RUN]
+    ///     TO {TIMESTAMP '<ts>' | HLC '<n>' | LSN <n>} [DRY RUN]
     /// ```
     Restore {
         /// What to restore: DATABASE or a specific table name
         object_type: Option<ObjectName>,
         /// Source S3 URI
         location: Option<String>,
-        /// Target timestamp (mutually exclusive with target_lsn)
+        /// Target timestamp (mutually exclusive with the other targets)
         target_timestamp: Option<String>,
-        /// Target LSN (mutually exclusive with target_timestamp)
+        /// Target hybrid-logical-clock commit timestamp (mutually exclusive
+        /// with the other targets)
+        target_hlc: Option<u64>,
+        /// Target LSN (mutually exclusive with the other targets)
         target_lsn: Option<u64>,
         /// DRY RUN — preview without executing
         dry_run: bool,
@@ -7626,6 +7629,7 @@ impl fmt::Display for Statement {
                 object_type,
                 location,
                 target_timestamp,
+                target_hlc,
                 target_lsn,
                 dry_run,
             } => {
@@ -7640,6 +7644,9 @@ impl fmt::Display for Statement {
                 }
                 if let Some(ts) = target_timestamp {
                     write!(f, " TO TIMESTAMP '{ts}'")?;
+                }
+                if let Some(hlc) = target_hlc {
+                    write!(f, " TO HLC '{hlc}'")?;
                 }
                 if let Some(lsn) = target_lsn {
                     write!(f, " TO LSN {lsn}")?;

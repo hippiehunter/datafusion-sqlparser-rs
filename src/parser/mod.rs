@@ -21113,11 +21113,18 @@ impl<'a> Parser<'a> {
         };
 
         let mut target_timestamp = None;
+        let mut target_hlc = None;
         let mut target_lsn = None;
 
         if self.parse_keyword(Keyword::TO) {
             if self.parse_keyword(Keyword::TIMESTAMP) {
                 target_timestamp = Some(self.parse_literal_string()?);
+            } else if self.parse_keyword(Keyword::HLC) {
+                let hlc_str = self.parse_literal_string()?;
+                target_hlc =
+                    Some(hlc_str.parse::<u64>().map_err(|e| {
+                        ParserError::ParserError(format!("invalid HLC value: {e}"))
+                    })?);
             } else if self.parse_keyword(Keyword::LSN) {
                 let lsn_str = self.parse_literal_string()?;
                 target_lsn =
@@ -21126,7 +21133,7 @@ impl<'a> Parser<'a> {
                     })?);
             } else {
                 return Err(ParserError::ParserError(
-                    "expected TIMESTAMP or LSN after TO".to_string(),
+                    "expected TIMESTAMP, HLC, or LSN after TO".to_string(),
                 ));
             }
         }
@@ -21137,6 +21144,7 @@ impl<'a> Parser<'a> {
             object_type,
             location,
             target_timestamp,
+            target_hlc,
             target_lsn,
             dry_run,
         })
