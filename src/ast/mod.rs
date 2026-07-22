@@ -6445,6 +6445,13 @@ pub enum Statement {
     /// VACUUM tbl
     /// ```
     Vacuum(VacuumStatement),
+    /// Rebuilds an index or the indexes owned by a PostgreSQL catalog object.
+    ///
+    /// ```sql
+    /// REINDEX [ ( option [, ...] ) ] { INDEX | TABLE | SCHEMA | DATABASE | SYSTEM }
+    ///     [ CONCURRENTLY ] name
+    /// ```
+    Reindex(ReindexStatement),
     /// Restore the value of a run-time parameter to the default value.
     ///
     /// ```sql
@@ -8179,6 +8186,7 @@ impl fmt::Display for Statement {
             Statement::CreateUser(s) => write!(f, "{s}"),
             Statement::AlterSchema(s) => write!(f, "{s}"),
             Statement::Vacuum(s) => write!(f, "{s}"),
+            Statement::Reindex(s) => write!(f, "{s}"),
             Statement::AlterUser(s) => write!(f, "{s}"),
             Statement::Reset(s) => write!(f, "{s}"),
         }
@@ -13270,6 +13278,57 @@ pub struct VacuumStatement {
     pub boost: bool,
 }
 
+/// The catalog object whose indexes PostgreSQL should rebuild.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum ReindexTarget {
+    Index,
+    Table,
+    Schema,
+    Database,
+    System,
+}
+
+impl fmt::Display for ReindexTarget {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            Self::Index => "INDEX",
+            Self::Table => "TABLE",
+            Self::Schema => "SCHEMA",
+            Self::Database => "DATABASE",
+            Self::System => "SYSTEM",
+        })
+    }
+}
+
+/// A PostgreSQL `REINDEX` statement.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct ReindexStatement {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
+    pub options: Vec<UtilityOption>,
+    pub target: ReindexTarget,
+    pub concurrently: bool,
+    pub name: ObjectName,
+}
+
+impl fmt::Display for ReindexStatement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "REINDEX")?;
+        if !self.options.is_empty() {
+            write!(f, " ({})", display_comma_separated(&self.options))?;
+        }
+        write!(f, " {}", self.target)?;
+        if self.concurrently {
+            write!(f, " CONCURRENTLY")?;
+        }
+        write!(f, " {}", self.name)
+    }
+}
+
 impl fmt::Display for VacuumStatement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let VacuumStatement {
@@ -13565,6 +13624,12 @@ impl From<CreateUser> for Statement {
 impl From<VacuumStatement> for Statement {
     fn from(v: VacuumStatement) -> Self {
         Self::Vacuum(v)
+    }
+}
+
+impl From<ReindexStatement> for Statement {
+    fn from(r: ReindexStatement) -> Self {
+        Self::Reindex(r)
     }
 }
 

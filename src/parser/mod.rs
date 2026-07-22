@@ -1117,6 +1117,7 @@ impl<'a> Parser<'a> {
                     self.prev_token();
                     self.parse_vacuum()
                 }
+                Keyword::REINDEX if dialect_of!(self is PostgreSqlDialect) => self.parse_reindex(),
                 Keyword::RESET => self.parse_reset(),
                 // SQL/PSM NULL statement (no-op)
                 Keyword::NULL => Ok(Statement::Null),
@@ -23156,6 +23157,43 @@ impl<'a> Parser<'a> {
             table_name,
             threshold,
             boost,
+        }))
+    }
+
+    fn parse_reindex(&self) -> Result<Statement, ParserError> {
+        let token = self.attached_token_from_current();
+        let options = if self.peek_token().token == BorrowedToken::LParen {
+            self.parse_utility_options()?
+        } else {
+            Vec::new()
+        };
+        let target = match self.parse_one_of_keywords(&[
+            Keyword::INDEX,
+            Keyword::TABLE,
+            Keyword::SCHEMA,
+            Keyword::DATABASE,
+            Keyword::SYSTEM,
+        ]) {
+            Some(Keyword::INDEX) => ReindexTarget::Index,
+            Some(Keyword::TABLE) => ReindexTarget::Table,
+            Some(Keyword::SCHEMA) => ReindexTarget::Schema,
+            Some(Keyword::DATABASE) => ReindexTarget::Database,
+            Some(Keyword::SYSTEM) => ReindexTarget::System,
+            _ => {
+                return self.expected(
+                    "INDEX, TABLE, SCHEMA, DATABASE, or SYSTEM after REINDEX",
+                    self.peek_token(),
+                );
+            }
+        };
+        let concurrently = self.parse_keyword(Keyword::CONCURRENTLY);
+        let name = self.parse_object_name(false)?;
+        Ok(Statement::Reindex(ReindexStatement {
+            token,
+            options,
+            target,
+            concurrently,
+            name,
         }))
     }
 

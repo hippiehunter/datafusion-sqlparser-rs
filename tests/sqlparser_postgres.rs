@@ -29,7 +29,45 @@ use test_utils::*;
 use sqlparser::ast::AstBox as Box;
 use sqlparser::ast::*;
 use sqlparser::dialect::PostgreSqlDialect;
-use sqlparser::parser::ParserError;
+use sqlparser::parser::{Parser, ParserError};
+
+#[test]
+fn parse_reindex() {
+    let sql = "REINDEX (VERBOSE, TABLESPACE fast_space) INDEX CONCURRENTLY public.events_by_time";
+    let Statement::Reindex(statement) = pg().verified_stmt(sql) else {
+        panic!("expected REINDEX statement");
+    };
+    assert_eq!(statement.target, ReindexTarget::Index);
+    assert!(statement.concurrently);
+    assert_eq!(statement.name.to_string(), "public.events_by_time");
+    assert_eq!(statement.options.len(), 2);
+    assert_eq!(statement.options[0].to_string(), "verbose");
+    assert_eq!(statement.options[1].to_string(), "tablespace fast_space");
+    assert_eq!(
+        statement.to_string(),
+        "REINDEX (verbose, tablespace fast_space) INDEX CONCURRENTLY public.events_by_time"
+    );
+
+    for (sql, target) in [
+        ("REINDEX TABLE events", ReindexTarget::Table),
+        ("REINDEX SCHEMA analytics", ReindexTarget::Schema),
+        ("REINDEX DATABASE warehouse", ReindexTarget::Database),
+        ("REINDEX SYSTEM warehouse", ReindexTarget::System),
+    ] {
+        let Statement::Reindex(statement) = pg().verified_stmt(sql) else {
+            panic!("expected REINDEX statement");
+        };
+        assert_eq!(statement.target, target);
+        assert!(!statement.concurrently);
+        assert!(statement.options.is_empty());
+    }
+
+    let error = Parser::parse_sql(&PostgreSqlDialect {}, "REINDEX events_by_time")
+        .expect_err("REINDEX requires an object kind");
+    assert!(error
+        .to_string()
+        .contains("INDEX, TABLE, SCHEMA, DATABASE, or SYSTEM after REINDEX"));
+}
 
 #[test]
 fn parse_create_table_generated_always_as_identity() {
