@@ -12180,6 +12180,8 @@ impl<'a> Parser<'a> {
         } else if self.parse_keywords(&[Keyword::SWAP, Keyword::WITH]) {
             let target = self.parse_object_name(false)?;
             AlterTableOperation::SwapWith { target }
+        } else if self.parse_keyword(Keyword::REORGANIZE) {
+            AlterTableOperation::Reorganize
         } else if self.parse_keywords(&[
             Keyword::NO,
             Keyword::FORCE,

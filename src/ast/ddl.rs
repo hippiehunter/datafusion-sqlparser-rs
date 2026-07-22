@@ -298,6 +298,8 @@ pub enum AlterTableOperation {
     ValidateConstraints,
     /// `SWAP WITH <target>` (gantry admin extension)
     SwapWith { target: ObjectName },
+    /// `REORGANIZE` (gantry heap-maintenance extension)
+    Reorganize,
     /// Arbitrary parenthesized `SET` options.
     ///
     /// Example:
@@ -682,6 +684,7 @@ impl fmt::Display for AlterTableOperation {
             AlterTableOperation::ClearDegraded => write!(f, "CLEAR DEGRADED"),
             AlterTableOperation::ValidateConstraints => write!(f, "VALIDATE CONSTRAINTS"),
             AlterTableOperation::SwapWith { target } => write!(f, "SWAP WITH {target}"),
+            AlterTableOperation::Reorganize => write!(f, "REORGANIZE"),
             AlterTableOperation::SetOptionsParens { options } => {
                 write!(f, "SET ({})", display_comma_separated(options))
             }

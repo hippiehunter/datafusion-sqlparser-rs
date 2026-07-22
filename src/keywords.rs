@@ -885,6 +885,7 @@ define_keywords!(
     REGR_SXX,
     REGR_SXY,
     REGR_SYY,
+    REORGANIZE,
     REINDEX,
     REJECT_LIMIT,
     RELATIVE,

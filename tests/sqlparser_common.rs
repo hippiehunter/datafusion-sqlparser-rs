@@ -15822,6 +15822,32 @@ fn parse_table_maintenance() {
 }
 
 #[test]
+fn parse_heap_reorganization() {
+    let dialects = all_dialects_where(|dialect| dialect.is::<PostgreSqlDialect>());
+    let statement = dialects.verified_stmt("ALTER TABLE public.orders REORGANIZE");
+    match statement {
+        Statement::AlterTable(alter) => {
+            assert_eq!("public.orders", alter.name.to_string());
+            assert!(matches!(
+                alter.operations.as_slice(),
+                [AlterTableOperation::Reorganize]
+            ));
+        }
+        other => panic!("expected ALTER TABLE, got {other:?}"),
+    }
+
+    let statements = dialects
+        .parse_sql_statements(
+            "ALTER TABLE first REORGANIZE; ALTER TABLE \"Second\" REORGANIZE",
+        )
+        .unwrap();
+    assert_eq!(2, statements.len());
+    assert!(dialects
+        .parse_sql_statements("ALTER TABLE orders REORGANIZE trailing")
+        .is_err());
+}
+
+#[test]
 fn parse_select_skip_and_top() {
     let dialects = all_dialects_where(|dialect| !dialect.supports_top_before_distinct());
 

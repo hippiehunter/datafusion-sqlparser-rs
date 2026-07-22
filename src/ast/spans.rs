@@ -1267,6 +1267,7 @@ impl Spanned for AlterTableOperation {
             AlterTableOperation::ClearDegraded => Span::empty(),
             AlterTableOperation::ValidateConstraints => Span::empty(),
             AlterTableOperation::SwapWith { target } => target.span(),
+            AlterTableOperation::Reorganize => Span::empty(),
             AlterTableOperation::SetOptionsParens { options } => {
                 union_spans(options.iter().map(|i| i.span()))
             }
