@@ -1086,6 +1086,12 @@ impl<'a> Parser<'a> {
                 Keyword::UNLISTEN if self.features.supports_listen_notify => self.parse_unlisten(),
                 Keyword::NOTIFY if self.features.supports_listen_notify => self.parse_notify(),
                 Keyword::WAIT if self.features.supports_wait_for_lsn => self.parse_wait_for_lsn(),
+                Keyword::QUIESCE if self.features.supports_table_maintenance_commands => {
+                    self.parse_table_maintenance(TableMaintenanceAction::Quiesce)
+                }
+                Keyword::UNQUIESCE if self.features.supports_table_maintenance_commands => {
+                    self.parse_table_maintenance(TableMaintenanceAction::Unquiesce)
+                }
                 // `PRAGMA` statement
                 Keyword::PRAGMA => self.parse_pragma(),
                 Keyword::UNLOAD => {
@@ -2726,6 +2732,21 @@ impl<'a> Parser<'a> {
             wait_token,
             lsn,
             timeout_ms,
+        })
+    }
+
+    /// Parses `{ QUIESCE | UNQUIESCE } TABLE table_name`.
+    pub fn parse_table_maintenance(
+        &self,
+        action: TableMaintenanceAction,
+    ) -> Result<Statement, ParserError> {
+        let maintenance_token = self.attached_token_from_current();
+        self.expect_keyword(Keyword::TABLE)?;
+        let table_name = self.parse_object_name(false)?;
+        Ok(Statement::TableMaintenance {
+            maintenance_token,
+            action,
+            table_name,
         })
     }
 

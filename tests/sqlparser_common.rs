@@ -15771,3 +15771,60 @@ fn parse_wait_for_lsn() {
         ParserError::ParserError("Expected: an SQL statement, found: WAIT".to_string())
     );
 }
+
+#[test]
+fn parse_table_maintenance() {
+    let dialects = all_dialects_where(|dialect| dialect.supports_table_maintenance_commands());
+
+    for (sql, expected_action, expected_table) in [
+        (
+            "QUIESCE TABLE public.orders",
+            TableMaintenanceAction::Quiesce,
+            "public.orders",
+        ),
+        (
+            "UNQUIESCE TABLE \"Operations\".\"Order Queue\"",
+            TableMaintenanceAction::Unquiesce,
+            "\"Operations\".\"Order Queue\"",
+        ),
+    ] {
+        match dialects.verified_stmt(sql) {
+            Statement::TableMaintenance {
+                action, table_name, ..
+            } => {
+                assert_eq!(expected_action, action);
+                assert_eq!(expected_table, table_name.to_string());
+            }
+            other => panic!("expected table maintenance statement, got {other:?}"),
+        }
+    }
+
+    let statements = dialects
+        .parse_sql_statements("QUIESCE TABLE first; UNQUIESCE TABLE second")
+        .unwrap();
+    assert_eq!(2, statements.len());
+
+    for invalid in [
+        "QUIESCE TABLE",
+        "UNQUIESCE TABLE",
+        "QUIESCE TABLESPACE fast",
+    ] {
+        assert!(dialects.parse_sql_statements(invalid).is_err(), "{invalid}");
+    }
+
+    let dialects = all_dialects_where(|dialect| !dialect.supports_table_maintenance_commands());
+    assert!(dialects
+        .parse_sql_statements("QUIESCE TABLE public.orders")
+        .is_err());
+    assert!(dialects
+        .parse_sql_statements("UNQUIESCE TABLE public.orders")
+        .is_err());
+}
+
+#[test]
+fn parse_select_skip_and_top() {
+    let dialects = all_dialects_where(|dialect| !dialect.supports_top_before_distinct());
+
+    dialects.verified_stmt("SELECT SKIP 2 TOP 5 id FROM orders");
+    dialects.verified_stmt("SELECT TOP 5 SKIP 2 id FROM orders");
+}

@@ -528,6 +528,11 @@ impl Spanned for Statement {
                 channel,
             } => unlisten_token.0.union(&channel.span),
             Statement::WaitForLsn { wait_token, .. } => wait_token.0,
+            Statement::TableMaintenance {
+                maintenance_token,
+                table_name,
+                ..
+            } => maintenance_token.0.union(&table_name.span()),
             Statement::RenameTable(rename_tables) => {
                 if let Some(first) = rename_tables.first() {
                     first.token.0

@@ -4995,6 +4995,26 @@ impl fmt::Display for BackupAuditRetentionValue {
     }
 }
 
+/// The admission change requested by a [`Statement::TableMaintenance`] command.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum TableMaintenanceAction {
+    /// Stop admitting new table mutations and wait for admitted writers.
+    Quiesce,
+    /// Reopen table mutation admission.
+    Unquiesce,
+}
+
+impl fmt::Display for TableMaintenanceAction {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            TableMaintenanceAction::Quiesce => "QUIESCE",
+            TableMaintenanceAction::Unquiesce => "UNQUIESCE",
+        })
+    }
+}
+
 /// A top-level statement (SELECT, INSERT, CREATE, etc.)
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
@@ -6348,6 +6368,16 @@ pub enum Statement {
         lsn: String,
         /// Optional timeout in milliseconds
         timeout_ms: Option<String>,
+    },
+    /// ```sql
+    /// { QUIESCE | UNQUIESCE } TABLE table_name
+    /// ```
+    /// Changes table mutation admission for an administrative operation.
+    TableMaintenance {
+        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+        maintenance_token: AttachedToken,
+        action: TableMaintenanceAction,
+        table_name: ObjectName,
     },
     /// ```sql
     /// LOAD DATA [LOCAL] INPATH 'filepath' [OVERWRITE] INTO TABLE tablename
@@ -8113,6 +8143,9 @@ impl fmt::Display for Statement {
                 }
                 Ok(())
             }
+            Statement::TableMaintenance {
+                action, table_name, ..
+            } => write!(f, "{action} TABLE {table_name}"),
             Statement::RenameTable(rename_tables) => {
                 write!(f, "RENAME TABLE {}", display_comma_separated(rename_tables))
             }
