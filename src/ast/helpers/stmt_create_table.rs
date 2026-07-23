@@ -29,8 +29,8 @@ use sqlparser_derive::{Visit, VisitMut};
 use crate::ast::ddl::PartitionByClause;
 use crate::ast::{
     ColumnDef, CommentDef, CreateTable, CreateTableLikeKind, CreateTableOptions,
-    CreateTableSystemVersioning, ObjectName, OnCommit, PartitionBoundSpec, Query, Statement,
-    TableConstraint, TableVersion,
+    CreateTableSystemVersioning, ObjectName, OnCommit, OrderByExpr, PartitionBoundSpec, Query,
+    Statement, TableConstraint, TableVersion,
 };
 
 use crate::parser::ParserError;
@@ -90,6 +90,7 @@ pub struct CreateTableBuilder {
     pub partition_by: Option<PartitionByClause>,
     pub partition_of: Option<ObjectName>,
     pub partition_bound: Option<PartitionBoundSpec>,
+    pub clustering_by: Option<Vec<OrderByExpr>>,
 }
 
 impl CreateTableBuilder {
@@ -119,6 +120,7 @@ impl CreateTableBuilder {
             partition_by: None,
             partition_of: None,
             partition_bound: None,
+            clustering_by: None,
         }
     }
     pub fn or_replace(mut self, or_replace: bool) -> Self {
@@ -239,6 +241,11 @@ impl CreateTableBuilder {
         self
     }
 
+    pub fn clustering_by(mut self, clustering_by: Option<Vec<OrderByExpr>>) -> Self {
+        self.clustering_by = clustering_by;
+        self
+    }
+
     pub fn build(self) -> Statement {
         CreateTable {
             or_replace: self.or_replace,
@@ -265,6 +272,7 @@ impl CreateTableBuilder {
             partition_by: self.partition_by,
             partition_of: self.partition_of,
             partition_bound: self.partition_bound,
+            clustering_by: self.clustering_by,
         }
         .into()
     }
@@ -302,6 +310,7 @@ impl TryFrom<Statement> for CreateTableBuilder {
                 partition_by,
                 partition_of,
                 partition_bound,
+                clustering_by,
             }) => Ok(Self {
                 or_replace,
                 temporary,
@@ -327,6 +336,7 @@ impl TryFrom<Statement> for CreateTableBuilder {
                 partition_by,
                 partition_of,
                 partition_bound,
+                clustering_by,
             }),
             _ => Err(ParserError::ParserError(format!(
                 "Expected create table statement, but received: {stmt}"

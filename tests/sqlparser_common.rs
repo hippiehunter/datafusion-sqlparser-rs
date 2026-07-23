@@ -15837,14 +15837,90 @@ fn parse_heap_reorganization() {
     }
 
     let statements = dialects
-        .parse_sql_statements(
-            "ALTER TABLE first REORGANIZE; ALTER TABLE \"Second\" REORGANIZE",
-        )
+        .parse_sql_statements("ALTER TABLE first REORGANIZE; ALTER TABLE \"Second\" REORGANIZE")
         .unwrap();
     assert_eq!(2, statements.len());
     assert!(dialects
         .parse_sql_statements("ALTER TABLE orders REORGANIZE trailing")
         .is_err());
+}
+
+#[test]
+fn parse_table_organization_clauses() {
+    let dialects = all_dialects_where(|dialect| dialect.is::<PostgreSqlDialect>());
+
+    let statement = dialects.verified_stmt(
+        "CREATE TABLE events (tenant_id INT, event_id INT, priority INT, \
+         PRIMARY KEY (tenant_id, event_id)) \
+         CLUSTERING BY (priority DESC NULLS LAST, tenant_id)",
+    );
+    let Statement::CreateTable(create) = statement else {
+        panic!("expected CREATE TABLE");
+    };
+    let columns = create
+        .clustering_by
+        .as_ref()
+        .expect("expected clustering declaration");
+    assert_eq!(2, columns.len());
+    assert_eq!("priority DESC NULLS LAST", columns[0].to_string());
+    assert_eq!("tenant_id", columns[1].to_string());
+
+    let statement = dialects
+        .verified_stmt("ALTER TABLE events CLUSTERING BY (priority DESC NULLS LAST, tenant_id)");
+    let Statement::AlterTable(alter) = statement else {
+        panic!("expected ALTER TABLE");
+    };
+    let [AlterTableOperation::ClusteringBy { columns }] = alter.operations.as_slice() else {
+        panic!("expected typed clustering operation");
+    };
+    assert_eq!(2, columns.len());
+    assert_eq!(
+        "ALTER TABLE events CLUSTERING BY (priority DESC NULLS LAST, tenant_id)",
+        Statement::AlterTable(alter).to_string()
+    );
+
+    let statements = dialects
+        .parse_sql_statements(
+            "CREATE TABLE first (id INT) CLUSTERING BY (id); \
+             ALTER TABLE first CLUSTERING BY (id)",
+        )
+        .unwrap();
+    assert_eq!(2, statements.len());
+
+    for invalid in [
+        "CREATE TABLE events (id INT) CLUSTERING BY ()",
+        "ALTER TABLE events CLUSTERING BY ()",
+        "ALTER TABLE events CLUSTERING (id)",
+    ] {
+        assert!(dialects.parse_sql_statements(invalid).is_err(), "{invalid}");
+    }
+}
+
+#[test]
+fn parse_storage_maintenance_operations() {
+    let dialects = all_dialects_where(|dialect| dialect.is::<PostgreSqlDialect>());
+
+    let rewrite = dialects.verified_stmt("ALTER TABLE events REWRITE STORAGE");
+    assert!(matches!(
+        rewrite,
+        Statement::AlterTable(AlterTable {
+            operations,
+            ..
+        }) if matches!(operations.as_slice(), [AlterTableOperation::RewriteStorage])
+    ));
+
+    let rekey =
+        dialects.verified_stmt("ALTER TABLE events REKEY STORAGE BY (region, \"recorded At\")");
+    let Statement::AlterTable(alter) = rekey else {
+        panic!("expected ALTER TABLE");
+    };
+    let [AlterTableOperation::RekeyStorage { columns }] = alter.operations.as_slice() else {
+        panic!("expected typed storage re-key operation");
+    };
+    assert_eq!(
+        vec!["region", "recorded At"],
+        columns.iter().map(|c| c.value.as_str()).collect::<Vec<_>>()
+    );
 }
 
 #[test]

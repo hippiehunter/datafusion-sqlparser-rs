@@ -1948,6 +1948,7 @@ fn parse_create_table_with_valid_options() {
                 partition_by: None,
                 partition_of: None,
                 partition_bound: None,
+                clustering_by: None,
             })
         );
     }
@@ -2087,6 +2088,7 @@ fn parse_create_table_with_identity_column() {
                 partition_by: None,
                 partition_of: None,
                 partition_bound: None,
+                clustering_by: None,
             }),
         );
     }

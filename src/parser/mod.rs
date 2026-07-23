@@ -10594,6 +10594,15 @@ impl<'a> Parser<'a> {
             None
         };
 
+        let clustering_by = if self.parse_keywords(&[Keyword::CLUSTERING, Keyword::BY]) {
+            self.expect_token(&BorrowedToken::LParen)?;
+            let columns = self.parse_comma_separated(Parser::parse_order_by_expr)?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            Some(columns)
+        } else {
+            None
+        };
+
         // Parse optional `WITHOUT ROWID` at the end of `CREATE TABLE`
         let without_rowid = self.parse_keywords(&[Keyword::WITHOUT, Keyword::ROWID]);
 
@@ -10651,6 +10660,7 @@ impl<'a> Parser<'a> {
             .partition_by(partition_by)
             .partition_of(partition_of)
             .partition_bound(partition_bound)
+            .clustering_by(clustering_by)
             .build())
     }
 
@@ -12183,6 +12193,19 @@ impl<'a> Parser<'a> {
             AlterTableOperation::SwapWith { target }
         } else if self.parse_keyword(Keyword::REORGANIZE) {
             AlterTableOperation::Reorganize
+        } else if self.parse_keywords(&[Keyword::REWRITE, Keyword::STORAGE]) {
+            AlterTableOperation::RewriteStorage
+        } else if self.parse_keyword(Keyword::REKEY) {
+            self.expect_keywords(&[Keyword::STORAGE, Keyword::BY])?;
+            self.expect_token(&BorrowedToken::LParen)?;
+            let columns = self.parse_comma_separated(Parser::parse_identifier)?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            AlterTableOperation::RekeyStorage { columns }
+        } else if self.parse_keywords(&[Keyword::CLUSTERING, Keyword::BY]) {
+            self.expect_token(&BorrowedToken::LParen)?;
+            let columns = self.parse_comma_separated(Parser::parse_order_by_expr)?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            AlterTableOperation::ClusteringBy { columns }
         } else if self.parse_keywords(&[
             Keyword::NO,
             Keyword::FORCE,

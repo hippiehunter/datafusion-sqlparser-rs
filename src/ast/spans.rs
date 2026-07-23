@@ -610,6 +610,7 @@ impl Spanned for CreateTable {
             partition_by: _,
             partition_of: _,
             partition_bound: _,
+            clustering_by,
         } = self;
 
         union_spans(
@@ -618,7 +619,8 @@ impl Spanned for CreateTable {
                 .chain(columns.iter().map(|i| i.span()))
                 .chain(constraints.iter().map(|i| i.span()))
                 .chain(query.iter().map(|i| i.span()))
-                .chain(clone.iter().map(|i| i.span())),
+                .chain(clone.iter().map(|i| i.span()))
+                .chain(clustering_by.iter().flatten().map(|i| i.span())),
         )
     }
 }
@@ -1269,6 +1271,13 @@ impl Spanned for AlterTableOperation {
             AlterTableOperation::ValidateConstraints => Span::empty(),
             AlterTableOperation::SwapWith { target } => target.span(),
             AlterTableOperation::Reorganize => Span::empty(),
+            AlterTableOperation::RewriteStorage => Span::empty(),
+            AlterTableOperation::RekeyStorage { columns } => {
+                union_spans(columns.iter().map(|column| column.span()))
+            }
+            AlterTableOperation::ClusteringBy { columns } => {
+                union_spans(columns.iter().map(|column| column.span()))
+            }
             AlterTableOperation::SetOptionsParens { options } => {
                 union_spans(options.iter().map(|i| i.span()))
             }

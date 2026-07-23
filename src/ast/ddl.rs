@@ -300,6 +300,12 @@ pub enum AlterTableOperation {
     SwapWith { target: ObjectName },
     /// `REORGANIZE` (gantry heap-maintenance extension)
     Reorganize,
+    /// `REWRITE STORAGE` (storage-maintenance extension)
+    RewriteStorage,
+    /// `REKEY STORAGE BY (<column>, ...)` (storage-maintenance extension)
+    RekeyStorage { columns: Vec<Ident> },
+    /// `CLUSTERING BY (<order expression>, ...)` (table-organization extension)
+    ClusteringBy { columns: Vec<OrderByExpr> },
     /// Arbitrary parenthesized `SET` options.
     ///
     /// Example:
@@ -685,6 +691,13 @@ impl fmt::Display for AlterTableOperation {
             AlterTableOperation::ValidateConstraints => write!(f, "VALIDATE CONSTRAINTS"),
             AlterTableOperation::SwapWith { target } => write!(f, "SWAP WITH {target}"),
             AlterTableOperation::Reorganize => write!(f, "REORGANIZE"),
+            AlterTableOperation::RewriteStorage => write!(f, "REWRITE STORAGE"),
+            AlterTableOperation::RekeyStorage { columns } => {
+                write!(f, "REKEY STORAGE BY ({})", display_comma_separated(columns))
+            }
+            AlterTableOperation::ClusteringBy { columns } => {
+                write!(f, "CLUSTERING BY ({})", display_comma_separated(columns))
+            }
             AlterTableOperation::SetOptionsParens { options } => {
                 write!(f, "SET ({})", display_comma_separated(options))
             }
@@ -2368,6 +2381,8 @@ pub struct CreateTable {
     pub partition_of: Option<ObjectName>,
     /// PostgreSQL partition bound spec (`FOR VALUES ...` or `DEFAULT`)
     pub partition_bound: Option<PartitionBoundSpec>,
+    /// Declarative physical organization requested for the table.
+    pub clustering_by: Option<Vec<OrderByExpr>>,
 }
 
 impl fmt::Display for CreateTable {
@@ -2451,6 +2466,10 @@ impl fmt::Display for CreateTable {
         // PARTITION BY clause
         if let Some(partition_by) = &self.partition_by {
             write!(f, " {partition_by}")?;
+        }
+
+        if let Some(columns) = &self.clustering_by {
+            write!(f, " CLUSTERING BY ({})", display_comma_separated(columns))?;
         }
 
         if self.external {

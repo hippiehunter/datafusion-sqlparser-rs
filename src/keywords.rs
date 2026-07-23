@@ -888,6 +888,7 @@ define_keywords!(
     REGR_SYY,
     REINDEX,
     REJECT_LIMIT,
+    REKEY,
     RELATIVE,
     RELAY,
     RELEASE,
