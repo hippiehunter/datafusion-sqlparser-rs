@@ -1081,6 +1081,7 @@ define_keywords!(
     TEMPLATE,
     TEMPORARY,
     TEMPTABLE,
+    TENANT,
     TERMINATED,
     TERSE,
     TEXT,

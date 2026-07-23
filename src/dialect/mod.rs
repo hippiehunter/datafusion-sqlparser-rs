@@ -1172,6 +1172,11 @@ pub trait Dialect: Debug + Any {
         false
     }
 
+    /// Returns true if the dialect supports tenant mutation admission commands.
+    fn supports_tenant_maintenance_commands(&self) -> bool {
+        false
+    }
+
     /// Snapshot every boolean capability method into a [`DialectFeatures`].
     fn features(&self) -> DialectFeatures {
         DialectFeatures {
@@ -1278,6 +1283,7 @@ pub trait Dialect: Debug + Any {
             supports_unicode_string_literal: self.supports_unicode_string_literal(),
             supports_wait_for_lsn: self.supports_wait_for_lsn(),
             supports_table_maintenance_commands: self.supports_table_maintenance_commands(),
+            supports_tenant_maintenance_commands: self.supports_tenant_maintenance_commands(),
         }
     }
 }
@@ -1375,6 +1381,7 @@ pub struct DialectFeatures {
     pub supports_unicode_string_literal: bool,
     pub supports_wait_for_lsn: bool,
     pub supports_table_maintenance_commands: bool,
+    pub supports_tenant_maintenance_commands: bool,
 }
 
 /// This represents the operators for which precedence must be defined

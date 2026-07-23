@@ -5015,6 +5015,26 @@ impl fmt::Display for TableMaintenanceAction {
     }
 }
 
+/// The admission change requested by a [`Statement::AlterTenant`] command.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum TenantMaintenanceAction {
+    /// Stop admitting new tenant mutations and wait for admitted writers.
+    Quiesce,
+    /// Reopen tenant mutation admission.
+    Resume,
+}
+
+impl fmt::Display for TenantMaintenanceAction {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            TenantMaintenanceAction::Quiesce => "QUIESCE",
+            TenantMaintenanceAction::Resume => "RESUME",
+        })
+    }
+}
+
 /// A top-level statement (SELECT, INSERT, CREATE, etc.)
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
@@ -6381,6 +6401,18 @@ pub enum Statement {
         maintenance_token: AttachedToken,
         action: TableMaintenanceAction,
         table_name: ObjectName,
+    },
+    /// ```sql
+    /// ALTER TENANT tenant_name { QUIESCE | RESUME }
+    /// ```
+    /// Changes tenant mutation admission for an administrative operation.
+    AlterTenant {
+        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+        alter_token: AttachedToken,
+        tenant_name: Ident,
+        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+        action_token: AttachedToken,
+        action: TenantMaintenanceAction,
     },
     /// ```sql
     /// LOAD DATA [LOCAL] INPATH 'filepath' [OVERWRITE] INTO TABLE tablename
@@ -8160,6 +8192,11 @@ impl fmt::Display for Statement {
             Statement::TableMaintenance {
                 action, table_name, ..
             } => write!(f, "{action} TABLE {table_name}"),
+            Statement::AlterTenant {
+                tenant_name,
+                action,
+                ..
+            } => write!(f, "ALTER TENANT {tenant_name} {action}"),
             Statement::RenameTable(rename_tables) => {
                 write!(f, "RENAME TABLE {}", display_comma_separated(rename_tables))
             }

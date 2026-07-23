@@ -216,6 +216,10 @@ impl Dialect for PostgreSqlDialect {
         true
     }
 
+    fn supports_tenant_maintenance_commands(&self) -> bool {
+        true
+    }
+
     /// see <https://www.postgresql.org/docs/13/functions-math.html>
     fn supports_factorial_operator(&self) -> bool {
         true

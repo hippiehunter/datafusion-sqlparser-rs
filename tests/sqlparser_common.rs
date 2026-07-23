@@ -15822,6 +15822,52 @@ fn parse_table_maintenance() {
 }
 
 #[test]
+fn parse_tenant_maintenance() {
+    let dialects = all_dialects_where(|dialect| dialect.supports_tenant_maintenance_commands());
+
+    for (sql, expected_action, expected_tenant) in [
+        (
+            "ALTER TENANT regional_accounts QUIESCE",
+            TenantMaintenanceAction::Quiesce,
+            "regional_accounts",
+        ),
+        (
+            "ALTER TENANT \"priority accounts\" RESUME",
+            TenantMaintenanceAction::Resume,
+            "\"priority accounts\"",
+        ),
+    ] {
+        let statement = dialects.verified_stmt(sql);
+        assert_eq!(statement.span().start, Location::new(1, 1));
+        assert_eq!(statement.span().end, Location::new(1, sql.len() as u64 + 1));
+        match statement {
+            Statement::AlterTenant {
+                tenant_name,
+                action,
+                ..
+            } => {
+                assert_eq!(expected_action, action);
+                assert_eq!(expected_tenant, tenant_name.to_string());
+            }
+            other => panic!("expected tenant maintenance statement, got {other:?}"),
+        }
+    }
+
+    for invalid in [
+        "ALTER TENANT",
+        "ALTER TENANT regional_accounts",
+        "ALTER TENANT regional_accounts UNQUIESCE",
+    ] {
+        assert!(dialects.parse_sql_statements(invalid).is_err(), "{invalid}");
+    }
+
+    let dialects = all_dialects_where(|dialect| !dialect.supports_tenant_maintenance_commands());
+    assert!(dialects
+        .parse_sql_statements("ALTER TENANT regional_accounts QUIESCE")
+        .is_err());
+}
+
+#[test]
 fn parse_heap_reorganization() {
     let dialects = all_dialects_where(|dialect| dialect.is::<PostgreSqlDialect>());
     let statement = dialects.verified_stmt("ALTER TABLE public.orders REORGANIZE");

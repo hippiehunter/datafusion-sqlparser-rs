@@ -533,6 +533,11 @@ impl Spanned for Statement {
                 table_name,
                 ..
             } => maintenance_token.0.union(&table_name.span()),
+            Statement::AlterTenant {
+                alter_token,
+                action_token,
+                ..
+            } => alter_token.0.union(&action_token.0),
             Statement::RenameTable(rename_tables) => {
                 if let Some(first) = rename_tables.first() {
                     first.token.0

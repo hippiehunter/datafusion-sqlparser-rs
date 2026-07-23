@@ -12577,6 +12577,7 @@ impl<'a> Parser<'a> {
             Keyword::SEQUENCE,
             Keyword::SERVER,
             Keyword::FOREIGN,
+            Keyword::TENANT,
         ])?;
         match object_type {
             Keyword::SCHEMA => {
@@ -12623,6 +12624,13 @@ impl<'a> Parser<'a> {
             }
             Keyword::SEQUENCE => self.parse_alter_sequence(),
             Keyword::SERVER => self.parse_alter_server(),
+            Keyword::TENANT => {
+                if self.features.supports_tenant_maintenance_commands {
+                    self.parse_alter_tenant()
+                } else {
+                    self.expected("supported object type after ALTER", self.peek_token())
+                }
+            }
             Keyword::FOREIGN => {
                 // ALTER FOREIGN TABLE or ALTER FOREIGN DATA WRAPPER
                 if self.parse_keyword(Keyword::TABLE) {
@@ -12639,6 +12647,31 @@ impl<'a> Parser<'a> {
             // unreachable because expect_one_of_keywords used above
             _ => unreachable!(),
         }
+    }
+
+    /// Parses `ALTER TENANT tenant_name { QUIESCE | RESUME }`.
+    pub fn parse_alter_tenant(&self) -> Result<Statement, ParserError> {
+        let current_pos = self.index();
+        self.prev_token();
+        self.prev_token();
+        let alter_token = self.attached_token_from_current();
+        while self.index() < current_pos {
+            self.advance_token();
+        }
+
+        let tenant_name = self.parse_identifier()?;
+        let action = match self.expect_one_of_keywords(&[Keyword::QUIESCE, Keyword::RESUME])? {
+            Keyword::QUIESCE => TenantMaintenanceAction::Quiesce,
+            Keyword::RESUME => TenantMaintenanceAction::Resume,
+            _ => unreachable!(),
+        };
+        let action_token = self.attached_token_from_current();
+        Ok(Statement::AlterTenant {
+            alter_token,
+            tenant_name,
+            action_token,
+            action,
+        })
     }
 
     /// Parse ALTER SEQUENCE statement (SQL:2016 T174)
