@@ -15868,6 +15868,59 @@ fn parse_tenant_maintenance() {
 }
 
 #[test]
+fn parse_restore_tenant() {
+    for (sql, expected_tenant, expected_destination) in [
+        (
+            "RESTORE TENANT acme TO TIMESTAMP '2026-07-01 00:00:00'",
+            "acme",
+            None,
+        ),
+        (
+            "RESTORE TENANT acme FROM 's3://bucket/backups' TO LSN 42 AS NEW TENANT acme_copy",
+            "acme",
+            Some("acme_copy"),
+        ),
+        (
+            "RESTORE TENANT \"priority accounts\" TO HLC '123456'",
+            "\"priority accounts\"",
+            None,
+        ),
+    ] {
+        match verified_stmt(sql) {
+            Statement::Restore {
+                object_type,
+                tenant,
+                as_new_tenant,
+                ..
+            } => {
+                assert!(object_type.is_none());
+                assert_eq!(
+                    Some(expected_tenant.to_string()),
+                    tenant.map(|t| t.to_string())
+                );
+                assert_eq!(
+                    expected_destination.map(str::to_string),
+                    as_new_tenant.map(|t| t.to_string())
+                );
+            }
+            other => panic!("expected RESTORE statement, got {other:?}"),
+        }
+    }
+
+    for invalid in [
+        "RESTORE TENANT",
+        "RESTORE TENANT acme AS NEW TENANT",
+        "RESTORE DATABASE AS NEW TENANT acme_copy",
+        "RESTORE TABLE public.orders AS NEW TENANT acme_copy",
+    ] {
+        assert!(
+            all_dialects().parse_sql_statements(invalid).is_err(),
+            "{invalid}"
+        );
+    }
+}
+
+#[test]
 fn parse_heap_reorganization() {
     let dialects = all_dialects_where(|dialect| dialect.is::<PostgreSqlDialect>());
     let statement = dialects.verified_stmt("ALTER TABLE public.orders REORGANIZE");

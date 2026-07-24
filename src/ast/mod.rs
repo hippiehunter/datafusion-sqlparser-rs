@@ -5858,12 +5858,18 @@ pub enum Statement {
         reset_pitr_chain: bool,
     },
     /// ```sql
-    /// RESTORE {DATABASE | TABLE <name>} [FROM '<s3_uri>']
-    ///     TO {TIMESTAMP '<ts>' | HLC '<n>' | LSN <n>} [DRY RUN]
+    /// RESTORE {DATABASE | TABLE <name> | TENANT <name>} [FROM '<s3_uri>']
+    ///     TO {TIMESTAMP '<ts>' | HLC '<n>' | LSN <n>}
+    ///     [AS NEW TENANT <name>] [DRY RUN]
     /// ```
     Restore {
         /// What to restore: DATABASE or a specific table name
         object_type: Option<ObjectName>,
+        /// Tenant to restore; mutually exclusive with `object_type`
+        tenant: Option<Ident>,
+        /// Destination tenant for a restore-as-copy (`AS NEW TENANT`);
+        /// only valid together with `tenant`
+        as_new_tenant: Option<Ident>,
         /// Source S3 URI
         location: Option<String>,
         /// Target timestamp (mutually exclusive with the other targets)
@@ -7666,6 +7672,8 @@ impl fmt::Display for Statement {
             }
             Statement::Restore {
                 object_type,
+                tenant,
+                as_new_tenant,
                 location,
                 target_timestamp,
                 target_hlc,
@@ -7673,7 +7681,9 @@ impl fmt::Display for Statement {
                 dry_run,
             } => {
                 write!(f, "RESTORE")?;
-                if let Some(obj) = object_type {
+                if let Some(tenant) = tenant {
+                    write!(f, " TENANT {tenant}")?;
+                } else if let Some(obj) = object_type {
                     write!(f, " {obj}")?;
                 } else {
                     write!(f, " DATABASE")?;
@@ -7689,6 +7699,9 @@ impl fmt::Display for Statement {
                 }
                 if let Some(lsn) = target_lsn {
                     write!(f, " TO LSN {lsn}")?;
+                }
+                if let Some(destination) = as_new_tenant {
+                    write!(f, " AS NEW TENANT {destination}")?;
                 }
                 if *dry_run {
                     write!(f, " DRY RUN")?;

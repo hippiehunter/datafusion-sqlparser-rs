@@ -21153,12 +21153,17 @@ impl<'a> Parser<'a> {
         Ok(reset_pitr_chain)
     }
 
-    /// Parse RESTORE {DATABASE | TABLE <name>} [FROM '<uri>'] TO {TIMESTAMP '<ts>' | LSN <n>} [DRY RUN]
+    /// Parse RESTORE {DATABASE | TABLE <name> | TENANT <name>} [FROM '<uri>']
+    /// TO {TIMESTAMP '<ts>' | HLC '<n>' | LSN <n>} [AS NEW TENANT <name>] [DRY RUN]
     pub fn parse_restore(&self) -> Result<Statement, ParserError> {
+        let mut tenant = None;
         let object_type = if self.parse_keyword(Keyword::DATABASE) {
             None
         } else if self.parse_keyword(Keyword::TABLE) {
             Some(self.parse_object_name(false)?)
+        } else if self.parse_keyword(Keyword::TENANT) {
+            tenant = Some(self.parse_identifier()?);
+            None
         } else {
             None
         };
@@ -21183,11 +21188,14 @@ impl<'a> Parser<'a> {
                         ParserError::ParserError(format!("invalid HLC value: {e}"))
                     })?);
             } else if self.parse_keyword(Keyword::LSN) {
-                let lsn_str = self.parse_literal_string()?;
-                target_lsn =
-                    Some(lsn_str.parse::<u64>().map_err(|e| {
+                let value = if matches!(self.peek_token_ref().token, BorrowedToken::SingleQuotedString(_)) {
+                    self.parse_literal_string()?.parse::<u64>().map_err(|e| {
                         ParserError::ParserError(format!("invalid LSN value: {e}"))
-                    })?);
+                    })?
+                } else {
+                    self.parse_literal_uint()?
+                };
+                target_lsn = Some(value);
             } else {
                 return Err(ParserError::ParserError(
                     "expected TIMESTAMP, HLC, or LSN after TO".to_string(),
@@ -21195,10 +21203,24 @@ impl<'a> Parser<'a> {
             }
         }
 
+        let as_new_tenant =
+            if self.parse_keywords(&[Keyword::AS, Keyword::NEW, Keyword::TENANT]) {
+                if tenant.is_none() {
+                    return Err(ParserError::ParserError(
+                        "AS NEW TENANT is only valid for RESTORE TENANT".to_string(),
+                    ));
+                }
+                Some(self.parse_identifier()?)
+            } else {
+                None
+            };
+
         let dry_run = self.parse_keywords(&[Keyword::DRY, Keyword::RUN]);
 
         Ok(Statement::Restore {
             object_type,
+            tenant,
+            as_new_tenant,
             location,
             target_timestamp,
             target_hlc,
