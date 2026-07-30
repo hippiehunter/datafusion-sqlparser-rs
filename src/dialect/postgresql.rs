@@ -91,6 +91,12 @@ impl Dialect for PostgreSqlDialect {
         true
     }
 
+    // Gantry's optional Trifox compatibility surface is parsed with the
+    // PostgreSQL dialect and semantically gated after parsing.
+    fn supports_try_convert(&self) -> bool {
+        true
+    }
+
     /// See <https://www.postgresql.org/docs/current/sql-createoperator.html>
     fn is_custom_operator_part(&self, ch: char) -> bool {
         matches!(

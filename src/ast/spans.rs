@@ -344,17 +344,7 @@ impl Spanned for Statement {
             Statement::CreatePropertyGraph(create_property_graph) => create_property_graph.token.0,
             Statement::AlterTable(alter_table) => alter_table.span(),
             Statement::AlterIndex { name, operation } => name.span().union(&operation.span()),
-            Statement::AlterView {
-                name,
-                columns,
-                query,
-                with_options,
-            } => union_spans(
-                core::iter::once(name.span())
-                    .chain(columns.iter().map(|i| i.span))
-                    .chain(core::iter::once(query.span()))
-                    .chain(with_options.iter().map(|i| i.span())),
-            ),
+            Statement::AlterView { name, .. } => name.span(),
             Statement::AlterMaterializedView { name, .. } => name.span(),
             Statement::RefreshMaterializedView { name, .. } => name.span(),
             // These statements need to be implemented
@@ -483,6 +473,7 @@ impl Spanned for Statement {
             } => create_token.0.union(&name.span()).union(&body.span()),
             Statement::Assert { assert_token, .. } => assert_token.0,
             Statement::Grant { grant_token, .. } => grant_token.0,
+            Statement::AlterDefaultPrivileges { alter_token, .. } => alter_token.0,
             Statement::Deny(deny_stmt) => deny_stmt.token.0,
             Statement::Revoke { revoke_token, .. } => revoke_token.0,
             Statement::GrantRole { grant_token, .. } => grant_token.0,

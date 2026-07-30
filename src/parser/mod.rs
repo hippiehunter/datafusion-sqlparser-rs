@@ -6295,7 +6295,7 @@ impl<'a> Parser<'a> {
     ///  - `CONVERT('héhé', CHAR CHARACTER SET utf8mb4)` (MySQL)
     ///  - `CONVERT(DECIMAL(10, 5), 42)` (MSSQL) - the type comes first
     pub fn parse_convert_expr(&self, is_try: bool) -> Result<Expr, ParserError> {
-        if self.features.convert_type_before_value {
+        if self.features.convert_type_before_value || is_try {
             return self.parse_mssql_convert(is_try);
         }
         self.expect_token(&BorrowedToken::LParen)?;
@@ -16495,6 +16495,9 @@ impl<'a> Parser<'a> {
             self.expect_keyword(Keyword::VIEW)?;
             return self.parse_alter_materialized_view();
         }
+        if self.parse_keywords(&[Keyword::DEFAULT, Keyword::PRIVILEGES]) {
+            return self.parse_alter_default_privileges();
+        }
 
         let object_type = self.expect_one_of_keywords(&[
             Keyword::VIEW,
@@ -16779,19 +16782,134 @@ impl<'a> Parser<'a> {
 
     pub fn parse_alter_view(&self) -> Result<Statement, ParserError> {
         let name = self.parse_object_name(false)?;
-        let columns = self.parse_parenthesized_column_list(Optional, false)?;
+        let operation = if self.parse_keywords(&[Keyword::RENAME, Keyword::TO]) {
+            AlterViewOperation::Rename {
+                new_name: self.parse_identifier()?,
+            }
+        } else if self.parse_keywords(&[Keyword::SET, Keyword::SCHEMA]) {
+            AlterViewOperation::SetSchema {
+                new_schema: self.parse_object_name(false)?,
+            }
+        } else if self.parse_keywords(&[Keyword::OWNER, Keyword::TO]) {
+            AlterViewOperation::OwnerTo {
+                new_owner: self.parse_owner()?,
+            }
+        } else if self.parse_keyword(Keyword::SET) {
+            self.expect_token(&BorrowedToken::LParen)?;
+            let options = self.parse_comma_separated(Parser::parse_sql_option)?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            AlterViewOperation::SetOptions { options }
+        } else if self.parse_keyword(Keyword::RESET) {
+            self.expect_token(&BorrowedToken::LParen)?;
+            let options = self.parse_comma_separated(Parser::parse_identifier)?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            AlterViewOperation::ResetOptions { options }
+        } else {
+            return self.expected(
+                "RENAME TO, SET SCHEMA, OWNER TO, SET (...), or RESET (...) after ALTER VIEW",
+                self.peek_token(),
+            );
+        };
 
-        let with_options = self.parse_options(Keyword::WITH)?;
+        Ok(Statement::AlterView { name, operation })
+    }
 
-        self.expect_keyword_is(Keyword::AS)?;
-        let query = self.parse_query()?;
+    fn parse_alter_default_privileges(&self) -> Result<Statement, ParserError> {
+        let alter_token = {
+            let current_pos = self.index();
+            self.prev_token();
+            self.prev_token();
+            self.prev_token();
+            let token = self.attached_token_from_current();
+            while self.index() < current_pos {
+                self.advance_token();
+            }
+            token
+        };
 
-        Ok(Statement::AlterView {
-            name,
-            columns,
-            query,
-            with_options,
-        })
+        let target_roles = if self.parse_keyword(Keyword::FOR) {
+            self.expect_one_of_keywords(&[Keyword::ROLE, Keyword::USER])?;
+            self.parse_comma_separated(Parser::parse_identifier)?
+        } else {
+            Vec::new()
+        };
+        let schemas = if self.parse_keywords(&[Keyword::IN, Keyword::SCHEMA]) {
+            self.parse_comma_separated(|p| p.parse_object_name(false))?
+        } else {
+            Vec::new()
+        };
+
+        let is_grant = if self.parse_keyword(Keyword::GRANT) {
+            true
+        } else if self.parse_keyword(Keyword::REVOKE) {
+            false
+        } else {
+            return self.expected("GRANT or REVOKE", self.peek_token());
+        };
+        let grant_option_for =
+            !is_grant && self.parse_keywords(&[Keyword::GRANT, Keyword::OPTION, Keyword::FOR]);
+        let privileges = if self.parse_keyword(Keyword::ALL) {
+            Privileges::All {
+                with_privileges_keyword: self.parse_keyword(Keyword::PRIVILEGES),
+            }
+        } else {
+            Privileges::Actions(self.parse_actions_list()?)
+        };
+        self.expect_keyword_is(Keyword::ON)?;
+        let object = match self.expect_one_of_keywords(&[
+            Keyword::TABLES,
+            Keyword::SEQUENCES,
+            Keyword::FUNCTIONS,
+            Keyword::PROCEDURES,
+            Keyword::TYPES,
+            Keyword::SCHEMAS,
+        ])? {
+            Keyword::TABLES => DefaultPrivilegeObject::Tables,
+            Keyword::SEQUENCES => DefaultPrivilegeObject::Sequences,
+            Keyword::FUNCTIONS => DefaultPrivilegeObject::Functions,
+            Keyword::PROCEDURES => DefaultPrivilegeObject::Procedures,
+            Keyword::TYPES => DefaultPrivilegeObject::Types,
+            Keyword::SCHEMAS => DefaultPrivilegeObject::Schemas,
+            _ => unreachable!(),
+        };
+        if is_grant {
+            self.expect_keyword_is(Keyword::TO)?;
+            let grantees = self.parse_grantees()?;
+            let with_grant_option =
+                self.parse_keywords(&[Keyword::WITH, Keyword::GRANT, Keyword::OPTION]);
+            Ok(Statement::AlterDefaultPrivileges {
+                alter_token,
+                target_roles,
+                schemas,
+                action: AlterDefaultPrivilegesAction::Grant {
+                    privileges,
+                    object,
+                    grantees,
+                    with_grant_option,
+                },
+            })
+        } else {
+            self.expect_keyword_is(Keyword::FROM)?;
+            let grantees = self.parse_grantees()?;
+            let cascade = if self.parse_keyword(Keyword::CASCADE) {
+                true
+            } else {
+                let _ = self.parse_keyword(Keyword::RESTRICT);
+                false
+            };
+            Ok(Statement::AlterDefaultPrivileges {
+                alter_token,
+                target_roles,
+                schemas,
+                action: AlterDefaultPrivilegesAction::Revoke {
+                    privileges,
+                    object,
+                    grantees,
+                    grant_option_for,
+                    cascade,
+                },
+            })
+        }
     }
 
     pub fn parse_alter_materialized_view(&self) -> Result<Statement, ParserError> {

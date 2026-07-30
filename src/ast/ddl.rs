@@ -793,6 +793,34 @@ pub enum AlterTypeOperation {
     RenameValue(AlterTypeRenameValue),
 }
 
+/// An operation supported by PostgreSQL `ALTER VIEW`.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum AlterViewOperation {
+    Rename { new_name: Ident },
+    SetSchema { new_schema: ObjectName },
+    OwnerTo { new_owner: Owner },
+    SetOptions { options: Vec<SqlOption> },
+    ResetOptions { options: Vec<Ident> },
+}
+
+impl fmt::Display for AlterViewOperation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Rename { new_name } => write!(f, "RENAME TO {new_name}"),
+            Self::SetSchema { new_schema } => write!(f, "SET SCHEMA {new_schema}"),
+            Self::OwnerTo { new_owner } => write!(f, "OWNER TO {new_owner}"),
+            Self::SetOptions { options } => {
+                write!(f, "SET ({})", display_comma_separated(options))
+            }
+            Self::ResetOptions { options } => {
+                write!(f, "RESET ({})", display_comma_separated(options))
+            }
+        }
+    }
+}
+
 /// See [AlterTypeOperation::Rename]
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

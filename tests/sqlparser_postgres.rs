@@ -7710,3 +7710,39 @@ fn parse_synergy_skip_and_top_prefixes() {
         pg().one_statement_parses_to(sql, sql);
     }
 }
+
+#[test]
+fn parse_alter_default_privileges() {
+    for sql in [
+        "ALTER DEFAULT PRIVILEGES IN SCHEMA app GRANT SELECT ON TABLES TO reader",
+        "ALTER DEFAULT PRIVILEGES FOR ROLE owner IN SCHEMA app GRANT USAGE ON SEQUENCES TO reader WITH GRANT OPTION",
+        "ALTER DEFAULT PRIVILEGES REVOKE GRANT OPTION FOR EXECUTE ON FUNCTIONS FROM reader CASCADE",
+    ] {
+        pg().one_statement_parses_to(sql, sql);
+    }
+}
+
+#[test]
+fn parse_postgresql_alter_view_operations() {
+    for sql in [
+        "ALTER VIEW old_view RENAME TO new_view",
+        "ALTER VIEW app.v SET SCHEMA archive",
+        "ALTER VIEW app.v OWNER TO owner",
+        "ALTER VIEW app.v SET (security_barrier = true)",
+        "ALTER VIEW app.v RESET (security_barrier)",
+    ] {
+        pg().one_statement_parses_to(sql, sql);
+    }
+}
+
+#[test]
+fn parse_trifox_try_convert_with_postgresql_front_door() {
+    pg().one_statement_parses_to(
+        "SELECT TRY_CONVERT(INTEGER, value)",
+        "SELECT TRY_CONVERT(INTEGER, value)",
+    );
+    pg().one_statement_parses_to(
+        "SELECT TRY_CONVERT(VARCHAR(20), value, 1)",
+        "SELECT TRY_CONVERT(VARCHAR(20), value, 1)",
+    );
+}

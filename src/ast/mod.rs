@@ -51,19 +51,19 @@ pub use self::data_type::{
     ExactNumberInfo, IntervalFields, MdArrayTypeDef, StructBracketKind, TimezoneInfo,
 };
 pub use self::dcl::{
-    AlterConfigurationOperation, AlterRoleOperation, CreateRole, ResetConfig, RoleOption,
-    SetConfigValue, Use,
+    AlterConfigurationOperation, AlterDefaultPrivilegesAction, AlterRoleOperation, CreateRole,
+    DefaultPrivilegeObject, ResetConfig, RoleOption, SetConfigValue, Use,
 };
 pub use self::ddl::{
     Alignment, AlterColumnOperation, AlterIndexOperation, AlterPolicyOperation, AlterSchema,
     AlterSchemaOperation, AlterTable, AlterTableAlgorithm, AlterTableLock, AlterTableOperation,
     AlterType, AlterTypeAddValue, AlterTypeAddValuePosition, AlterTypeOperation, AlterTypeRename,
-    AlterTypeRenameValue, ColumnDef, ColumnOption, ColumnOptionDef, ColumnOptions,
-    ConstraintCharacteristics, CreateAssertion, CreateDomain, CreateExtension, CreateFunction,
-    CreateIndex, CreateOperator, CreateOperatorClass, CreateOperatorFamily, CreatePropertyGraph,
-    CreateTable, CreateTableSystemVersioning, CreateTrigger, CreateView, Deduplicate,
-    DeferrableInitial, DropBehavior, DropExtension, DropFunction, DropPropertyGraph, DropTrigger,
-    GeneratedAs, GeneratedExpressionMode, GraphEdgeEndpoint, GraphEdgeTableDefinition,
+    AlterTypeRenameValue, AlterViewOperation, ColumnDef, ColumnOption, ColumnOptionDef,
+    ColumnOptions, ConstraintCharacteristics, CreateAssertion, CreateDomain, CreateExtension,
+    CreateFunction, CreateIndex, CreateOperator, CreateOperatorClass, CreateOperatorFamily,
+    CreatePropertyGraph, CreateTable, CreateTableSystemVersioning, CreateTrigger, CreateView,
+    Deduplicate, DeferrableInitial, DropBehavior, DropExtension, DropFunction, DropPropertyGraph,
+    DropTrigger, GeneratedAs, GeneratedExpressionMode, GraphEdgeEndpoint, GraphEdgeTableDefinition,
     GraphKeyClause, GraphPropertiesClause, GraphVertexTableDefinition, IdentityParameters,
     IdentityProperty, IdentityPropertyFormatKind, IdentityPropertyKind, IdentityPropertyOrder,
     IndexColumn, IndexOption, IndexType, KeyOrIndexDisplay, NullsDistinctOption, OperatorArgTypes,
@@ -6915,9 +6915,7 @@ pub enum Statement {
         /// View name
         #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
         name: ObjectName,
-        columns: Vec<Ident>,
-        query: Box<Query>,
-        with_options: Vec<SqlOption>,
+        operation: AlterViewOperation,
     },
     /// ```sql
     /// ALTER MATERIALIZED VIEW
@@ -7672,6 +7670,14 @@ pub enum Statement {
         with_grant_option: bool,
         as_grantor: Option<Ident>,
         granted_by: Option<Ident>,
+    },
+    /// PostgreSQL `ALTER DEFAULT PRIVILEGES`.
+    AlterDefaultPrivileges {
+        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+        alter_token: AttachedToken,
+        target_roles: Vec<Ident>,
+        schemas: Vec<ObjectName>,
+        action: AlterDefaultPrivilegesAction,
     },
     /// ```sql
     /// DENY privileges ON object TO grantees
@@ -10899,20 +10905,8 @@ impl fmt::Display for Statement {
             Statement::AlterIndex { name, operation } => {
                 write!(f, "ALTER INDEX {name} {operation}")
             }
-            Statement::AlterView {
-                name,
-                columns,
-                query,
-                with_options,
-            } => {
-                write!(f, "ALTER VIEW {name}")?;
-                if !with_options.is_empty() {
-                    write!(f, " WITH ({})", display_comma_separated(with_options))?;
-                }
-                if !columns.is_empty() {
-                    write!(f, " ({})", display_comma_separated(columns))?;
-                }
-                write!(f, " AS {query}")
+            Statement::AlterView { name, operation } => {
+                write!(f, "ALTER VIEW {name} {operation}")
             }
             Statement::AlterMaterializedView { name, operation } => {
                 write!(f, "ALTER MATERIALIZED VIEW {name} {operation}")
@@ -11623,6 +11617,21 @@ impl fmt::Display for Statement {
                     write!(f, " GRANTED BY {grantor}")?;
                 }
                 Ok(())
+            }
+            Statement::AlterDefaultPrivileges {
+                alter_token: _,
+                target_roles,
+                schemas,
+                action,
+            } => {
+                write!(f, "ALTER DEFAULT PRIVILEGES")?;
+                if !target_roles.is_empty() {
+                    write!(f, " FOR ROLE {}", display_comma_separated(target_roles))?;
+                }
+                if !schemas.is_empty() {
+                    write!(f, " IN SCHEMA {}", display_comma_separated(schemas))?;
+                }
+                write!(f, " {action}")
             }
             Statement::Deny(s) => write!(f, "{s}"),
             Statement::Revoke {

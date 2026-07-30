@@ -29,7 +29,7 @@ use serde::{Deserialize, Serialize};
 use sqlparser_derive::{Visit, VisitMut};
 
 use super::{display_comma_separated, Expr, Ident, Password, Spanned};
-use crate::ast::{display_separated, ObjectName};
+use crate::ast::{display_separated, Grantee, ObjectName, Privileges};
 use crate::tokenizer::Span;
 
 /// An option in `ROLE` statement.
@@ -49,6 +49,93 @@ pub enum RoleOption {
     Replication(bool),
     SuperUser(bool),
     ValidUntil(Expr),
+}
+
+/// Object class targeted by `ALTER DEFAULT PRIVILEGES`.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum DefaultPrivilegeObject {
+    Tables,
+    Sequences,
+    Functions,
+    Procedures,
+    Types,
+    Schemas,
+}
+
+impl fmt::Display for DefaultPrivilegeObject {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Tables => "TABLES",
+            Self::Sequences => "SEQUENCES",
+            Self::Functions => "FUNCTIONS",
+            Self::Procedures => "PROCEDURES",
+            Self::Types => "TYPES",
+            Self::Schemas => "SCHEMAS",
+        })
+    }
+}
+
+/// Grant or revoke action in an `ALTER DEFAULT PRIVILEGES` statement.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum AlterDefaultPrivilegesAction {
+    Grant {
+        privileges: Privileges,
+        object: DefaultPrivilegeObject,
+        grantees: Vec<Grantee>,
+        with_grant_option: bool,
+    },
+    Revoke {
+        privileges: Privileges,
+        object: DefaultPrivilegeObject,
+        grantees: Vec<Grantee>,
+        grant_option_for: bool,
+        cascade: bool,
+    },
+}
+
+impl fmt::Display for AlterDefaultPrivilegesAction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Grant {
+                privileges,
+                object,
+                grantees,
+                with_grant_option,
+            } => {
+                write!(
+                    f,
+                    "GRANT {privileges} ON {object} TO {}",
+                    display_comma_separated(grantees)
+                )?;
+                if *with_grant_option {
+                    write!(f, " WITH GRANT OPTION")?;
+                }
+                Ok(())
+            }
+            Self::Revoke {
+                privileges,
+                object,
+                grantees,
+                grant_option_for,
+                cascade,
+            } => {
+                write!(f, "REVOKE ")?;
+                if *grant_option_for {
+                    write!(f, "GRANT OPTION FOR ")?;
+                }
+                write!(
+                    f,
+                    "{privileges} ON {object} FROM {} {}",
+                    display_comma_separated(grantees),
+                    if *cascade { "CASCADE" } else { "RESTRICT" }
+                )
+            }
+        }
+    }
 }
 
 impl fmt::Display for RoleOption {
