@@ -17,6 +17,7 @@
 
 mod mssql;
 mod mysql;
+mod oracle;
 mod postgresql;
 
 use core::any::{Any, TypeId};
@@ -28,6 +29,7 @@ use log::debug;
 
 pub use self::mssql::MsSqlDialect;
 pub use self::mysql::MySqlDialect;
+pub use self::oracle::OracleDialect;
 pub use self::postgresql::PostgreSqlDialect;
 use crate::ast::{ColumnOption, Expr, GranteesType, Ident, ObjectNamePart, Statement};
 pub use crate::keywords;
@@ -221,6 +223,12 @@ pub trait Dialect: Debug + Any {
     ///  - [Postgres docs](https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-SYNTAX-STRINGS-UESCAPE)
     ///  - [H2 docs](http://www.h2database.com/html/grammar.html#string)
     fn supports_unicode_string_literal(&self) -> bool {
+        false
+    }
+
+    /// Determine if the dialect supports alternative quoted string literals
+    /// such as `q'[text containing ' quotes]'`.
+    fn supports_alternative_quoted_string_literal(&self) -> bool {
         false
     }
 
@@ -1281,6 +1289,8 @@ pub trait Dialect: Debug + Any {
                 .supports_string_literal_backslash_escape(),
             ignores_wildcard_escapes: self.ignores_wildcard_escapes(),
             supports_unicode_string_literal: self.supports_unicode_string_literal(),
+            supports_alternative_quoted_string_literal: self
+                .supports_alternative_quoted_string_literal(),
             supports_wait_for_lsn: self.supports_wait_for_lsn(),
             supports_table_maintenance_commands: self.supports_table_maintenance_commands(),
             supports_tenant_maintenance_commands: self.supports_tenant_maintenance_commands(),
@@ -1379,6 +1389,7 @@ pub struct DialectFeatures {
     pub supports_string_literal_backslash_escape: bool,
     pub ignores_wildcard_escapes: bool,
     pub supports_unicode_string_literal: bool,
+    pub supports_alternative_quoted_string_literal: bool,
     pub supports_wait_for_lsn: bool,
     pub supports_table_maintenance_commands: bool,
     pub supports_tenant_maintenance_commands: bool,
@@ -1424,6 +1435,7 @@ pub fn dialect_from_str(dialect_name: impl AsRef<str>) -> Option<Box<dyn Dialect
     let dialect_name = dialect_name.as_ref();
     match dialect_name.to_lowercase().as_str() {
         "mysql" => Some(Box::new(MySqlDialect {})),
+        "oracle" => Some(Box::new(OracleDialect {})),
         "postgresql" | "postgres" => Some(Box::new(PostgreSqlDialect {})),
         "mssql" => Some(Box::new(MsSqlDialect {})),
         _ => None,
@@ -1461,6 +1473,8 @@ mod tests {
     fn test_dialect_from_str() {
         assert!(parse_dialect("mysql").is::<MySqlDialect>());
         assert!(parse_dialect("MySql").is::<MySqlDialect>());
+        assert!(parse_dialect("oracle").is::<OracleDialect>());
+        assert!(parse_dialect("Oracle").is::<OracleDialect>());
         assert!(parse_dialect("postgresql").is::<PostgreSqlDialect>());
         assert!(parse_dialect("postgres").is::<PostgreSqlDialect>());
         assert!(parse_dialect("MsSql").is::<MsSqlDialect>());
@@ -1478,6 +1492,7 @@ mod tests {
     fn identifier_quote_style() {
         let tests: Vec<(&dyn Dialect, &str, Option<char>)> = vec![
             (&PostgreSqlDialect {}, "id", Some('"')),
+            (&OracleDialect {}, "id", Some('"')),
             (&MySqlDialect {}, "id", Some('`')),
         ];
 

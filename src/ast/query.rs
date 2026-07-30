@@ -98,6 +98,11 @@ impl fmt::Display for Query {
 pub enum SetExpr {
     /// Restricted SELECT .. FROM .. HAVING (no ORDER BY or set operations)
     Select(Box<Select>),
+    /// An Oracle `SELECT ... MODEL` query.
+    OracleModel {
+        select: Box<Select>,
+        model: OracleModelClause,
+    },
     /// Parenthesized SELECT subquery, which may include more set operations
     /// in its body and an optional ORDER BY / LIMIT.
     Query(Box<Query>),
@@ -119,10 +124,9 @@ pub enum SetExpr {
 impl SetExpr {
     /// If this `SetExpr` is a `SELECT`, returns the [`Select`].
     pub fn as_select(&self) -> Option<&Select> {
-        if let Self::Select(select) = self {
-            Some(&**select)
-        } else {
-            None
+        match self {
+            Self::Select(select) | Self::OracleModel { select, .. } => Some(&**select),
+            _ => None,
         }
     }
 }
@@ -131,6 +135,7 @@ impl fmt::Display for SetExpr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             SetExpr::Select(s) => s.fmt(f),
+            SetExpr::OracleModel { select, model } => write!(f, "{select} {model}"),
             SetExpr::Query(q) => {
                 f.write_str("(")?;
                 q.fmt(f)?;
@@ -168,6 +173,418 @@ impl fmt::Display for SetExpr {
             }
         }
     }
+}
+
+/// The core clauses of an Oracle SQL `MODEL` query.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleModelClause {
+    pub global_options: OracleModelCellReferenceOptions,
+    pub return_rows: Option<OracleModelReturnRows>,
+    pub reference_models: Vec<OracleReferenceModel>,
+    pub name: Option<Ident>,
+    pub partition_by: Vec<ExprWithAlias>,
+    pub dimension_by: Vec<ExprWithAlias>,
+    pub measures: Vec<ExprWithAlias>,
+    pub cell_reference_options: OracleModelCellReferenceOptions,
+    pub rule_mode: Option<OracleModelRuleMode>,
+    pub rule_order: Option<OracleModelRuleOrder>,
+    pub iterate: Option<OracleModelIterate>,
+    pub rules: Vec<OracleModelRule>,
+}
+
+impl fmt::Display for OracleModelClause {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("MODEL")?;
+        self.global_options.fmt_with_prefix(f)?;
+        if let Some(return_rows) = self.return_rows {
+            write!(f, " RETURN {return_rows} ROWS")?;
+        }
+        for reference in &self.reference_models {
+            write!(f, " {reference}")?;
+        }
+        if let Some(name) = &self.name {
+            write!(f, " MAIN {name}")?;
+        }
+        fmt_oracle_model_columns(f, &self.partition_by, &self.dimension_by, &self.measures)?;
+        self.cell_reference_options.fmt_with_prefix(f)?;
+        if self.rule_mode.is_some() || self.rule_order.is_some() || self.iterate.is_some() {
+            f.write_str(" RULES")?;
+            if let Some(mode) = self.rule_mode {
+                write!(f, " {mode}")?;
+            }
+            if let Some(order) = self.rule_order {
+                write!(f, " {order} ORDER")?;
+            }
+            if let Some(iterate) = &self.iterate {
+                write!(f, " {iterate}")?;
+            }
+        }
+        write!(f, " ({})", display_comma_separated(&self.rules))
+    }
+}
+
+fn fmt_oracle_model_columns(
+    f: &mut fmt::Formatter,
+    partition_by: &[ExprWithAlias],
+    dimension_by: &[ExprWithAlias],
+    measures: &[ExprWithAlias],
+) -> fmt::Result {
+    if !partition_by.is_empty() {
+        write!(
+            f,
+            " PARTITION BY ({})",
+            display_comma_separated(partition_by)
+        )?;
+    }
+    write!(
+        f,
+        " DIMENSION BY ({}) MEASURES ({})",
+        display_comma_separated(dimension_by),
+        display_comma_separated(measures)
+    )
+}
+
+#[derive(Debug, Clone, Default, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleModelCellReferenceOptions {
+    pub nav: Option<OracleModelNav>,
+    pub unique: Option<OracleModelUnique>,
+}
+
+impl OracleModelCellReferenceOptions {
+    fn fmt_with_prefix(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Some(nav) = self.nav {
+            write!(f, " {nav} NAV")?;
+        }
+        if let Some(unique) = self.unique {
+            write!(f, " UNIQUE {unique}")?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleModelNav {
+    Ignore,
+    Keep,
+}
+
+impl fmt::Display for OracleModelNav {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            Self::Ignore => "IGNORE",
+            Self::Keep => "KEEP",
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleModelUnique {
+    Dimension,
+    SingleReference,
+}
+
+impl fmt::Display for OracleModelUnique {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            Self::Dimension => "DIMENSION",
+            Self::SingleReference => "SINGLE REFERENCE",
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleModelReturnRows {
+    Updated,
+    All,
+}
+
+impl fmt::Display for OracleModelReturnRows {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            Self::Updated => "UPDATED",
+            Self::All => "ALL",
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleReferenceModel {
+    pub name: Ident,
+    pub query: Box<Query>,
+    pub partition_by: Vec<ExprWithAlias>,
+    pub dimension_by: Vec<ExprWithAlias>,
+    pub measures: Vec<ExprWithAlias>,
+    pub cell_reference_options: OracleModelCellReferenceOptions,
+}
+
+impl fmt::Display for OracleReferenceModel {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "REFERENCE {} ON ({})", self.name, self.query)?;
+        fmt_oracle_model_columns(f, &self.partition_by, &self.dimension_by, &self.measures)?;
+        self.cell_reference_options.fmt_with_prefix(f)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleModelRuleMode {
+    Update,
+    Upsert,
+    UpsertAll,
+}
+
+impl fmt::Display for OracleModelRuleMode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            Self::Update => "UPDATE",
+            Self::Upsert => "UPSERT",
+            Self::UpsertAll => "UPSERT ALL",
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleModelRuleOrder {
+    Automatic,
+    Sequential,
+}
+
+impl fmt::Display for OracleModelRuleOrder {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            Self::Automatic => "AUTOMATIC",
+            Self::Sequential => "SEQUENTIAL",
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleModelIterate {
+    pub iterations: Expr,
+    pub until: Option<Expr>,
+}
+
+impl fmt::Display for OracleModelIterate {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "ITERATE ({})", self.iterations)?;
+        if let Some(until) = &self.until {
+            write!(f, " UNTIL ({until})")?;
+        }
+        Ok(())
+    }
+}
+
+/// An assignment in an Oracle SQL `MODEL` rules clause.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleModelRule {
+    pub mode: Option<OracleModelRuleMode>,
+    pub target: OracleModelRuleTarget,
+    pub order_by: Vec<OrderByExpr>,
+    pub value: Expr,
+}
+
+impl fmt::Display for OracleModelRule {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Some(mode) = self.mode {
+            write!(f, "{mode} ")?;
+        }
+        write!(f, "{}", self.target)?;
+        if !self.order_by.is_empty() {
+            write!(f, " ORDER BY {}", display_comma_separated(&self.order_by))?;
+        }
+        write!(f, " = {}", self.value)
+    }
+}
+
+/// The cells selected on the left-hand side of an Oracle SQL `MODEL` rule.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleModelRuleTarget {
+    Expr(Expr),
+    ForLoop(OracleModelForLoopAssignment),
+}
+
+impl fmt::Display for OracleModelRuleTarget {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Expr(expr) => expr.fmt(f),
+            Self::ForLoop(assignment) => assignment.fmt(f),
+        }
+    }
+}
+
+/// A `MODEL` cell assignment containing one or more `FOR` loops.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleModelForLoopAssignment {
+    pub measure: Ident,
+    pub selectors: OracleModelForLoopSelectors,
+}
+
+impl fmt::Display for OracleModelForLoopAssignment {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}[{}]", self.measure, self.selectors)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleModelForLoopSelectors {
+    Items(Vec<OracleModelCellSelector>),
+    MultiColumn(OracleModelMultiColumnForLoop),
+}
+
+impl fmt::Display for OracleModelForLoopSelectors {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Items(items) => display_comma_separated(items).fmt(f),
+            Self::MultiColumn(for_loop) => for_loop.fmt(f),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleModelCellSelector {
+    Expr(Expr),
+    For(OracleModelSingleColumnForLoop),
+}
+
+impl fmt::Display for OracleModelCellSelector {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Expr(expr) => expr.fmt(f),
+            Self::For(for_loop) => for_loop.fmt(f),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleModelSingleColumnForLoop {
+    pub dimension: Ident,
+    pub values: OracleModelSingleColumnForLoopValues,
+}
+
+impl fmt::Display for OracleModelSingleColumnForLoop {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "FOR {} {}", self.dimension, self.values)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleModelSingleColumnForLoopValues {
+    InList(Vec<Expr>),
+    InQuery(Box<Query>),
+    Range {
+        like: Option<Expr>,
+        from: Expr,
+        to: Expr,
+        direction: OracleModelForLoopDirection,
+        step: Expr,
+    },
+}
+
+impl fmt::Display for OracleModelSingleColumnForLoopValues {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::InList(values) => write!(f, "IN ({})", display_comma_separated(values)),
+            Self::InQuery(query) => write!(f, "IN ({query})"),
+            Self::Range {
+                like,
+                from,
+                to,
+                direction,
+                step,
+            } => {
+                if let Some(pattern) = like {
+                    write!(f, "LIKE {pattern} ")?;
+                }
+                write!(f, "FROM {from} TO {to} {direction} {step}")
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleModelForLoopDirection {
+    Increment,
+    Decrement,
+}
+
+impl fmt::Display for OracleModelForLoopDirection {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            Self::Increment => "INCREMENT",
+            Self::Decrement => "DECREMENT",
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleModelMultiColumnForLoop {
+    pub dimensions: Vec<Ident>,
+    pub values: OracleModelMultiColumnForLoopValues,
+}
+
+impl fmt::Display for OracleModelMultiColumnForLoop {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "FOR ({}) IN (",
+            display_comma_separated(&self.dimensions)
+        )?;
+        match &self.values {
+            OracleModelMultiColumnForLoopValues::Rows(rows) => {
+                for (index, row) in rows.iter().enumerate() {
+                    if index > 0 {
+                        f.write_str(", ")?;
+                    }
+                    write!(f, "({})", display_comma_separated(row))?;
+                }
+            }
+            OracleModelMultiColumnForLoopValues::Query(query) => query.fmt(f)?,
+        }
+        f.write_str(")")
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleModelMultiColumnForLoopValues {
+    Rows(Vec<Vec<Expr>>),
+    Query(Box<Query>),
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
@@ -283,6 +700,8 @@ pub struct Select {
     pub group_by: GroupByExpr,
     /// HAVING
     pub having: Option<Box<Expr>>,
+    /// Oracle `QUALIFY` filtering after analytic function evaluation.
+    pub qualify: Option<Box<Expr>>,
     /// WINDOW AS
     pub named_window: Vec<NamedWindowDefinition>,
     /// STARTING WITH .. CONNECT BY
@@ -353,12 +772,22 @@ impl fmt::Display for Select {
                     self.group_by.fmt(f)?;
                 }
             }
+            GroupByExpr::OracleVector(_) => {
+                SpaceOrNewline.fmt(f)?;
+                self.group_by.fmt(f)?;
+            }
         }
         if let Some(ref having) = self.having {
             SpaceOrNewline.fmt(f)?;
             f.write_str("HAVING")?;
             SpaceOrNewline.fmt(f)?;
             Indent(having).fmt(f)?;
+        }
+        if let Some(ref qualify) = self.qualify {
+            SpaceOrNewline.fmt(f)?;
+            f.write_str("QUALIFY")?;
+            SpaceOrNewline.fmt(f)?;
+            Indent(qualify).fmt(f)?;
         }
         if !self.named_window.is_empty() {
             SpaceOrNewline.fmt(f)?;
@@ -430,6 +859,8 @@ pub struct With {
     /// Token for the "WITH" keyword
     pub with_token: AttachedToken,
     pub recursive: bool,
+    /// Oracle PL/SQL declarations preceding CTEs or the query body.
+    pub oracle_declarations: Vec<OraclePlSqlRoutine>,
     pub cte_tables: Vec<Cte>,
     /// SQL:2016 T133: SEARCH clause for recursive CTEs
     pub search: Option<SearchClause>,
@@ -480,10 +911,10 @@ impl fmt::Display for SearchOrder {
     }
 }
 
-/// SQL:2016 T133: CYCLE clause for recursive CTEs
+/// Recursive CTE CYCLE clause.
 /// ```sql
 /// CYCLE col1, col2 SET is_cycle USING path
-/// CYCLE col1, col2 SET is_cycle TO 'Y' DEFAULT 'N' USING path  -- SQL:2023
+/// CYCLE col1, col2 SET is_cycle TO 'Y' DEFAULT 'N'
 /// ```
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -497,8 +928,8 @@ pub struct CycleClause {
     pub cycle_value: Option<Expr>,
     /// SQL:2023: Value when no cycle (DEFAULT value)
     pub non_cycle_value: Option<Expr>,
-    /// Column name for the path array
-    pub using_column: Ident,
+    /// Column name for the path array in the SQL-standard form.
+    pub using_column: Option<Ident>,
 }
 
 impl fmt::Display for CycleClause {
@@ -512,7 +943,10 @@ impl fmt::Display for CycleClause {
         if let Some(ref non_cycle_val) = self.non_cycle_value {
             write!(f, " DEFAULT {}", non_cycle_val)?;
         }
-        write!(f, " USING {}", self.using_column)
+        if let Some(ref using_column) = self.using_column {
+            write!(f, " USING {using_column}")?;
+        }
+        Ok(())
     }
 }
 
@@ -522,7 +956,12 @@ impl fmt::Display for With {
         if self.recursive {
             f.write_str("RECURSIVE ")?;
         }
-        display_comma_separated(&self.cte_tables).fmt(f)?;
+        for declaration in &self.oracle_declarations {
+            write!(f, "{declaration}; ")?;
+        }
+        if !self.cte_tables.is_empty() {
+            display_comma_separated(&self.cte_tables).fmt(f)?;
+        }
         if let Some(ref search) = self.search {
             write!(f, " {}", search)?;
         }
@@ -900,19 +1339,23 @@ impl fmt::Display for TableWithJoins {
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct ConnectBy {
     /// START WITH
-    pub condition: Expr,
-    /// CONNECT BY
+    pub condition: Option<Expr>,
+    /// CONNECT BY NOCYCLE
+    pub nocycle: bool,
+    /// CONNECT BY relationships
     pub relationships: Vec<Expr>,
 }
 
 impl fmt::Display for ConnectBy {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "START WITH {condition} CONNECT BY {relationships}",
-            condition = self.condition,
-            relationships = display_comma_separated(&self.relationships)
-        )
+        if let Some(condition) = &self.condition {
+            write!(f, "START WITH {condition} ")?;
+        }
+        write!(f, "CONNECT BY")?;
+        if self.nocycle {
+            write!(f, " NOCYCLE")?;
+        }
+        write!(f, " {}", display_comma_separated(&self.relationships))
     }
 }
 
@@ -1168,6 +1611,11 @@ pub enum TableFactor {
         /// The alias for the table.
         alias: Option<TableAlias>,
     },
+    /// Oracle inline external table.
+    OracleExternal {
+        definition: OracleExternalTableDefinition,
+        alias: Option<TableAlias>,
+    },
     /// Represents a parenthesized table factor. The SQL spec only allows a
     /// join expression (`(foo <JOIN> bar [ <JOIN> baz ... ])`) to be nested,
     /// possibly several times.
@@ -1183,6 +1631,8 @@ pub enum TableFactor {
     ///
     Pivot {
         table: Box<TableFactor>,
+        /// Oracle XML-form pivot.
+        xml: bool,
         aggregate_functions: Vec<ExprWithAlias>, // Function expression
         value_column: Vec<Expr>,
         value_source: PivotValueSource,
@@ -1800,6 +2250,8 @@ pub struct NodePattern {
     pub variable: Option<Ident>,
     /// Optional label expression(s) - multiple labels are conjunction
     pub labels: Vec<LabelExpression>,
+    /// Oracle `IS label` spelling rather than SQL/PGQ `:label`.
+    pub is_label_syntax: bool,
     /// Optional property constraints
     pub properties: Vec<PropertyKeyValue>,
     /// Optional WHERE clause
@@ -1812,8 +2264,12 @@ impl fmt::Display for NodePattern {
         if let Some(var) = &self.variable {
             write!(f, "{var}")?;
         }
-        for label in &self.labels {
-            write!(f, ":{label}")?;
+        for (index, label) in self.labels.iter().enumerate() {
+            if self.is_label_syntax {
+                write!(f, "{}{label}", if index == 0 { " IS " } else { "|" })?;
+            } else {
+                write!(f, ":{label}")?;
+            }
         }
         if !self.properties.is_empty() {
             write!(f, " {{")?;
@@ -1841,6 +2297,8 @@ pub struct EdgePattern {
     pub variable: Option<Ident>,
     /// Optional label expression(s)
     pub labels: Vec<LabelExpression>,
+    /// Oracle `IS label` spelling rather than SQL/PGQ `:label`.
+    pub is_label_syntax: bool,
     /// Optional property constraints
     pub properties: Vec<PropertyKeyValue>,
     /// Optional WHERE clause
@@ -1875,8 +2333,12 @@ impl fmt::Display for EdgePattern {
             if let Some(var) = &self.variable {
                 write!(f, "{var}")?;
             }
-            for label in &self.labels {
-                write!(f, ":{label}")?;
+            for (index, label) in self.labels.iter().enumerate() {
+                if self.is_label_syntax {
+                    write!(f, "{}{label}", if index == 0 { " IS " } else { "|" })?;
+                } else {
+                    write!(f, ":{label}")?;
+                }
             }
             if !self.properties.is_empty() {
                 write!(f, " {{")?;
@@ -2366,7 +2828,7 @@ impl fmt::Display for TableFactor {
                     json_path.fmt(f)?;
                 }
                 if !partitions.is_empty() {
-                    write!(f, "PARTITION ({})", display_comma_separated(partitions))?;
+                    write!(f, " PARTITION ({})", display_comma_separated(partitions))?;
                 }
                 if let Some(args) = args {
                     write!(f, "(")?;
@@ -2497,6 +2959,18 @@ impl fmt::Display for TableFactor {
                 }
                 Ok(())
             }
+            TableFactor::OracleExternal { definition, alias } => {
+                write!(
+                    f,
+                    "EXTERNAL (({}) {})",
+                    display_comma_separated(&definition.columns),
+                    definition
+                )?;
+                if let Some(alias) = alias {
+                    write!(f, " {alias}")?;
+                }
+                Ok(())
+            }
             TableFactor::NestedJoin {
                 table_with_joins,
                 alias,
@@ -2509,6 +2983,7 @@ impl fmt::Display for TableFactor {
             }
             TableFactor::Pivot {
                 table,
+                xml,
                 aggregate_functions,
                 value_column,
                 value_source,
@@ -2517,7 +2992,8 @@ impl fmt::Display for TableFactor {
             } => {
                 write!(
                     f,
-                    "{table} PIVOT({} FOR ",
+                    "{table} PIVOT{}({} FOR ",
+                    if *xml { " XML " } else { "" },
                     display_comma_separated(aggregate_functions),
                 )?;
                 if value_column.len() == 1 {
@@ -2758,6 +3234,17 @@ impl fmt::Display for TableAliasColumnDef {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub enum TableVersion {
+    /// Oracle `AS OF SCN|TIMESTAMP` flashback query.
+    OracleAsOf {
+        kind: OracleFlashbackVersionKind,
+        expr: Expr,
+    },
+    /// Oracle `VERSIONS BETWEEN SCN|TIMESTAMP ... AND ...` flashback query.
+    OracleVersionsBetween {
+        kind: OracleFlashbackVersionKind,
+        start: OracleFlashbackBoundary,
+        end: OracleFlashbackBoundary,
+    },
     /// When the table version is defined using `FOR SYSTEM_TIME AS OF`.
     /// For example: `SELECT * FROM tbl FOR SYSTEM_TIME AS OF TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR)`
     ForSystemTimeAsOf(Expr),
@@ -2781,6 +3268,10 @@ pub enum TableVersion {
 impl Display for TableVersion {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            TableVersion::OracleAsOf { kind, expr } => write!(f, "AS OF {kind} {expr}")?,
+            TableVersion::OracleVersionsBetween { kind, start, end } => {
+                write!(f, "VERSIONS BETWEEN {kind} {start} AND {end}")?
+            }
             TableVersion::ForSystemTimeAsOf(e) => write!(f, "FOR SYSTEM_TIME AS OF {e}")?,
             TableVersion::ForSystemTimeFromTo { start, end } => {
                 write!(f, "FOR SYSTEM_TIME FROM {start} TO {end}")?
@@ -2795,6 +3286,42 @@ impl Display for TableVersion {
             TableVersion::Function(func) => write!(f, "{func}")?,
         }
         Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleFlashbackVersionKind {
+    Scn,
+    Timestamp,
+}
+
+impl Display for OracleFlashbackVersionKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            Self::Scn => "SCN",
+            Self::Timestamp => "TIMESTAMP",
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleFlashbackBoundary {
+    Expr(Expr),
+    MinValue,
+    MaxValue,
+}
+
+impl Display for OracleFlashbackBoundary {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Expr(expr) => write!(f, "{expr}"),
+            Self::MinValue => f.write_str("MINVALUE"),
+            Self::MaxValue => f.write_str("MAXVALUE"),
+        }
     }
 }
 
@@ -2929,6 +3456,16 @@ impl fmt::Display for Join {
                 self.relation,
                 suffix(constraint)
             )),
+            JoinOperator::OraclePartitioned {
+                kind,
+                partition_by,
+                constraint,
+            } => f.write_fmt(format_args!(
+                "{kind} JOIN {} PARTITION BY ({}){}",
+                self.relation,
+                display_comma_separated(partition_by),
+                suffix(constraint)
+            )),
             JoinOperator::StraightJoin(constraint) => f.write_fmt(format_args!(
                 "STRAIGHT_JOIN {}{}",
                 self.relation,
@@ -2974,10 +3511,40 @@ pub enum JoinOperator {
         match_condition: Box<Expr>,
         constraint: JoinConstraint,
     },
+    /// Oracle partitioned outer join with the partition clause on the
+    /// right-hand row source.
+    OraclePartitioned {
+        kind: OraclePartitionedJoinKind,
+        partition_by: Vec<Expr>,
+        constraint: JoinConstraint,
+    },
     /// STRAIGHT_JOIN (non-standard)
     ///
     /// See <https://dev.mysql.com/doc/refman/8.4/en/join.html>.
     StraightJoin(JoinConstraint),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OraclePartitionedJoinKind {
+    Left,
+    LeftOuter,
+    Right,
+    RightOuter,
+    FullOuter,
+}
+
+impl fmt::Display for OraclePartitionedJoinKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            Self::Left => "LEFT",
+            Self::LeftOuter => "LEFT OUTER",
+            Self::Right => "RIGHT",
+            Self::RightOuter => "RIGHT OUTER",
+            Self::FullOuter => "FULL OUTER",
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
@@ -2999,6 +3566,9 @@ pub enum OrderByKind {
 
     /// Expressions
     Expressions(Vec<OrderByExpr>),
+
+    /// Oracle hierarchical-query sibling ordering
+    Siblings(Vec<OrderByExpr>),
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
@@ -3013,9 +3583,13 @@ pub struct OrderBy {
 
 impl fmt::Display for OrderBy {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "ORDER BY")?;
+        if matches!(self.kind, OrderByKind::Siblings(_)) {
+            write!(f, "ORDER SIBLINGS BY")?;
+        } else {
+            write!(f, "ORDER BY")?;
+        }
         match &self.kind {
-            OrderByKind::Expressions(exprs) => {
+            OrderByKind::Expressions(exprs) | OrderByKind::Siblings(exprs) => {
                 write!(f, " {}", display_comma_separated(exprs))?;
             }
             OrderByKind::All(all) => {
@@ -3233,6 +3807,8 @@ impl fmt::Display for OffsetRows {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct Fetch {
+    /// Oracle approximate vector row limiting.
+    pub approximate: bool,
     pub with_ties: bool,
     pub percent: bool,
     pub quantity: Option<Expr>,
@@ -3241,11 +3817,15 @@ pub struct Fetch {
 impl fmt::Display for Fetch {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let extension = if self.with_ties { "WITH TIES" } else { "ONLY" };
+        let approximate = if self.approximate { " APPROXIMATE" } else { "" };
         if let Some(ref quantity) = self.quantity {
             let percent = if self.percent { " PERCENT" } else { "" };
-            write!(f, "FETCH FIRST {quantity}{percent} ROWS {extension}")
+            write!(
+                f,
+                "FETCH{approximate} FIRST {quantity}{percent} ROWS {extension}"
+            )
         } else {
-            write!(f, "FETCH FIRST ROWS {extension}")
+            write!(f, "FETCH{approximate} FIRST ROWS {extension}")
         }
     }
 }
@@ -3449,6 +4029,7 @@ impl fmt::Display for Values {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct SelectInto {
+    pub bulk_collect: bool,
     pub temporary: bool,
     pub unlogged: bool,
     pub table: bool,
@@ -3467,6 +4048,9 @@ impl fmt::Display for SelectInto {
         let table = if self.table { " TABLE" } else { "" };
         let strict = if self.strict { " STRICT" } else { "" };
 
+        if self.bulk_collect {
+            write!(f, "BULK COLLECT ")?;
+        }
         write!(
             f,
             "INTO{}{}{}{} {}",
@@ -3517,6 +4101,9 @@ pub enum GroupByExpr {
 
     /// Expressions
     Expressions(Vec<Expr>, Vec<GroupByWithModifier>),
+
+    /// Oracle `GROUP BY VECTOR` vectors.
+    OracleVector(Vec<Vec<Expr>>),
 }
 
 impl fmt::Display for GroupByExpr {
@@ -3537,6 +4124,16 @@ impl fmt::Display for GroupByExpr {
                     write!(f, " {}", display_separated(modifiers, " "))?;
                 }
                 Ok(())
+            }
+            GroupByExpr::OracleVector(vectors) => {
+                f.write_str("GROUP BY VECTOR (")?;
+                for (index, vector) in vectors.iter().enumerate() {
+                    if index > 0 {
+                        f.write_str(", ")?;
+                    }
+                    write!(f, "({})", display_comma_separated(vector))?;
+                }
+                f.write_str(")")
             }
         }
     }

@@ -79,6 +79,33 @@ impl Display for OverridingKind {
     }
 }
 
+/// Expressions returned by a DML statement and optional targets receiving
+/// those values.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct ReturningClause {
+    pub expressions: Vec<SelectItem>,
+    pub bulk_collect: bool,
+    pub into: Option<Vec<Expr>>,
+}
+
+impl Display for ReturningClause {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("RETURNING")?;
+        indented_list(f, &self.expressions)?;
+        if self.bulk_collect {
+            write!(f, " BULK COLLECT")?;
+        }
+        if let Some(targets) = &self.into {
+            SpaceOrNewline.fmt(f)?;
+            f.write_str("INTO")?;
+            indented_list(f, targets)?;
+        }
+        Ok(())
+    }
+}
+
 /// INSERT statement.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -113,13 +140,15 @@ pub struct Insert {
     pub has_table_keyword: bool,
     pub on: Option<OnInsert>,
     /// RETURNING
-    pub returning: Option<Vec<SelectItem>>,
+    pub returning: Option<ReturningClause>,
     /// Only for mysql
     pub replace_into: bool,
     /// Only for mysql
     pub priority: Option<MysqlInsertPriority>,
     /// Only for mysql
     pub insert_alias: Option<InsertAliases>,
+    /// Oracle DML error logging.
+    pub error_logging: Option<OracleErrorLoggingClause>,
 }
 
 impl Display for Insert {
@@ -196,8 +225,11 @@ impl Display for Insert {
 
         if let Some(returning) = &self.returning {
             SpaceOrNewline.fmt(f)?;
-            f.write_str("RETURNING")?;
-            indented_list(f, returning)?;
+            returning.fmt(f)?;
+        }
+        if let Some(error_logging) = &self.error_logging {
+            SpaceOrNewline.fmt(f)?;
+            error_logging.fmt(f)?;
         }
         Ok(())
     }
@@ -221,7 +253,7 @@ pub struct Delete {
     /// WHERE
     pub selection: Option<Expr>,
     /// RETURNING
-    pub returning: Option<Vec<SelectItem>>,
+    pub returning: Option<ReturningClause>,
     /// ORDER BY (MySQL)
     pub order_by: Vec<OrderByExpr>,
     /// LIMIT (MySQL)
@@ -260,8 +292,7 @@ impl Display for Delete {
         }
         if let Some(returning) = &self.returning {
             SpaceOrNewline.fmt(f)?;
-            f.write_str("RETURNING")?;
-            indented_list(f, returning)?;
+            returning.fmt(f)?;
         }
         if !self.order_by.is_empty() {
             SpaceOrNewline.fmt(f)?;
@@ -296,11 +327,11 @@ pub struct Update {
     /// WHERE
     pub selection: Option<Expr>,
     /// RETURNING
-    pub returning: Option<Vec<SelectItem>>,
-    /// PL/pgSQL INTO targets for `UPDATE ... RETURNING ... INTO ...`.
-    pub returning_into: Option<Vec<ObjectName>>,
+    pub returning: Option<ReturningClause>,
     /// LIMIT
     pub limit: Option<Expr>,
+    /// Oracle DML error logging.
+    pub error_logging: Option<OracleErrorLoggingClause>,
 }
 
 impl Display for Update {
@@ -329,18 +360,126 @@ impl Display for Update {
         }
         if let Some(returning) = &self.returning {
             SpaceOrNewline.fmt(f)?;
-            f.write_str("RETURNING")?;
-            indented_list(f, returning)?;
-        }
-        if let Some(returning_into) = &self.returning_into {
-            SpaceOrNewline.fmt(f)?;
-            f.write_str("INTO")?;
-            indented_list(f, returning_into)?;
+            returning.fmt(f)?;
         }
         if let Some(limit) = &self.limit {
             SpaceOrNewline.fmt(f)?;
             write!(f, "LIMIT {limit}")?;
         }
+        if let Some(error_logging) = &self.error_logging {
+            SpaceOrNewline.fmt(f)?;
+            error_logging.fmt(f)?;
+        }
         Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleErrorLoggingClause {
+    pub table: Option<ObjectName>,
+    pub tag: Option<Expr>,
+    pub reject_limit: Option<OracleRejectLimit>,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleRejectLimit {
+    Unlimited,
+    Value(Expr),
+}
+
+impl Display for OracleErrorLoggingClause {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("LOG ERRORS")?;
+        if let Some(table) = &self.table {
+            write!(f, " INTO {table}")?;
+        }
+        if let Some(tag) = &self.tag {
+            write!(f, " ({tag})")?;
+        }
+        if let Some(limit) = &self.reject_limit {
+            f.write_str(" REJECT LIMIT ")?;
+            match limit {
+                OracleRejectLimit::Unlimited => f.write_str("UNLIMITED")?,
+                OracleRejectLimit::Value(value) => value.fmt(f)?,
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleMultiTableInsertMode {
+    All,
+    First,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleMultiTableInsert {
+    pub mode: OracleMultiTableInsertMode,
+    pub branches: Vec<OracleMultiTableInsertBranch>,
+    pub else_targets: Vec<OracleMultiTableInsertTarget>,
+    pub source: Box<Query>,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleMultiTableInsertBranch {
+    pub condition: Option<Expr>,
+    pub targets: Vec<OracleMultiTableInsertTarget>,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleMultiTableInsertTarget {
+    pub table: ObjectName,
+    pub columns: Vec<Ident>,
+    pub values: Vec<Expr>,
+}
+
+impl Display for OracleMultiTableInsertTarget {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "INTO {}", self.table)?;
+        if !self.columns.is_empty() {
+            write!(f, " ({})", display_comma_separated(&self.columns))?;
+        }
+        write!(f, " VALUES ({})", display_comma_separated(&self.values))
+    }
+}
+
+impl Display for OracleMultiTableInsert {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "INSERT {}",
+            match self.mode {
+                OracleMultiTableInsertMode::All => "ALL",
+                OracleMultiTableInsertMode::First => "FIRST",
+            }
+        )?;
+        for branch in &self.branches {
+            if let Some(condition) = &branch.condition {
+                write!(f, " WHEN {condition} THEN")?;
+            }
+            for target in &branch.targets {
+                write!(f, " {target}")?;
+            }
+        }
+        if !self.else_targets.is_empty() {
+            f.write_str(" ELSE")?;
+            for target in &self.else_targets {
+                write!(f, " {target}")?;
+            }
+        }
+        write!(f, " {}", self.source)
     }
 }

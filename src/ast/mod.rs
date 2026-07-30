@@ -67,14 +67,20 @@ pub use self::ddl::{
     GraphKeyClause, GraphPropertiesClause, GraphVertexTableDefinition, IdentityParameters,
     IdentityProperty, IdentityPropertyFormatKind, IdentityPropertyKind, IdentityPropertyOrder,
     IndexColumn, IndexOption, IndexType, KeyOrIndexDisplay, NullsDistinctOption, OperatorArgTypes,
-    OperatorClassItem, OperatorPurpose, Owner, Partition, PartitionByClause, PartitionKeyDef,
-    PartitionKeyExpr, PartitionStrategy, ProcedureParam, ReferentialAction, RenameTableNameKind,
-    ReplicaIdentity, SplitPartitionTarget, TriggerObjectKind, Truncate,
+    OperatorClassItem, OperatorPurpose, OracleCreateMaterializedViewOptions,
+    OracleCreateViewOptions, OracleMaterializedViewBuild, OracleObjectView,
+    OraclePartitionDefinition, OracleViewConstraint, Owner, Partition, PartitionByClause,
+    PartitionKeyDef, PartitionKeyExpr, PartitionStrategy, ProcedureParam, ReferentialAction,
+    RenameTableNameKind, ReplicaIdentity, SplitPartitionTarget, TriggerObjectKind, Truncate,
     UserDefinedTypeCompositeAttributeDef, UserDefinedTypeInternalLength,
     UserDefinedTypeRangeOption, UserDefinedTypeRepresentation, UserDefinedTypeSqlDefinitionOption,
     UserDefinedTypeStorage, ViewColumnDef,
 };
-pub use self::dml::{Delete, ForPortionOf, Insert, OverridingKind, Update};
+pub use self::dml::{
+    Delete, ForPortionOf, Insert, OracleErrorLoggingClause, OracleMultiTableInsert,
+    OracleMultiTableInsertBranch, OracleMultiTableInsertMode, OracleMultiTableInsertTarget,
+    OracleRejectLimit, OverridingKind, ReturningClause, Update,
+};
 pub use self::operator::{BinaryOperator, UnaryOperator};
 pub use self::query::{
     AfterMatchSkip, ConnectBy, Cte, CteAsMaterialized, CycleClause, Distinct, EdgeDirection,
@@ -85,19 +91,26 @@ pub use self::query::{
     JoinOperator, JsonTableColumn, JsonTableColumnErrorHandling, JsonTableNamedColumn,
     JsonTableNestedColumn, KeepClause, LabelExpression, LimitClause, LockClause, LockType,
     MatchRecognizePattern, MatchRecognizeSymbol, Measure, NamedWindowDefinition, NamedWindowExpr,
-    NodePattern, NonBlock, Offset, OffsetRows, OpenJsonTableColumn, OrderBy, OrderByExpr,
-    OrderByKind, OrderByOptions, PathFinding, PathMode, PathVariant, PivotValueSource,
-    PropertyKeyValue, Query, RenameSelectItem, RepetitionQuantifier, ReplaceSelectElement,
-    ReplaceSelectItem, RowLimiting, RowsPerMatch, SearchClause, SearchOrder, Select, SelectFlavor,
-    SelectInto, SelectItem, SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier,
-    SubsetDefinition, SymbolDefinition, Table, TableAlias, TableAliasColumnDef, TableFactor,
-    TableFunctionArgs, TableIndexHintForClause, TableIndexHintType, TableIndexHints,
-    TableIndexType, TableSample, TableSampleBucket, TableSampleKind, TableSampleMethod,
-    TableSampleModifier, TableSampleQuantity, TableSampleSeed, TableSampleSeedModifier,
-    TableSampleUnit, TableVersion, TableWithJoins, Top, TopQuantity, UpdateTableFromKind, Values,
-    WildcardAdditionalOptions, With, WithFill, XmlAttribute, XmlDocumentOrContent,
-    XmlForestElement, XmlNamespaceDefinition, XmlPassingArgument, XmlPassingClause, XmlTableColumn,
-    XmlTableColumnOption, XmlTableOnError, XmlWhitespace,
+    NodePattern, NonBlock, Offset, OffsetRows, OpenJsonTableColumn, OracleFlashbackBoundary,
+    OracleFlashbackVersionKind, OracleModelCellReferenceOptions, OracleModelCellSelector,
+    OracleModelClause, OracleModelForLoopAssignment, OracleModelForLoopDirection,
+    OracleModelForLoopSelectors, OracleModelIterate, OracleModelMultiColumnForLoop,
+    OracleModelMultiColumnForLoopValues, OracleModelNav, OracleModelReturnRows, OracleModelRule,
+    OracleModelRuleMode, OracleModelRuleOrder, OracleModelRuleTarget,
+    OracleModelSingleColumnForLoop, OracleModelSingleColumnForLoopValues, OracleModelUnique,
+    OraclePartitionedJoinKind, OracleReferenceModel, OrderBy, OrderByExpr, OrderByKind,
+    OrderByOptions, PathFinding, PathMode, PathVariant, PivotValueSource, PropertyKeyValue, Query,
+    RenameSelectItem, RepetitionQuantifier, ReplaceSelectElement, ReplaceSelectItem, RowLimiting,
+    RowsPerMatch, SearchClause, SearchOrder, Select, SelectFlavor, SelectInto, SelectItem,
+    SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, SubsetDefinition,
+    SymbolDefinition, Table, TableAlias, TableAliasColumnDef, TableFactor, TableFunctionArgs,
+    TableIndexHintForClause, TableIndexHintType, TableIndexHints, TableIndexType, TableSample,
+    TableSampleBucket, TableSampleKind, TableSampleMethod, TableSampleModifier,
+    TableSampleQuantity, TableSampleSeed, TableSampleSeedModifier, TableSampleUnit, TableVersion,
+    TableWithJoins, Top, TopQuantity, UpdateTableFromKind, Values, WildcardAdditionalOptions, With,
+    WithFill, XmlAttribute, XmlDocumentOrContent, XmlForestElement, XmlNamespaceDefinition,
+    XmlPassingArgument, XmlPassingClause, XmlTableColumn, XmlTableColumnOption, XmlTableOnError,
+    XmlWhitespace,
 };
 
 pub use self::trigger::{
@@ -106,9 +119,9 @@ pub use self::trigger::{
 };
 
 pub use self::value::{
-    escape_double_quote_string, escape_quoted_string, DateTimeField, DollarQuotedString,
-    JsonPredicateType, JsonPredicateUniqueKeyConstraint, NormalizationForm, TrimWhereField, Value,
-    ValueWithSpan,
+    escape_double_quote_string, escape_quoted_string, AlternativeQuotedString, DateTimeField,
+    DollarQuotedString, JsonPredicateType, JsonPredicateUniqueKeyConstraint, NormalizationForm,
+    TrimWhereField, Value, ValueWithSpan,
 };
 
 use crate::ast::helpers::key_value_options::KeyValueOptions;
@@ -901,6 +914,12 @@ pub enum Expr {
         /// The unique keys constraint
         unique_keys: Option<JsonPredicateUniqueKeyConstraint>,
     },
+    /// Oracle floating-point and object type predicates.
+    OracleIs {
+        expr: Box<Expr>,
+        negated: bool,
+        predicate: OracleIsPredicate,
+    },
     /// `<expr> IS [ NOT ] DOCUMENT`
     ///
     /// See SQL:2016 standard, X-Series (XML document predicate).
@@ -1071,6 +1090,14 @@ pub enum Expr {
         pattern: Box<Expr>,
         escape_char: Option<Value>,
     },
+    /// Oracle character comparison variants `LIKEC`, `LIKE2`, and `LIKE4`.
+    OracleLike {
+        kind: OracleLikeKind,
+        negated: bool,
+        expr: Box<Expr>,
+        pattern: Box<Expr>,
+        escape_char: Option<Value>,
+    },
     /// `ILIKE` (case-insensitive `LIKE`)
     ILike {
         negated: bool,
@@ -1145,6 +1172,24 @@ pub enum Expr {
         timestamp: Box<Expr>,
         time_zone: Box<Expr>,
     },
+    /// Convert a timestamp with time zone to the current session time zone.
+    AtLocal {
+        timestamp: Box<Expr>,
+    },
+    /// Oracle `TRANSLATE(expr USING character_set)` expression.
+    OracleTranslateUsing {
+        expr: Box<Expr>,
+        character_set: ObjectName,
+    },
+    /// Oracle `TREAT(expr AS type)` expression.
+    OracleTreat {
+        expr: Box<Expr>,
+        data_type: DataType,
+    },
+    /// Oracle cursor expression.
+    Cursor(Box<Query>),
+    /// Oracle multiset subquery expression.
+    Multiset(Box<Query>),
     /// Extract a field from a timestamp e.g. `EXTRACT(MONTH FROM foo)`
     /// Or `EXTRACT(MONTH, foo)`
     ///
@@ -1249,6 +1294,12 @@ pub enum Expr {
     TypedString(TypedString),
     /// Scalar function call e.g. `LEFT(foo, 5)`
     Function(Function),
+    /// Oracle ordered aggregate selection.
+    OracleKeep {
+        aggregate: Box<Expr>,
+        rank: OracleKeepRank,
+        order_by: Vec<OrderByExpr>,
+    },
     /// `XMLPARSE(DOCUMENT|CONTENT <expr> [PRESERVE|STRIP WHITESPACE])`
     ///
     /// See SQL:2016 standard, X-Series (XML).
@@ -1401,6 +1452,12 @@ pub enum Expr {
     Lambda(LambdaFunction),
     /// Checks membership of a value in a JSON array
     MemberOf(MemberOf),
+    /// Oracle object collection membership predicate.
+    OracleMemberOf {
+        expr: Box<Expr>,
+        collection: Box<Expr>,
+        negated: bool,
+    },
     /// SQL:2016 PERIOD constructor: `PERIOD (start, end)`
     Period {
         start: Box<Expr>,
@@ -1435,6 +1492,9 @@ impl Expr {
 pub enum Subscript {
     /// Accesses the element of the array at the given index.
     Index { index: Expr },
+
+    /// Accesses multiple dimensions in an Oracle model cell reference.
+    IndexList { indexes: Vec<Expr> },
 
     /// Accesses a slice of an array on PostgreSQL, e.g.
     ///
@@ -1477,6 +1537,7 @@ impl fmt::Display for Subscript {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Subscript::Index { index } => write!(f, "{index}"),
+            Subscript::IndexList { indexes } => display_comma_separated(indexes).fmt(f),
             Subscript::Slice {
                 lower_bound,
                 upper_bound,
@@ -1847,6 +1908,26 @@ impl fmt::Display for Expr {
                     pattern
                 ),
             },
+            Expr::OracleLike {
+                kind,
+                negated,
+                expr,
+                pattern,
+                escape_char,
+            } => {
+                write!(
+                    f,
+                    "{} {}{} {}",
+                    expr,
+                    if *negated { "NOT " } else { "" },
+                    kind,
+                    pattern
+                )?;
+                if let Some(escape_char) = escape_char {
+                    write!(f, " ESCAPE {escape_char}")?;
+                }
+                Ok(())
+            }
             Expr::ILike {
                 negated,
                 expr,
@@ -1919,6 +2000,15 @@ impl fmt::Display for Expr {
                 }
                 Ok(())
             }
+            Expr::OracleIs {
+                expr,
+                negated,
+                predicate,
+            } => write!(
+                f,
+                "{expr} IS {}{predicate}",
+                if *negated { "NOT " } else { "" }
+            ),
             Expr::IsDocument { expr, negated } => {
                 let not_ = if *negated { "NOT " } else { "" };
                 write!(f, "{expr} IS {not_}DOCUMENT")
@@ -2124,6 +2214,15 @@ impl fmt::Display for Expr {
             Expr::Prefixed { prefix, value } => write!(f, "{prefix} {value}"),
             Expr::TypedString(ts) => ts.fmt(f),
             Expr::Function(fun) => fun.fmt(f),
+            Expr::OracleKeep {
+                aggregate,
+                rank,
+                order_by,
+            } => write!(
+                f,
+                "{aggregate} KEEP (DENSE_RANK {rank} ORDER BY {})",
+                display_comma_separated(order_by)
+            ),
             Expr::XmlParse {
                 document_or_content,
                 expr,
@@ -2363,6 +2462,22 @@ impl fmt::Display for Expr {
             } => {
                 write!(f, "{timestamp} AT TIME ZONE {time_zone}")
             }
+            Expr::AtLocal { timestamp } => {
+                write!(f, "{timestamp} AT LOCAL")
+            }
+            Expr::OracleTranslateUsing {
+                expr,
+                character_set,
+            } => write!(f, "TRANSLATE({expr} USING {character_set})"),
+            Expr::OracleTreat { expr, data_type } => {
+                write!(f, "TREAT({expr} AS {data_type})")
+            }
+            Expr::Cursor(query) => {
+                write!(f, "CURSOR({query})")
+            }
+            Expr::Multiset(query) => {
+                write!(f, "MULTISET({query})")
+            }
             Expr::Interval(interval) => {
                 write!(f, "{interval}")
             }
@@ -2387,6 +2502,15 @@ impl fmt::Display for Expr {
             Expr::Prior(expr) => write!(f, "PRIOR {expr}"),
             Expr::Lambda(lambda) => write!(f, "{lambda}"),
             Expr::MemberOf(member_of) => write!(f, "{member_of}"),
+            Expr::OracleMemberOf {
+                expr,
+                collection,
+                negated,
+            } => write!(
+                f,
+                "{expr} {}MEMBER OF {collection}",
+                if *negated { "NOT " } else { "" }
+            ),
             Expr::Period { start, end } => write!(f, "PERIOD ({start}, {end})"),
             Expr::NextValueFor { sequence_name } => {
                 write!(f, "NEXT VALUE FOR {sequence_name}")
@@ -2735,9 +2859,33 @@ pub struct CaseStatement {
     pub case_token: AttachedToken,
     pub match_expr: Option<Expr>,
     pub when_blocks: Vec<ConditionalStatementBlock>,
+    pub oracle_when_controls: Vec<Option<Vec<OracleCaseControl>>>,
     pub else_block: Option<ConditionalStatementBlock>,
     /// The last token of the statement (`END` or `CASE`).
     pub end_case_token: AttachedToken,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleCaseControl {
+    Expression(Expr),
+    Comparison {
+        operator: BinaryOperator,
+        expression: Expr,
+    },
+}
+
+impl fmt::Display for OracleCaseControl {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Expression(expression) => expression.fmt(f),
+            Self::Comparison {
+                operator,
+                expression,
+            } => write!(f, "{operator} {expression}"),
+        }
+    }
 }
 
 impl fmt::Display for CaseStatement {
@@ -2746,6 +2894,7 @@ impl fmt::Display for CaseStatement {
             case_token: _,
             match_expr,
             when_blocks,
+            oracle_when_controls,
             else_block,
             end_case_token,
         } = self;
@@ -2756,8 +2905,31 @@ impl fmt::Display for CaseStatement {
             write!(f, " {expr}")?;
         }
 
-        if !when_blocks.is_empty() {
+        if oracle_when_controls.is_empty() && !when_blocks.is_empty() {
             write!(f, " {}", display_separated(when_blocks, " "))?;
+        } else {
+            for (block, controls) in when_blocks.iter().zip(oracle_when_controls) {
+                write!(f, " {}", block.start_token)?;
+                if let Some(controls) = controls {
+                    write!(f, " {}", display_comma_separated(controls))?;
+                    if block.then_token.is_some() {
+                        write!(f, " THEN")?;
+                    }
+                    if !block.conditional_statements.statements().is_empty() {
+                        write!(f, " {}", block.conditional_statements)?;
+                    }
+                } else {
+                    if let Some(condition) = &block.condition {
+                        write!(f, " {condition}")?;
+                    }
+                    if block.then_token.is_some() {
+                        write!(f, " THEN")?;
+                    }
+                    if !block.conditional_statements.statements().is_empty() {
+                        write!(f, " {}", block.conditional_statements)?;
+                    }
+                }
+            }
         }
 
         if let Some(else_block) = else_block {
@@ -2854,6 +3026,8 @@ pub struct WhileStatement {
     pub end_label: Option<Ident>,
     /// Whether the DO keyword is present (SQL:2016 syntax)
     pub has_do_keyword: bool,
+    /// Whether the LOOP keyword is present (PL/SQL syntax)
+    pub has_loop_keyword: bool,
     /// Legacy support: the while block for old-style WHILE
     pub while_block: Option<ConditionalStatementBlock>,
 }
@@ -2877,11 +3051,17 @@ impl fmt::Display for WhileStatement {
         }
         if self.has_do_keyword {
             write!(f, " DO")?;
+        } else if self.has_loop_keyword {
+            write!(f, " LOOP")?;
         }
         if !self.body.statements().is_empty() {
             write!(f, " {}", self.body)?;
         }
-        write!(f, " END WHILE")?;
+        if self.has_loop_keyword {
+            write!(f, " END LOOP")?;
+        } else {
+            write!(f, " END WHILE")?;
+        }
         if let Some(end_label) = &self.end_label {
             write!(f, " {end_label}")?;
         }
@@ -3055,6 +3235,13 @@ pub enum ForLoopVariant {
         query_expr: Box<Expr>,
         using: Option<Vec<Expr>>,
     },
+    /// Oracle cursor iteration over an explicit cursor variable.
+    CursorVariable { cursor: Box<Expr> },
+    /// Oracle 23ai collection iterator controls.
+    Iterator {
+        mutable: bool,
+        collection: Box<Expr>,
+    },
 }
 
 /// A `FOR` statement for cursor-based iteration over query results or integer ranges.
@@ -3145,6 +3332,18 @@ impl fmt::Display for ForStatement {
                     write!(f, " USING {}", display_comma_separated(using_exprs))?;
                 }
                 write!(f, " LOOP {body} END LOOP")?;
+            }
+            ForLoopVariant::CursorVariable { cursor } => {
+                write!(f, "IN {cursor} LOOP {body} END LOOP")?;
+            }
+            ForLoopVariant::Iterator {
+                mutable,
+                collection,
+            } => {
+                if *mutable {
+                    write!(f, "MUTABLE ")?;
+                }
+                write!(f, "ITERATOR IN {collection} LOOP {body} END LOOP")?;
             }
         }
 
@@ -3642,6 +3841,1414 @@ pub struct SqlPsmDeclaration {
     pub default: Option<Expr>,
 }
 
+/// A PL/SQL procedure or function, shared by standalone and nested declarations.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OraclePlSqlRoutine {
+    pub kind: OraclePlSqlRoutineKind,
+    pub name: ObjectName,
+    pub parameters: Vec<OraclePlSqlParameter>,
+    pub has_parameter_list: bool,
+    pub return_type: Option<SqlPsmDataType>,
+    pub clauses: Vec<OraclePlSqlRoutineClause>,
+    pub body: OraclePlSqlRoutineBody,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OraclePlSqlRoutineKind {
+    Procedure,
+    Function,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OraclePlSqlParameter {
+    pub name: Ident,
+    pub mode: Option<PlSqlParameterMode>,
+    pub nocopy: bool,
+    pub data_type: SqlPsmDataType,
+    pub default_operator: Option<DeclarationAssignmentOperator>,
+    pub default: Option<Expr>,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OraclePlSqlRoutineClause {
+    Authid(OraclePlSqlAuthid),
+    AccessibleBy(Vec<OraclePlSqlAccessor>),
+    DefaultCollation(Ident),
+    Deterministic,
+    ResultCache {
+        relies_on: Vec<ObjectName>,
+    },
+    Pipelined,
+    ParallelEnable {
+        partition_parameter: Option<Ident>,
+        partition_method: Option<Ident>,
+    },
+    SqlMacro(Option<Ident>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OraclePlSqlAuthid {
+    CurrentUser,
+    Definer,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OraclePlSqlAccessor {
+    pub unit_kind: Option<Ident>,
+    pub name: ObjectName,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OraclePlSqlRoutineBody {
+    Block {
+        is_as: bool,
+        declarations: Vec<PlSqlDeclaration>,
+        block: BeginEndStatements,
+    },
+    AggregateUsing(ObjectName),
+    CallSpec(OraclePlSqlCallSpec),
+    Declaration,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OraclePlSqlCallSpec {
+    pub language: Ident,
+    pub name: Expr,
+    pub library: Option<ObjectName>,
+    pub parameters: Vec<OraclePlSqlCallSpecParameter>,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OraclePlSqlCallSpecParameter {
+    pub name: Option<Ident>,
+    pub return_value: bool,
+    pub data_type: SqlPsmDataType,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleCreatePlSqlRoutine {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub create_token: AttachedToken,
+    pub or_replace: bool,
+    pub editionable: Option<bool>,
+    pub if_not_exists: bool,
+    pub routine: OraclePlSqlRoutine,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleCreatePackage {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub create_token: AttachedToken,
+    pub or_replace: bool,
+    pub editionable: Option<bool>,
+    pub is_body: bool,
+    pub if_not_exists: bool,
+    pub name: ObjectName,
+    pub clauses: Vec<OraclePackageClause>,
+    pub is_as: bool,
+    pub declarations: Vec<PlSqlDeclaration>,
+    pub initialization: Option<BeginEndStatements>,
+    pub end_name: Option<Ident>,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OraclePackageClause {
+    Authid(OraclePlSqlAuthid),
+    AccessibleBy(Vec<OraclePlSqlAccessor>),
+    Resettable,
+    Sharing(Ident),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OraclePlSqlUnitKind {
+    Procedure,
+    Function,
+    Package,
+    Trigger,
+    Type,
+    Library,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleAlterPlSqlUnit {
+    pub kind: OraclePlSqlUnitKind,
+    pub name: ObjectName,
+    pub action: OracleAlterPlSqlUnitAction,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleAlterPlSqlUnitAction {
+    Compile {
+        target: Option<OraclePlSqlCompileTarget>,
+        debug: bool,
+        parameters: Vec<OraclePlSqlCompileParameter>,
+        reuse_settings: bool,
+    },
+    Enable,
+    Disable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OraclePlSqlCompileTarget {
+    Specification,
+    Body,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OraclePlSqlCompileParameter {
+    pub name: ObjectName,
+    pub value: Expr,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleDropPlSqlUnit {
+    pub kind: OraclePlSqlUnitKind,
+    pub body: bool,
+    pub name: ObjectName,
+    pub force: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleCreateTrigger {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub create_token: AttachedToken,
+    pub or_replace: bool,
+    pub editionable: Option<bool>,
+    pub if_not_exists: bool,
+    pub name: ObjectName,
+    pub timing: Option<OracleTriggerTiming>,
+    pub events: Vec<OracleTriggerEvent>,
+    pub target: OracleTriggerTarget,
+    pub referencing: Vec<OracleTriggerReferencing>,
+    pub for_each_row: bool,
+    pub crossedition: Option<OracleTriggerCrossedition>,
+    pub ordering: Option<OracleTriggerOrdering>,
+    pub enabled: Option<bool>,
+    pub when: Option<Expr>,
+    pub body: OracleTriggerBody,
+}
+
+/// An alias declared by an Oracle trigger `REFERENCING` clause.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleTriggerReferencing {
+    pub kind: OracleTriggerReferencingKind,
+    pub is_as: bool,
+    pub alias: Ident,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleTriggerReferencingKind {
+    Old,
+    New,
+    Parent,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleTriggerTiming {
+    Before,
+    After,
+    InsteadOf,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleTriggerCrossedition {
+    Forward,
+    Reverse,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleTriggerOrdering {
+    pub kind: OracleTriggerOrderingKind,
+    pub triggers: Vec<ObjectName>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleTriggerOrderingKind {
+    Follows,
+    Precedes,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleTriggerEvent {
+    Insert,
+    Update(Vec<Ident>),
+    Delete,
+    Create,
+    Alter,
+    Analyze,
+    AssociateStatistics,
+    Audit,
+    Comment,
+    DisassociateStatistics,
+    Drop,
+    Grant,
+    NoAudit,
+    Rename,
+    Revoke,
+    Truncate,
+    Ddl,
+    Startup,
+    Shutdown,
+    DbRoleChange,
+    ServerError,
+    Logon,
+    Logoff,
+    Suspend,
+    Clone,
+    Unplug,
+    SetContainer,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleTriggerTarget {
+    Object(ObjectName),
+    Schema,
+    NamedSchema(Ident),
+    Database,
+    PluggableDatabase,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleTriggerBody {
+    Block(BeginEndStatements),
+    Call(Expr),
+    Compound {
+        declarations: Vec<PlSqlDeclaration>,
+        sections: Vec<OracleCompoundTriggerSection>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleCompoundTriggerSection {
+    pub timing: OracleCompoundTriggerTiming,
+    pub declarations: Vec<PlSqlDeclaration>,
+    pub block: BeginEndStatements,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleCompoundTriggerTiming {
+    BeforeStatement,
+    BeforeEachRow,
+    AfterEachRow,
+    AfterStatement,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleCreateType {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub create_token: AttachedToken,
+    pub or_replace: bool,
+    pub editionable: Option<bool>,
+    pub is_body: bool,
+    pub name: ObjectName,
+    pub definition: OracleTypeDefinition,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleTypeDefinition {
+    Collection {
+        kind: PlSqlCollectionKind,
+        element_type: SqlPsmDataType,
+        not_null: bool,
+    },
+    Object {
+        elements: Vec<OracleObjectTypeElement>,
+        not_final: bool,
+    },
+    Body {
+        methods: Vec<OracleObjectTypeMethod>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleObjectTypeElement {
+    Attribute {
+        name: Ident,
+        data_type: SqlPsmDataType,
+    },
+    Method(OracleObjectTypeMethod),
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleObjectTypeMethod {
+    pub modifier: OracleObjectTypeMethodModifier,
+    pub routine: OraclePlSqlRoutine,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleObjectTypeMethodModifier {
+    Member,
+    Static,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleAlterType {
+    pub name: ObjectName,
+    pub action: OracleAlterTypeAction,
+    pub cascade: bool,
+    pub including_table_data: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleAlterTypeAction {
+    AddAttributes(Vec<SqlPsmDeclaration>),
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleCreateLibrary {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub create_token: AttachedToken,
+    pub or_replace: bool,
+    pub name: ObjectName,
+    pub file: Expr,
+    pub agent: Option<Expr>,
+    pub credential: Option<ObjectName>,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum PlSqlDeclaration {
+    Variable(SqlPsmDeclaration),
+    Subtype {
+        name: Ident,
+        data_type: SqlPsmDataType,
+        not_null: bool,
+    },
+    RecordType {
+        name: Ident,
+        fields: Vec<SqlPsmDeclaration>,
+    },
+    CollectionType {
+        name: Ident,
+        kind: PlSqlCollectionKind,
+        element_type: SqlPsmDataType,
+        index_by: Option<SqlPsmDataType>,
+    },
+    RefCursorType {
+        name: Ident,
+        return_type: Option<SqlPsmDataType>,
+    },
+    Cursor {
+        name: Ident,
+        parameters: Vec<SqlPsmDeclaration>,
+        return_type: Option<SqlPsmDataType>,
+        query: Box<Query>,
+    },
+    Exception {
+        name: Ident,
+    },
+    Pragma(Pragma),
+    Routine(Box<OraclePlSqlRoutine>),
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum PlSqlCollectionKind {
+    NestedTable,
+    Varray(Expr),
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct Pragma {
+    pub name: ObjectName,
+    pub arguments: Vec<Expr>,
+    pub is_eq: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct PlSqlFetch {
+    pub cursor: Ident,
+    pub bulk_collect: bool,
+    pub targets: Vec<Expr>,
+    pub limit: Option<Expr>,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct PlSqlForAll {
+    pub index: Ident,
+    pub bounds: PlSqlForAllBounds,
+    pub save_exceptions: bool,
+    pub statement: Box<Statement>,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum PlSqlForAllBounds {
+    Range { lower: Expr, upper: Expr },
+    IndicesOf { collection: Expr },
+    ValuesOf { collection: Expr },
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct PlSqlExecuteImmediate {
+    pub sql: Expr,
+    pub bulk_collect: bool,
+    pub into: Vec<Expr>,
+    pub using: Vec<PlSqlUsingArgument>,
+    pub returning_into: Vec<Expr>,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct PlSqlUsingArgument {
+    pub mode: PlSqlParameterMode,
+    pub expr: Expr,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct PlSqlConditionalCompilation {
+    pub branches: Vec<PlSqlConditionalCompilationBranch>,
+    pub else_statements: Vec<Statement>,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct PlSqlConditionalCompilationBranch {
+    pub condition: Expr,
+    pub statements: Vec<Statement>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum PlSqlParameterMode {
+    In,
+    Out,
+    InOut,
+}
+
+impl fmt::Display for PlSqlParameterMode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::In => write!(f, "IN"),
+            Self::Out => write!(f, "OUT"),
+            Self::InOut => write!(f, "IN OUT"),
+        }
+    }
+}
+
+impl From<SqlPsmDeclaration> for PlSqlDeclaration {
+    fn from(value: SqlPsmDeclaration) -> Self {
+        Self::Variable(value)
+    }
+}
+
+impl fmt::Display for OraclePlSqlRoutineKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Procedure => write!(f, "PROCEDURE"),
+            Self::Function => write!(f, "FUNCTION"),
+        }
+    }
+}
+
+impl fmt::Display for OraclePlSqlParameter {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.name)?;
+        if let Some(mode) = self.mode {
+            write!(f, " {mode}")?;
+        }
+        if self.nocopy {
+            write!(f, " NOCOPY")?;
+        }
+        write!(f, " {}", self.data_type)?;
+        if let Some(default) = &self.default {
+            let operator = self
+                .default_operator
+                .as_ref()
+                .unwrap_or(&DeclarationAssignmentOperator::Default);
+            write!(f, " {operator} {default}")?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Display for OraclePlSqlAuthid {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::CurrentUser => write!(f, "CURRENT_USER"),
+            Self::Definer => write!(f, "DEFINER"),
+        }
+    }
+}
+
+impl fmt::Display for OraclePlSqlAccessor {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Some(unit_kind) = &self.unit_kind {
+            write!(f, "{unit_kind} ")?;
+        }
+        write!(f, "{}", self.name)
+    }
+}
+
+impl fmt::Display for OraclePlSqlRoutineClause {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Authid(authid) => write!(f, "AUTHID {authid}"),
+            Self::AccessibleBy(accessors) => {
+                write!(f, "ACCESSIBLE BY ({})", display_comma_separated(accessors))
+            }
+            Self::DefaultCollation(collation) => {
+                write!(f, "DEFAULT COLLATION {collation}")
+            }
+            Self::Deterministic => write!(f, "DETERMINISTIC"),
+            Self::ResultCache { relies_on } => {
+                write!(f, "RESULT_CACHE")?;
+                if !relies_on.is_empty() {
+                    write!(f, " RELIES_ON ({})", display_comma_separated(relies_on))?;
+                }
+                Ok(())
+            }
+            Self::Pipelined => write!(f, "PIPELINED"),
+            Self::ParallelEnable {
+                partition_parameter,
+                partition_method,
+            } => {
+                write!(f, "PARALLEL_ENABLE")?;
+                if let Some(parameter) = partition_parameter {
+                    write!(f, "(PARTITION {parameter}")?;
+                    if let Some(method) = partition_method {
+                        write!(f, " BY {method}")?;
+                    }
+                    write!(f, ")")?;
+                }
+                Ok(())
+            }
+            Self::SqlMacro(kind) => {
+                write!(f, "SQL_MACRO")?;
+                if let Some(kind) = kind {
+                    write!(f, "({kind})")?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+impl fmt::Display for OraclePlSqlCallSpecParameter {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.return_value {
+            write!(f, "RETURN ")?;
+        } else if let Some(name) = &self.name {
+            write!(f, "{name} ")?;
+        }
+        write!(f, "{}", self.data_type)
+    }
+}
+
+impl fmt::Display for OraclePlSqlCallSpec {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "LANGUAGE {} NAME {}", self.language, self.name)?;
+        if let Some(library) = &self.library {
+            write!(f, " LIBRARY {library}")?;
+        }
+        if !self.parameters.is_empty() {
+            write!(
+                f,
+                " PARAMETERS ({})",
+                display_comma_separated(&self.parameters)
+            )?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Display for OraclePlSqlRoutineBody {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Block {
+                is_as,
+                declarations,
+                block,
+            } => {
+                write!(f, " {}", if *is_as { "AS" } else { "IS" })?;
+                for declaration in declarations {
+                    write!(f, " {declaration};")?;
+                }
+                write!(f, " {block}")
+            }
+            Self::AggregateUsing(implementation) => {
+                write!(f, " AGGREGATE USING {implementation}")
+            }
+            Self::CallSpec(call_spec) => write!(f, " AS {call_spec}"),
+            Self::Declaration => Ok(()),
+        }
+    }
+}
+
+impl fmt::Display for OraclePlSqlRoutine {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} {}", self.kind, self.name)?;
+        if self.has_parameter_list {
+            write!(f, "({})", display_comma_separated(&self.parameters))?;
+        }
+        if let Some(return_type) = &self.return_type {
+            write!(f, " RETURN {return_type}")?;
+        }
+        for clause in &self.clauses {
+            write!(f, " {clause}")?;
+        }
+        self.body.fmt(f)
+    }
+}
+
+impl fmt::Display for OracleCreatePlSqlRoutine {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "CREATE ")?;
+        if self.or_replace {
+            write!(f, "OR REPLACE ")?;
+        }
+        if let Some(editionable) = self.editionable {
+            write!(
+                f,
+                "{} ",
+                if editionable {
+                    "EDITIONABLE"
+                } else {
+                    "NONEDITIONABLE"
+                }
+            )?;
+        }
+        write!(f, "{} ", self.routine.kind)?;
+        if self.if_not_exists {
+            write!(f, "IF NOT EXISTS ")?;
+        }
+        // The kind has already been emitted as part of the CREATE prefix.
+        write!(f, "{}", self.routine.name)?;
+        if self.routine.has_parameter_list {
+            write!(f, "({})", display_comma_separated(&self.routine.parameters))?;
+        }
+        if let Some(return_type) = &self.routine.return_type {
+            write!(f, " RETURN {return_type}")?;
+        }
+        for clause in &self.routine.clauses {
+            write!(f, " {clause}")?;
+        }
+        self.routine.body.fmt(f)
+    }
+}
+
+impl fmt::Display for OraclePackageClause {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Authid(authid) => write!(f, "AUTHID {authid}"),
+            Self::AccessibleBy(accessors) => {
+                write!(f, "ACCESSIBLE BY ({})", display_comma_separated(accessors))
+            }
+            Self::Resettable => write!(f, "RESETTABLE"),
+            Self::Sharing(value) => write!(f, "SHARING = {value}"),
+        }
+    }
+}
+
+impl fmt::Display for OracleCreatePackage {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "CREATE ")?;
+        if self.or_replace {
+            write!(f, "OR REPLACE ")?;
+        }
+        if let Some(editionable) = self.editionable {
+            write!(
+                f,
+                "{} ",
+                if editionable {
+                    "EDITIONABLE"
+                } else {
+                    "NONEDITIONABLE"
+                }
+            )?;
+        }
+        write!(f, "PACKAGE ")?;
+        if self.is_body {
+            write!(f, "BODY ")?;
+        }
+        if self.if_not_exists {
+            write!(f, "IF NOT EXISTS ")?;
+        }
+        write!(f, "{}", self.name)?;
+        for clause in &self.clauses {
+            write!(f, " {clause}")?;
+        }
+        write!(f, " {}", if self.is_as { "AS" } else { "IS" })?;
+        for declaration in &self.declarations {
+            write!(f, " {declaration};")?;
+        }
+        if let Some(initialization) = &self.initialization {
+            write!(f, " {initialization}")
+        } else {
+            write!(f, " END")?;
+            if let Some(end_name) = &self.end_name {
+                write!(f, " {end_name}")?;
+            }
+            Ok(())
+        }
+    }
+}
+
+impl fmt::Display for OraclePlSqlUnitKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Procedure => write!(f, "PROCEDURE"),
+            Self::Function => write!(f, "FUNCTION"),
+            Self::Package => write!(f, "PACKAGE"),
+            Self::Trigger => write!(f, "TRIGGER"),
+            Self::Type => write!(f, "TYPE"),
+            Self::Library => write!(f, "LIBRARY"),
+        }
+    }
+}
+
+impl fmt::Display for OracleAlterPlSqlUnit {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "ALTER {} {} ", self.kind, self.name)?;
+        match &self.action {
+            OracleAlterPlSqlUnitAction::Compile {
+                target,
+                debug,
+                parameters,
+                reuse_settings,
+            } => {
+                write!(f, "COMPILE")?;
+                if let Some(target) = target {
+                    write!(f, " {target}")?;
+                }
+                if *debug {
+                    write!(f, " DEBUG")?;
+                }
+                for parameter in parameters {
+                    write!(f, " {} = {}", parameter.name, parameter.value)?;
+                }
+                if *reuse_settings {
+                    write!(f, " REUSE SETTINGS")?;
+                }
+                Ok(())
+            }
+            OracleAlterPlSqlUnitAction::Enable => write!(f, "ENABLE"),
+            OracleAlterPlSqlUnitAction::Disable => write!(f, "DISABLE"),
+        }
+    }
+}
+
+impl fmt::Display for OraclePlSqlCompileTarget {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Specification => write!(f, "SPECIFICATION"),
+            Self::Body => write!(f, "BODY"),
+        }
+    }
+}
+
+impl fmt::Display for OracleDropPlSqlUnit {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "DROP {}", self.kind)?;
+        if self.body {
+            write!(f, " BODY")?;
+        }
+        write!(f, " {}", self.name)?;
+        if self.force {
+            write!(f, " FORCE")?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Display for OracleTriggerTiming {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Before => write!(f, "BEFORE"),
+            Self::After => write!(f, "AFTER"),
+            Self::InsteadOf => write!(f, "INSTEAD OF"),
+        }
+    }
+}
+
+impl fmt::Display for OracleTriggerCrossedition {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            Self::Forward => "FORWARD CROSSEDITION",
+            Self::Reverse => "REVERSE CROSSEDITION",
+        })
+    }
+}
+
+impl fmt::Display for OracleTriggerOrderingKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            Self::Follows => "FOLLOWS",
+            Self::Precedes => "PRECEDES",
+        })
+    }
+}
+
+impl fmt::Display for OracleTriggerOrdering {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{} {}",
+            self.kind,
+            display_comma_separated(&self.triggers)
+        )
+    }
+}
+
+impl fmt::Display for OracleTriggerEvent {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Insert => write!(f, "INSERT"),
+            Self::Update(columns) => {
+                write!(f, "UPDATE")?;
+                if !columns.is_empty() {
+                    write!(f, " OF {}", display_comma_separated(columns))?;
+                }
+                Ok(())
+            }
+            Self::Delete => write!(f, "DELETE"),
+            Self::Create => write!(f, "CREATE"),
+            Self::Alter => write!(f, "ALTER"),
+            Self::Analyze => write!(f, "ANALYZE"),
+            Self::AssociateStatistics => write!(f, "ASSOCIATE STATISTICS"),
+            Self::Audit => write!(f, "AUDIT"),
+            Self::Comment => write!(f, "COMMENT"),
+            Self::DisassociateStatistics => write!(f, "DISASSOCIATE STATISTICS"),
+            Self::Drop => write!(f, "DROP"),
+            Self::Grant => write!(f, "GRANT"),
+            Self::NoAudit => write!(f, "NOAUDIT"),
+            Self::Rename => write!(f, "RENAME"),
+            Self::Revoke => write!(f, "REVOKE"),
+            Self::Truncate => write!(f, "TRUNCATE"),
+            Self::Ddl => write!(f, "DDL"),
+            Self::Startup => write!(f, "STARTUP"),
+            Self::Shutdown => write!(f, "SHUTDOWN"),
+            Self::DbRoleChange => write!(f, "DB_ROLE_CHANGE"),
+            Self::ServerError => write!(f, "SERVERERROR"),
+            Self::Logon => write!(f, "LOGON"),
+            Self::Logoff => write!(f, "LOGOFF"),
+            Self::Suspend => write!(f, "SUSPEND"),
+            Self::Clone => write!(f, "CLONE"),
+            Self::Unplug => write!(f, "UNPLUG"),
+            Self::SetContainer => write!(f, "SET CONTAINER"),
+        }
+    }
+}
+
+impl fmt::Display for OracleTriggerTarget {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Object(name) => write!(f, "{name}"),
+            Self::Schema => write!(f, "SCHEMA"),
+            Self::NamedSchema(schema) => write!(f, "{schema}.SCHEMA"),
+            Self::Database => write!(f, "DATABASE"),
+            Self::PluggableDatabase => write!(f, "PLUGGABLE DATABASE"),
+        }
+    }
+}
+
+impl fmt::Display for OracleTriggerReferencingKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            Self::Old => "OLD",
+            Self::New => "NEW",
+            Self::Parent => "PARENT",
+        })
+    }
+}
+
+impl fmt::Display for OracleTriggerReferencing {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.kind)?;
+        if self.is_as {
+            f.write_str(" AS")?;
+        }
+        write!(f, " {}", self.alias)
+    }
+}
+
+impl fmt::Display for OracleCompoundTriggerTiming {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::BeforeStatement => write!(f, "BEFORE STATEMENT"),
+            Self::BeforeEachRow => write!(f, "BEFORE EACH ROW"),
+            Self::AfterEachRow => write!(f, "AFTER EACH ROW"),
+            Self::AfterStatement => write!(f, "AFTER STATEMENT"),
+        }
+    }
+}
+
+impl fmt::Display for OracleCompoundTriggerSection {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} IS", self.timing)?;
+        for declaration in &self.declarations {
+            write!(f, " {declaration};")?;
+        }
+        write!(f, " {}", self.block)?;
+        // Section terminators repeat the timing after END.
+        write!(f, " {}", self.timing)
+    }
+}
+
+impl fmt::Display for OracleTriggerBody {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Block(block) => block.fmt(f),
+            Self::Call(call) => write!(f, "CALL {call}"),
+            Self::Compound {
+                declarations,
+                sections,
+            } => {
+                write!(f, "COMPOUND TRIGGER")?;
+                for declaration in declarations {
+                    write!(f, " {declaration};")?;
+                }
+                for section in sections {
+                    write!(f, " {section};")?;
+                }
+                write!(f, " END")
+            }
+        }
+    }
+}
+
+impl fmt::Display for OracleCreateTrigger {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "CREATE ")?;
+        if self.or_replace {
+            write!(f, "OR REPLACE ")?;
+        }
+        if let Some(editionable) = self.editionable {
+            write!(
+                f,
+                "{} ",
+                if editionable {
+                    "EDITIONABLE"
+                } else {
+                    "NONEDITIONABLE"
+                }
+            )?;
+        }
+        f.write_str("TRIGGER ")?;
+        if self.if_not_exists {
+            f.write_str("IF NOT EXISTS ")?;
+        }
+        write!(f, "{}", self.name)?;
+        if let Some(timing) = self.timing {
+            write!(f, " {timing}")?;
+        } else if matches!(&self.body, OracleTriggerBody::Compound { .. }) {
+            write!(f, " FOR")?;
+        }
+        write!(f, " {}", display_separated(&self.events, " OR "))?;
+        write!(f, " ON {}", self.target)?;
+        if !self.referencing.is_empty() {
+            write!(
+                f,
+                " REFERENCING {}",
+                display_separated(&self.referencing, " ")
+            )?;
+        }
+        if self.for_each_row {
+            write!(f, " FOR EACH ROW")?;
+        }
+        if let Some(crossedition) = self.crossedition {
+            write!(f, " {crossedition}")?;
+        }
+        if let Some(ordering) = &self.ordering {
+            write!(f, " {ordering}")?;
+        }
+        if let Some(enabled) = self.enabled {
+            f.write_str(if enabled { " ENABLE" } else { " DISABLE" })?;
+        }
+        if let Some(condition) = &self.when {
+            write!(f, " WHEN ({condition})")?;
+        }
+        write!(f, " {}", self.body)
+    }
+}
+
+impl fmt::Display for OracleObjectTypeMethodModifier {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Member => write!(f, "MEMBER"),
+            Self::Static => write!(f, "STATIC"),
+        }
+    }
+}
+
+impl fmt::Display for OracleObjectTypeMethod {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} {}", self.modifier, self.routine)
+    }
+}
+
+impl fmt::Display for OracleObjectTypeElement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Attribute { name, data_type } => write!(f, "{name} {data_type}"),
+            Self::Method(method) => method.fmt(f),
+        }
+    }
+}
+
+impl fmt::Display for OracleTypeDefinition {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Collection {
+                kind,
+                element_type,
+                not_null,
+            } => {
+                write!(f, "AS {kind} OF {element_type}")?;
+                if *not_null {
+                    write!(f, " NOT NULL")?;
+                }
+                Ok(())
+            }
+            Self::Object {
+                elements,
+                not_final,
+            } => {
+                write!(f, "AS OBJECT ({})", display_comma_separated(elements))?;
+                if *not_final {
+                    write!(f, " NOT FINAL")?;
+                }
+                Ok(())
+            }
+            Self::Body { methods } => {
+                write!(f, "IS")?;
+                for method in methods {
+                    write!(f, " {method};")?;
+                }
+                write!(f, " END")
+            }
+        }
+    }
+}
+
+impl fmt::Display for OracleCreateType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "CREATE ")?;
+        if self.or_replace {
+            write!(f, "OR REPLACE ")?;
+        }
+        if let Some(editionable) = self.editionable {
+            write!(
+                f,
+                "{} ",
+                if editionable {
+                    "EDITIONABLE"
+                } else {
+                    "NONEDITIONABLE"
+                }
+            )?;
+        }
+        write!(f, "TYPE")?;
+        if self.is_body {
+            write!(f, " BODY")?;
+        }
+        write!(f, " {} {}", self.name, self.definition)
+    }
+}
+
+impl fmt::Display for OracleAlterType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "ALTER TYPE {} ", self.name)?;
+        match &self.action {
+            OracleAlterTypeAction::AddAttributes(attributes) => {
+                write!(f, "ADD ATTRIBUTE ({})", display_comma_separated(attributes))?;
+            }
+        }
+        if self.cascade {
+            write!(f, " CASCADE")?;
+        }
+        if self.including_table_data {
+            write!(f, " INCLUDING TABLE DATA")?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Display for OracleCreateLibrary {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "CREATE ")?;
+        if self.or_replace {
+            write!(f, "OR REPLACE ")?;
+        }
+        write!(f, "LIBRARY {} AS {}", self.name, self.file)?;
+        if let Some(agent) = &self.agent {
+            write!(f, " AGENT {agent}")?;
+        }
+        if let Some(credential) = &self.credential {
+            write!(f, " CREDENTIAL {credential}")?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Display for PlSqlDeclaration {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Variable(declaration) => declaration.fmt(f),
+            Self::Subtype {
+                name,
+                data_type,
+                not_null,
+            } => {
+                write!(f, "SUBTYPE {name} IS {data_type}")?;
+                if *not_null {
+                    write!(f, " NOT NULL")?;
+                }
+                Ok(())
+            }
+            Self::RecordType { name, fields } => write!(
+                f,
+                "TYPE {name} IS RECORD ({})",
+                display_comma_separated(fields)
+            ),
+            Self::CollectionType {
+                name,
+                kind,
+                element_type,
+                index_by,
+            } => {
+                write!(f, "TYPE {name} IS {kind} OF {element_type}")?;
+                if let Some(index_by) = index_by {
+                    write!(f, " INDEX BY {index_by}")?;
+                }
+                Ok(())
+            }
+            Self::RefCursorType { name, return_type } => {
+                write!(f, "TYPE {name} IS REF CURSOR")?;
+                if let Some(return_type) = return_type {
+                    write!(f, " RETURN {return_type}")?;
+                }
+                Ok(())
+            }
+            Self::Cursor {
+                name,
+                parameters,
+                return_type,
+                query,
+            } => {
+                write!(f, "CURSOR {name}")?;
+                if !parameters.is_empty() {
+                    write!(f, "({})", display_comma_separated(parameters))?;
+                }
+                if let Some(return_type) = return_type {
+                    write!(f, " RETURN {return_type}")?;
+                }
+                write!(f, " IS {query}")
+            }
+            Self::Exception { name } => write!(f, "{name} EXCEPTION"),
+            Self::Pragma(pragma) => pragma.fmt(f),
+            Self::Routine(routine) => routine.fmt(f),
+        }
+    }
+}
+
+impl fmt::Display for PlSqlCollectionKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::NestedTable => write!(f, "TABLE"),
+            Self::Varray(size) => write!(f, "VARRAY({size})"),
+        }
+    }
+}
+
+impl fmt::Display for Pragma {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "PRAGMA {}", self.name)?;
+        if !self.arguments.is_empty() {
+            if self.is_eq {
+                write!(f, " = {}", self.arguments[0])
+            } else {
+                write!(f, "({})", display_comma_separated(&self.arguments))
+            }
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl fmt::Display for PlSqlFetch {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "FETCH {}", self.cursor)?;
+        if self.bulk_collect {
+            write!(f, " BULK COLLECT")?;
+        }
+        write!(f, " INTO {}", display_comma_separated(&self.targets))?;
+        if let Some(limit) = &self.limit {
+            write!(f, " LIMIT {limit}")?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Display for PlSqlForAll {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "FORALL {} IN {}", self.index, self.bounds)?;
+        if self.save_exceptions {
+            write!(f, " SAVE EXCEPTIONS")?;
+        }
+        write!(f, " {}", self.statement)
+    }
+}
+
+impl fmt::Display for PlSqlForAllBounds {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Range { lower, upper } => write!(f, "{lower}..{upper}"),
+            Self::IndicesOf { collection } => write!(f, "INDICES OF {collection}"),
+            Self::ValuesOf { collection } => write!(f, "VALUES OF {collection}"),
+        }
+    }
+}
+
+impl fmt::Display for PlSqlExecuteImmediate {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "EXECUTE IMMEDIATE {}", self.sql)?;
+        if self.bulk_collect {
+            write!(f, " BULK COLLECT")?;
+        }
+        if !self.into.is_empty() {
+            write!(f, " INTO {}", display_comma_separated(&self.into))?;
+        }
+        if !self.using.is_empty() {
+            write!(f, " USING {}", display_comma_separated(&self.using))?;
+        }
+        if !self.returning_into.is_empty() {
+            write!(
+                f,
+                " RETURNING INTO {}",
+                display_comma_separated(&self.returning_into)
+            )?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Display for PlSqlUsingArgument {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.mode {
+            PlSqlParameterMode::In => self.expr.fmt(f),
+            PlSqlParameterMode::Out => write!(f, "OUT {}", self.expr),
+            PlSqlParameterMode::InOut => write!(f, "IN OUT {}", self.expr),
+        }
+    }
+}
+
+impl fmt::Display for PlSqlConditionalCompilation {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for (index, branch) in self.branches.iter().enumerate() {
+            write!(
+                f,
+                "{} {} $THEN",
+                if index == 0 { "$IF" } else { "$ELSIF" },
+                branch.condition
+            )?;
+            if !branch.statements.is_empty() {
+                write!(f, " ")?;
+                format_statement_list(f, &branch.statements)?;
+            }
+            write!(f, " ")?;
+        }
+        if !self.else_statements.is_empty() {
+            write!(f, "$ELSE ")?;
+            format_statement_list(f, &self.else_statements)?;
+            write!(f, " ")?;
+        }
+        write!(f, "$END")
+    }
+}
+
 impl fmt::Display for CursorScrollOption {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -3719,7 +5326,7 @@ pub struct BeginEndStatements {
     #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
     pub begin_token: AttachedToken,
     pub label: Option<Ident>,
-    pub declarations: Vec<SqlPsmDeclaration>,
+    pub declarations: Vec<PlSqlDeclaration>,
     pub statements: Vec<Statement>,
     pub exception_handlers: Option<Vec<ExceptionWhen>>,
     #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
@@ -5045,6 +6652,16 @@ impl fmt::Display for TenantMaintenanceAction {
     visit(with = "visit_statement")
 )]
 pub enum Statement {
+    /// Oracle `CREATE` statement for an Oracle-specific object.
+    OracleCreate(OracleCreateStatement),
+    /// Oracle administrative command with a command-specific AST.
+    OracleCommand(OracleCommandStatement),
+    /// Oracle `ALTER` statement for an Oracle-specific object.
+    OracleAlter(OracleAlterStatement),
+    /// Oracle `DROP` statement for an Oracle-specific schema object.
+    OracleDrop(OracleDropStatement),
+    /// Oracle `LOCK TABLE` statement.
+    OracleLockTable(OracleLockTable),
     /// ```sql
     /// ANALYZE
     /// ```
@@ -5092,6 +6709,25 @@ pub enum Statement {
     Continue(ContinueStatement),
     /// A labeled `BEGIN...END` block.
     LabeledBlock(LabeledBlock),
+    /// A PL/SQL block with declarations and optional exception handlers.
+    PlSqlBlock(BeginEndStatements),
+    /// A PL/SQL statement prefixed by a `<<label>>`.
+    PlSqlLabeled {
+        label: Ident,
+        statement: Box<Statement>,
+    },
+    /// A PL/SQL `GOTO` statement.
+    PlSqlGoto(Ident),
+    /// A PL/SQL cursor fetch.
+    PlSqlFetch(PlSqlFetch),
+    /// A PL/SQL bulk DML loop.
+    PlSqlForAll(PlSqlForAll),
+    /// A PL/SQL dynamic SQL statement.
+    PlSqlExecuteImmediate(PlSqlExecuteImmediate),
+    /// A PL/SQL pipelined-function row emission.
+    PlSqlPipeRow(Expr),
+    /// A PL/SQL conditional-compilation directive.
+    PlSqlConditionalCompilation(PlSqlConditionalCompilation),
     /// A `GET DIAGNOSTICS` statement.
     GetDiagnostics(GetDiagnosticsStatement),
     /// A `RAISE` statement.
@@ -5121,6 +6757,8 @@ pub enum Statement {
     /// CALL <function>
     /// ```
     Call(Function),
+    /// A PL/SQL procedure invocation without a `CALL` keyword.
+    PlSqlProcedureCall(Function),
     /// ```sql
     /// COPY [TO | FROM] ...
     /// ```
@@ -5386,6 +7024,8 @@ pub enum Statement {
         /// MySQL-specific drop index syntax, which requires table specification
         /// See <https://dev.mysql.com/doc/refman/8.4/en/drop-index.html>
         table: Option<ObjectName>,
+        /// Oracle object-specific DROP modifiers.
+        oracle: Option<OracleDropOptions>,
     },
     /// ```sql
     /// DROP FUNCTION
@@ -5823,6 +7463,7 @@ pub enum Statement {
         chain: bool,
         end: bool,
         modifier: Option<TransactionModifier>,
+        oracle: Option<OracleCommitOptions>,
     },
     /// ```sql
     /// ROLLBACK [ TRANSACTION | WORK ] [ AND [ NO ] CHAIN ] [ TO [ SAVEPOINT ] savepoint_name ]
@@ -5991,6 +7632,14 @@ pub enum Statement {
     /// ```sql
     /// CREATE PROCEDURE
     /// ```
+    OracleCreatePlSqlRoutine(OracleCreatePlSqlRoutine),
+    OracleCreatePackage(OracleCreatePackage),
+    OracleCreateTrigger(OracleCreateTrigger),
+    OracleCreateType(OracleCreateType),
+    OracleAlterType(OracleAlterType),
+    OracleCreateLibrary(OracleCreateLibrary),
+    OracleAlterPlSqlUnit(OracleAlterPlSqlUnit),
+    OracleDropPlSqlUnit(OracleDropPlSqlUnit),
     CreateProcedure {
         /// The `CREATE` token
         create_token: AttachedToken,
@@ -6150,10 +7799,14 @@ pub enum Statement {
     /// ```sql
     /// CREATE MATERIALIZED VIEW LOG ON table_name
     /// ```
-    /// No-op retained for Oracle/Trifox compatibility.
     CreateMaterializedViewLog {
         #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
         table_name: ObjectName,
+        with_primary_key: bool,
+        with_rowid: bool,
+        with_sequence: bool,
+        columns: Vec<Ident>,
+        including_new_values: bool,
     },
     /// ```sql
     /// DROP MATERIALIZED VIEW LOG ON table_name
@@ -6235,6 +7888,17 @@ pub enum Statement {
         clauses: Vec<MergeClause>,
         // Specifies the output to save changes in MSSQL
         output: Option<OutputClause>,
+        /// Oracle DML error logging.
+        error_logging: Option<OracleErrorLoggingClause>,
+    },
+    /// Oracle conditional or unconditional multitable INSERT.
+    OracleMultiTableInsert(OracleMultiTableInsert),
+    /// Oracle private temporary, blockchain, or immutable table.
+    OracleCreateTable(OracleCreateTable),
+    /// Oracle external table declaration.
+    OracleCreateExternalTable {
+        name: ObjectName,
+        definition: OracleExternalTableDefinition,
     },
     /// ```sql
     /// CACHE [ FLAG ] TABLE <table_name> [ OPTIONS('K1' = 'V1', 'K2' = V2) ] [ AS ] [ <query> ]
@@ -6296,9 +7960,7 @@ pub enum Statement {
     /// ```
     Pragma {
         pragma_token: AttachedToken,
-        name: ObjectName,
-        value: Option<Value>,
-        is_eq: bool,
+        pragma: Pragma,
     },
     /// ```sql
     /// LOCK TABLES <table_name> [READ [LOCAL] | [LOW_PRIORITY] WRITE]
@@ -6500,6 +8162,2037 @@ pub enum Statement {
     Reset(ResetStatement),
 }
 
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleCommitOptions {
+    pub work: bool,
+    pub comment: Option<String>,
+    pub write: Option<OracleCommitWrite>,
+    pub force: Option<OracleCommitForce>,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleCommitWrite {
+    pub wait: Option<bool>,
+    pub immediate: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleCommitForce {
+    pub corrupt_xid: String,
+    pub scn: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleCreateStatement {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub create_token: AttachedToken,
+    pub or_replace: bool,
+    pub and_compile: bool,
+    pub definition: OracleCreateDefinition,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleSize {
+    pub value: Expr,
+    pub unit: Option<Ident>,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleTypedName {
+    pub name: Ident,
+    pub data_type: DataType,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleJoinGroupEntry {
+    pub table: ObjectName,
+    pub columns: Vec<Ident>,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleAnalyticDimension {
+    pub dimension: ObjectName,
+    pub key: Ident,
+    pub references: Ident,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleAnalyticMeasure {
+    pub name: Ident,
+    pub fact: ObjectName,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleAttributeLevel {
+    pub name: Ident,
+    pub key: Ident,
+    pub determines: Vec<Ident>,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleDimensionLevel {
+    pub name: Ident,
+    pub value: ObjectName,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleJsonField {
+    pub name: Expr,
+    pub value: Expr,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OraclePropertyGraphVertex {
+    pub table: ObjectName,
+    pub key: Vec<Ident>,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OraclePropertyGraphEdge {
+    pub table: ObjectName,
+    pub key: Vec<Ident>,
+    pub source_key: Vec<Ident>,
+    pub source_table: ObjectName,
+    pub source_columns: Vec<Ident>,
+    pub destination_key: Vec<Ident>,
+    pub destination_table: ObjectName,
+    pub destination_columns: Vec<Ident>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleParameterFileKind {
+    Pfile,
+    Spfile,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleDiskgroupRedundancy {
+    External,
+    Normal,
+    High,
+    Flex,
+    Extended,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleIndexKind {
+    Standard,
+    Bitmap,
+    Vector,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleIndexOptions {
+    pub online: bool,
+    pub local: bool,
+    pub indextype: Option<ObjectName>,
+    pub parameters: Option<Expr>,
+    pub vector_distance: Option<Ident>,
+    pub target_accuracy: Option<Expr>,
+    pub vector_parameters: Vec<OracleIndexParameter>,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleIndexParameter {
+    pub name: Ident,
+    pub value: Expr,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleCreateDefinition {
+    AnalyticView {
+        name: ObjectName,
+        using_table: ObjectName,
+        dimensions: Vec<OracleAnalyticDimension>,
+        measures: Vec<OracleAnalyticMeasure>,
+    },
+    ApplicationIdentity {
+        name: ObjectName,
+        mapped_to: Expr,
+    },
+    AuditPolicy {
+        name: ObjectName,
+        actions: Vec<Ident>,
+        on: ObjectName,
+    },
+    Cluster {
+        name: ObjectName,
+        columns: Vec<OracleTypedName>,
+        size: Expr,
+    },
+    Context {
+        name: ObjectName,
+        using_package: ObjectName,
+        accessed_globally: bool,
+    },
+    AttributeDimension {
+        name: ObjectName,
+        using_table: ObjectName,
+        attributes: Vec<Ident>,
+        levels: Vec<OracleAttributeLevel>,
+    },
+    Controlfile {
+        database: ObjectName,
+        set: bool,
+        resetlogs: bool,
+        noarchivelog: bool,
+    },
+    DataRole {
+        name: ObjectName,
+        local: bool,
+    },
+    DataGrant {
+        name: ObjectName,
+        object: ObjectName,
+        condition: Expr,
+        grantee: ObjectName,
+    },
+    Database {
+        name: ObjectName,
+        sys_password: Ident,
+        system_password: Ident,
+        character_set: Ident,
+    },
+    DatabaseLink {
+        public: bool,
+        name: ObjectName,
+        user: ObjectName,
+        password: Ident,
+        using: Expr,
+    },
+    Directory {
+        name: ObjectName,
+        path: Expr,
+        sharing: Option<Ident>,
+    },
+    Directive {
+        name: ObjectName,
+        value: ObjectName,
+        domain: ObjectName,
+    },
+    Diskgroup {
+        name: ObjectName,
+        redundancy: OracleDiskgroupRedundancy,
+        disks: Vec<Expr>,
+    },
+    Dimension {
+        name: ObjectName,
+        levels: Vec<OracleDimensionLevel>,
+        hierarchy: Ident,
+        child: Ident,
+        parent: Ident,
+    },
+    Edition {
+        name: ObjectName,
+        child_of: ObjectName,
+    },
+    EndUser {
+        name: ObjectName,
+        password: Ident,
+        account_unlock: bool,
+    },
+    EndUserContext {
+        name: ObjectName,
+        using_package: ObjectName,
+    },
+    FlashbackArchive {
+        name: ObjectName,
+        tablespace: ObjectName,
+        retention: Expr,
+        unit: Ident,
+    },
+    FlexibleDomain {
+        name: ObjectName,
+        columns: Vec<OracleTypedName>,
+        selector: Expr,
+    },
+    Hierarchy {
+        name: ObjectName,
+        using_dimension: ObjectName,
+        child: Ident,
+        parent: Ident,
+    },
+    HybridVectorIndex {
+        name: ObjectName,
+        table: ObjectName,
+        columns: Vec<Ident>,
+        parameters: Expr,
+    },
+    IcebergTable {
+        name: ObjectName,
+        catalog: ObjectName,
+    },
+    Indextype {
+        name: ObjectName,
+        function: ObjectName,
+        argument_types: Vec<DataType>,
+        using_type: ObjectName,
+    },
+    InmemoryJoinGroup {
+        name: ObjectName,
+        entries: Vec<OracleJoinGroupEntry>,
+    },
+    Index {
+        kind: OracleIndexKind,
+        unique: bool,
+        name: ObjectName,
+        table: ObjectName,
+        columns: Vec<IndexColumn>,
+        options: OracleIndexOptions,
+    },
+    JavaSource {
+        name: Ident,
+        source: String,
+    },
+    JsonRelationalDualityView {
+        name: ObjectName,
+        fields: Vec<OracleJsonField>,
+        table: ObjectName,
+        alias: Option<Ident>,
+    },
+    LockdownProfile {
+        name: ObjectName,
+    },
+    LogicalPartitionTracking {
+        table: ObjectName,
+        key: Vec<Ident>,
+        partition: Ident,
+        less_than: Expr,
+    },
+    MaterializedZonemap {
+        name: ObjectName,
+        table: ObjectName,
+        columns: Vec<Ident>,
+    },
+    MleEnv {
+        name: ObjectName,
+        language_options: Expr,
+    },
+    MleModule {
+        name: ObjectName,
+        language: Ident,
+        source: Expr,
+    },
+    Operator {
+        name: ObjectName,
+        argument_types: Vec<DataType>,
+        return_type: DataType,
+        using_function: ObjectName,
+    },
+    Outline {
+        name: ObjectName,
+        query: Box<Query>,
+    },
+    ParameterFile {
+        kind: OracleParameterFileKind,
+        path: Expr,
+        from_memory: bool,
+    },
+    PluggableDatabase {
+        name: ObjectName,
+        admin_user: ObjectName,
+        password: Ident,
+    },
+    PmemFilestore {
+        name: ObjectName,
+        mountpoint: Expr,
+        size: OracleSize,
+    },
+    Profile {
+        name: ObjectName,
+        limits: Vec<OracleResourceValue>,
+    },
+    PropertyGraph {
+        name: ObjectName,
+        vertices: Vec<OraclePropertyGraphVertex>,
+        edges: Vec<OraclePropertyGraphEdge>,
+    },
+    RestorePoint {
+        name: ObjectName,
+        guarantee_flashback_database: bool,
+    },
+    Role {
+        name: ObjectName,
+        not_identified: bool,
+    },
+    RollbackSegment {
+        name: ObjectName,
+        tablespace: ObjectName,
+    },
+    Schema {
+        authorization: Ident,
+        statements: Vec<Statement>,
+    },
+    Synonym {
+        public: bool,
+        name: ObjectName,
+        target: ObjectName,
+    },
+    MultiColumnDomain {
+        name: ObjectName,
+        columns: Vec<OracleTypedName>,
+    },
+    Tablespace {
+        name: ObjectName,
+        datafile: Expr,
+        size: OracleSize,
+        autoextend: bool,
+        next: Option<OracleSize>,
+    },
+    TablespaceSet {
+        name: ObjectName,
+        datafile_size: OracleSize,
+    },
+    User {
+        name: ObjectName,
+        password: Ident,
+        default_tablespace: ObjectName,
+        quota: OracleSize,
+        quota_tablespace: ObjectName,
+    },
+}
+
+impl fmt::Display for OracleSize {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.value)?;
+        if let Some(unit) = &self.unit {
+            write!(f, "{unit}")?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Display for OracleCreateStatement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "CREATE")?;
+        if self.or_replace {
+            write!(f, " OR REPLACE")?;
+        }
+        if self.and_compile {
+            write!(f, " AND COMPILE")?;
+        }
+        match &self.definition {
+            OracleCreateDefinition::AnalyticView {
+                name,
+                using_table,
+                dimensions,
+                measures,
+            } => {
+                write!(f, " ANALYTIC VIEW {name} USING {using_table} DIMENSION BY (")?;
+                for (index, dimension) in dimensions.iter().enumerate() {
+                    if index > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(
+                        f,
+                        "{} KEY {} REFERENCES {}",
+                        dimension.dimension, dimension.key, dimension.references
+                    )?;
+                }
+                write!(f, ") MEASURES (")?;
+                for (index, measure) in measures.iter().enumerate() {
+                    if index > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{} FACT {}", measure.name, measure.fact)?;
+                }
+                write!(f, ")")
+            }
+            OracleCreateDefinition::ApplicationIdentity { name, mapped_to } => {
+                write!(f, " APPLICATION IDENTITY {name} MAPPED TO {mapped_to}")
+            }
+            OracleCreateDefinition::AttributeDimension {
+                name,
+                using_table,
+                attributes,
+                levels,
+            } => {
+                write!(
+                    f,
+                    " ATTRIBUTE DIMENSION {name} USING {using_table} ATTRIBUTES ({})",
+                    display_comma_separated(attributes)
+                )?;
+                for level in levels {
+                    write!(f, " LEVEL {} KEY {}", level.name, level.key)?;
+                    if !level.determines.is_empty() {
+                        write!(
+                            f,
+                            " DETERMINES ({})",
+                            display_comma_separated(&level.determines)
+                        )?;
+                    }
+                }
+                Ok(())
+            }
+            OracleCreateDefinition::AuditPolicy { name, actions, on } => write!(
+                f,
+                " AUDIT POLICY {name} ACTIONS {} ON {on}",
+                display_comma_separated(actions)
+            ),
+            OracleCreateDefinition::Cluster {
+                name,
+                columns,
+                size,
+            } => {
+                write!(f, " CLUSTER {name} (")?;
+                for (index, column) in columns.iter().enumerate() {
+                    if index > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{} {}", column.name, column.data_type)?;
+                }
+                write!(f, ") SIZE {size}")
+            }
+            OracleCreateDefinition::Context {
+                name,
+                using_package,
+                accessed_globally,
+            } => {
+                write!(f, " CONTEXT {name} USING {using_package}")?;
+                if *accessed_globally {
+                    write!(f, " ACCESSED GLOBALLY")?;
+                }
+                Ok(())
+            }
+            OracleCreateDefinition::Controlfile {
+                database,
+                set,
+                resetlogs,
+                noarchivelog,
+            } => {
+                write!(f, " CONTROLFILE")?;
+                if *set {
+                    write!(f, " SET")?;
+                }
+                write!(f, " DATABASE {database}")?;
+                if *resetlogs {
+                    write!(f, " RESETLOGS")?;
+                }
+                if *noarchivelog {
+                    write!(f, " NOARCHIVELOG")?;
+                }
+                Ok(())
+            }
+            OracleCreateDefinition::DataRole { name, local } => {
+                write!(f, " DATA ROLE {name}")?;
+                if *local {
+                    write!(f, " LOCAL")?;
+                }
+                Ok(())
+            }
+            OracleCreateDefinition::DataGrant {
+                name,
+                object,
+                condition,
+                grantee,
+            } => write!(
+                f,
+                " DATA GRANT {name} AS SELECT ON {object} WHERE {condition} TO {grantee}"
+            ),
+            OracleCreateDefinition::Database {
+                name,
+                sys_password,
+                system_password,
+                character_set,
+            } => write!(
+                f,
+                " DATABASE {name} USER SYS IDENTIFIED BY {sys_password} USER SYSTEM IDENTIFIED BY {system_password} CHARACTER SET {character_set}"
+            ),
+            OracleCreateDefinition::DatabaseLink {
+                public,
+                name,
+                user,
+                password,
+                using,
+            } => write!(
+                f,
+                " {}DATABASE LINK {name} CONNECT TO {user} IDENTIFIED BY {password} USING {using}",
+                if *public { "PUBLIC " } else { "" }
+            ),
+            OracleCreateDefinition::Directory {
+                name,
+                path,
+                sharing,
+            } => {
+                write!(f, " DIRECTORY {name} AS {path}")?;
+                if let Some(sharing) = sharing {
+                    write!(f, " SHARING = {sharing}")?;
+                }
+                Ok(())
+            }
+            OracleCreateDefinition::Directive {
+                name,
+                value,
+                domain,
+            } => write!(
+                f,
+                " DIRECTIVE {name} AS VALIDATE {value} USING {domain}"
+            ),
+            OracleCreateDefinition::Diskgroup {
+                name,
+                redundancy,
+                disks,
+            } => {
+                let redundancy = match redundancy {
+                    OracleDiskgroupRedundancy::External => "EXTERNAL",
+                    OracleDiskgroupRedundancy::Normal => "NORMAL",
+                    OracleDiskgroupRedundancy::High => "HIGH",
+                    OracleDiskgroupRedundancy::Flex => "FLEX",
+                    OracleDiskgroupRedundancy::Extended => "EXTENDED",
+                };
+                write!(
+                    f,
+                    " DISKGROUP {name} {redundancy} REDUNDANCY DISK {}",
+                    display_comma_separated(disks)
+                )
+            }
+            OracleCreateDefinition::Dimension {
+                name,
+                levels,
+                hierarchy,
+                child,
+                parent,
+            } => {
+                write!(f, " DIMENSION {name}")?;
+                for level in levels {
+                    write!(f, " LEVEL {} IS {}", level.name, level.value)?;
+                }
+                write!(
+                    f,
+                    " HIERARCHY {hierarchy} ({child} CHILD OF {parent})"
+                )
+            }
+            OracleCreateDefinition::Edition { name, child_of } => {
+                write!(f, " EDITION {name} AS CHILD OF {child_of}")
+            }
+            OracleCreateDefinition::EndUser {
+                name,
+                password,
+                account_unlock,
+            } => {
+                write!(f, " END USER {name} IDENTIFIED BY {password}")?;
+                if *account_unlock {
+                    write!(f, " ACCOUNT UNLOCK")?;
+                }
+                Ok(())
+            }
+            OracleCreateDefinition::EndUserContext {
+                name,
+                using_package,
+            } => write!(f, " END USER CONTEXT {name} USING {using_package}"),
+            OracleCreateDefinition::FlashbackArchive {
+                name,
+                tablespace,
+                retention,
+                unit,
+            } => write!(
+                f,
+                " FLASHBACK ARCHIVE {name} TABLESPACE {tablespace} RETENTION {retention} {unit}"
+            ),
+            OracleCreateDefinition::FlexibleDomain {
+                name,
+                columns,
+                selector,
+            } => {
+                write!(f, " FLEXIBLE DOMAIN {name} (")?;
+                for (index, column) in columns.iter().enumerate() {
+                    if index > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{} AS {}", column.name, column.data_type)?;
+                }
+                write!(f, ") CHOOSE DOMAIN USING ({selector})")
+            }
+            OracleCreateDefinition::Hierarchy {
+                name,
+                using_dimension,
+                child,
+                parent,
+            } => write!(
+                f,
+                " HIERARCHY {name} USING {using_dimension} ({child} CHILD OF {parent})"
+            ),
+            OracleCreateDefinition::HybridVectorIndex {
+                name,
+                table,
+                columns,
+                parameters,
+            } => write!(
+                f,
+                " HYBRID VECTOR INDEX {name} ON {table} ({}) PARAMETERS ({parameters})",
+                display_comma_separated(columns)
+            ),
+            OracleCreateDefinition::IcebergTable { name, catalog } => {
+                write!(f, " ICEBERG TABLE {name} WITH CATALOG {catalog}")
+            }
+            OracleCreateDefinition::Indextype {
+                name,
+                function,
+                argument_types,
+                using_type,
+            } => write!(
+                f,
+                " INDEXTYPE {name} FOR {function}({}) USING {using_type}",
+                display_comma_separated(argument_types)
+            ),
+            OracleCreateDefinition::InmemoryJoinGroup { name, entries } => {
+                write!(f, " INMEMORY JOIN GROUP {name} (")?;
+                for (index, entry) in entries.iter().enumerate() {
+                    if index > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(
+                        f,
+                        "{}({})",
+                        entry.table,
+                        display_comma_separated(&entry.columns)
+                    )?;
+                }
+                write!(f, ")")
+            }
+            OracleCreateDefinition::Index {
+                kind,
+                unique,
+                name,
+                table,
+                columns,
+                options,
+            } => {
+                write!(f, " ")?;
+                if *unique {
+                    write!(f, "UNIQUE ")?;
+                }
+                match kind {
+                    OracleIndexKind::Standard => {}
+                    OracleIndexKind::Bitmap => write!(f, "BITMAP ")?,
+                    OracleIndexKind::Vector => write!(f, "VECTOR ")?,
+                }
+                write!(
+                    f,
+                    "INDEX {name} ON {table} ({})",
+                    display_comma_separated(columns)
+                )?;
+                if let Some(indextype) = &options.indextype {
+                    write!(f, " INDEXTYPE IS {indextype}")?;
+                }
+                if let Some(parameters) = &options.parameters {
+                    write!(f, " PARAMETERS ({parameters})")?;
+                }
+                if options.local {
+                    write!(f, " LOCAL")?;
+                }
+                if options.online {
+                    write!(f, " ONLINE")?;
+                }
+                if matches!(kind, OracleIndexKind::Vector) {
+                    write!(f, " ORGANIZATION INMEMORY NEIGHBOR GRAPH")?;
+                    if let Some(distance) = &options.vector_distance {
+                        write!(f, " DISTANCE {distance}")?;
+                    }
+                    if let Some(target_accuracy) = &options.target_accuracy {
+                        write!(f, " WITH TARGET ACCURACY {target_accuracy}")?;
+                    }
+                    if !options.vector_parameters.is_empty() {
+                        write!(f, " PARAMETERS (")?;
+                        for (index, parameter) in
+                            options.vector_parameters.iter().enumerate()
+                        {
+                            if index > 0 {
+                                write!(f, ", ")?;
+                            }
+                            write!(f, "{} {}", parameter.name, parameter.value)?;
+                        }
+                        write!(f, ")")?;
+                    }
+                }
+                Ok(())
+            }
+            OracleCreateDefinition::JavaSource { name, source } => {
+                write!(f, " JAVA SOURCE NAMED {name} AS {source}")
+            }
+            OracleCreateDefinition::JsonRelationalDualityView {
+                name,
+                fields,
+                table,
+                alias,
+            } => {
+                write!(f, " JSON RELATIONAL DUALITY VIEW {name} AS SELECT JSON {{")?;
+                for (index, field) in fields.iter().enumerate() {
+                    if index > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{} : {}", field.name, field.value)?;
+                }
+                write!(f, "}} FROM {table}")?;
+                if let Some(alias) = alias {
+                    write!(f, " {alias}")?;
+                }
+                Ok(())
+            }
+            OracleCreateDefinition::LockdownProfile { name } => {
+                write!(f, " LOCKDOWN PROFILE {name}")
+            }
+            OracleCreateDefinition::LogicalPartitionTracking {
+                table,
+                key,
+                partition,
+                less_than,
+            } => write!(
+                f,
+                " LOGICAL PARTITION TRACKING ON {table} PARTITION BY RANGE ({}) (PARTITION {partition} VALUES LESS THAN ({less_than}))",
+                display_comma_separated(key)
+            ),
+            OracleCreateDefinition::MaterializedZonemap {
+                name,
+                table,
+                columns,
+            } => write!(
+                f,
+                " MATERIALIZED ZONEMAP {name} ON {table} ({})",
+                display_comma_separated(columns)
+            ),
+            OracleCreateDefinition::MleEnv {
+                name,
+                language_options,
+            } => write!(f, " MLE ENV {name} LANGUAGE OPTIONS {language_options}"),
+            OracleCreateDefinition::MleModule {
+                name,
+                language,
+                source,
+            } => write!(
+                f,
+                " MLE MODULE {name} LANGUAGE {language} AS {source}"
+            ),
+            OracleCreateDefinition::Operator {
+                name,
+                argument_types,
+                return_type,
+                using_function,
+            } => write!(
+                f,
+                " OPERATOR {name} BINDING ({}) RETURN {return_type} USING {using_function}",
+                display_comma_separated(argument_types)
+            ),
+            OracleCreateDefinition::Outline { name, query } => {
+                write!(f, " OUTLINE {name} ON {query}")
+            }
+            OracleCreateDefinition::ParameterFile {
+                kind,
+                path,
+                from_memory,
+            } => {
+                write!(
+                    f,
+                    " {} = {path}",
+                    match kind {
+                        OracleParameterFileKind::Pfile => "PFILE",
+                        OracleParameterFileKind::Spfile => "SPFILE",
+                    }
+                )?;
+                if *from_memory {
+                    write!(f, " FROM MEMORY")?;
+                }
+                Ok(())
+            }
+            OracleCreateDefinition::PluggableDatabase {
+                name,
+                admin_user,
+                password,
+            } => write!(
+                f,
+                " PLUGGABLE DATABASE {name} ADMIN USER {admin_user} IDENTIFIED BY {password}"
+            ),
+            OracleCreateDefinition::PmemFilestore {
+                name,
+                mountpoint,
+                size,
+            } => write!(
+                f,
+                " PMEM FILESTORE {name} MOUNTPOINT {mountpoint} SIZE {size}"
+            ),
+            OracleCreateDefinition::Profile { name, limits } => {
+                write!(f, " PROFILE {name} LIMIT")?;
+                for limit in limits {
+                    write!(f, " {} {}", limit.resource, limit.value)?;
+                }
+                Ok(())
+            }
+            OracleCreateDefinition::PropertyGraph {
+                name,
+                vertices,
+                edges,
+            } => {
+                write!(f, " PROPERTY GRAPH {name} VERTEX TABLES (")?;
+                for (index, vertex) in vertices.iter().enumerate() {
+                    if index > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(
+                        f,
+                        "{} KEY ({})",
+                        vertex.table,
+                        display_comma_separated(&vertex.key)
+                    )?;
+                }
+                write!(f, ") EDGE TABLES (")?;
+                for (index, edge) in edges.iter().enumerate() {
+                    if index > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(
+                        f,
+                        "{} KEY ({}) SOURCE KEY ({}) REFERENCES {}({}) DESTINATION KEY ({}) REFERENCES {}({})",
+                        edge.table,
+                        display_comma_separated(&edge.key),
+                        display_comma_separated(&edge.source_key),
+                        edge.source_table,
+                        display_comma_separated(&edge.source_columns),
+                        display_comma_separated(&edge.destination_key),
+                        edge.destination_table,
+                        display_comma_separated(&edge.destination_columns)
+                    )?;
+                }
+                write!(f, ")")
+            }
+            OracleCreateDefinition::RestorePoint {
+                name,
+                guarantee_flashback_database,
+            } => {
+                write!(f, " RESTORE POINT {name}")?;
+                if *guarantee_flashback_database {
+                    write!(f, " GUARANTEE FLASHBACK DATABASE")?;
+                }
+                Ok(())
+            }
+            OracleCreateDefinition::Role {
+                name,
+                not_identified,
+            } => {
+                write!(f, " ROLE {name}")?;
+                if *not_identified {
+                    write!(f, " NOT IDENTIFIED")?;
+                }
+                Ok(())
+            }
+            OracleCreateDefinition::RollbackSegment { name, tablespace } => {
+                write!(f, " ROLLBACK SEGMENT {name} TABLESPACE {tablespace}")
+            }
+            OracleCreateDefinition::Schema {
+                authorization,
+                statements,
+            } => {
+                write!(f, " SCHEMA AUTHORIZATION {authorization}")?;
+                for statement in statements {
+                    write!(f, " {statement}")?;
+                }
+                Ok(())
+            }
+            OracleCreateDefinition::Synonym {
+                public,
+                name,
+                target,
+            } => write!(
+                f,
+                " {}SYNONYM {name} FOR {target}",
+                if *public { "PUBLIC " } else { "" }
+            ),
+            OracleCreateDefinition::MultiColumnDomain { name, columns } => {
+                write!(f, " DOMAIN {name} AS (")?;
+                for (index, column) in columns.iter().enumerate() {
+                    if index > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{} AS {}", column.name, column.data_type)?;
+                }
+                write!(f, ")")
+            }
+            OracleCreateDefinition::Tablespace {
+                name,
+                datafile,
+                size,
+                autoextend,
+                next,
+            } => {
+                write!(f, " TABLESPACE {name} DATAFILE {datafile} SIZE {size}")?;
+                if *autoextend {
+                    write!(f, " AUTOEXTEND ON")?;
+                }
+                if let Some(next) = next {
+                    write!(f, " NEXT {next}")?;
+                }
+                Ok(())
+            }
+            OracleCreateDefinition::TablespaceSet {
+                name,
+                datafile_size,
+            } => write!(
+                f,
+                " TABLESPACE SET {name} USING TEMPLATE (DATAFILE SIZE {datafile_size})"
+            ),
+            OracleCreateDefinition::User {
+                name,
+                password,
+                default_tablespace,
+                quota,
+                quota_tablespace,
+            } => write!(
+                f,
+                " USER {name} IDENTIFIED BY {password} DEFAULT TABLESPACE {default_tablespace} QUOTA {quota} ON {quota_tablespace}"
+            ),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleCommandStatement {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub command_token: AttachedToken,
+    pub command: OracleCommand,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleCommand {
+    AdministerKeyManagementCreateKeystore {
+        path: Expr,
+        password: Ident,
+    },
+    AnalyzeTable {
+        table: ObjectName,
+        cascade: bool,
+    },
+    AssociateColumnStatistics {
+        columns: Vec<ObjectName>,
+        using_type: ObjectName,
+    },
+    DisassociateColumnStatistics {
+        columns: Vec<ObjectName>,
+        force: bool,
+    },
+    AuditPolicy {
+        policy: ObjectName,
+        users: Vec<ObjectName>,
+        outcome: OracleAuditOutcome,
+    },
+    FlashbackDatabaseToRestorePoint {
+        restore_point: ObjectName,
+    },
+    FlashbackTableToTimestamp {
+        table: ObjectName,
+        timestamp: Expr,
+        enable_triggers: bool,
+    },
+    GrantDataRole {
+        role: ObjectName,
+        grantees: Vec<ObjectName>,
+    },
+    RevokeDataRole {
+        role: ObjectName,
+        grantees: Vec<ObjectName>,
+    },
+    NoauditPolicy {
+        policy: ObjectName,
+        users: Vec<ObjectName>,
+    },
+    NoauditAction {
+        action: Ident,
+        object_type: Ident,
+        users: Vec<ObjectName>,
+        outcome: OracleAuditOutcome,
+    },
+    PurgeRecyclebin,
+    SetUseDataGrantsOnly {
+        object: ObjectName,
+        enabled: bool,
+    },
+    TruncateCluster {
+        cluster: ObjectName,
+        drop_storage: bool,
+    },
+    SetTransaction {
+        modes: Vec<TransactionMode>,
+        name: Option<Expr>,
+    },
+    SetRole {
+        role: ObjectName,
+        password: Ident,
+    },
+    ExplainPlan {
+        statement_id: Option<Expr>,
+        into: ObjectName,
+        statement: Box<Statement>,
+    },
+    GrantSystemPrivileges {
+        privileges: Vec<OracleSystemPrivilege>,
+        grantees: Vec<ObjectName>,
+        admin_option: bool,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleSystemPrivilege {
+    CreateSession,
+    CreateTable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleAuditOutcome {
+    Successful,
+    NotSuccessful,
+}
+
+impl fmt::Display for OracleAuditOutcome {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            Self::Successful => "SUCCESSFUL",
+            Self::NotSuccessful => "NOT SUCCESSFUL",
+        })
+    }
+}
+
+impl fmt::Display for OracleCommandStatement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match &self.command {
+            OracleCommand::AdministerKeyManagementCreateKeystore { path, password } => write!(
+                f,
+                "ADMINISTER KEY MANAGEMENT CREATE KEYSTORE {path} IDENTIFIED BY {password}"
+            ),
+            OracleCommand::AnalyzeTable { table, cascade } => {
+                write!(f, "ANALYZE TABLE {table} VALIDATE STRUCTURE")?;
+                if *cascade {
+                    write!(f, " CASCADE")?;
+                }
+                Ok(())
+            }
+            OracleCommand::AssociateColumnStatistics {
+                columns,
+                using_type,
+            } => write!(
+                f,
+                "ASSOCIATE STATISTICS WITH COLUMNS {} USING {using_type}",
+                display_comma_separated(columns)
+            ),
+            OracleCommand::DisassociateColumnStatistics { columns, force } => {
+                write!(
+                    f,
+                    "DISASSOCIATE STATISTICS FROM COLUMNS {}",
+                    display_comma_separated(columns)
+                )?;
+                if *force {
+                    write!(f, " FORCE")?;
+                }
+                Ok(())
+            }
+            OracleCommand::AuditPolicy {
+                policy,
+                users,
+                outcome,
+            } => write!(
+                f,
+                "AUDIT POLICY {policy} BY {} WHENEVER {outcome}",
+                display_comma_separated(users)
+            ),
+            OracleCommand::FlashbackDatabaseToRestorePoint { restore_point } => {
+                write!(f, "FLASHBACK DATABASE TO RESTORE POINT {restore_point}")
+            }
+            OracleCommand::FlashbackTableToTimestamp {
+                table,
+                timestamp,
+                enable_triggers,
+            } => {
+                write!(f, "FLASHBACK TABLE {table} TO TIMESTAMP {timestamp}")?;
+                if *enable_triggers {
+                    write!(f, " ENABLE TRIGGERS")?;
+                }
+                Ok(())
+            }
+            OracleCommand::GrantDataRole { role, grantees } => write!(
+                f,
+                "GRANT DATA ROLE {role} TO {}",
+                display_comma_separated(grantees)
+            ),
+            OracleCommand::RevokeDataRole { role, grantees } => write!(
+                f,
+                "REVOKE DATA ROLE {role} FROM {}",
+                display_comma_separated(grantees)
+            ),
+            OracleCommand::NoauditPolicy { policy, users } => write!(
+                f,
+                "NOAUDIT POLICY {policy} BY {}",
+                display_comma_separated(users)
+            ),
+            OracleCommand::NoauditAction {
+                action,
+                object_type,
+                users,
+                outcome,
+            } => write!(
+                f,
+                "NOAUDIT {action} {object_type} BY {} WHENEVER {outcome}",
+                display_comma_separated(users)
+            ),
+            OracleCommand::PurgeRecyclebin => write!(f, "PURGE RECYCLEBIN"),
+            OracleCommand::SetUseDataGrantsOnly { object, enabled } => write!(
+                f,
+                "SET USE DATA GRANTS ONLY ON {object} {}",
+                if *enabled { "ENABLED" } else { "DISABLED" }
+            ),
+            OracleCommand::TruncateCluster {
+                cluster,
+                drop_storage,
+            } => {
+                write!(f, "TRUNCATE CLUSTER {cluster}")?;
+                if *drop_storage {
+                    write!(f, " DROP STORAGE")?;
+                }
+                Ok(())
+            }
+            OracleCommand::SetTransaction { modes, name } => {
+                write!(f, "SET TRANSACTION")?;
+                if !modes.is_empty() {
+                    write!(f, " {}", display_comma_separated(modes))?;
+                }
+                if let Some(name) = name {
+                    write!(f, " NAME {name}")?;
+                }
+                Ok(())
+            }
+            OracleCommand::SetRole { role, password } => {
+                write!(f, "SET ROLE {role} IDENTIFIED BY {password}")
+            }
+            OracleCommand::ExplainPlan {
+                statement_id,
+                into,
+                statement,
+            } => {
+                write!(f, "EXPLAIN PLAN")?;
+                if let Some(statement_id) = statement_id {
+                    write!(f, " SET STATEMENT_ID = {statement_id}")?;
+                }
+                write!(f, " INTO {into} FOR {statement}")
+            }
+            OracleCommand::GrantSystemPrivileges {
+                privileges,
+                grantees,
+                admin_option,
+            } => {
+                write!(f, "GRANT ")?;
+                for (index, privilege) in privileges.iter().enumerate() {
+                    if index > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(
+                        f,
+                        "{}",
+                        match privilege {
+                            OracleSystemPrivilege::CreateSession => "CREATE SESSION",
+                            OracleSystemPrivilege::CreateTable => "CREATE TABLE",
+                        }
+                    )?;
+                }
+                write!(f, " TO {}", display_comma_separated(grantees))?;
+                if *admin_option {
+                    write!(f, " WITH ADMIN OPTION")?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleAlterStatement {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub alter_token: AttachedToken,
+    pub object_type: OracleAlterObjectType,
+    pub target: OracleAlterTarget,
+    pub operation: OracleAlterOperation,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleAlterObjectType {
+    AnalyticView,
+    Assertion,
+    AttributeDimension,
+    AuditPolicy,
+    Cluster,
+    Database,
+    DatabaseLink,
+    DatabaseDictionary,
+    Dimension,
+    Directive,
+    Diskgroup,
+    Domain,
+    EndUser,
+    FlashbackArchive,
+    Hierarchy,
+    Index,
+    Indextype,
+    InmemoryJoinGroup,
+    JavaSource,
+    JsonRelationalDualityView,
+    LockdownProfile,
+    MaterializedViewLog,
+    MaterializedZonemap,
+    MleEnv,
+    MleModule,
+    Operator,
+    Outline,
+    PluggableDatabase,
+    PmemFilestore,
+    Profile,
+    PropertyGraph,
+    PublicDatabaseLink,
+    PublicSynonym,
+    ResourceCost,
+    Role,
+    RollbackSegment,
+    Session,
+    System,
+    Synonym,
+    Tablespace,
+    TablespaceSet,
+    User,
+    View,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleAlterTarget {
+    None,
+    Name(ObjectName),
+    On(ObjectName),
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleAlterOperation {
+    Compile,
+    ConnectTo {
+        user: ObjectName,
+        password: Ident,
+    },
+    Enable,
+    EnableValidate,
+    AddAuditActions {
+        actions: Vec<Ident>,
+        on: ObjectName,
+    },
+    Size(Expr),
+    ForceLogging,
+    EncryptCredentials,
+    CheckAll,
+    AddDisplay(Ident),
+    AccountUnlock,
+    ModifyRetention {
+        value: Expr,
+        unit: Ident,
+    },
+    AddJoinColumns {
+        table: ObjectName,
+        columns: Vec<Ident>,
+    },
+    EnableLogicalReplication,
+    DisableStatements(Vec<Expr>),
+    AddColumns(Vec<Ident>),
+    Rebuild,
+    RebuildIndex {
+        online: bool,
+    },
+    SetMetadata {
+        data_type: Ident,
+        value: Expr,
+    },
+    OpenReadWrite,
+    Resize {
+        value: Expr,
+        unit: Option<Ident>,
+    },
+    Limit(Vec<OracleResourceValue>),
+    NotIdentified,
+    Online,
+    SetParameter {
+        parameter: ObjectName,
+        value: Expr,
+        scope: Option<Ident>,
+    },
+    ReadOnly,
+    ResourceValues(Vec<OracleResourceValue>),
+    UserQuota {
+        amount: Expr,
+        tablespace: ObjectName,
+        account_unlock: bool,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleResourceValue {
+    pub resource: Ident,
+    pub value: Expr,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleCreateTable {
+    pub kind: OracleCreateTableKind,
+    pub name: ObjectName,
+    pub columns: Vec<ColumnDef>,
+    pub constraints: Vec<TableConstraint>,
+    pub options: OracleCreateTableOptions,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleCreateTableKind {
+    PrivateTemporary,
+    Blockchain,
+    Immutable,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleCreateTableOptions {
+    PrivateTemporary {
+        drop_definition: bool,
+    },
+    Retention {
+        no_drop_until: Expr,
+        no_drop_unit: Ident,
+        no_delete_until: Option<Expr>,
+        no_delete_unit: Option<Ident>,
+        no_delete_after_insert: bool,
+        hashing: Option<OracleBlockchainHashing>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleBlockchainHashing {
+    pub algorithm: Ident,
+    pub version: Ident,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleExternalTableDefinition {
+    pub columns: Vec<ColumnDef>,
+    pub access_driver: Ident,
+    pub default_directory: ObjectName,
+    pub access_parameters: Vec<OracleExternalAccessParameter>,
+    pub locations: Vec<Expr>,
+    pub reject_limit: Option<OracleRejectLimit>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleExternalAccessParameter {
+    RecordsDelimitedByNewline,
+}
+
+impl fmt::Display for OracleExternalTableDefinition {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "TYPE {} DEFAULT DIRECTORY {} ACCESS PARAMETERS (",
+            self.access_driver, self.default_directory
+        )?;
+        for (index, parameter) in self.access_parameters.iter().enumerate() {
+            if index > 0 {
+                f.write_str(" ")?;
+            }
+            match parameter {
+                OracleExternalAccessParameter::RecordsDelimitedByNewline => {
+                    f.write_str("RECORDS DELIMITED BY NEWLINE")?
+                }
+            }
+        }
+        write!(
+            f,
+            ") LOCATION ({})",
+            display_comma_separated(&self.locations)
+        )
+    }
+}
+
+impl fmt::Display for OracleCreateTable {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "CREATE {} TABLE {} (",
+            match self.kind {
+                OracleCreateTableKind::PrivateTemporary => "PRIVATE TEMPORARY",
+                OracleCreateTableKind::Blockchain => "BLOCKCHAIN",
+                OracleCreateTableKind::Immutable => "IMMUTABLE",
+            },
+            self.name,
+        )?;
+        let mut separator = "";
+        for column in &self.columns {
+            write!(f, "{separator}{column}")?;
+            separator = ", ";
+        }
+        for constraint in &self.constraints {
+            write!(f, "{separator}{constraint}")?;
+            separator = ", ";
+        }
+        f.write_str(")")?;
+        match &self.options {
+            OracleCreateTableOptions::PrivateTemporary { drop_definition } => write!(
+                f,
+                " ON COMMIT {} DEFINITION",
+                if *drop_definition { "DROP" } else { "PRESERVE" }
+            ),
+            OracleCreateTableOptions::Retention {
+                no_drop_until,
+                no_drop_unit,
+                no_delete_until,
+                no_delete_unit,
+                no_delete_after_insert,
+                hashing,
+            } => {
+                write!(
+                    f,
+                    " NO DROP UNTIL {no_drop_until} {no_drop_unit} IDLE NO DELETE"
+                )?;
+                if let (Some(value), Some(unit)) = (no_delete_until, no_delete_unit) {
+                    write!(f, " UNTIL {value} {unit}")?;
+                    if *no_delete_after_insert {
+                        f.write_str(" AFTER INSERT")?;
+                    }
+                }
+                if let Some(hashing) = hashing {
+                    write!(
+                        f,
+                        " HASHING USING {} VERSION {}",
+                        hashing.algorithm, hashing.version
+                    )?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+impl fmt::Display for OracleAlterObjectType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            Self::AnalyticView => "ANALYTIC VIEW",
+            Self::Assertion => "ASSERTION",
+            Self::AttributeDimension => "ATTRIBUTE DIMENSION",
+            Self::AuditPolicy => "AUDIT POLICY",
+            Self::Cluster => "CLUSTER",
+            Self::Database => "DATABASE",
+            Self::DatabaseLink => "DATABASE LINK",
+            Self::DatabaseDictionary => "DATABASE DICTIONARY",
+            Self::Dimension => "DIMENSION",
+            Self::Directive => "DIRECTIVE",
+            Self::Diskgroup => "DISKGROUP",
+            Self::Domain => "DOMAIN",
+            Self::EndUser => "END USER",
+            Self::FlashbackArchive => "FLASHBACK ARCHIVE",
+            Self::Hierarchy => "HIERARCHY",
+            Self::Index => "INDEX",
+            Self::Indextype => "INDEXTYPE",
+            Self::InmemoryJoinGroup => "INMEMORY JOIN GROUP",
+            Self::JavaSource => "JAVA SOURCE",
+            Self::JsonRelationalDualityView => "JSON RELATIONAL DUALITY VIEW",
+            Self::LockdownProfile => "LOCKDOWN PROFILE",
+            Self::MaterializedViewLog => "MATERIALIZED VIEW LOG",
+            Self::MaterializedZonemap => "MATERIALIZED ZONEMAP",
+            Self::MleEnv => "MLE ENV",
+            Self::MleModule => "MLE MODULE",
+            Self::Operator => "OPERATOR",
+            Self::Outline => "OUTLINE",
+            Self::PluggableDatabase => "PLUGGABLE DATABASE",
+            Self::PmemFilestore => "PMEM FILESTORE",
+            Self::Profile => "PROFILE",
+            Self::PropertyGraph => "PROPERTY GRAPH",
+            Self::PublicDatabaseLink => "PUBLIC DATABASE LINK",
+            Self::PublicSynonym => "PUBLIC SYNONYM",
+            Self::ResourceCost => "RESOURCE COST",
+            Self::Role => "ROLE",
+            Self::RollbackSegment => "ROLLBACK SEGMENT",
+            Self::Session => "SESSION",
+            Self::System => "SYSTEM",
+            Self::Synonym => "SYNONYM",
+            Self::Tablespace => "TABLESPACE",
+            Self::TablespaceSet => "TABLESPACE SET",
+            Self::User => "USER",
+            Self::View => "VIEW",
+        })
+    }
+}
+
+impl fmt::Display for OracleAlterStatement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "ALTER {}", self.object_type)?;
+        match &self.target {
+            OracleAlterTarget::None => {}
+            OracleAlterTarget::Name(name) => write!(f, " {name}")?,
+            OracleAlterTarget::On(name) => write!(f, " ON {name}")?,
+        }
+        match &self.operation {
+            OracleAlterOperation::Compile => write!(f, " COMPILE"),
+            OracleAlterOperation::ConnectTo { user, password } => {
+                write!(f, " CONNECT TO {user} IDENTIFIED BY {password}")
+            }
+            OracleAlterOperation::Enable => write!(f, " ENABLE"),
+            OracleAlterOperation::EnableValidate => write!(f, " ENABLE VALIDATE"),
+            OracleAlterOperation::AddAuditActions { actions, on } => write!(
+                f,
+                " ADD ACTIONS {} ON {on}",
+                display_comma_separated(actions)
+            ),
+            OracleAlterOperation::Size(size) => write!(f, " SIZE {size}"),
+            OracleAlterOperation::ForceLogging => write!(f, " FORCE LOGGING"),
+            OracleAlterOperation::EncryptCredentials => write!(f, " ENCRYPT CREDENTIALS"),
+            OracleAlterOperation::CheckAll => write!(f, " CHECK ALL"),
+            OracleAlterOperation::AddDisplay(display) => write!(f, " ADD DISPLAY {display}"),
+            OracleAlterOperation::AccountUnlock => write!(f, " ACCOUNT UNLOCK"),
+            OracleAlterOperation::ModifyRetention { value, unit } => {
+                write!(f, " MODIFY RETENTION {value} {unit}")
+            }
+            OracleAlterOperation::AddJoinColumns { table, columns } => {
+                write!(f, " ADD ({table} ({}))", display_comma_separated(columns))
+            }
+            OracleAlterOperation::EnableLogicalReplication => {
+                write!(f, " ENABLE LOGICAL REPLICATION")
+            }
+            OracleAlterOperation::DisableStatements(statements) => write!(
+                f,
+                " DISABLE STATEMENT = ({})",
+                display_comma_separated(statements)
+            ),
+            OracleAlterOperation::AddColumns(columns) => {
+                write!(f, " ADD ({})", display_comma_separated(columns))
+            }
+            OracleAlterOperation::Rebuild => write!(f, " REBUILD"),
+            OracleAlterOperation::RebuildIndex { online } => {
+                write!(f, " REBUILD")?;
+                if *online {
+                    write!(f, " ONLINE")?;
+                }
+                Ok(())
+            }
+            OracleAlterOperation::SetMetadata { data_type, value } => {
+                write!(f, " SET METADATA USING {data_type} {value}")
+            }
+            OracleAlterOperation::OpenReadWrite => write!(f, " OPEN READ WRITE"),
+            OracleAlterOperation::Resize { value, unit } => {
+                write!(f, " RESIZE {value}")?;
+                if let Some(unit) = unit {
+                    write!(f, "{unit}")?;
+                }
+                Ok(())
+            }
+            OracleAlterOperation::Limit(limits) => {
+                write!(f, " LIMIT")?;
+                for limit in limits {
+                    write!(f, " {} {}", limit.resource, limit.value)?;
+                }
+                Ok(())
+            }
+            OracleAlterOperation::NotIdentified => write!(f, " NOT IDENTIFIED"),
+            OracleAlterOperation::Online => write!(f, " ONLINE"),
+            OracleAlterOperation::SetParameter {
+                parameter,
+                value,
+                scope,
+            } => {
+                write!(f, " SET {parameter} = {value}")?;
+                if let Some(scope) = scope {
+                    write!(f, " SCOPE = {scope}")?;
+                }
+                Ok(())
+            }
+            OracleAlterOperation::ReadOnly => write!(f, " READ ONLY"),
+            OracleAlterOperation::ResourceValues(values) => {
+                for value in values {
+                    write!(f, " {} {}", value.resource, value.value)?;
+                }
+                Ok(())
+            }
+            OracleAlterOperation::UserQuota {
+                amount,
+                tablespace,
+                account_unlock,
+            } => {
+                write!(f, " QUOTA {amount} ON {tablespace}")?;
+                if *account_unlock {
+                    write!(f, " ACCOUNT UNLOCK")?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleDropStatement {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub drop_token: AttachedToken,
+    pub object_type: OracleDropObjectType,
+    pub if_exists: bool,
+    pub target: OracleDropTarget,
+    pub options: Vec<OracleDropOption>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleDropObjectType {
+    AnalyticView,
+    ApplicationIdentity,
+    Assertion,
+    AttributeDimension,
+    AuditPolicy,
+    Cluster,
+    Context,
+    DataGrant,
+    DataRole,
+    Database,
+    DatabaseLink,
+    Dimension,
+    Directory,
+    Directive,
+    Diskgroup,
+    Domain,
+    Edition,
+    EndUser,
+    FlashbackArchive,
+    Hierarchy,
+    IcebergTable,
+    Indextype,
+    InmemoryJoinGroup,
+    JavaSource,
+    LockdownProfile,
+    MaterializedViewLog,
+    MaterializedZonemap,
+    MleEnv,
+    MleModule,
+    Operator,
+    Outline,
+    PluggableDatabase,
+    PmemFilestore,
+    Profile,
+    PropertyGraph,
+    PublicDatabaseLink,
+    PublicSynonym,
+    RestorePoint,
+    RollbackSegment,
+    Synonym,
+    Tablespace,
+    TablespaceSet,
+    User,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleDropTarget {
+    None,
+    Name(ObjectName),
+    On(ObjectName),
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleDropOption {
+    IncludingTables,
+    CascadeConstraints,
+    ExcludingContents,
+    Force,
+    Preserve,
+    Cascade,
+    WithinCatalog(ObjectName),
+    Purge,
+    IncludingDatafiles,
+    IncludingContentsAndDatafiles,
+}
+
+impl fmt::Display for OracleDropObjectType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            Self::AnalyticView => "ANALYTIC VIEW",
+            Self::ApplicationIdentity => "APPLICATION IDENTITY",
+            Self::Assertion => "ASSERTION",
+            Self::AttributeDimension => "ATTRIBUTE DIMENSION",
+            Self::AuditPolicy => "AUDIT POLICY",
+            Self::Cluster => "CLUSTER",
+            Self::Context => "CONTEXT",
+            Self::DataGrant => "DATA GRANT",
+            Self::DataRole => "DATA ROLE",
+            Self::Database => "DATABASE",
+            Self::DatabaseLink => "DATABASE LINK",
+            Self::Dimension => "DIMENSION",
+            Self::Directory => "DIRECTORY",
+            Self::Directive => "DIRECTIVE",
+            Self::Diskgroup => "DISKGROUP",
+            Self::Domain => "DOMAIN",
+            Self::Edition => "EDITION",
+            Self::EndUser => "END USER",
+            Self::FlashbackArchive => "FLASHBACK ARCHIVE",
+            Self::Hierarchy => "HIERARCHY",
+            Self::IcebergTable => "ICEBERG TABLE",
+            Self::Indextype => "INDEXTYPE",
+            Self::InmemoryJoinGroup => "INMEMORY JOIN GROUP",
+            Self::JavaSource => "JAVA SOURCE",
+            Self::LockdownProfile => "LOCKDOWN PROFILE",
+            Self::MaterializedViewLog => "MATERIALIZED VIEW LOG",
+            Self::MaterializedZonemap => "MATERIALIZED ZONEMAP",
+            Self::MleEnv => "MLE ENV",
+            Self::MleModule => "MLE MODULE",
+            Self::Operator => "OPERATOR",
+            Self::Outline => "OUTLINE",
+            Self::PluggableDatabase => "PLUGGABLE DATABASE",
+            Self::PmemFilestore => "PMEM FILESTORE",
+            Self::Profile => "PROFILE",
+            Self::PropertyGraph => "PROPERTY GRAPH",
+            Self::PublicDatabaseLink => "PUBLIC DATABASE LINK",
+            Self::PublicSynonym => "PUBLIC SYNONYM",
+            Self::RestorePoint => "RESTORE POINT",
+            Self::RollbackSegment => "ROLLBACK SEGMENT",
+            Self::Synonym => "SYNONYM",
+            Self::Tablespace => "TABLESPACE",
+            Self::TablespaceSet => "TABLESPACE SET",
+            Self::User => "USER",
+        })
+    }
+}
+
+impl fmt::Display for OracleDropStatement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "DROP {}", self.object_type)?;
+        if self.if_exists {
+            f.write_str(" IF EXISTS")?;
+        }
+        match &self.target {
+            OracleDropTarget::None => {}
+            OracleDropTarget::Name(name) => write!(f, " {name}")?,
+            OracleDropTarget::On(name) => write!(f, " ON {name}")?,
+        }
+        for option in &self.options {
+            match option {
+                OracleDropOption::IncludingTables => write!(f, " INCLUDING TABLES")?,
+                OracleDropOption::CascadeConstraints => write!(f, " CASCADE CONSTRAINTS")?,
+                OracleDropOption::ExcludingContents => write!(f, " EXCLUDING CONTENTS")?,
+                OracleDropOption::Force => write!(f, " FORCE")?,
+                OracleDropOption::Preserve => write!(f, " PRESERVE")?,
+                OracleDropOption::Cascade => write!(f, " CASCADE")?,
+                OracleDropOption::WithinCatalog(catalog) => write!(f, " WITHIN CATALOG {catalog}")?,
+                OracleDropOption::Purge => write!(f, " PURGE")?,
+                OracleDropOption::IncludingDatafiles => write!(f, " INCLUDING DATAFILES")?,
+                OracleDropOption::IncludingContentsAndDatafiles => {
+                    write!(f, " INCLUDING CONTENTS AND DATAFILES")?
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleLockTable {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub lock_token: AttachedToken,
+    pub tables: Vec<ObjectName>,
+    pub mode: OracleLockMode,
+    pub wait: Option<OracleLockWait>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleLockMode {
+    RowShare,
+    RowExclusive,
+    ShareUpdate,
+    Share,
+    ShareRowExclusive,
+    Exclusive,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleLockWait {
+    Nowait,
+    Wait(Expr),
+}
+
+impl fmt::Display for OracleLockMode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            Self::RowShare => "ROW SHARE",
+            Self::RowExclusive => "ROW EXCLUSIVE",
+            Self::ShareUpdate => "SHARE UPDATE",
+            Self::Share => "SHARE",
+            Self::ShareRowExclusive => "SHARE ROW EXCLUSIVE",
+            Self::Exclusive => "EXCLUSIVE",
+        })
+    }
+}
+
+impl fmt::Display for OracleLockTable {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "LOCK TABLE {} IN {} MODE",
+            display_comma_separated(&self.tables),
+            self.mode
+        )?;
+        match &self.wait {
+            Some(OracleLockWait::Nowait) => write!(f, " NOWAIT"),
+            Some(OracleLockWait::Wait(duration)) => write!(f, " WAIT {duration}"),
+            None => Ok(()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleAdministrativeAction {
+    Administer,
+    Alter,
+    Analyze,
+    Associate,
+    Audit,
+    Create,
+    Disassociate,
+    Drop,
+    Flashback,
+    Grant,
+    Noaudit,
+    Purge,
+    Revoke,
+    Set,
+    Truncate,
+}
+
+impl fmt::Display for OracleAdministrativeAction {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            Self::Administer => "ADMINISTER",
+            Self::Alter => "ALTER",
+            Self::Analyze => "ANALYZE",
+            Self::Associate => "ASSOCIATE",
+            Self::Audit => "AUDIT",
+            Self::Create => "CREATE",
+            Self::Disassociate => "DISASSOCIATE",
+            Self::Drop => "DROP",
+            Self::Flashback => "FLASHBACK",
+            Self::Grant => "GRANT",
+            Self::Noaudit => "NOAUDIT",
+            Self::Purge => "PURGE",
+            Self::Revoke => "REVOKE",
+            Self::Set => "SET",
+            Self::Truncate => "TRUNCATE",
+        })
+    }
+}
+
+impl fmt::Display for OracleCommitOptions {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.work {
+            write!(f, " WORK")?;
+        }
+        if let Some(comment) = &self.comment {
+            write!(
+                f,
+                " COMMENT '{}'",
+                value::escape_single_quote_string(comment)
+            )?;
+        }
+        if let Some(write) = &self.write {
+            write!(f, " WRITE")?;
+            if let Some(immediate) = write.immediate {
+                write!(f, " {}", if immediate { "IMMEDIATE" } else { "BATCH" })?;
+            }
+            if let Some(wait) = write.wait {
+                write!(f, " {}", if wait { "WAIT" } else { "NOWAIT" })?;
+            }
+        }
+        if let Some(force) = &self.force {
+            write!(
+                f,
+                " FORCE '{}'",
+                value::escape_single_quote_string(&force.corrupt_xid)
+            )?;
+            if let Some(scn) = force.scn {
+                write!(f, ", {scn}")?;
+            }
+        }
+        Ok(())
+    }
+}
+
 impl From<Analyze> for Statement {
     fn from(analyze: Analyze) -> Self {
         Statement::Analyze(analyze)
@@ -6523,6 +10216,11 @@ pub enum AlterMaterializedViewOperation {
     /// `ALTER MATERIALIZED VIEW name REFRESH SCHEDULE EVERY '...' [START AT '...'] [METHOD ...]`
     /// or `ALTER MATERIALIZED VIEW name REFRESH SCHEDULE NONE`
     RefreshSchedule(Option<MaterializedViewRefreshSchedule>),
+    /// Oracle refresh method and timing.
+    OracleRefresh {
+        method: OracleMaterializedViewRefreshMethod,
+        mode: OracleMaterializedViewRefreshMode,
+    },
 }
 
 impl fmt::Display for AlterMaterializedViewOperation {
@@ -6537,7 +10235,46 @@ impl fmt::Display for AlterMaterializedViewOperation {
             AlterMaterializedViewOperation::RefreshSchedule(Some(sched)) => {
                 write!(f, "REFRESH SCHEDULE {sched}")
             }
+            AlterMaterializedViewOperation::OracleRefresh { method, mode } => {
+                write!(f, "REFRESH {method} ON {mode}")
+            }
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleMaterializedViewRefreshMethod {
+    Fast,
+    Complete,
+    Force,
+}
+
+impl fmt::Display for OracleMaterializedViewRefreshMethod {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            Self::Fast => "FAST",
+            Self::Complete => "COMPLETE",
+            Self::Force => "FORCE",
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleMaterializedViewRefreshMode {
+    Commit,
+    Demand,
+}
+
+impl fmt::Display for OracleMaterializedViewRefreshMode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            Self::Commit => "COMMIT",
+            Self::Demand => "DEMAND",
+        })
     }
 }
 
@@ -6638,6 +10375,11 @@ impl fmt::Display for Statement {
     #[allow(clippy::cognitive_complexity)]
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Statement::OracleCreate(statement) => statement.fmt(f),
+            Statement::OracleCommand(statement) => statement.fmt(f),
+            Statement::OracleAlter(statement) => statement.fmt(f),
+            Statement::OracleDrop(statement) => statement.fmt(f),
+            Statement::OracleLockTable(statement) => statement.fmt(f),
             Statement::Flush {
                 flush_token: _,
                 object_type,
@@ -6697,8 +10439,35 @@ impl fmt::Display for Statement {
 
                 write!(f, "{table_name}")
             }
-            Statement::CreateMaterializedViewLog { table_name } => {
-                write!(f, "CREATE MATERIALIZED VIEW LOG ON {table_name}")
+            Statement::CreateMaterializedViewLog {
+                table_name,
+                with_primary_key,
+                with_rowid,
+                with_sequence,
+                columns,
+                including_new_values,
+            } => {
+                write!(f, "CREATE MATERIALIZED VIEW LOG ON {table_name}")?;
+                let mut options = Vec::new();
+                if *with_primary_key {
+                    options.push("PRIMARY KEY");
+                }
+                if *with_rowid {
+                    options.push("ROWID");
+                }
+                if *with_sequence {
+                    options.push("SEQUENCE");
+                }
+                if !options.is_empty() {
+                    write!(f, " WITH {}", options.join(", "))?;
+                }
+                if !columns.is_empty() {
+                    write!(f, " ({})", display_comma_separated(columns))?;
+                }
+                if *including_new_values {
+                    f.write_str(" INCLUDING NEW VALUES")?;
+                }
+                Ok(())
             }
             Statement::DropMaterializedViewLog { table_name } => {
                 write!(f, "DROP MATERIALIZED VIEW LOG ON {table_name}")
@@ -6864,6 +10633,17 @@ impl fmt::Display for Statement {
             Statement::Insert(insert) => insert.fmt(f),
 
             Statement::Call(function) => write!(f, "CALL {function}"),
+            Statement::PlSqlProcedureCall(function) => write!(f, "{function}"),
+            Statement::PlSqlBlock(block) => write!(f, "{block}"),
+            Statement::PlSqlLabeled { label, statement } => {
+                write!(f, "<<{label}>> {statement}")
+            }
+            Statement::PlSqlGoto(label) => write!(f, "GOTO {label}"),
+            Statement::PlSqlFetch(fetch) => fetch.fmt(f),
+            Statement::PlSqlForAll(forall) => forall.fmt(f),
+            Statement::PlSqlExecuteImmediate(execute) => execute.fmt(f),
+            Statement::PlSqlPipeRow(row) => write!(f, "PIPE ROW({row})"),
+            Statement::PlSqlConditionalCompilation(compilation) => compilation.fmt(f),
 
             Statement::Copy {
                 source,
@@ -6965,6 +10745,14 @@ impl fmt::Display for Statement {
             Statement::CreateDomain(create_domain) => create_domain.fmt(f),
             Statement::CreateTrigger(create_trigger) => create_trigger.fmt(f),
             Statement::DropTrigger(drop_trigger) => drop_trigger.fmt(f),
+            Statement::OracleCreatePlSqlRoutine(routine) => routine.fmt(f),
+            Statement::OracleCreatePackage(package) => package.fmt(f),
+            Statement::OracleCreateTrigger(trigger) => trigger.fmt(f),
+            Statement::OracleCreateType(data_type) => data_type.fmt(f),
+            Statement::OracleAlterType(data_type) => data_type.fmt(f),
+            Statement::OracleCreateLibrary(library) => library.fmt(f),
+            Statement::OracleAlterPlSqlUnit(unit) => unit.fmt(f),
+            Statement::OracleDropPlSqlUnit(unit) => unit.fmt(f),
             Statement::CreateProcedure {
                 create_token: _,
                 name,
@@ -7202,21 +10990,27 @@ impl fmt::Display for Statement {
                 purge,
                 temporary,
                 table,
+                oracle,
             } => {
                 write!(
                     f,
-                    "DROP {}{}{} {}{}{}{}",
+                    "DROP {}{}{} {}{}{}",
                     if *temporary { "TEMPORARY " } else { "" },
                     object_type,
                     if *if_exists { " IF EXISTS" } else { "" },
                     display_comma_separated(names),
                     if *cascade { " CASCADE" } else { "" },
                     if *restrict { " RESTRICT" } else { "" },
-                    if *purge { " PURGE" } else { "" },
                 )?;
                 if let Some(table_name) = table.as_ref() {
                     write!(f, " ON {table_name}")?;
                 };
+                if let Some(oracle) = oracle {
+                    oracle.fmt(f)?;
+                }
+                if *purge {
+                    write!(f, " PURGE")?;
+                }
                 Ok(())
             }
             Statement::DropFunction(drop_function) => write!(f, "{drop_function}"),
@@ -7611,6 +11405,7 @@ impl fmt::Display for Statement {
                 chain,
                 end: end_syntax,
                 modifier,
+                oracle,
             } => {
                 if *end_syntax {
                     write!(f, "END")?;
@@ -7622,6 +11417,9 @@ impl fmt::Display for Statement {
                     }
                 } else {
                     write!(f, "COMMIT{}", if *chain { " AND CHAIN" } else { "" })?;
+                    if let Some(oracle) = oracle {
+                        oracle.fmt(f)?;
+                    }
                 }
                 Ok(())
             }
@@ -7999,6 +11797,7 @@ impl fmt::Display for Statement {
                 on,
                 clauses,
                 output,
+                error_logging,
             } => {
                 write!(
                     f,
@@ -8009,6 +11808,26 @@ impl fmt::Display for Statement {
                 write!(f, "{}", display_separated(clauses, " "))?;
                 if let Some(output) = output {
                     write!(f, " {output}")?;
+                }
+                if let Some(error_logging) = error_logging {
+                    write!(f, " {error_logging}")?;
+                }
+                Ok(())
+            }
+            Statement::OracleMultiTableInsert(insert) => insert.fmt(f),
+            Statement::OracleCreateTable(table) => table.fmt(f),
+            Statement::OracleCreateExternalTable { name, definition } => {
+                write!(f, "CREATE TABLE {name}")?;
+                if !definition.columns.is_empty() {
+                    write!(f, " ({})", display_comma_separated(&definition.columns))?;
+                }
+                write!(f, " ORGANIZATION EXTERNAL ({definition})")?;
+                if let Some(limit) = &definition.reject_limit {
+                    f.write_str(" REJECT LIMIT ")?;
+                    match limit {
+                        OracleRejectLimit::Unlimited => f.write_str("UNLIMITED")?,
+                        OracleRejectLimit::Value(value) => value.fmt(f)?,
+                    }
                 }
                 Ok(())
             }
@@ -8093,21 +11912,8 @@ impl fmt::Display for Statement {
             }
             Statement::Pragma {
                 pragma_token: _,
-                name,
-                value,
-                is_eq,
-            } => {
-                write!(f, "PRAGMA {name}")?;
-                if value.is_some() {
-                    let val = value.as_ref().unwrap();
-                    if *is_eq {
-                        write!(f, " = {val}")?;
-                    } else {
-                        write!(f, "({val})")?;
-                    }
-                }
-                Ok(())
-            }
+                pragma,
+            } => pragma.fmt(f),
             Statement::LockTables {
                 lock_token: _,
                 tables,
@@ -8258,7 +12064,9 @@ pub enum SequenceOptions {
     MaxValue(Option<Expr>),
     StartWith(Expr, bool),
     Cache(Expr),
+    NoCache,
     Cycle(bool),
+    Order(bool),
     /// SQL:2016 T174: RESTART [ WITH value ]
     Restart {
         with: bool,
@@ -8300,8 +12108,12 @@ impl fmt::Display for SequenceOptions {
             SequenceOptions::Cache(cache) => {
                 write!(f, " CACHE {}", *cache)
             }
+            SequenceOptions::NoCache => write!(f, " NOCACHE"),
             SequenceOptions::Cycle(no) => {
                 write!(f, " {}CYCLE", if *no { "NO " } else { "" })
+            }
+            SequenceOptions::Order(no) => {
+                write!(f, " {}ORDER", if *no { "NO" } else { "" })
             }
             SequenceOptions::Restart { with, value } => {
                 write!(f, " RESTART")?;
@@ -8382,6 +12194,25 @@ pub enum TruncateIdentityOption {
 pub enum CascadeOption {
     Cascade,
     Restrict,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleTruncateStorage {
+    Drop,
+    DropAll,
+    Reuse,
+}
+
+impl fmt::Display for OracleTruncateStorage {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            Self::Drop => "DROP STORAGE",
+            Self::DropAll => "DROP ALL STORAGE",
+            Self::Reuse => "REUSE STORAGE",
+        })
+    }
 }
 
 impl Display for CascadeOption {
@@ -9510,6 +13341,24 @@ impl fmt::Display for TypedString {
 }
 
 /// A function call
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleKeepRank {
+    First,
+    Last,
+}
+
+impl fmt::Display for OracleKeepRank {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            OracleKeepRank::First => f.write_str("FIRST"),
+            OracleKeepRank::Last => f.write_str("LAST"),
+        }
+    }
+}
+
+/// A function call
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -9712,6 +13561,8 @@ pub enum FunctionArgumentClause {
     JsonQueryWrapper(JsonQueryWrapper),
     /// WITH/WITHOUT UNIQUE KEYS for JSON_OBJECT, JSON_OBJECTAGG
     JsonUniqueKeys(JsonPredicateUniqueKeyConstraint),
+    /// Oracle SQL/JSON PASSING bindings.
+    OracleJsonPassing(Vec<ExprWithAlias>),
 }
 
 impl fmt::Display for FunctionArgumentClause {
@@ -9739,6 +13590,9 @@ impl fmt::Display for FunctionArgumentClause {
             }
             FunctionArgumentClause::JsonQueryWrapper(wrapper) => write!(f, "{wrapper}"),
             FunctionArgumentClause::JsonUniqueKeys(unique_keys) => write!(f, "{unique_keys}"),
+            FunctionArgumentClause::OracleJsonPassing(bindings) => {
+                write!(f, "PASSING {}", display_comma_separated(bindings))
+            }
         }
     }
 }
@@ -9887,6 +13741,30 @@ impl fmt::Display for HavingBoundKind {
             HavingBoundKind::Min => write!(f, "MIN"),
             HavingBoundKind::Max => write!(f, "MAX"),
         }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleDropOptions {
+    pub cascade_constraints: bool,
+    pub preserve_table: bool,
+    pub online: bool,
+}
+
+impl fmt::Display for OracleDropOptions {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.cascade_constraints {
+            write!(f, " CASCADE CONSTRAINTS")?;
+        }
+        if self.preserve_table {
+            write!(f, " PRESERVE TABLE")?;
+        }
+        if self.online {
+            write!(f, " ONLINE")?;
+        }
+        Ok(())
     }
 }
 
@@ -11545,6 +15423,8 @@ pub struct MergeInsertExpr {
     pub columns: Vec<Ident>,
     /// The insert type used by the statement.
     pub kind: MergeInsertKind,
+    /// Oracle action-local condition.
+    pub where_clause: Option<Expr>,
 }
 
 impl Display for MergeInsertExpr {
@@ -11552,7 +15432,11 @@ impl Display for MergeInsertExpr {
         if !self.columns.is_empty() {
             write!(f, "({}) ", display_comma_separated(self.columns.as_slice()))?;
         }
-        write!(f, "{}", self.kind)
+        write!(f, "{}", self.kind)?;
+        if let Some(condition) = &self.where_clause {
+            write!(f, " WHERE {condition}")?;
+        }
+        Ok(())
     }
 }
 
@@ -11580,7 +15464,13 @@ pub enum MergeAction {
     /// ```sql
     /// UPDATE SET quantity = T.quantity + S.quantity
     /// ```
-    Update { assignments: Vec<Assignment> },
+    Update {
+        assignments: Vec<Assignment>,
+        /// Oracle update action condition.
+        where_clause: Option<Expr>,
+        /// Oracle delete condition evaluated after the update.
+        delete_where: Option<Expr>,
+    },
     /// A plain `DELETE` clause
     Delete,
     /// A `DO NOTHING` clause (PostgreSQL) — the matched/not-matched row is skipped.
@@ -11593,8 +15483,19 @@ impl Display for MergeAction {
             MergeAction::Insert(insert) => {
                 write!(f, "INSERT {insert}")
             }
-            MergeAction::Update { assignments } => {
-                write!(f, "UPDATE SET {}", display_comma_separated(assignments))
+            MergeAction::Update {
+                assignments,
+                where_clause,
+                delete_where,
+            } => {
+                write!(f, "UPDATE SET {}", display_comma_separated(assignments))?;
+                if let Some(condition) = where_clause {
+                    write!(f, " WHERE {condition}")?;
+                }
+                if let Some(condition) = delete_where {
+                    write!(f, " DELETE WHERE {condition}")?;
+                }
+                Ok(())
             }
             MergeAction::Delete => {
                 write!(f, "DELETE")
@@ -12684,6 +16585,12 @@ pub enum JsonOnBehavior {
     EmptyArray,
     /// EMPTY OBJECT ON EMPTY/ERROR (JSON_QUERY only)
     EmptyObject,
+    /// TRUE ON ERROR
+    True,
+    /// FALSE ON ERROR
+    False,
+    /// UNKNOWN ON ERROR
+    Unknown,
 }
 
 impl Display for JsonOnBehavior {
@@ -12694,6 +16601,9 @@ impl Display for JsonOnBehavior {
             JsonOnBehavior::Default(expr) => write!(f, "DEFAULT {}", expr),
             JsonOnBehavior::EmptyArray => write!(f, "EMPTY ARRAY"),
             JsonOnBehavior::EmptyObject => write!(f, "EMPTY OBJECT"),
+            JsonOnBehavior::True => write!(f, "TRUE"),
+            JsonOnBehavior::False => write!(f, "FALSE"),
+            JsonOnBehavior::Unknown => write!(f, "UNKNOWN"),
         }
     }
 }
@@ -13021,7 +16931,7 @@ pub enum ReturnStatementValue {
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub enum OpenFor {
     /// OPEN cursor_name(args) - bound cursor with arguments
-    BoundCursorArgs(Vec<Expr>),
+    BoundCursorArgs(Vec<OracleCursorArgument>),
     /// OPEN cursor_name FOR query - unbound cursor with query
     Query(Box<Query>),
     /// OPEN cursor_name FOR EXECUTE query_expr [USING ...]
@@ -13029,6 +16939,34 @@ pub enum OpenFor {
         query_expr: Box<Expr>,
         using: Option<Vec<Expr>>,
     },
+    /// Oracle native dynamic SQL: `OPEN cursor FOR expression [USING ...]`.
+    OracleDynamic {
+        query_expr: Box<Expr>,
+        using: Vec<PlSqlUsingArgument>,
+    },
+    /// Oracle static query with bind arguments.
+    OracleQuery {
+        query: Box<Query>,
+        using: Vec<PlSqlUsingArgument>,
+    },
+}
+
+/// A positional or named actual argument in an Oracle `OPEN` statement.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleCursorArgument {
+    pub name: Option<Ident>,
+    pub value: Expr,
+}
+
+impl fmt::Display for OracleCursorArgument {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Some(name) = &self.name {
+            write!(f, "{name} => ")?;
+        }
+        self.value.fmt(f)
+    }
 }
 
 /// INTO clause for EXECUTE statement with optional STRICT
@@ -13053,6 +16991,20 @@ impl fmt::Display for OpenFor {
                 write!(f, " FOR EXECUTE {}", query_expr)?;
                 if let Some(using_exprs) = using {
                     write!(f, " USING {}", display_comma_separated(using_exprs))?;
+                }
+                Ok(())
+            }
+            OpenFor::OracleDynamic { query_expr, using } => {
+                write!(f, " FOR {query_expr}")?;
+                if !using.is_empty() {
+                    write!(f, " USING {}", display_comma_separated(using))?;
+                }
+                Ok(())
+            }
+            OpenFor::OracleQuery { query, using } => {
+                write!(f, " FOR {query}")?;
+                if !using.is_empty() {
+                    write!(f, " USING {}", display_comma_separated(using))?;
                 }
                 Ok(())
             }
@@ -13124,6 +17076,49 @@ impl fmt::Display for NullInclusion {
 pub struct MemberOf {
     pub value: Box<Expr>,
     pub array: Box<Expr>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleLikeKind {
+    LikeC,
+    Like2,
+    Like4,
+}
+
+impl fmt::Display for OracleLikeKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            Self::LikeC => "LIKEC",
+            Self::Like2 => "LIKE2",
+            Self::Like4 => "LIKE4",
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleIsPredicate {
+    Nan,
+    Infinite,
+    Of { only: bool, types: Vec<ObjectName> },
+}
+
+impl fmt::Display for OracleIsPredicate {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Nan => f.write_str("NAN"),
+            Self::Infinite => f.write_str("INFINITE"),
+            Self::Of { only, types } => write!(
+                f,
+                "OF ({}{})",
+                if *only { "ONLY " } else { "" },
+                display_comma_separated(types)
+            ),
+        }
+    }
 }
 
 impl fmt::Display for MemberOf {

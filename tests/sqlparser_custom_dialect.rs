@@ -120,6 +120,7 @@ fn custom_statement_parser() -> Result<(), ParserError> {
                     chain: false,
                     end: false,
                     modifier: None,
+                    oracle: None,
                 }))
             } else {
                 None

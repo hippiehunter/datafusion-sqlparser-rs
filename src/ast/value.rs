@@ -141,6 +141,8 @@ pub enum Value {
     SingleQuotedByteStringLiteral(String),
     /// N'string value'
     NationalStringLiteral(String),
+    /// q'<delimiter>string value<delimiter>'
+    AlternativeQuotedString(AlternativeQuotedString),
     /// X'hex value'
     HexStringLiteral(String),
 
@@ -151,6 +153,8 @@ pub enum Value {
     Null,
     /// `?` or `$` Prepared statement arg placeholder
     Placeholder(String),
+    /// A PL/SQL inquiry directive such as `$$PLSQL_UNIT`.
+    PlSqlInquiryDirective(String),
 }
 
 impl ValueWithSpan {
@@ -171,6 +175,7 @@ impl Value {
             | Value::UnicodeStringLiteral(s)
             | Value::NationalStringLiteral(s)
             | Value::HexStringLiteral(s) => Some(s),
+            Value::AlternativeQuotedString(s) => Some(s.value),
             Value::DollarQuotedString(s) => Some(s.value),
             _ => None,
         }
@@ -201,12 +206,46 @@ impl fmt::Display for Value {
             Value::EscapedStringLiteral(v) => write!(f, "E'{}'", escape_escaped_string(v)),
             Value::UnicodeStringLiteral(v) => write!(f, "U&'{}'", escape_unicode_string(v)),
             Value::NationalStringLiteral(v) => write!(f, "N'{v}'"),
+            Value::AlternativeQuotedString(v) => write!(f, "{v}"),
             Value::HexStringLiteral(v) => write!(f, "X'{v}'"),
             Value::Boolean(v) => write!(f, "{v}"),
             Value::SingleQuotedByteStringLiteral(v) => write!(f, "B'{v}'"),
             Value::Null => write!(f, "NULL"),
             Value::Placeholder(v) => write!(f, "{v}"),
+            Value::PlSqlInquiryDirective(v) => write!(f, "{v}"),
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct AlternativeQuotedString {
+    pub value: String,
+    pub delimiter: char,
+}
+
+impl AlternativeQuotedString {
+    pub fn closing_delimiter(&self) -> char {
+        match self.delimiter {
+            '[' => ']',
+            '{' => '}',
+            '(' => ')',
+            '<' => '>',
+            delimiter => delimiter,
+        }
+    }
+}
+
+impl fmt::Display for AlternativeQuotedString {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "q'{}{}{}'",
+            self.delimiter,
+            self.value,
+            self.closing_delimiter()
+        )
     }
 }
 

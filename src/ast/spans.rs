@@ -37,14 +37,17 @@ use super::{
     JoinConstraint, JoinOperator, JsonOnBehavior, JsonPath, JsonPathElem, LeaveStatement,
     LimitClause, LoopStatement, MatchRecognizePattern, MdArray, MdArrayDimension, Measure,
     NamedParenthesizedList, NamedWindowDefinition, ObjectName, ObjectNamePart, Offset, OnConflict,
-    OnConflictAction, OnInsert, OpenStatement, OrderBy, OrderByExpr, OrderByKind, Partition,
-    PerformStatement, PivotValueSource, Query, RaiseMessage, RaiseStatement, RaiseUsingItem,
+    OnConflictAction, OnInsert, OpenStatement, OracleCreateLibrary, OracleCreatePackage,
+    OracleCreatePlSqlRoutine, OracleCreateTrigger, OracleCreateType, OracleIsPredicate, OrderBy,
+    OrderByExpr, OrderByKind, Partition, PerformStatement, PivotValueSource, PlSqlCollectionKind,
+    PlSqlDeclaration, PlSqlExecuteImmediate, PlSqlFetch, PlSqlForAll, PlSqlForAllBounds,
+    PlSqlUsingArgument, Pragma, Query, RaiseMessage, RaiseStatement, RaiseUsingItem,
     ReferentialAction, RenameSelectItem, RepeatStatement, ReplaceSelectElement, ReplaceSelectItem,
-    Select, SelectInto, SelectItem, SetExpr, SqlOption, SqlPsmAssignment, SqlPsmDataType,
-    SqlPsmDeclaration, Statement, Subscript, SubsetDefinition, SymbolDefinition, TableAlias,
-    TableAliasColumnDef, TableConstraint, TableFactor, TableObject, TableOptionsClustered,
-    TableWithJoins, Update, UpdateTableFromKind, Use, Value, Values, ViewColumnDef, WhileStatement,
-    WildcardAdditionalOptions, With, WithFill,
+    ReturningClause, Select, SelectInto, SelectItem, SetExpr, SqlOption, SqlPsmAssignment,
+    SqlPsmDataType, SqlPsmDeclaration, Statement, Subscript, SubsetDefinition, SymbolDefinition,
+    TableAlias, TableAliasColumnDef, TableConstraint, TableFactor, TableObject,
+    TableOptionsClustered, TableWithJoins, Update, UpdateTableFromKind, Use, Value, Values,
+    ViewColumnDef, WhileStatement, WildcardAdditionalOptions, With, WithFill,
 };
 
 /// Given an iterator of spans, return the [Span::union] of all spans.
@@ -153,8 +156,9 @@ impl Spanned for Offset {
 impl Spanned for Fetch {
     fn span(&self) -> Span {
         let Fetch {
-            with_ties: _, // bool
-            percent: _,   // bool
+            approximate: _, // bool
+            with_ties: _,   // bool
+            percent: _,     // bool
             quantity,
         } = self;
 
@@ -167,6 +171,7 @@ impl Spanned for With {
         let With {
             with_token,
             recursive: _, // bool
+            oracle_declarations: _,
             cte_tables,
             search: _,
             cycle: _,
@@ -202,6 +207,7 @@ impl Spanned for SetExpr {
     fn span(&self) -> Span {
         match self {
             SetExpr::Select(select) => select.span(),
+            SetExpr::OracleModel { select, .. } => select.span(),
             SetExpr::Query(query) => query.span(),
             SetExpr::SetOperation {
                 op: _,
@@ -272,6 +278,11 @@ impl Spanned for Values {
 impl Spanned for Statement {
     fn span(&self) -> Span {
         match self {
+            Statement::OracleCreate(statement) => statement.create_token.0,
+            Statement::OracleCommand(statement) => statement.command_token.0,
+            Statement::OracleAlter(statement) => statement.alter_token.0,
+            Statement::OracleDrop(statement) => statement.drop_token.0,
+            Statement::OracleLockTable(statement) => statement.lock_token.0,
             Statement::Analyze(analyze) => analyze.span(),
             Statement::Truncate(truncate) => truncate.span(),
             Statement::Query(query) => query.span(),
@@ -394,6 +405,27 @@ impl Spanned for Statement {
                 ..
             } => comment_token.0.union(&object_name.span()),
             Statement::Commit { commit_token, .. } => commit_token.0,
+            Statement::PlSqlProcedureCall(function) => function.span(),
+            Statement::PlSqlBlock(block) => block.span(),
+            Statement::PlSqlLabeled { label, statement } => label.span().union(&statement.span()),
+            Statement::PlSqlGoto(label) => label.span(),
+            Statement::PlSqlFetch(fetch) => fetch.span(),
+            Statement::PlSqlForAll(forall) => forall.span(),
+            Statement::PlSqlExecuteImmediate(execute) => execute.span(),
+            Statement::PlSqlPipeRow(row) => row.span(),
+            Statement::PlSqlConditionalCompilation(compilation) => union_spans(
+                compilation
+                    .branches
+                    .iter()
+                    .map(|branch| branch.condition.span())
+                    .chain(
+                        compilation
+                            .branches
+                            .iter()
+                            .flat_map(|branch| branch.statements.iter().map(Spanned::span)),
+                    )
+                    .chain(compilation.else_statements.iter().map(Spanned::span)),
+            ),
             Statement::Rollback {
                 rollback_token,
                 savepoint,
@@ -435,6 +467,14 @@ impl Spanned for Statement {
             Statement::CreateDomain(create_domain) => create_domain.token.0,
             Statement::CreateTrigger(create_trigger) => create_trigger.token.0,
             Statement::DropTrigger(drop_trigger) => drop_trigger.token.0,
+            Statement::OracleCreatePlSqlRoutine(routine) => routine.span(),
+            Statement::OracleCreatePackage(package) => package.span(),
+            Statement::OracleCreateTrigger(trigger) => trigger.span(),
+            Statement::OracleCreateType(data_type) => data_type.span(),
+            Statement::OracleAlterType(data_type) => data_type.name.span(),
+            Statement::OracleCreateLibrary(library) => library.span(),
+            Statement::OracleAlterPlSqlUnit(unit) => unit.name.span(),
+            Statement::OracleDropPlSqlUnit(unit) => unit.name.span(),
             Statement::CreateProcedure {
                 create_token,
                 name,
@@ -477,7 +517,10 @@ impl Spanned for Statement {
             Statement::ExplainTable { explain_token, .. } => explain_token.0,
             Statement::CreateMaterializedViewLog { .. }
             | Statement::DropMaterializedViewLog { .. }
-            | Statement::ExplainMaterializedView { .. } => Span::empty(),
+            | Statement::ExplainMaterializedView { .. }
+            | Statement::OracleMultiTableInsert(_)
+            | Statement::OracleCreateTable(_)
+            | Statement::OracleCreateExternalTable { .. } => Span::empty(),
             Statement::Explain { explain_token, .. } => explain_token.0,
             Statement::Savepoint {
                 savepoint_token,
@@ -708,6 +751,7 @@ impl Spanned for CaseStatement {
             case_token: start,
             match_expr: _,
             when_blocks: _,
+            oracle_when_controls: _,
             else_block: _,
             end_case_token: end,
         } = self;
@@ -742,6 +786,7 @@ impl Spanned for WhileStatement {
             body,
             end_label: _,
             has_do_keyword: _,
+            has_loop_keyword: _,
             while_block,
         } = self;
 
@@ -1024,7 +1069,7 @@ impl Spanned for Delete {
                             .map(|u| union_spans(u.iter().map(|i| i.span()))),
                     )
                     .chain(selection.iter().map(|i| i.span()))
-                    .chain(returning.iter().flat_map(|i| i.iter().map(|k| k.span())))
+                    .chain(returning.iter().map(|i| i.span()))
                     .chain(order_by.iter().map(|i| i.span()))
                     .chain(limit.iter().map(|i| i.span())),
             ),
@@ -1042,8 +1087,8 @@ impl Spanned for Update {
             from,
             selection,
             returning,
-            returning_into,
             limit,
+            error_logging: _,
         } = self;
 
         union_spans(
@@ -1053,12 +1098,7 @@ impl Spanned for Update {
                 .chain(assignments.iter().map(|i| i.span()))
                 .chain(from.iter().map(|i| i.span()))
                 .chain(selection.iter().map(|i| i.span()))
-                .chain(returning.iter().flat_map(|i| i.iter().map(|k| k.span())))
-                .chain(
-                    returning_into
-                        .iter()
-                        .flat_map(|i| i.iter().map(|target| target.span())),
-                )
+                .chain(returning.iter().map(|i| i.span()))
                 .chain(limit.iter().map(|i| i.span())),
         )
     }
@@ -1189,6 +1229,10 @@ impl Spanned for AlterTableOperation {
                 column_def,
                 column_position: _,
             } => column_def.span(),
+            AlterTableOperation::OracleAddColumns { columns }
+            | AlterTableOperation::OracleModifyColumns { columns } => {
+                union_spans(columns.iter().map(Spanned::span))
+            }
             AlterTableOperation::DisableRowLevelSecurity => Span::empty(),
             AlterTableOperation::DisableRule { name } => name.span,
             AlterTableOperation::DisableTrigger { name } => name.span,
@@ -1318,7 +1362,7 @@ impl Spanned for OrderBy {
     fn span(&self) -> Span {
         match &self.kind {
             OrderByKind::All(_) => Span::empty(),
-            OrderByKind::Expressions(exprs) => union_spans(
+            OrderByKind::Expressions(exprs) | OrderByKind::Siblings(exprs) => union_spans(
                 exprs
                     .iter()
                     .map(|i| i.span())
@@ -1338,6 +1382,9 @@ impl Spanned for GroupByExpr {
             GroupByExpr::All(_) => Span::empty(),
             GroupByExpr::Expressions(exprs, _modifiers) => {
                 union_spans(exprs.iter().map(|i| i.span()))
+            }
+            GroupByExpr::OracleVector(vectors) => {
+                union_spans(vectors.iter().flatten().map(Spanned::span))
             }
         }
     }
@@ -1392,6 +1439,7 @@ impl Spanned for Insert {
             priority: _,     // todo, mysql specific
             insert_alias: _, // todo, mysql specific
             assignments,
+            error_logging: _,
         } = self;
 
         union_spans(
@@ -1404,7 +1452,22 @@ impl Spanned for Insert {
                 .chain(partitioned.iter().flat_map(|i| i.iter().map(|k| k.span())))
                 .chain(after_columns.iter().map(|i| i.span))
                 .chain(on.as_ref().map(|i| i.span()))
-                .chain(returning.iter().flat_map(|i| i.iter().map(|k| k.span()))),
+                .chain(returning.iter().map(|i| i.span())),
+        )
+    }
+}
+
+impl Spanned for ReturningClause {
+    fn span(&self) -> Span {
+        union_spans(
+            self.expressions
+                .iter()
+                .map(|expression| expression.span())
+                .chain(
+                    self.into
+                        .iter()
+                        .flat_map(|targets| targets.iter().map(|target| target.span())),
+                ),
         )
     }
 }
@@ -1547,6 +1610,7 @@ impl Spanned for Expr {
                 escape_char: _,
                 any: _,
             } => expr.span().union(&pattern.span()),
+            Expr::OracleLike { expr, pattern, .. } => expr.span().union(&pattern.span()),
             Expr::ILike {
                 negated: _,
                 expr,
@@ -1566,6 +1630,14 @@ impl Spanned for Expr {
                 json_predicate_type: _,
                 unique_keys: _,
             } => expr.span(),
+            Expr::OracleIs {
+                expr, predicate, ..
+            } => match predicate {
+                OracleIsPredicate::Of { types, .. } => expr
+                    .span()
+                    .union(&union_spans(types.iter().map(Spanned::span))),
+                OracleIsPredicate::Nan | OracleIsPredicate::Infinite => expr.span(),
+            },
             Expr::IsDocument { expr, negated: _ } => expr.span(),
             Expr::IsContent { expr, negated: _ } => expr.span(),
             Expr::IsLabeled {
@@ -1613,6 +1685,13 @@ impl Spanned for Expr {
             Expr::Value(value) => value.span(),
             Expr::TypedString(TypedString { value, .. }) => value.span(),
             Expr::Function(function) => function.span(),
+            Expr::OracleKeep {
+                aggregate,
+                rank: _,
+                order_by,
+            } => aggregate
+                .span()
+                .union(&union_spans(order_by.iter().map(Spanned::span))),
             Expr::XmlParse { expr, .. } => expr.span(),
             Expr::XmlSerialize { expr, .. } => expr.span(),
             Expr::XmlPi { name, content } => {
@@ -1679,6 +1758,13 @@ impl Spanned for Expr {
                 timestamp,
                 time_zone,
             } => timestamp.span().union(&time_zone.span()),
+            Expr::AtLocal { timestamp } => timestamp.span(),
+            Expr::OracleTranslateUsing {
+                expr,
+                character_set,
+            } => expr.span().union(&character_set.span()),
+            Expr::OracleTreat { expr, .. } => expr.span(),
+            Expr::Cursor(query) | Expr::Multiset(query) => query.span(),
             Expr::Extract {
                 field: _,
                 syntax: _,
@@ -1746,6 +1832,9 @@ impl Spanned for Expr {
             Expr::Prior(expr) => expr.span(),
             Expr::Lambda(_) => Span::empty(),
             Expr::MemberOf(member_of) => member_of.value.span().union(&member_of.array.span()),
+            Expr::OracleMemberOf {
+                expr, collection, ..
+            } => expr.span().union(&collection.span()),
             Expr::Period { start, end } => start.span().union(&end.span()),
             Expr::NextValueFor { sequence_name } => sequence_name.span(),
             Expr::QuantifiedPredicate {
@@ -1763,6 +1852,7 @@ impl Spanned for Subscript {
     fn span(&self) -> Span {
         match self {
             Subscript::Index { index } => index.span(),
+            Subscript::IndexList { indexes } => union_spans(indexes.iter().map(Spanned::span)),
             Subscript::Slice {
                 lower_bound,
                 upper_bound,
@@ -1947,6 +2037,9 @@ impl Spanned for FunctionArgumentClause {
             },
             FunctionArgumentClause::JsonQueryWrapper(_) => Span::empty(),
             FunctionArgumentClause::JsonUniqueKeys(_) => Span::empty(),
+            FunctionArgumentClause::OracleJsonPassing(bindings) => {
+                union_spans(bindings.iter().map(|binding| binding.expr.span()))
+            }
         }
     }
 }
@@ -2145,6 +2238,7 @@ impl Spanned for TableFactor {
             TableFactor::XmlTable { .. } => Span::empty(),
             TableFactor::Pivot {
                 table,
+                xml: _,
                 aggregate_functions,
                 value_column,
                 value_source,
@@ -2194,6 +2288,7 @@ impl Spanned for TableFactor {
                     .chain(alias.as_ref().map(|i| i.span())),
             ),
             TableFactor::OpenJsonTable { .. } => Span::empty(),
+            TableFactor::OracleExternal { .. } => Span::empty(),
             TableFactor::GraphTable {
                 graph_name,
                 match_clause: _,
@@ -2394,6 +2489,16 @@ impl Spanned for JoinOperator {
                 match_condition,
                 constraint,
             } => match_condition.span().union(&constraint.span()),
+            JoinOperator::OraclePartitioned {
+                partition_by,
+                constraint,
+                ..
+            } => union_spans(
+                partition_by
+                    .iter()
+                    .map(Spanned::span)
+                    .chain(core::iter::once(constraint.span())),
+            ),
             JoinOperator::Anti(join_constraint) => join_constraint.span(),
             JoinOperator::Semi(join_constraint) => join_constraint.span(),
             JoinOperator::StraightJoin(join_constraint) => join_constraint.span(),
@@ -2437,6 +2542,7 @@ impl Spanned for Select {
             selection,
             group_by,
             having,
+            qualify,
             named_window,
             connect_by,
             top_before_distinct: _,
@@ -2451,6 +2557,7 @@ impl Spanned for Select {
                 .chain(selection.iter().map(|item| item.span()))
                 .chain(core::iter::once(group_by.span()))
                 .chain(having.iter().map(|item| item.span()))
+                .chain(qualify.iter().map(|item| item.span()))
                 .chain(named_window.iter().map(|item| item.span()))
                 .chain(connect_by.iter().map(|item| item.span())),
         )
@@ -2461,11 +2568,15 @@ impl Spanned for ConnectBy {
     fn span(&self) -> Span {
         let ConnectBy {
             condition,
+            nocycle: _,
             relationships,
         } = self;
 
         union_spans(
-            core::iter::once(condition.span()).chain(relationships.iter().map(|item| item.span())),
+            condition
+                .iter()
+                .map(|item| item.span())
+                .chain(relationships.iter().map(|item| item.span())),
         )
     }
 }
@@ -2484,10 +2595,11 @@ impl Spanned for NamedWindowDefinition {
 impl Spanned for SelectInto {
     fn span(&self) -> Span {
         let SelectInto {
-            temporary: _, // bool
-            unlogged: _,  // bool
-            table: _,     // bool
-            strict: _,    // bool
+            bulk_collect: _, // bool
+            temporary: _,    // bool
+            unlogged: _,     // bool
+            table: _,        // bool
+            strict: _,       // bool
             name,
             additional_targets,
         } = self;
@@ -2545,10 +2657,19 @@ impl Spanned for super::SqlPsmCursorDeclaration {
 impl Spanned for super::OpenFor {
     fn span(&self) -> Span {
         match self {
-            super::OpenFor::BoundCursorArgs(args) => union_spans(args.iter().map(Spanned::span)),
+            super::OpenFor::BoundCursorArgs(args) => {
+                union_spans(args.iter().map(|argument| argument.value.span()))
+            }
             super::OpenFor::Query(query) => query.span(),
             super::OpenFor::Execute { query_expr, using } => union_spans(
                 iter::once(query_expr.span()).chain(using.iter().flatten().map(Spanned::span)),
+            ),
+            super::OpenFor::OracleDynamic { query_expr, using } => union_spans(
+                iter::once(query_expr.span())
+                    .chain(using.iter().map(|argument| argument.expr.span())),
+            ),
+            super::OpenFor::OracleQuery { query, using } => union_spans(
+                iter::once(query.span()).chain(using.iter().map(|argument| argument.expr.span())),
             ),
         }
     }
@@ -2590,6 +2711,140 @@ impl Spanned for SqlPsmDeclaration {
                 .chain(collation.iter().map(|i| i.span()))
                 .chain(default.iter().map(|i| i.span())),
         )
+    }
+}
+
+impl Spanned for PlSqlDeclaration {
+    fn span(&self) -> Span {
+        match self {
+            Self::Variable(declaration) => declaration.span(),
+            Self::Subtype {
+                name,
+                data_type,
+                not_null: _,
+            } => name.span().union(&data_type.span()),
+            Self::RecordType { name, fields } => union_spans(
+                core::iter::once(name.span()).chain(fields.iter().map(|field| field.span())),
+            ),
+            Self::CollectionType {
+                name,
+                kind,
+                element_type,
+                index_by,
+            } => {
+                let kind_span = match kind {
+                    PlSqlCollectionKind::NestedTable => Span::empty(),
+                    PlSqlCollectionKind::Varray(size) => size.span(),
+                };
+                union_spans(
+                    [name.span(), kind_span, element_type.span()]
+                        .into_iter()
+                        .chain(index_by.iter().map(|data_type| data_type.span())),
+                )
+            }
+            Self::RefCursorType { name, return_type } => union_spans(
+                core::iter::once(name.span())
+                    .chain(return_type.iter().map(|data_type| data_type.span())),
+            ),
+            Self::Cursor {
+                name,
+                parameters,
+                return_type,
+                query,
+            } => union_spans(
+                core::iter::once(name.span())
+                    .chain(parameters.iter().map(|parameter| parameter.span()))
+                    .chain(return_type.iter().map(|data_type| data_type.span()))
+                    .chain(core::iter::once(query.span())),
+            ),
+            Self::Exception { name } => name.span(),
+            Self::Pragma(pragma) => pragma.span(),
+            Self::Routine(routine) => routine.name.span(),
+        }
+    }
+}
+
+impl Spanned for OracleCreatePlSqlRoutine {
+    fn span(&self) -> Span {
+        self.create_token.0.union(&self.routine.name.span())
+    }
+}
+
+impl Spanned for OracleCreatePackage {
+    fn span(&self) -> Span {
+        self.create_token.0.union(&self.name.span())
+    }
+}
+
+impl Spanned for OracleCreateTrigger {
+    fn span(&self) -> Span {
+        self.create_token.0.union(&self.name.span())
+    }
+}
+
+impl Spanned for OracleCreateType {
+    fn span(&self) -> Span {
+        self.create_token.0.union(&self.name.span())
+    }
+}
+
+impl Spanned for OracleCreateLibrary {
+    fn span(&self) -> Span {
+        self.create_token.0.union(&self.name.span())
+    }
+}
+
+impl Spanned for Pragma {
+    fn span(&self) -> Span {
+        union_spans(
+            core::iter::once(self.name.span())
+                .chain(self.arguments.iter().map(|argument| argument.span())),
+        )
+    }
+}
+
+impl Spanned for PlSqlFetch {
+    fn span(&self) -> Span {
+        union_spans(
+            core::iter::once(self.cursor.span)
+                .chain(self.targets.iter().map(|target| target.span()))
+                .chain(self.limit.iter().map(|limit| limit.span())),
+        )
+    }
+}
+
+impl Spanned for PlSqlForAll {
+    fn span(&self) -> Span {
+        self.index
+            .span
+            .union(&self.bounds.span())
+            .union(&self.statement.span())
+    }
+}
+
+impl Spanned for PlSqlForAllBounds {
+    fn span(&self) -> Span {
+        match self {
+            Self::Range { lower, upper } => lower.span().union(&upper.span()),
+            Self::IndicesOf { collection } | Self::ValuesOf { collection } => collection.span(),
+        }
+    }
+}
+
+impl Spanned for PlSqlExecuteImmediate {
+    fn span(&self) -> Span {
+        union_spans(
+            core::iter::once(self.sql.span())
+                .chain(self.into.iter().map(|target| target.span()))
+                .chain(self.using.iter().map(|argument| argument.span()))
+                .chain(self.returning_into.iter().map(|target| target.span())),
+        )
+    }
+}
+
+impl Spanned for PlSqlUsingArgument {
+    fn span(&self) -> Span {
+        self.expr.span()
     }
 }
 

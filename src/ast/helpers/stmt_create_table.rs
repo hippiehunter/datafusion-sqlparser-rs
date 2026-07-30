@@ -374,6 +374,7 @@ mod tests {
             chain: false,
             end: false,
             modifier: None,
+            oracle: None,
         };
 
         assert_eq!(

@@ -476,6 +476,8 @@ impl From<bool> for MatchedTrailingBracket {
     }
 }
 
+type OracleModelColumns = (Vec<ExprWithAlias>, Vec<ExprWithAlias>, Vec<ExprWithAlias>);
+
 /// Options that control how the [`Parser`] parses SQL text
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParserOptions {
@@ -949,259 +951,2317 @@ impl<'a> Parser<'a> {
 
         let next_token = self.next_token();
         match &next_token.token {
-            BorrowedToken::Word(w) => match w.keyword {
-                Keyword::KILL => self.parse_kill(),
-                Keyword::FLUSH => self.parse_flush(),
-                Keyword::DESC => self.parse_explain(DescribeAlias::Desc),
-                Keyword::DESCRIBE => self.parse_explain(DescribeAlias::Describe),
-                Keyword::EXPLAIN => self.parse_explain(DescribeAlias::Explain),
-                Keyword::ANALYZE => self.parse_analyze(),
-                Keyword::CASE => {
-                    self.prev_token();
-                    self.parse_case_stmt()
-                }
-                Keyword::IF => {
-                    self.prev_token();
-                    self.parse_if_stmt()
-                }
-                Keyword::WHILE => {
-                    self.prev_token();
-                    self.parse_while(None)
-                }
-                Keyword::LOOP => {
-                    self.prev_token();
-                    self.parse_loop(None)
-                }
-                Keyword::REPEAT => {
-                    self.prev_token();
-                    self.parse_repeat(None)
-                }
-                Keyword::FOR => {
-                    self.prev_token();
-                    self.parse_for(None)
-                }
-                Keyword::LEAVE => {
-                    self.prev_token();
-                    self.parse_leave()
-                }
-                Keyword::ITERATE => {
-                    self.prev_token();
-                    self.parse_iterate()
-                }
-                Keyword::FOREACH => {
-                    self.prev_token();
-                    self.parse_foreach(None)
-                }
-                Keyword::EXIT => {
-                    self.prev_token();
-                    self.parse_exit()
-                }
-                Keyword::CONTINUE => {
-                    self.prev_token();
-                    self.parse_continue()
-                }
-                Keyword::RAISE => {
-                    self.prev_token();
-                    self.parse_raise_stmt()
-                }
-                Keyword::PERFORM => {
-                    self.prev_token();
-                    self.parse_perform()
-                }
-                Keyword::DO => {
-                    self.prev_token();
-                    self.parse_do()
-                }
-                Keyword::SIGNAL => {
-                    self.prev_token();
-                    self.parse_signal()
-                }
-                Keyword::RESIGNAL => {
-                    self.prev_token();
-                    self.parse_resignal()
-                }
-                Keyword::SELECT | Keyword::WITH | Keyword::VALUES | Keyword::FROM => {
-                    self.prev_token();
-                    self.parse_query().map(Statement::Query)
-                }
-                Keyword::TRUNCATE => self.parse_truncate(),
-                Keyword::CREATE => self.parse_create(),
-                Keyword::CACHE => self.parse_cache_table(),
-                Keyword::DROP => self.parse_drop(),
-                Keyword::DISCARD => self.parse_discard(),
-                Keyword::DECLARE => self.parse_declare(),
-                Keyword::FETCH => self.parse_fetch_statement(),
-                Keyword::MOVE => self.parse_move(),
-                Keyword::GET => {
-                    self.prev_token();
-                    self.parse_get_diagnostics()
-                }
-                Keyword::DELETE => self.parse_delete(next_token),
-                Keyword::INSERT => self.parse_insert(next_token),
-                Keyword::REPLACE => self.parse_replace(next_token),
-                Keyword::UNCACHE => self.parse_uncache_table(),
-                Keyword::UPDATE => self.parse_update(next_token),
-                Keyword::ALTER => self.parse_alter(),
-                Keyword::CALL => self.parse_call(),
-                Keyword::COPY => self.parse_copy(),
-                Keyword::OPEN => {
-                    self.prev_token();
-                    self.parse_open()
-                }
-                Keyword::CLOSE => self.parse_close(),
-                Keyword::SET => self.parse_set(),
-                Keyword::SHOW => self.parse_show(),
-                Keyword::USE => self.parse_use(),
-                Keyword::GRANT => self.parse_grant(),
-                Keyword::DENY => {
-                    self.prev_token();
-                    self.parse_deny()
-                }
-                Keyword::REVOKE => self.parse_revoke(),
-                Keyword::START => self.parse_start_transaction(),
-                Keyword::BEGIN => self.parse_begin(),
-                Keyword::END => self.parse_end(),
-                Keyword::SAVEPOINT => self.parse_savepoint(),
-                Keyword::RELEASE => self.parse_release(),
-                Keyword::COMMIT => self.parse_commit(),
-                Keyword::CHECKPOINT => self.parse_checkpoint(),
-                Keyword::REFRESH => self.parse_refresh(),
-                Keyword::BACKUP => self.parse_backup(),
-                Keyword::RESTORE => self.parse_restore(),
-                Keyword::RECOVER => self.parse_recover(),
-                Keyword::VALIDATE => self.parse_validate(),
-                Keyword::CANCEL => self.parse_cancel(),
-                Keyword::RAISERROR => Ok(self.parse_raiserror()?),
-                Keyword::ROLLBACK => self.parse_rollback(),
-                Keyword::ASSERT => self.parse_assert(),
-                // `PREPARE`, `EXECUTE` and `DEALLOCATE` are Postgres-specific
-                // syntaxes. They are used for Postgres prepared statement.
-                Keyword::DEALLOCATE => self.parse_deallocate(),
-                Keyword::EXECUTE | Keyword::EXEC => self.parse_execute(),
-                Keyword::PREPARE => self.parse_prepare(),
-                Keyword::MERGE => self.parse_merge(),
-                // `LISTEN`, `UNLISTEN` and `NOTIFY` are Postgres-specific
-                // syntaxes. They are used for Postgres statement.
-                Keyword::LISTEN if self.features.supports_listen_notify => self.parse_listen(),
-                Keyword::UNLISTEN if self.features.supports_listen_notify => self.parse_unlisten(),
-                Keyword::NOTIFY if self.features.supports_listen_notify => self.parse_notify(),
-                Keyword::WAIT if self.features.supports_wait_for_lsn => self.parse_wait_for_lsn(),
-                Keyword::QUIESCE if self.features.supports_table_maintenance_commands => {
-                    self.parse_table_maintenance(TableMaintenanceAction::Quiesce)
-                }
-                Keyword::UNQUIESCE if self.features.supports_table_maintenance_commands => {
-                    self.parse_table_maintenance(TableMaintenanceAction::Unquiesce)
-                }
-                // `PRAGMA` statement
-                Keyword::PRAGMA => self.parse_pragma(),
-                Keyword::UNLOAD => {
-                    self.prev_token();
-                    self.parse_unload()
-                }
-                Keyword::LOCK => self.parse_pg_lock_table(next_token),
-                Keyword::RENAME => self.parse_rename(),
-                Keyword::LOAD => self.parse_load(),
-                // IMPORT FOREIGN SCHEMA is SQL/MED standard
-                Keyword::IMPORT => {
-                    if self.parse_keywords(&[Keyword::FOREIGN, Keyword::SCHEMA]) {
-                        self.parse_import_foreign_schema()
-                    } else {
-                        self.expected("FOREIGN SCHEMA after IMPORT", self.peek_token())
+            BorrowedToken::Word(w) => {
+                if self.dialect.is::<OracleDialect>() {
+                    if let Some((action, object_type)) =
+                        self.classify_oracle_administrative_statement(w.value.as_ref())
+                    {
+                        if action == OracleAdministrativeAction::Alter {
+                            return self.parse_oracle_alter_statement(
+                                AttachedToken::from(next_token.clone()),
+                                &object_type,
+                            );
+                        }
+                        if action == OracleAdministrativeAction::Drop {
+                            return self.parse_oracle_drop_statement(
+                                AttachedToken::from(next_token.clone()),
+                                &object_type,
+                            );
+                        }
+                        if action == OracleAdministrativeAction::Create {
+                            return self.parse_oracle_create_statement(
+                                AttachedToken::from(next_token.clone()),
+                                &object_type,
+                            );
+                        }
+                        return self.parse_oracle_command_statement(
+                            AttachedToken::from(next_token.clone()),
+                            action,
+                            &object_type,
+                        );
                     }
                 }
-                // `COMMENT` statement
-                Keyword::COMMENT if self.features.supports_comment_on => self.parse_comment(),
-                Keyword::PRINT => self.parse_print(),
-                Keyword::RETURN => self.parse_return(),
-                Keyword::VACUUM => {
-                    self.prev_token();
-                    self.parse_vacuum()
-                }
-                Keyword::REINDEX if dialect_of!(self is PostgreSqlDialect) => self.parse_reindex(),
-                Keyword::RESET => self.parse_reset(),
-                // SQL/PSM NULL statement (no-op)
-                Keyword::NULL => Ok(Statement::Null),
-                _ => {
-                    // Check for labeled statement: identifier COLON (LOOP | REPEAT | WHILE | BEGIN)
-                    // Note: Even keywords can be used as labels (e.g., "outer: LOOP" where OUTER is a keyword)
-                    if self.consume_token(&BorrowedToken::Colon) {
-                        let label = self.word_to_ident(w.clone(), next_token.span);
-                        let next_keyword = self.peek_token();
-                        match &next_keyword.token {
-                            BorrowedToken::Word(w2) if w2.keyword == Keyword::LOOP => {
-                                return self.parse_loop(Some(label));
-                            }
-                            BorrowedToken::Word(w2) if w2.keyword == Keyword::REPEAT => {
-                                return self.parse_repeat(Some(label));
-                            }
-                            BorrowedToken::Word(w2) if w2.keyword == Keyword::WHILE => {
-                                return self.parse_while(Some(label));
-                            }
-                            BorrowedToken::Word(w2) if w2.keyword == Keyword::BEGIN => {
-                                return self.parse_begin_end_statement(Some(label));
-                            }
-                            BorrowedToken::Word(w2) if w2.keyword == Keyword::FOR => {
-                                return self.parse_for(Some(label));
-                            }
-                            BorrowedToken::Word(w2) if w2.keyword == Keyword::FOREACH => {
-                                return self.parse_foreach(Some(label));
-                            }
-                            _ => {
-                                return self.expected(
-                                    "LOOP, REPEAT, WHILE, FOR, FOREACH, or BEGIN after label",
-                                    next_keyword,
-                                );
-                            }
+                match w.keyword {
+                    Keyword::KILL => self.parse_kill(),
+                    Keyword::FLUSH => self.parse_flush(),
+                    Keyword::DESC => self.parse_explain(DescribeAlias::Desc),
+                    Keyword::DESCRIBE => self.parse_explain(DescribeAlias::Describe),
+                    Keyword::EXPLAIN
+                        if self.dialect.is::<OracleDialect>()
+                            && self.peek_keyword(Keyword::PLAN) =>
+                    {
+                        self.parse_oracle_explain_plan(AttachedToken::from(next_token.clone()))
+                    }
+                    Keyword::EXPLAIN => self.parse_explain(DescribeAlias::Explain),
+                    Keyword::ANALYZE => self.parse_analyze(),
+                    Keyword::CASE => {
+                        self.prev_token();
+                        self.parse_case_stmt()
+                    }
+                    Keyword::IF => {
+                        self.prev_token();
+                        self.parse_if_stmt()
+                    }
+                    Keyword::WHILE => {
+                        self.prev_token();
+                        self.parse_while(None)
+                    }
+                    Keyword::LOOP => {
+                        self.prev_token();
+                        self.parse_loop(None)
+                    }
+                    Keyword::REPEAT => {
+                        self.prev_token();
+                        self.parse_repeat(None)
+                    }
+                    Keyword::FOR => {
+                        self.prev_token();
+                        self.parse_for(None)
+                    }
+                    Keyword::LEAVE => {
+                        self.prev_token();
+                        self.parse_leave()
+                    }
+                    Keyword::ITERATE => {
+                        self.prev_token();
+                        self.parse_iterate()
+                    }
+                    Keyword::FOREACH => {
+                        self.prev_token();
+                        self.parse_foreach(None)
+                    }
+                    Keyword::EXIT => {
+                        self.prev_token();
+                        self.parse_exit()
+                    }
+                    Keyword::CONTINUE => {
+                        self.prev_token();
+                        self.parse_continue()
+                    }
+                    Keyword::RAISE => {
+                        self.prev_token();
+                        self.parse_raise_stmt()
+                    }
+                    Keyword::PERFORM => {
+                        self.prev_token();
+                        self.parse_perform()
+                    }
+                    Keyword::DO => {
+                        self.prev_token();
+                        self.parse_do()
+                    }
+                    Keyword::SIGNAL => {
+                        self.prev_token();
+                        self.parse_signal()
+                    }
+                    Keyword::RESIGNAL => {
+                        self.prev_token();
+                        self.parse_resignal()
+                    }
+                    Keyword::SELECT | Keyword::WITH | Keyword::VALUES | Keyword::FROM => {
+                        self.prev_token();
+                        self.parse_query().map(Statement::Query)
+                    }
+                    Keyword::TRUNCATE => self.parse_truncate(),
+                    Keyword::CREATE => self.parse_create(),
+                    Keyword::CACHE => self.parse_cache_table(),
+                    Keyword::DROP => self.parse_drop(),
+                    Keyword::DISCARD => self.parse_discard(),
+                    Keyword::DECLARE if self.dialect.is::<OracleDialect>() => {
+                        self.prev_token();
+                        self.parse_sql_psm_block().map(Statement::PlSqlBlock)
+                    }
+                    Keyword::DECLARE => self.parse_declare(),
+                    Keyword::FETCH if self.dialect.is::<OracleDialect>() => {
+                        self.parse_plsql_fetch()
+                    }
+                    Keyword::FETCH => self.parse_fetch_statement(),
+                    Keyword::MOVE => self.parse_move(),
+                    Keyword::GET => {
+                        self.prev_token();
+                        self.parse_get_diagnostics()
+                    }
+                    Keyword::GOTO if self.dialect.is::<OracleDialect>() => {
+                        Ok(Statement::PlSqlGoto(self.parse_identifier()?))
+                    }
+                    Keyword::DELETE => self.parse_delete(next_token),
+                    Keyword::INSERT
+                        if self.dialect.is::<OracleDialect>()
+                            && (self.peek_oracle_words(&["ALL", "SELECT"])
+                                || self.peek_oracle_words(&["FIRST", "SELECT"])) =>
+                    {
+                        self.expected("INTO or WHEN after multitable INSERT", self.peek_token())
+                    }
+                    Keyword::INSERT => self.parse_insert(next_token),
+                    Keyword::REPLACE => self.parse_replace(next_token),
+                    Keyword::UNCACHE => self.parse_uncache_table(),
+                    Keyword::UPDATE => self.parse_update(next_token),
+                    Keyword::ALTER => self.parse_alter(),
+                    Keyword::CALL => self.parse_call(),
+                    Keyword::COPY => self.parse_copy(),
+                    Keyword::OPEN => {
+                        self.prev_token();
+                        self.parse_open()
+                    }
+                    Keyword::CLOSE => self.parse_close(),
+                    Keyword::SET
+                        if self.dialect.is::<OracleDialect>()
+                            && self.peek_keyword(Keyword::TRANSACTION) =>
+                    {
+                        self.parse_oracle_set_transaction(AttachedToken::from(next_token.clone()))
+                    }
+                    Keyword::SET
+                        if self.dialect.is::<OracleDialect>()
+                            && self.peek_keyword(Keyword::ROLE) =>
+                    {
+                        self.parse_oracle_set_role(AttachedToken::from(next_token.clone()))
+                    }
+                    Keyword::SET => self.parse_set(),
+                    Keyword::SHOW => self.parse_show(),
+                    Keyword::USE => self.parse_use(),
+                    Keyword::GRANT
+                        if self.dialect.is::<OracleDialect>()
+                            && self.peek_keyword(Keyword::CREATE) =>
+                    {
+                        self.parse_oracle_grant_system(AttachedToken::from(next_token.clone()))
+                    }
+                    Keyword::GRANT => self.parse_grant(),
+                    Keyword::DENY => {
+                        self.prev_token();
+                        self.parse_deny()
+                    }
+                    Keyword::REVOKE => self.parse_revoke(),
+                    Keyword::START => self.parse_start_transaction(),
+                    Keyword::BEGIN if self.dialect.is::<OracleDialect>() => {
+                        self.prev_token();
+                        self.parse_sql_psm_block().map(Statement::PlSqlBlock)
+                    }
+                    Keyword::BEGIN => self.parse_begin(),
+                    Keyword::END => self.parse_end(),
+                    Keyword::SAVEPOINT => self.parse_savepoint(),
+                    Keyword::RELEASE => self.parse_release(),
+                    Keyword::COMMIT => self.parse_commit(),
+                    Keyword::CHECKPOINT => self.parse_checkpoint(),
+                    Keyword::REFRESH => self.parse_refresh(),
+                    Keyword::BACKUP => self.parse_backup(),
+                    Keyword::RESTORE => self.parse_restore(),
+                    Keyword::RECOVER => self.parse_recover(),
+                    Keyword::VALIDATE => self.parse_validate(),
+                    Keyword::CANCEL => self.parse_cancel(),
+                    Keyword::RAISERROR => Ok(self.parse_raiserror()?),
+                    Keyword::ROLLBACK => self.parse_rollback(),
+                    Keyword::ASSERT => self.parse_assert(),
+                    // `PREPARE`, `EXECUTE` and `DEALLOCATE` are Postgres-specific
+                    // syntaxes. They are used for Postgres prepared statement.
+                    Keyword::DEALLOCATE => self.parse_deallocate(),
+                    Keyword::EXECUTE
+                        if self.dialect.is::<OracleDialect>()
+                            && self.peek_keyword(Keyword::IMMEDIATE) =>
+                    {
+                        self.parse_plsql_execute_immediate()
+                    }
+                    Keyword::EXECUTE | Keyword::EXEC => self.parse_execute(),
+                    Keyword::FORALL if self.dialect.is::<OracleDialect>() => {
+                        self.parse_plsql_forall()
+                    }
+                    Keyword::PIPE if self.dialect.is::<OracleDialect>() => {
+                        self.parse_plsql_pipe_row()
+                    }
+                    Keyword::PREPARE => self.parse_prepare(),
+                    Keyword::MERGE => self.parse_merge(),
+                    // `LISTEN`, `UNLISTEN` and `NOTIFY` are Postgres-specific
+                    // syntaxes. They are used for Postgres statement.
+                    Keyword::LISTEN if self.features.supports_listen_notify => self.parse_listen(),
+                    Keyword::UNLISTEN if self.features.supports_listen_notify => {
+                        self.parse_unlisten()
+                    }
+                    Keyword::NOTIFY if self.features.supports_listen_notify => self.parse_notify(),
+                    Keyword::WAIT if self.features.supports_wait_for_lsn => {
+                        self.parse_wait_for_lsn()
+                    }
+                    Keyword::QUIESCE if self.features.supports_table_maintenance_commands => {
+                        self.parse_table_maintenance(TableMaintenanceAction::Quiesce)
+                    }
+                    Keyword::UNQUIESCE if self.features.supports_table_maintenance_commands => {
+                        self.parse_table_maintenance(TableMaintenanceAction::Unquiesce)
+                    }
+                    // `PRAGMA` statement
+                    Keyword::PRAGMA => self.parse_pragma(),
+                    Keyword::UNLOAD => {
+                        self.prev_token();
+                        self.parse_unload()
+                    }
+                    Keyword::LOCK if self.dialect.is::<OracleDialect>() => {
+                        self.parse_oracle_lock_table(next_token)
+                    }
+                    Keyword::LOCK => self.parse_pg_lock_table(next_token),
+                    Keyword::RENAME => self.parse_rename(),
+                    Keyword::LOAD => self.parse_load(),
+                    // IMPORT FOREIGN SCHEMA is SQL/MED standard
+                    Keyword::IMPORT => {
+                        if self.parse_keywords(&[Keyword::FOREIGN, Keyword::SCHEMA]) {
+                            self.parse_import_foreign_schema()
+                        } else {
+                            self.expected("FOREIGN SCHEMA after IMPORT", self.peek_token())
                         }
                     }
+                    // `COMMENT` statement
+                    Keyword::COMMENT if self.features.supports_comment_on => self.parse_comment(),
+                    Keyword::PRINT => self.parse_print(),
+                    Keyword::RETURN => self.parse_return(),
+                    Keyword::VACUUM => {
+                        self.prev_token();
+                        self.parse_vacuum()
+                    }
+                    Keyword::REINDEX if dialect_of!(self is PostgreSqlDialect) => {
+                        self.parse_reindex()
+                    }
+                    Keyword::RESET => self.parse_reset(),
+                    // SQL/PSM NULL statement (no-op)
+                    Keyword::NULL => Ok(Statement::Null),
+                    _ => {
+                        // Check for labeled statement: identifier COLON (LOOP | REPEAT | WHILE | BEGIN)
+                        // Note: Even keywords can be used as labels (e.g., "outer: LOOP" where OUTER is a keyword)
+                        if self.consume_token(&BorrowedToken::Colon) {
+                            let label = self.word_to_ident(w.clone(), next_token.span);
+                            let next_keyword = self.peek_token();
+                            match &next_keyword.token {
+                                BorrowedToken::Word(w2) if w2.keyword == Keyword::LOOP => {
+                                    return self.parse_loop(Some(label));
+                                }
+                                BorrowedToken::Word(w2) if w2.keyword == Keyword::REPEAT => {
+                                    return self.parse_repeat(Some(label));
+                                }
+                                BorrowedToken::Word(w2) if w2.keyword == Keyword::WHILE => {
+                                    return self.parse_while(Some(label));
+                                }
+                                BorrowedToken::Word(w2) if w2.keyword == Keyword::BEGIN => {
+                                    return self.parse_begin_end_statement(Some(label));
+                                }
+                                BorrowedToken::Word(w2) if w2.keyword == Keyword::FOR => {
+                                    return self.parse_for(Some(label));
+                                }
+                                BorrowedToken::Word(w2) if w2.keyword == Keyword::FOREACH => {
+                                    return self.parse_foreach(Some(label));
+                                }
+                                _ => {
+                                    return self.expected(
+                                        "LOOP, REPEAT, WHILE, FOR, FOREACH, or BEGIN after label",
+                                        next_keyword,
+                                    );
+                                }
+                            }
+                        }
 
-                    // Try SQL/PSM assignment: identifier := value or identifier.field := value
-                    // Keywords like NEW, OLD can start assignments in trigger functions
-                    // The expression parser handles := as BinaryOperator::Assignment,
-                    // so we parse as an expression and check if it's an assignment.
-                    self.prev_token();
-                    if let Ok(Some(assignment)) = self.maybe_parse(|parser| {
-                        let expr = parser.parse_expr()?;
-                        // Check if this is an assignment expression (target := value).
-                        // PL/pgSQL also spells assignment with a bare `=`, which the
-                        // expression parser produces as a BinaryOperator::Eq; at
-                        // statement-start position a `target = value` with an
-                        // identifier target is unambiguously an assignment (a bare
-                        // equality expression is not a valid statement here).
-                        if let Expr::BinaryOp { left, op, right } = expr {
-                            let is_assignment = matches!(op, BinaryOperator::Assignment)
-                                || (matches!(op, BinaryOperator::Eq)
-                                    && matches!(
-                                        left.as_ref(),
-                                        Expr::Identifier(_) | Expr::CompoundIdentifier(_)
-                                    ));
-                            if is_assignment {
-                                Ok(Statement::SqlPsmAssignment(SqlPsmAssignment {
-                                    target: box_into_inner(left),
-                                    value: box_into_inner(right),
-                                }))
+                        // Try SQL/PSM assignment: identifier := value or identifier.field := value
+                        // Keywords like NEW, OLD can start assignments in trigger functions
+                        // The expression parser handles := as BinaryOperator::Assignment,
+                        // so we parse as an expression and check if it's an assignment.
+                        self.prev_token();
+                        if let Ok(Some(assignment)) = self.maybe_parse(|parser| {
+                            let expr = parser.parse_expr()?;
+                            // Check if this is an assignment expression (target := value).
+                            // PL/pgSQL also spells assignment with a bare `=`, which the
+                            // expression parser produces as a BinaryOperator::Eq; at
+                            // statement-start position a `target = value` with an
+                            // identifier target is unambiguously an assignment (a bare
+                            // equality expression is not a valid statement here).
+                            if let Expr::BinaryOp { left, op, right } = expr {
+                                let is_assignment = matches!(op, BinaryOperator::Assignment)
+                                    || (matches!(op, BinaryOperator::Eq)
+                                        && matches!(
+                                            left.as_ref(),
+                                            Expr::Identifier(_) | Expr::CompoundIdentifier(_)
+                                        ));
+                                if is_assignment {
+                                    Ok(Statement::SqlPsmAssignment(SqlPsmAssignment {
+                                        target: box_into_inner(left),
+                                        value: box_into_inner(right),
+                                    }))
+                                } else {
+                                    parser_err!(
+                                        "Not a SQL/PSM assignment",
+                                        parser.peek_token().span.start
+                                    )
+                                }
                             } else {
                                 parser_err!(
                                     "Not a SQL/PSM assignment",
                                     parser.peek_token().span.start
                                 )
                             }
-                        } else {
-                            parser_err!("Not a SQL/PSM assignment", parser.peek_token().span.start)
+                        }) {
+                            return Ok(assignment);
                         }
-                    }) {
-                        return Ok(assignment);
+                        if self.dialect.is::<OracleDialect>() {
+                            if let Ok(Some(call)) = self.maybe_parse(|parser| {
+                                let expr = parser.parse_expr()?;
+                                let function = match expr {
+                                    Expr::Function(function) => function,
+                                    Expr::Identifier(identifier) => Function {
+                                        name: ObjectName::from(vec![identifier]),
+                                        uses_odbc_syntax: false,
+                                        parameters: FunctionArguments::None,
+                                        args: FunctionArguments::None,
+                                        filter: None,
+                                        nth_value_order: None,
+                                        null_treatment: None,
+                                        over: None,
+                                        within_group: vec![],
+                                    },
+                                    Expr::CompoundIdentifier(identifiers) => Function {
+                                        name: ObjectName::from(identifiers),
+                                        uses_odbc_syntax: false,
+                                        parameters: FunctionArguments::None,
+                                        args: FunctionArguments::None,
+                                        filter: None,
+                                        nth_value_order: None,
+                                        null_treatment: None,
+                                        over: None,
+                                        within_group: vec![],
+                                    },
+                                    _ => {
+                                        return parser_err!(
+                                            "Not a PL/SQL procedure invocation",
+                                            parser.peek_token().span.start
+                                        );
+                                    }
+                                };
+                                Ok(Statement::PlSqlProcedureCall(function))
+                            }) {
+                                return Ok(call);
+                            }
+                        }
+                        self.advance_token(); // Re-consume the token for error message
+                        self.expected("an SQL statement", next_token)
                     }
-                    self.advance_token(); // Re-consume the token for error message
-                    self.expected("an SQL statement", next_token)
                 }
-            },
+            }
+            BorrowedToken::ShiftLeft if self.dialect.is::<OracleDialect>() => {
+                self.prev_token();
+                if let Some(statement) = self.maybe_parse(|parser| {
+                    let label = parser
+                        .parse_sql_psm_label()?
+                        .expect("opening label token was checked");
+                    if parser.peek_keyword(Keyword::DECLARE) || parser.peek_keyword(Keyword::BEGIN)
+                    {
+                        return parser.expected(
+                            "a non-block statement after PL/SQL label",
+                            parser.peek_token(),
+                        );
+                    }
+                    let statement = parser.parse_statement()?;
+                    Ok(Statement::PlSqlLabeled {
+                        label,
+                        statement: Box::new(statement),
+                    })
+                })? {
+                    Ok(statement)
+                } else {
+                    self.parse_sql_psm_block().map(Statement::PlSqlBlock)
+                }
+            }
+            BorrowedToken::Placeholder(ref directive)
+                if self.dialect.is::<OracleDialect>() && directive.eq_ignore_ascii_case("$IF") =>
+            {
+                self.parse_plsql_conditional_compilation()
+            }
+            BorrowedToken::Colon if self.dialect.is::<OracleDialect>() => {
+                self.prev_token();
+                let expr = self.parse_expr()?;
+                if let Expr::BinaryOp { left, op, right } = expr {
+                    if matches!(op, BinaryOperator::Assignment) {
+                        Ok(Statement::SqlPsmAssignment(SqlPsmAssignment {
+                            target: box_into_inner(left),
+                            value: box_into_inner(right),
+                        }))
+                    } else {
+                        self.expected("a PL/SQL assignment", next_token)
+                    }
+                } else {
+                    self.expected("a PL/SQL assignment", next_token)
+                }
+            }
             BorrowedToken::LParen => {
                 self.prev_token();
                 self.parse_query().map(Statement::Query)
             }
             _ => self.expected("an SQL statement", next_token),
         }
+    }
+
+    fn classify_oracle_administrative_statement(
+        &self,
+        action_word: &str,
+    ) -> Option<(OracleAdministrativeAction, Vec<Ident>)> {
+        let words = (0..8)
+            .filter_map(|index| match self.peek_nth_token(index).token {
+                BorrowedToken::Word(word) => Some(word.value.to_uppercase()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let object_type = |phrase: &str| {
+            phrase
+                .split_ascii_whitespace()
+                .map(Ident::new)
+                .collect::<Vec<_>>()
+        };
+        let word = |index: usize| words.get(index).map(String::as_str).unwrap_or("");
+
+        match action_word.to_ascii_uppercase().as_str() {
+            "ADMINISTER" if word(0) == "KEY" && word(1) == "MANAGEMENT" => Some((
+                OracleAdministrativeAction::Administer,
+                object_type("KEY MANAGEMENT"),
+            )),
+            "CREATE" => {
+                let mut index = 0;
+                if word(index) == "OR" && word(index + 1) == "REPLACE" {
+                    index += 2;
+                }
+                if word(index) == "AND" && word(index + 1) == "COMPILE" {
+                    index += 2;
+                }
+                let first = word(index);
+                let second = word(index + 1);
+                let third = word(index + 2);
+                let phrase = match first {
+                    "ANALYTIC" => "ANALYTIC VIEW",
+                    "APPLICATION" => "APPLICATION IDENTITY",
+                    "ATTRIBUTE" => "ATTRIBUTE DIMENSION",
+                    "AUDIT" => "AUDIT POLICY",
+                    "BITMAP" => "BITMAP INDEX",
+                    "CLUSTER" => "CLUSTER",
+                    "CONTEXT" => "CONTEXT",
+                    "CONTROLFILE" => "CONTROLFILE",
+                    "DATA" if second == "GRANT" => "DATA GRANT",
+                    "DATA" if second == "ROLE" => "DATA ROLE",
+                    "DATABASE" if second == "LINK" => "DATABASE LINK",
+                    "DATABASE" => "DATABASE",
+                    "DIMENSION" => "DIMENSION",
+                    "DIRECTORY" => "DIRECTORY",
+                    "DIRECTIVE" => "DIRECTIVE",
+                    "DISKGROUP" => "DISKGROUP",
+                    "EDITION" => "EDITION",
+                    "END" if second == "USER" && third == "CONTEXT" => "END USER CONTEXT",
+                    "END" => "END USER",
+                    "FLASHBACK" => "FLASHBACK ARCHIVE",
+                    "FLEXIBLE" => "FLEXIBLE DOMAIN",
+                    "HIERARCHY" => "HIERARCHY",
+                    "HYBRID" => "HYBRID VECTOR INDEX",
+                    "ICEBERG" => "ICEBERG TABLE",
+                    "INDEXTYPE" => "INDEXTYPE",
+                    "INMEMORY" => "INMEMORY JOIN GROUP",
+                    "INDEX" => "INDEX",
+                    "JAVA" => "JAVA SOURCE",
+                    "JSON" => "JSON RELATIONAL DUALITY VIEW",
+                    "LOCKDOWN" => "LOCKDOWN PROFILE",
+                    "LOGICAL" => "LOGICAL PARTITION TRACKING",
+                    "MATERIALIZED" if second == "ZONEMAP" => "MATERIALIZED ZONEMAP",
+                    "MLE" if second == "ENV" => "MLE ENV",
+                    "MLE" if second == "MODULE" => "MLE MODULE",
+                    "MULTI" => "MULTI COLUMN DOMAIN",
+                    "OPERATOR" => "OPERATOR",
+                    "OUTLINE" => "OUTLINE",
+                    "PFILE" => "PFILE",
+                    "PLUGGABLE" => "PLUGGABLE DATABASE",
+                    "PMEM" => "PMEM FILESTORE",
+                    "PROFILE" => "PROFILE",
+                    "PROPERTY" => "PROPERTY GRAPH",
+                    "PUBLIC" if second == "DATABASE" && third == "LINK" => "PUBLIC DATABASE LINK",
+                    "PUBLIC" if second == "SYNONYM" => "PUBLIC SYNONYM",
+                    "RESTORE" => "RESTORE POINT",
+                    "ROLE" => "ROLE",
+                    "ROLLBACK" => "ROLLBACK SEGMENT",
+                    "SCHEMA" => "SCHEMA",
+                    "SINGLE" => "SINGLE COLUMN DOMAIN",
+                    "SPFILE" => "SPFILE",
+                    "SYNONYM" => "SYNONYM",
+                    "TABLESPACE" if second == "SET" => "TABLESPACE SET",
+                    "TABLESPACE" => "TABLESPACE",
+                    "UNIQUE" if second == "INDEX" => "UNIQUE INDEX",
+                    "USER" => "USER",
+                    "VECTOR" => "VECTOR INDEX",
+                    _ => return None,
+                };
+                Some((OracleAdministrativeAction::Create, object_type(phrase)))
+            }
+            "ALTER" => {
+                let first = word(0);
+                let second = word(1);
+                let third = word(2);
+                let phrase = match first {
+                    "ANALYTIC" => "ANALYTIC VIEW",
+                    "ASSERTION" => "ASSERTION",
+                    "ATTRIBUTE" => "ATTRIBUTE DIMENSION",
+                    "AUDIT" => "AUDIT POLICY",
+                    "CLUSTER" => "CLUSTER",
+                    "DATABASE" if second == "DICTIONARY" => "DATABASE DICTIONARY",
+                    "DATABASE" if second == "LINK" => "DATABASE LINK",
+                    "DATABASE" => "DATABASE",
+                    "DIMENSION" => "DIMENSION",
+                    "DIRECTIVE" => "DIRECTIVE",
+                    "DISKGROUP" => "DISKGROUP",
+                    "DOMAIN" => "DOMAIN",
+                    "END" => "END USER",
+                    "FLASHBACK" => "FLASHBACK ARCHIVE",
+                    "HIERARCHY" => "HIERARCHY",
+                    "INDEX" => "INDEX",
+                    "INDEXTYPE" => "INDEXTYPE",
+                    "INMEMORY" => "INMEMORY JOIN GROUP",
+                    "JAVA" => "JAVA SOURCE",
+                    "JSON" => "JSON RELATIONAL DUALITY VIEW",
+                    "LOCKDOWN" => "LOCKDOWN PROFILE",
+                    "MATERIALIZED" if second == "VIEW" && third == "LOG" => "MATERIALIZED VIEW LOG",
+                    "MATERIALIZED" if second == "ZONEMAP" => "MATERIALIZED ZONEMAP",
+                    "MLE" if second == "ENV" => "MLE ENV",
+                    "MLE" if second == "MODULE" => "MLE MODULE",
+                    "OPERATOR" => "OPERATOR",
+                    "OUTLINE" => "OUTLINE",
+                    "PLUGGABLE" => "PLUGGABLE DATABASE",
+                    "PMEM" => "PMEM FILESTORE",
+                    "PROFILE" => "PROFILE",
+                    "PROPERTY" => "PROPERTY GRAPH",
+                    "PUBLIC" if second == "DATABASE" && third == "LINK" => "PUBLIC DATABASE LINK",
+                    "PUBLIC" if second == "SYNONYM" => "PUBLIC SYNONYM",
+                    "RESOURCE" => "RESOURCE COST",
+                    "ROLE" => "ROLE",
+                    "ROLLBACK" => "ROLLBACK SEGMENT",
+                    "SESSION" => "SESSION",
+                    "SYSTEM" => "SYSTEM",
+                    "SYNONYM" => "SYNONYM",
+                    "TABLESPACE" if second == "SET" => "TABLESPACE SET",
+                    "TABLESPACE" => "TABLESPACE",
+                    "USER" => "USER",
+                    _ => return None,
+                };
+                Some((OracleAdministrativeAction::Alter, object_type(phrase)))
+            }
+            "DROP" => {
+                let first = word(0);
+                let second = word(1);
+                let third = word(2);
+                let phrase = match first {
+                    "ANALYTIC" => "ANALYTIC VIEW",
+                    "APPLICATION" => "APPLICATION IDENTITY",
+                    "ASSERTION" => "ASSERTION",
+                    "ATTRIBUTE" => "ATTRIBUTE DIMENSION",
+                    "AUDIT" => "AUDIT POLICY",
+                    "CLUSTER" => "CLUSTER",
+                    "CONTEXT" => "CONTEXT",
+                    "DATA" if second == "GRANT" => "DATA GRANT",
+                    "DATA" if second == "ROLE" => "DATA ROLE",
+                    "DATABASE" if second == "LINK" => "DATABASE LINK",
+                    "DATABASE" => "DATABASE",
+                    "DIMENSION" => "DIMENSION",
+                    "DIRECTORY" => "DIRECTORY",
+                    "DIRECTIVE" => "DIRECTIVE",
+                    "DISKGROUP" => "DISKGROUP",
+                    "DOMAIN" => "DOMAIN",
+                    "EDITION" => "EDITION",
+                    "END" => "END USER",
+                    "FLASHBACK" => "FLASHBACK ARCHIVE",
+                    "HIERARCHY" => "HIERARCHY",
+                    "ICEBERG" => "ICEBERG TABLE",
+                    "INDEXTYPE" => "INDEXTYPE",
+                    "INMEMORY" => "INMEMORY JOIN GROUP",
+                    "JAVA" => "JAVA SOURCE",
+                    "LOCKDOWN" => "LOCKDOWN PROFILE",
+                    "MATERIALIZED" if second == "VIEW" && third == "LOG" => "MATERIALIZED VIEW LOG",
+                    "MATERIALIZED" if second == "ZONEMAP" => "MATERIALIZED ZONEMAP",
+                    "MLE" if second == "ENV" => "MLE ENV",
+                    "MLE" if second == "MODULE" => "MLE MODULE",
+                    "OPERATOR" => "OPERATOR",
+                    "OUTLINE" => "OUTLINE",
+                    "PLUGGABLE" => "PLUGGABLE DATABASE",
+                    "PMEM" => "PMEM FILESTORE",
+                    "PROFILE" => "PROFILE",
+                    "PROPERTY" => "PROPERTY GRAPH",
+                    "PUBLIC" if second == "DATABASE" && third == "LINK" => "PUBLIC DATABASE LINK",
+                    "PUBLIC" if second == "SYNONYM" => "PUBLIC SYNONYM",
+                    "RESTORE" => "RESTORE POINT",
+                    "ROLLBACK" => "ROLLBACK SEGMENT",
+                    "SYNONYM" => "SYNONYM",
+                    "TABLESPACE" if second == "SET" => "TABLESPACE SET",
+                    "TABLESPACE" => "TABLESPACE",
+                    "USER" => "USER",
+                    _ => return None,
+                };
+                Some((OracleAdministrativeAction::Drop, object_type(phrase)))
+            }
+            "ANALYZE" if word(0) == "TABLE" => {
+                Some((OracleAdministrativeAction::Analyze, object_type("TABLE")))
+            }
+            "ASSOCIATE" if word(0) == "STATISTICS" => Some((
+                OracleAdministrativeAction::Associate,
+                object_type("STATISTICS"),
+            )),
+            "AUDIT" => Some((
+                OracleAdministrativeAction::Audit,
+                object_type(if word(0) == "POLICY" {
+                    "POLICY"
+                } else {
+                    word(0)
+                }),
+            )),
+            "DISASSOCIATE" if word(0) == "STATISTICS" => Some((
+                OracleAdministrativeAction::Disassociate,
+                object_type("STATISTICS"),
+            )),
+            "FLASHBACK" => Some((OracleAdministrativeAction::Flashback, object_type(word(0)))),
+            "GRANT" if word(0) == "DATA" && word(1) == "ROLE" => {
+                Some((OracleAdministrativeAction::Grant, object_type("DATA ROLE")))
+            }
+            "NOAUDIT" => Some((OracleAdministrativeAction::Noaudit, object_type(word(0)))),
+            "PURGE" => Some((OracleAdministrativeAction::Purge, object_type(word(0)))),
+            "REVOKE" if word(0) == "DATA" && word(1) == "ROLE" => {
+                Some((OracleAdministrativeAction::Revoke, object_type("DATA ROLE")))
+            }
+            "SET" if word(0) == "USE" && word(1) == "DATA" => Some((
+                OracleAdministrativeAction::Set,
+                object_type("USE DATA GRANTS"),
+            )),
+            "TRUNCATE" if word(0) == "CLUSTER" => {
+                Some((OracleAdministrativeAction::Truncate, object_type("CLUSTER")))
+            }
+            _ => None,
+        }
+    }
+
+    fn peek_oracle_words(&self, expected: &[&str]) -> bool {
+        expected.iter().enumerate().all(|(index, expected)| {
+            matches!(
+                self.peek_nth_token(index).token,
+                BorrowedToken::Word(word)
+                    if word.value.eq_ignore_ascii_case(expected)
+            )
+        })
+    }
+
+    fn consume_oracle_words(&self, expected: &[&str]) -> bool {
+        if !self.peek_oracle_words(expected) {
+            return false;
+        }
+        for _ in expected {
+            self.next_token();
+        }
+        true
+    }
+
+    fn expect_oracle_words(&self, expected: &[&str]) -> Result<(), ParserError> {
+        if self.consume_oracle_words(expected) {
+            Ok(())
+        } else {
+            self.expected(&expected.join(" "), self.peek_token())
+        }
+    }
+
+    fn parse_oracle_word_ident(&self) -> Result<Ident, ParserError> {
+        let token = self.next_token();
+        match token.token {
+            BorrowedToken::Word(word) => Ok(Ident {
+                value: word.value.into_owned(),
+                quote_style: word.quote_style,
+                span: token.span,
+            }),
+            _ => self.expected("an identifier", token),
+        }
+    }
+
+    fn parse_oracle_size(&self) -> Result<OracleSize, ParserError> {
+        let value = self.parse_expr()?;
+        let unit = if matches!(self.peek_token().token, BorrowedToken::Word(_)) {
+            Some(self.parse_oracle_word_ident()?)
+        } else {
+            None
+        };
+        Ok(OracleSize { value, unit })
+    }
+
+    fn parse_oracle_typed_names(&self) -> Result<Vec<OracleTypedName>, ParserError> {
+        self.expect_token(&BorrowedToken::LParen)?;
+        let names = self.parse_comma_separated(|parser| {
+            Ok(OracleTypedName {
+                name: parser.parse_identifier()?,
+                data_type: parser.parse_data_type()?,
+            })
+        })?;
+        self.expect_token(&BorrowedToken::RParen)?;
+        Ok(names)
+    }
+
+    fn parse_oracle_create_statement(
+        &self,
+        create_token: AttachedToken,
+        classified_type: &[Ident],
+    ) -> Result<Statement, ParserError> {
+        let or_replace = self.parse_keywords(&[Keyword::OR, Keyword::REPLACE]);
+        let and_compile = self.parse_keywords(&[Keyword::AND, Keyword::COMPILE]);
+        let phrase = classified_type
+            .iter()
+            .map(|ident| ident.value.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        let header = classified_type
+            .iter()
+            .map(|ident| ident.value.as_str())
+            .collect::<Vec<_>>();
+        self.expect_oracle_words(&header)?;
+
+        let definition = match phrase.as_str() {
+            "ANALYTIC VIEW" => {
+                let name = self.parse_object_name(false)?;
+                self.expect_keyword(Keyword::USING)?;
+                let using_table = self.parse_object_name(false)?;
+                self.expect_oracle_words(&["DIMENSION", "BY"])?;
+                self.expect_token(&BorrowedToken::LParen)?;
+                let dimensions = self.parse_comma_separated(|parser| {
+                    let dimension = parser.parse_object_name(false)?;
+                    parser.expect_keyword(Keyword::KEY)?;
+                    let key = parser.parse_identifier()?;
+                    parser.expect_oracle_words(&["REFERENCES"])?;
+                    Ok(OracleAnalyticDimension {
+                        dimension,
+                        key,
+                        references: parser.parse_identifier()?,
+                    })
+                })?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                self.expect_oracle_words(&["MEASURES"])?;
+                self.expect_token(&BorrowedToken::LParen)?;
+                let measures = self.parse_comma_separated(|parser| {
+                    let name = parser.parse_identifier()?;
+                    parser.expect_oracle_words(&["FACT"])?;
+                    Ok(OracleAnalyticMeasure {
+                        name,
+                        fact: parser.parse_object_name(false)?,
+                    })
+                })?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                OracleCreateDefinition::AnalyticView {
+                    name,
+                    using_table,
+                    dimensions,
+                    measures,
+                }
+            }
+            "APPLICATION IDENTITY" => {
+                let name = self.parse_object_name(false)?;
+                self.expect_oracle_words(&["MAPPED", "TO"])?;
+                OracleCreateDefinition::ApplicationIdentity {
+                    name,
+                    mapped_to: self.parse_expr()?,
+                }
+            }
+            "ATTRIBUTE DIMENSION" => {
+                let name = self.parse_object_name(false)?;
+                self.expect_keyword(Keyword::USING)?;
+                let using_table = self.parse_object_name(false)?;
+                self.expect_oracle_words(&["ATTRIBUTES"])?;
+                let attributes = self.parse_parenthesized_identifiers()?;
+                let mut levels = vec![];
+                while self.consume_oracle_words(&["LEVEL"]) {
+                    let level_name = self.parse_identifier()?;
+                    self.expect_keyword(Keyword::KEY)?;
+                    let key = self.parse_identifier()?;
+                    let determines = if self.consume_oracle_words(&["DETERMINES"]) {
+                        self.parse_parenthesized_identifiers()?
+                    } else {
+                        vec![]
+                    };
+                    levels.push(OracleAttributeLevel {
+                        name: level_name,
+                        key,
+                        determines,
+                    });
+                }
+                if levels.is_empty() {
+                    return self.expected("an attribute dimension level", self.peek_token());
+                }
+                OracleCreateDefinition::AttributeDimension {
+                    name,
+                    using_table,
+                    attributes,
+                    levels,
+                }
+            }
+            "AUDIT POLICY" => {
+                let name = self.parse_object_name(false)?;
+                self.expect_oracle_words(&["ACTIONS"])?;
+                let mut actions = vec![self.parse_oracle_word_ident()?];
+                while self.consume_token(&BorrowedToken::Comma) {
+                    actions.push(self.parse_oracle_word_ident()?);
+                }
+                self.expect_keyword(Keyword::ON)?;
+                OracleCreateDefinition::AuditPolicy {
+                    name,
+                    actions,
+                    on: self.parse_object_name(false)?,
+                }
+            }
+            "CLUSTER" => {
+                let name = self.parse_object_name(false)?;
+                let columns = self.parse_oracle_typed_names()?;
+                self.expect_oracle_words(&["SIZE"])?;
+                OracleCreateDefinition::Cluster {
+                    name,
+                    columns,
+                    size: self.parse_expr()?,
+                }
+            }
+            "CONTEXT" => {
+                let name = self.parse_object_name(false)?;
+                self.expect_keyword(Keyword::USING)?;
+                let using_package = self.parse_object_name(false)?;
+                let accessed_globally = self.consume_oracle_words(&["ACCESSED", "GLOBALLY"]);
+                OracleCreateDefinition::Context {
+                    name,
+                    using_package,
+                    accessed_globally,
+                }
+            }
+            "CONTROLFILE" => {
+                let set = self.consume_oracle_words(&["SET"]);
+                self.expect_keyword(Keyword::DATABASE)?;
+                let database = self.parse_object_name(false)?;
+                let resetlogs = self.consume_oracle_words(&["RESETLOGS"]);
+                let noarchivelog = self.consume_oracle_words(&["NOARCHIVELOG"]);
+                OracleCreateDefinition::Controlfile {
+                    database,
+                    set,
+                    resetlogs,
+                    noarchivelog,
+                }
+            }
+            "DATA ROLE" => {
+                let name = self.parse_object_name(false)?;
+                let local = self.consume_oracle_words(&["LOCAL"]);
+                OracleCreateDefinition::DataRole { name, local }
+            }
+            "DATA GRANT" => {
+                let name = self.parse_object_name(false)?;
+                self.expect_oracle_words(&["AS", "SELECT", "ON"])?;
+                let object = self.parse_object_name(false)?;
+                self.expect_keyword(Keyword::WHERE)?;
+                let condition = self.parse_expr()?;
+                self.expect_keyword(Keyword::TO)?;
+                OracleCreateDefinition::DataGrant {
+                    name,
+                    object,
+                    condition,
+                    grantee: self.parse_object_name(false)?,
+                }
+            }
+            "DATABASE" => {
+                let name = self.parse_object_name(false)?;
+                self.expect_oracle_words(&["USER", "SYS", "IDENTIFIED", "BY"])?;
+                let sys_password = self.parse_identifier()?;
+                self.expect_oracle_words(&["USER", "SYSTEM", "IDENTIFIED", "BY"])?;
+                let system_password = self.parse_identifier()?;
+                self.expect_oracle_words(&["CHARACTER", "SET"])?;
+                OracleCreateDefinition::Database {
+                    name,
+                    sys_password,
+                    system_password,
+                    character_set: self.parse_identifier()?,
+                }
+            }
+            "DATABASE LINK" | "PUBLIC DATABASE LINK" => {
+                let public = phrase == "PUBLIC DATABASE LINK";
+                let name = self.parse_object_name(false)?;
+                self.expect_oracle_words(&["CONNECT", "TO"])?;
+                let user = self.parse_object_name(false)?;
+                self.expect_oracle_words(&["IDENTIFIED", "BY"])?;
+                let password = self.parse_identifier()?;
+                self.expect_keyword(Keyword::USING)?;
+                OracleCreateDefinition::DatabaseLink {
+                    public,
+                    name,
+                    user,
+                    password,
+                    using: self.parse_expr()?,
+                }
+            }
+            "DIRECTORY" => {
+                let name = self.parse_object_name(false)?;
+                self.expect_keyword(Keyword::AS)?;
+                let path = self.parse_expr()?;
+                let sharing = if self.consume_oracle_words(&["SHARING"]) {
+                    self.expect_token(&BorrowedToken::Eq)?;
+                    Some(self.parse_identifier()?)
+                } else {
+                    None
+                };
+                OracleCreateDefinition::Directory {
+                    name,
+                    path,
+                    sharing,
+                }
+            }
+            "DIRECTIVE" => {
+                let name = self.parse_object_name(false)?;
+                self.expect_oracle_words(&["AS", "VALIDATE"])?;
+                let value = self.parse_object_name(false)?;
+                self.expect_keyword(Keyword::USING)?;
+                OracleCreateDefinition::Directive {
+                    name,
+                    value,
+                    domain: self.parse_object_name(false)?,
+                }
+            }
+            "DIMENSION" => {
+                let name = self.parse_object_name(false)?;
+                let mut levels = vec![];
+                while self.consume_oracle_words(&["LEVEL"]) {
+                    let level_name = self.parse_identifier()?;
+                    self.expect_keyword(Keyword::IS)?;
+                    levels.push(OracleDimensionLevel {
+                        name: level_name,
+                        value: self.parse_object_name(false)?,
+                    });
+                }
+                if levels.is_empty() {
+                    return self.expected("a dimension level", self.peek_token());
+                }
+                self.expect_oracle_words(&["HIERARCHY"])?;
+                let hierarchy = self.parse_identifier()?;
+                self.expect_token(&BorrowedToken::LParen)?;
+                let child = self.parse_identifier()?;
+                self.expect_oracle_words(&["CHILD", "OF"])?;
+                let parent = self.parse_identifier()?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                OracleCreateDefinition::Dimension {
+                    name,
+                    levels,
+                    hierarchy,
+                    child,
+                    parent,
+                }
+            }
+            "DISKGROUP" => {
+                let name = self.parse_object_name(false)?;
+                let redundancy_word = self.parse_oracle_word_ident()?;
+                let redundancy = match redundancy_word.value.to_ascii_uppercase().as_str() {
+                    "EXTERNAL" => OracleDiskgroupRedundancy::External,
+                    "NORMAL" => OracleDiskgroupRedundancy::Normal,
+                    "HIGH" => OracleDiskgroupRedundancy::High,
+                    "FLEX" => OracleDiskgroupRedundancy::Flex,
+                    "EXTENDED" => OracleDiskgroupRedundancy::Extended,
+                    _ => {
+                        return parser_err!(
+                            format!(
+                                "invalid Oracle disk group redundancy: {}",
+                                redundancy_word.value
+                            ),
+                            redundancy_word.span.start
+                        )
+                    }
+                };
+                self.expect_oracle_words(&["REDUNDANCY", "DISK"])?;
+                OracleCreateDefinition::Diskgroup {
+                    name,
+                    redundancy,
+                    disks: self.parse_comma_separated(Parser::parse_expr)?,
+                }
+            }
+            "EDITION" => {
+                let name = self.parse_object_name(false)?;
+                self.expect_oracle_words(&["AS", "CHILD", "OF"])?;
+                OracleCreateDefinition::Edition {
+                    name,
+                    child_of: self.parse_object_name(false)?,
+                }
+            }
+            "END USER" => {
+                let name = self.parse_object_name(false)?;
+                self.expect_oracle_words(&["IDENTIFIED", "BY"])?;
+                let password = self.parse_identifier()?;
+                let account_unlock = self.consume_oracle_words(&["ACCOUNT", "UNLOCK"]);
+                OracleCreateDefinition::EndUser {
+                    name,
+                    password,
+                    account_unlock,
+                }
+            }
+            "END USER CONTEXT" => {
+                let name = self.parse_object_name(false)?;
+                self.expect_keyword(Keyword::USING)?;
+                OracleCreateDefinition::EndUserContext {
+                    name,
+                    using_package: self.parse_object_name(false)?,
+                }
+            }
+            "FLASHBACK ARCHIVE" => {
+                let name = self.parse_object_name(false)?;
+                self.expect_oracle_words(&["TABLESPACE"])?;
+                let tablespace = self.parse_object_name(false)?;
+                self.expect_oracle_words(&["RETENTION"])?;
+                OracleCreateDefinition::FlashbackArchive {
+                    name,
+                    tablespace,
+                    retention: self.parse_expr()?,
+                    unit: self.parse_identifier()?,
+                }
+            }
+            "FLEXIBLE DOMAIN" => {
+                let name = self.parse_object_name(false)?;
+                self.expect_token(&BorrowedToken::LParen)?;
+                let columns = self.parse_comma_separated(|parser| {
+                    let name = parser.parse_identifier()?;
+                    parser.expect_keyword(Keyword::AS)?;
+                    Ok(OracleTypedName {
+                        name,
+                        data_type: parser.parse_data_type()?,
+                    })
+                })?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                self.expect_oracle_words(&["CHOOSE", "DOMAIN", "USING"])?;
+                self.expect_token(&BorrowedToken::LParen)?;
+                let selector = self.parse_expr()?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                OracleCreateDefinition::FlexibleDomain {
+                    name,
+                    columns,
+                    selector,
+                }
+            }
+            "HIERARCHY" => {
+                let name = self.parse_object_name(false)?;
+                self.expect_keyword(Keyword::USING)?;
+                let using_dimension = self.parse_object_name(false)?;
+                self.expect_token(&BorrowedToken::LParen)?;
+                let child = self.parse_identifier()?;
+                self.expect_oracle_words(&["CHILD", "OF"])?;
+                let parent = self.parse_identifier()?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                OracleCreateDefinition::Hierarchy {
+                    name,
+                    using_dimension,
+                    child,
+                    parent,
+                }
+            }
+            "HYBRID VECTOR INDEX" => {
+                let name = self.parse_object_name(false)?;
+                self.expect_keyword(Keyword::ON)?;
+                let table = self.parse_object_name(false)?;
+                let columns = self.parse_parenthesized_identifiers()?;
+                self.expect_oracle_words(&["PARAMETERS"])?;
+                self.expect_token(&BorrowedToken::LParen)?;
+                let parameters = self.parse_expr()?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                OracleCreateDefinition::HybridVectorIndex {
+                    name,
+                    table,
+                    columns,
+                    parameters,
+                }
+            }
+            "ICEBERG TABLE" => {
+                let name = self.parse_object_name(false)?;
+                self.expect_oracle_words(&["WITH", "CATALOG"])?;
+                OracleCreateDefinition::IcebergTable {
+                    name,
+                    catalog: self.parse_object_name(false)?,
+                }
+            }
+            "INDEXTYPE" => {
+                let name = self.parse_object_name(false)?;
+                self.expect_keyword(Keyword::FOR)?;
+                let function = self.parse_object_name(false)?;
+                self.expect_token(&BorrowedToken::LParen)?;
+                let argument_types = self.parse_comma_separated(Parser::parse_data_type)?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                self.expect_keyword(Keyword::USING)?;
+                OracleCreateDefinition::Indextype {
+                    name,
+                    function,
+                    argument_types,
+                    using_type: self.parse_object_name(false)?,
+                }
+            }
+            "INMEMORY JOIN GROUP" => {
+                let name = self.parse_object_name(false)?;
+                self.expect_token(&BorrowedToken::LParen)?;
+                let entries = self.parse_comma_separated(|parser| {
+                    Ok(OracleJoinGroupEntry {
+                        table: parser.parse_object_name(false)?,
+                        columns: parser.parse_parenthesized_identifiers()?,
+                    })
+                })?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                OracleCreateDefinition::InmemoryJoinGroup { name, entries }
+            }
+            "INDEX" | "UNIQUE INDEX" | "BITMAP INDEX" | "VECTOR INDEX" => {
+                let kind = match phrase.as_str() {
+                    "BITMAP INDEX" => OracleIndexKind::Bitmap,
+                    "VECTOR INDEX" => OracleIndexKind::Vector,
+                    _ => OracleIndexKind::Standard,
+                };
+                let unique = phrase == "UNIQUE INDEX";
+                let name = self.parse_object_name(false)?;
+                self.expect_keyword(Keyword::ON)?;
+                let table = self.parse_object_name(false)?;
+                let columns = self.parse_parenthesized_index_column_list()?;
+                let mut options = OracleIndexOptions {
+                    online: false,
+                    local: false,
+                    indextype: None,
+                    parameters: None,
+                    vector_distance: None,
+                    target_accuracy: None,
+                    vector_parameters: vec![],
+                };
+                if matches!(kind, OracleIndexKind::Vector) {
+                    self.expect_oracle_words(&[
+                        "ORGANIZATION",
+                        "INMEMORY",
+                        "NEIGHBOR",
+                        "GRAPH",
+                        "DISTANCE",
+                    ])?;
+                    options.vector_distance = Some(self.parse_identifier()?);
+                    self.expect_oracle_words(&["WITH", "TARGET", "ACCURACY"])?;
+                    options.target_accuracy = Some(self.parse_expr()?);
+                    self.expect_oracle_words(&["PARAMETERS"])?;
+                    self.expect_token(&BorrowedToken::LParen)?;
+                    options.vector_parameters = self.parse_comma_separated(|parser| {
+                        Ok(OracleIndexParameter {
+                            name: parser.parse_identifier()?,
+                            value: parser.parse_expr()?,
+                        })
+                    })?;
+                    self.expect_token(&BorrowedToken::RParen)?;
+                } else {
+                    if self.consume_oracle_words(&["INDEXTYPE", "IS"]) {
+                        options.indextype = Some(self.parse_object_name(false)?);
+                        if self.consume_oracle_words(&["PARAMETERS"]) {
+                            self.expect_token(&BorrowedToken::LParen)?;
+                            options.parameters = Some(self.parse_expr()?);
+                            self.expect_token(&BorrowedToken::RParen)?;
+                        }
+                    }
+                    options.local = self.consume_oracle_words(&["LOCAL"]);
+                    options.online = self.consume_oracle_words(&["ONLINE"]);
+                }
+                OracleCreateDefinition::Index {
+                    kind,
+                    unique,
+                    name,
+                    table,
+                    columns,
+                    options,
+                }
+            }
+            "JAVA SOURCE" => {
+                self.expect_oracle_words(&["NAMED"])?;
+                let name = self.parse_identifier()?;
+                self.expect_keyword(Keyword::AS)?;
+                let mut source = vec![];
+                let mut braces = 0i32;
+                let mut parentheses = 0i32;
+                while !matches!(self.peek_token().token, BorrowedToken::EOF) {
+                    let token = self.next_token();
+                    match token.token {
+                        BorrowedToken::LBrace => braces += 1,
+                        BorrowedToken::RBrace => braces -= 1,
+                        BorrowedToken::LParen => parentheses += 1,
+                        BorrowedToken::RParen => parentheses -= 1,
+                        _ => {}
+                    }
+                    if braces < 0 || parentheses < 0 {
+                        return parser_err!("unmatched delimiter in Java source", token.span.start);
+                    }
+                    source.push(token.token.to_string());
+                }
+                if source.is_empty() || braces != 0 || parentheses != 0 {
+                    return parser_err!("incomplete Java source", self.peek_token().span.start);
+                }
+                OracleCreateDefinition::JavaSource {
+                    name,
+                    source: source.join(" "),
+                }
+            }
+            "JSON RELATIONAL DUALITY VIEW" => {
+                let name = self.parse_object_name(false)?;
+                self.expect_oracle_words(&["AS", "SELECT", "JSON"])?;
+                self.expect_token(&BorrowedToken::LBrace)?;
+                let fields = self.parse_comma_separated(|parser| {
+                    let name = parser.parse_expr()?;
+                    parser.expect_token(&BorrowedToken::Colon)?;
+                    Ok(OracleJsonField {
+                        name,
+                        value: parser.parse_expr()?,
+                    })
+                })?;
+                self.expect_token(&BorrowedToken::RBrace)?;
+                self.expect_keyword(Keyword::FROM)?;
+                let table = self.parse_object_name(false)?;
+                let alias = if matches!(self.peek_token().token, BorrowedToken::Word(_)) {
+                    Some(self.parse_identifier()?)
+                } else {
+                    None
+                };
+                OracleCreateDefinition::JsonRelationalDualityView {
+                    name,
+                    fields,
+                    table,
+                    alias,
+                }
+            }
+            "LOCKDOWN PROFILE" => OracleCreateDefinition::LockdownProfile {
+                name: self.parse_object_name(false)?,
+            },
+            "LOGICAL PARTITION TRACKING" => {
+                self.expect_keyword(Keyword::ON)?;
+                let table = self.parse_object_name(false)?;
+                self.expect_oracle_words(&["PARTITION", "BY", "RANGE"])?;
+                let key = self.parse_parenthesized_identifiers()?;
+                self.expect_token(&BorrowedToken::LParen)?;
+                self.expect_oracle_words(&["PARTITION"])?;
+                let partition = self.parse_identifier()?;
+                self.expect_oracle_words(&["VALUES", "LESS", "THAN"])?;
+                self.expect_token(&BorrowedToken::LParen)?;
+                let less_than = self.parse_expr()?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                OracleCreateDefinition::LogicalPartitionTracking {
+                    table,
+                    key,
+                    partition,
+                    less_than,
+                }
+            }
+            "MATERIALIZED ZONEMAP" => {
+                let name = self.parse_object_name(false)?;
+                self.expect_keyword(Keyword::ON)?;
+                OracleCreateDefinition::MaterializedZonemap {
+                    name,
+                    table: self.parse_object_name(false)?,
+                    columns: self.parse_parenthesized_identifiers()?,
+                }
+            }
+            "MLE ENV" => {
+                let name = self.parse_object_name(false)?;
+                self.expect_oracle_words(&["LANGUAGE", "OPTIONS"])?;
+                OracleCreateDefinition::MleEnv {
+                    name,
+                    language_options: self.parse_expr()?,
+                }
+            }
+            "MLE MODULE" => {
+                let name = self.parse_object_name(false)?;
+                self.expect_oracle_words(&["LANGUAGE"])?;
+                let language = self.parse_identifier()?;
+                self.expect_keyword(Keyword::AS)?;
+                OracleCreateDefinition::MleModule {
+                    name,
+                    language,
+                    source: self.parse_expr()?,
+                }
+            }
+            "OPERATOR" => {
+                let name = self.parse_object_name(false)?;
+                self.expect_oracle_words(&["BINDING"])?;
+                self.expect_token(&BorrowedToken::LParen)?;
+                let argument_types = self.parse_comma_separated(Parser::parse_data_type)?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                self.expect_keyword(Keyword::RETURN)?;
+                let return_type = self.parse_data_type()?;
+                self.expect_keyword(Keyword::USING)?;
+                OracleCreateDefinition::Operator {
+                    name,
+                    argument_types,
+                    return_type,
+                    using_function: self.parse_object_name(false)?,
+                }
+            }
+            "OUTLINE" => {
+                let name = self.parse_object_name(false)?;
+                self.expect_keyword(Keyword::ON)?;
+                OracleCreateDefinition::Outline {
+                    name,
+                    query: self.parse_query()?,
+                }
+            }
+            "PFILE" | "SPFILE" => {
+                self.expect_token(&BorrowedToken::Eq)?;
+                let path = self.parse_expr()?;
+                let from_memory = self.consume_oracle_words(&["FROM", "MEMORY"]);
+                OracleCreateDefinition::ParameterFile {
+                    kind: if phrase == "PFILE" {
+                        OracleParameterFileKind::Pfile
+                    } else {
+                        OracleParameterFileKind::Spfile
+                    },
+                    path,
+                    from_memory,
+                }
+            }
+            "PLUGGABLE DATABASE" => {
+                let name = self.parse_object_name(false)?;
+                self.expect_oracle_words(&["ADMIN", "USER"])?;
+                let admin_user = self.parse_object_name(false)?;
+                self.expect_oracle_words(&["IDENTIFIED", "BY"])?;
+                OracleCreateDefinition::PluggableDatabase {
+                    name,
+                    admin_user,
+                    password: self.parse_identifier()?,
+                }
+            }
+            "PMEM FILESTORE" => {
+                let name = self.parse_object_name(false)?;
+                self.expect_oracle_words(&["MOUNTPOINT"])?;
+                let mountpoint = self.parse_expr()?;
+                self.expect_oracle_words(&["SIZE"])?;
+                OracleCreateDefinition::PmemFilestore {
+                    name,
+                    mountpoint,
+                    size: self.parse_oracle_size()?,
+                }
+            }
+            "PROFILE" => {
+                let name = self.parse_object_name(false)?;
+                self.expect_keyword(Keyword::LIMIT)?;
+                let mut limits = vec![];
+                while !matches!(
+                    self.peek_token().token,
+                    BorrowedToken::EOF | BorrowedToken::SemiColon
+                ) {
+                    limits.push(OracleResourceValue {
+                        resource: self.parse_identifier()?,
+                        value: self.parse_expr()?,
+                    });
+                }
+                if limits.is_empty() {
+                    return self.expected("a profile resource limit", self.peek_token());
+                }
+                OracleCreateDefinition::Profile { name, limits }
+            }
+            "PROPERTY GRAPH" => {
+                let name = self.parse_object_name(false)?;
+                self.expect_oracle_words(&["VERTEX", "TABLES"])?;
+                self.expect_token(&BorrowedToken::LParen)?;
+                let vertices = self.parse_comma_separated(|parser| {
+                    let table = parser.parse_object_name(false)?;
+                    parser.expect_keyword(Keyword::KEY)?;
+                    Ok(OraclePropertyGraphVertex {
+                        table,
+                        key: parser.parse_parenthesized_identifiers()?,
+                    })
+                })?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                self.expect_oracle_words(&["EDGE", "TABLES"])?;
+                self.expect_token(&BorrowedToken::LParen)?;
+                let edges = self.parse_comma_separated(|parser| {
+                    let table = parser.parse_object_name(false)?;
+                    parser.expect_keyword(Keyword::KEY)?;
+                    let key = parser.parse_parenthesized_identifiers()?;
+                    parser.expect_oracle_words(&["SOURCE", "KEY"])?;
+                    let source_key = parser.parse_parenthesized_identifiers()?;
+                    parser.expect_oracle_words(&["REFERENCES"])?;
+                    let source_table = parser.parse_object_name(false)?;
+                    let source_columns = parser.parse_parenthesized_identifiers()?;
+                    parser.expect_oracle_words(&["DESTINATION", "KEY"])?;
+                    let destination_key = parser.parse_parenthesized_identifiers()?;
+                    parser.expect_oracle_words(&["REFERENCES"])?;
+                    let destination_table = parser.parse_object_name(false)?;
+                    let destination_columns = parser.parse_parenthesized_identifiers()?;
+                    Ok(OraclePropertyGraphEdge {
+                        table,
+                        key,
+                        source_key,
+                        source_table,
+                        source_columns,
+                        destination_key,
+                        destination_table,
+                        destination_columns,
+                    })
+                })?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                OracleCreateDefinition::PropertyGraph {
+                    name,
+                    vertices,
+                    edges,
+                }
+            }
+            "RESTORE POINT" => {
+                let name = self.parse_object_name(false)?;
+                let guarantee_flashback_database =
+                    self.consume_oracle_words(&["GUARANTEE", "FLASHBACK", "DATABASE"]);
+                OracleCreateDefinition::RestorePoint {
+                    name,
+                    guarantee_flashback_database,
+                }
+            }
+            "ROLE" => {
+                let name = self.parse_object_name(false)?;
+                let not_identified = self.consume_oracle_words(&["NOT", "IDENTIFIED"]);
+                OracleCreateDefinition::Role {
+                    name,
+                    not_identified,
+                }
+            }
+            "ROLLBACK SEGMENT" => {
+                let name = self.parse_object_name(false)?;
+                self.expect_oracle_words(&["TABLESPACE"])?;
+                OracleCreateDefinition::RollbackSegment {
+                    name,
+                    tablespace: self.parse_object_name(false)?,
+                }
+            }
+            "SCHEMA" => {
+                self.expect_keyword(Keyword::AUTHORIZATION)?;
+                let authorization = self.parse_identifier()?;
+                let mut statements = vec![];
+                while !matches!(self.peek_token().token, BorrowedToken::EOF) {
+                    statements.push(self.parse_statement()?);
+                    let _ = self.consume_token(&BorrowedToken::SemiColon);
+                }
+                if statements.is_empty() {
+                    return self.expected("a schema statement", self.peek_token());
+                }
+                OracleCreateDefinition::Schema {
+                    authorization,
+                    statements,
+                }
+            }
+            "SYNONYM" | "PUBLIC SYNONYM" => {
+                let public = phrase == "PUBLIC SYNONYM";
+                let name = self.parse_object_name(false)?;
+                self.expect_keyword(Keyword::FOR)?;
+                OracleCreateDefinition::Synonym {
+                    public,
+                    name,
+                    target: self.parse_object_name(false)?,
+                }
+            }
+            "TABLESPACE" => {
+                let name = self.parse_object_name(false)?;
+                self.expect_oracle_words(&["DATAFILE"])?;
+                let datafile = self.parse_expr()?;
+                self.expect_oracle_words(&["SIZE"])?;
+                let size = self.parse_oracle_size()?;
+                let autoextend = self.consume_oracle_words(&["AUTOEXTEND", "ON"]);
+                let next = if self.consume_oracle_words(&["NEXT"]) {
+                    Some(self.parse_oracle_size()?)
+                } else {
+                    None
+                };
+                if next.is_some() && !autoextend {
+                    return parser_err!(
+                        "NEXT requires AUTOEXTEND ON",
+                        self.peek_token().span.start
+                    );
+                }
+                OracleCreateDefinition::Tablespace {
+                    name,
+                    datafile,
+                    size,
+                    autoextend,
+                    next,
+                }
+            }
+            "TABLESPACE SET" => {
+                let name = self.parse_object_name(false)?;
+                self.expect_oracle_words(&["USING", "TEMPLATE"])?;
+                self.expect_token(&BorrowedToken::LParen)?;
+                self.expect_oracle_words(&["DATAFILE", "SIZE"])?;
+                let datafile_size = self.parse_oracle_size()?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                OracleCreateDefinition::TablespaceSet {
+                    name,
+                    datafile_size,
+                }
+            }
+            "USER" => {
+                let name = self.parse_object_name(false)?;
+                self.expect_oracle_words(&["IDENTIFIED", "BY"])?;
+                let password = self.parse_identifier()?;
+                self.expect_oracle_words(&["DEFAULT", "TABLESPACE"])?;
+                let default_tablespace = self.parse_object_name(false)?;
+                self.expect_oracle_words(&["QUOTA"])?;
+                let quota = self.parse_oracle_size()?;
+                self.expect_keyword(Keyword::ON)?;
+                OracleCreateDefinition::User {
+                    name,
+                    password,
+                    default_tablespace,
+                    quota,
+                    quota_tablespace: self.parse_object_name(false)?,
+                }
+            }
+            _ => {
+                return parser_err!(
+                    format!("structured Oracle CREATE {phrase} parsing is not implemented"),
+                    self.peek_token().span.start
+                )
+            }
+        };
+
+        if !matches!(
+            self.peek_token().token,
+            BorrowedToken::EOF | BorrowedToken::SemiColon
+        ) {
+            return self.expected("end of Oracle CREATE statement", self.peek_token());
+        }
+        Ok(Statement::OracleCreate(OracleCreateStatement {
+            create_token,
+            or_replace,
+            and_compile,
+            definition,
+        }))
+    }
+
+    fn parse_oracle_drop_statement(
+        &self,
+        drop_token: AttachedToken,
+        classified_type: &[Ident],
+    ) -> Result<Statement, ParserError> {
+        let phrase = classified_type
+            .iter()
+            .map(|ident| ident.value.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        let object_type = match phrase.as_str() {
+            "ANALYTIC VIEW" => OracleDropObjectType::AnalyticView,
+            "APPLICATION IDENTITY" => OracleDropObjectType::ApplicationIdentity,
+            "ASSERTION" => OracleDropObjectType::Assertion,
+            "ATTRIBUTE DIMENSION" => OracleDropObjectType::AttributeDimension,
+            "AUDIT POLICY" => OracleDropObjectType::AuditPolicy,
+            "CLUSTER" => OracleDropObjectType::Cluster,
+            "CONTEXT" => OracleDropObjectType::Context,
+            "DATA GRANT" => OracleDropObjectType::DataGrant,
+            "DATA ROLE" => OracleDropObjectType::DataRole,
+            "DATABASE" => OracleDropObjectType::Database,
+            "DATABASE LINK" => OracleDropObjectType::DatabaseLink,
+            "DIMENSION" => OracleDropObjectType::Dimension,
+            "DIRECTORY" => OracleDropObjectType::Directory,
+            "DIRECTIVE" => OracleDropObjectType::Directive,
+            "DISKGROUP" => OracleDropObjectType::Diskgroup,
+            "DOMAIN" => OracleDropObjectType::Domain,
+            "EDITION" => OracleDropObjectType::Edition,
+            "END USER" => OracleDropObjectType::EndUser,
+            "FLASHBACK ARCHIVE" => OracleDropObjectType::FlashbackArchive,
+            "HIERARCHY" => OracleDropObjectType::Hierarchy,
+            "ICEBERG TABLE" => OracleDropObjectType::IcebergTable,
+            "INDEXTYPE" => OracleDropObjectType::Indextype,
+            "INMEMORY JOIN GROUP" => OracleDropObjectType::InmemoryJoinGroup,
+            "JAVA SOURCE" => OracleDropObjectType::JavaSource,
+            "LOCKDOWN PROFILE" => OracleDropObjectType::LockdownProfile,
+            "MATERIALIZED VIEW LOG" => OracleDropObjectType::MaterializedViewLog,
+            "MATERIALIZED ZONEMAP" => OracleDropObjectType::MaterializedZonemap,
+            "MLE ENV" => OracleDropObjectType::MleEnv,
+            "MLE MODULE" => OracleDropObjectType::MleModule,
+            "OPERATOR" => OracleDropObjectType::Operator,
+            "OUTLINE" => OracleDropObjectType::Outline,
+            "PLUGGABLE DATABASE" => OracleDropObjectType::PluggableDatabase,
+            "PMEM FILESTORE" => OracleDropObjectType::PmemFilestore,
+            "PROFILE" => OracleDropObjectType::Profile,
+            "PROPERTY GRAPH" => OracleDropObjectType::PropertyGraph,
+            "PUBLIC DATABASE LINK" => OracleDropObjectType::PublicDatabaseLink,
+            "PUBLIC SYNONYM" => OracleDropObjectType::PublicSynonym,
+            "RESTORE POINT" => OracleDropObjectType::RestorePoint,
+            "ROLLBACK SEGMENT" => OracleDropObjectType::RollbackSegment,
+            "SYNONYM" => OracleDropObjectType::Synonym,
+            "TABLESPACE" => OracleDropObjectType::Tablespace,
+            "TABLESPACE SET" => OracleDropObjectType::TablespaceSet,
+            "USER" => OracleDropObjectType::User,
+            _ => {
+                return parser_err!(
+                    "unsupported Oracle DROP object type: {phrase}",
+                    self.peek_token().span.start
+                )
+            }
+        };
+
+        let header = classified_type
+            .iter()
+            .map(|ident| ident.value.as_str())
+            .collect::<Vec<_>>();
+        self.expect_oracle_words(&header)?;
+        let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
+        if if_exists && object_type == OracleDropObjectType::Database {
+            return self.expected("DROP DATABASE without IF EXISTS", self.peek_token());
+        }
+
+        let target = match object_type {
+            OracleDropObjectType::Database => OracleDropTarget::None,
+            OracleDropObjectType::MaterializedViewLog => {
+                self.expect_keyword(Keyword::ON)?;
+                OracleDropTarget::On(self.parse_object_name(false)?)
+            }
+            _ => OracleDropTarget::Name(self.parse_object_name(false)?),
+        };
+
+        let mut options = vec![];
+        while !matches!(
+            self.peek_token().token,
+            BorrowedToken::EOF | BorrowedToken::SemiColon
+        ) {
+            let option = if self.consume_oracle_words(&["INCLUDING", "TABLES"]) {
+                OracleDropOption::IncludingTables
+            } else if self.consume_oracle_words(&["CASCADE", "CONSTRAINTS"]) {
+                OracleDropOption::CascadeConstraints
+            } else if self.consume_oracle_words(&["EXCLUDING", "CONTENTS"]) {
+                OracleDropOption::ExcludingContents
+            } else if self.consume_oracle_words(&["WITHIN", "CATALOG"]) {
+                OracleDropOption::WithinCatalog(self.parse_object_name(false)?)
+            } else if self.consume_oracle_words(&["INCLUDING", "CONTENTS", "AND", "DATAFILES"]) {
+                OracleDropOption::IncludingContentsAndDatafiles
+            } else if self.consume_oracle_words(&["INCLUDING", "DATAFILES"]) {
+                OracleDropOption::IncludingDatafiles
+            } else if self.consume_oracle_words(&["FORCE"]) {
+                OracleDropOption::Force
+            } else if self.consume_oracle_words(&["PRESERVE"]) {
+                OracleDropOption::Preserve
+            } else if self.consume_oracle_words(&["CASCADE"]) {
+                OracleDropOption::Cascade
+            } else if self.consume_oracle_words(&["PURGE"]) {
+                OracleDropOption::Purge
+            } else {
+                return self.expected("an Oracle DROP option", self.peek_token());
+            };
+            options.push(option);
+        }
+
+        let valid_options = match object_type {
+            OracleDropObjectType::Cluster => matches!(
+                options.as_slice(),
+                [] | [OracleDropOption::IncludingTables]
+                    | [
+                        OracleDropOption::IncludingTables,
+                        OracleDropOption::CascadeConstraints
+                    ]
+            ),
+            OracleDropObjectType::Diskgroup | OracleDropObjectType::PmemFilestore => matches!(
+                options.as_slice(),
+                [] | [OracleDropOption::ExcludingContents]
+            ),
+            OracleDropObjectType::Domain => matches!(
+                options.as_slice(),
+                [] | [OracleDropOption::Force]
+                    | [OracleDropOption::Force, OracleDropOption::Preserve]
+            ),
+            OracleDropObjectType::Edition | OracleDropObjectType::Profile => {
+                matches!(options.as_slice(), [] | [OracleDropOption::Cascade])
+            }
+            OracleDropObjectType::User => {
+                matches!(options.as_slice(), [] | [OracleDropOption::Cascade])
+            }
+            OracleDropObjectType::IcebergTable => matches!(
+                options.as_slice(),
+                [] | [OracleDropOption::WithinCatalog(_)]
+                    | [OracleDropOption::WithinCatalog(_), OracleDropOption::Purge]
+            ),
+            OracleDropObjectType::Indextype | OracleDropObjectType::Operator => {
+                matches!(options.as_slice(), [] | [OracleDropOption::Force])
+            }
+            OracleDropObjectType::Synonym | OracleDropObjectType::PublicSynonym => {
+                matches!(options.as_slice(), [] | [OracleDropOption::Force])
+            }
+            OracleDropObjectType::PluggableDatabase => matches!(
+                options.as_slice(),
+                [] | [OracleDropOption::IncludingDatafiles]
+            ),
+            OracleDropObjectType::Tablespace => matches!(
+                options.as_slice(),
+                [] | [OracleDropOption::IncludingContentsAndDatafiles]
+                    | [
+                        OracleDropOption::IncludingContentsAndDatafiles,
+                        OracleDropOption::CascadeConstraints
+                    ]
+            ),
+            OracleDropObjectType::TablespaceSet => matches!(
+                options.as_slice(),
+                [] | [OracleDropOption::IncludingContentsAndDatafiles]
+            ),
+            _ => options.is_empty(),
+        };
+        if !valid_options {
+            return parser_err!(
+                "invalid option sequence for DROP {object_type}",
+                self.peek_token().span.start
+            );
+        }
+
+        Ok(Statement::OracleDrop(OracleDropStatement {
+            drop_token,
+            object_type,
+            if_exists,
+            target,
+            options,
+        }))
+    }
+
+    fn parse_oracle_alter_statement(
+        &self,
+        alter_token: AttachedToken,
+        classified_type: &[Ident],
+    ) -> Result<Statement, ParserError> {
+        let phrase = classified_type
+            .iter()
+            .map(|ident| ident.value.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        let object_type = match phrase.as_str() {
+            "ANALYTIC VIEW" => OracleAlterObjectType::AnalyticView,
+            "ASSERTION" => OracleAlterObjectType::Assertion,
+            "ATTRIBUTE DIMENSION" => OracleAlterObjectType::AttributeDimension,
+            "AUDIT POLICY" => OracleAlterObjectType::AuditPolicy,
+            "CLUSTER" => OracleAlterObjectType::Cluster,
+            "DATABASE" => OracleAlterObjectType::Database,
+            "DATABASE LINK" => OracleAlterObjectType::DatabaseLink,
+            "DATABASE DICTIONARY" => OracleAlterObjectType::DatabaseDictionary,
+            "DIMENSION" => OracleAlterObjectType::Dimension,
+            "DIRECTIVE" => OracleAlterObjectType::Directive,
+            "DISKGROUP" => OracleAlterObjectType::Diskgroup,
+            "DOMAIN" => OracleAlterObjectType::Domain,
+            "END USER" => OracleAlterObjectType::EndUser,
+            "FLASHBACK ARCHIVE" => OracleAlterObjectType::FlashbackArchive,
+            "HIERARCHY" => OracleAlterObjectType::Hierarchy,
+            "INDEX" => OracleAlterObjectType::Index,
+            "INDEXTYPE" => OracleAlterObjectType::Indextype,
+            "INMEMORY JOIN GROUP" => OracleAlterObjectType::InmemoryJoinGroup,
+            "JAVA SOURCE" => OracleAlterObjectType::JavaSource,
+            "JSON RELATIONAL DUALITY VIEW" => OracleAlterObjectType::JsonRelationalDualityView,
+            "LOCKDOWN PROFILE" => OracleAlterObjectType::LockdownProfile,
+            "MATERIALIZED VIEW LOG" => OracleAlterObjectType::MaterializedViewLog,
+            "MATERIALIZED ZONEMAP" => OracleAlterObjectType::MaterializedZonemap,
+            "MLE ENV" => OracleAlterObjectType::MleEnv,
+            "MLE MODULE" => OracleAlterObjectType::MleModule,
+            "OPERATOR" => OracleAlterObjectType::Operator,
+            "OUTLINE" => OracleAlterObjectType::Outline,
+            "PLUGGABLE DATABASE" => OracleAlterObjectType::PluggableDatabase,
+            "PMEM FILESTORE" => OracleAlterObjectType::PmemFilestore,
+            "PROFILE" => OracleAlterObjectType::Profile,
+            "PROPERTY GRAPH" => OracleAlterObjectType::PropertyGraph,
+            "PUBLIC DATABASE LINK" => OracleAlterObjectType::PublicDatabaseLink,
+            "PUBLIC SYNONYM" => OracleAlterObjectType::PublicSynonym,
+            "RESOURCE COST" => OracleAlterObjectType::ResourceCost,
+            "ROLE" => OracleAlterObjectType::Role,
+            "ROLLBACK SEGMENT" => OracleAlterObjectType::RollbackSegment,
+            "SESSION" => OracleAlterObjectType::Session,
+            "SYSTEM" => OracleAlterObjectType::System,
+            "SYNONYM" => OracleAlterObjectType::Synonym,
+            "TABLESPACE" => OracleAlterObjectType::Tablespace,
+            "TABLESPACE SET" => OracleAlterObjectType::TablespaceSet,
+            "USER" => OracleAlterObjectType::User,
+            _ => {
+                return parser_err!(
+                    "unsupported Oracle ALTER object type: {phrase}",
+                    self.peek_token().span.start
+                )
+            }
+        };
+
+        let header = classified_type
+            .iter()
+            .map(|ident| ident.value.as_str())
+            .collect::<Vec<_>>();
+        self.expect_oracle_words(&header)?;
+
+        let target = match object_type {
+            OracleAlterObjectType::Database
+            | OracleAlterObjectType::DatabaseDictionary
+            | OracleAlterObjectType::ResourceCost
+            | OracleAlterObjectType::Session
+            | OracleAlterObjectType::System => OracleAlterTarget::None,
+            OracleAlterObjectType::MaterializedViewLog => {
+                self.expect_keyword(Keyword::ON)?;
+                OracleAlterTarget::On(self.parse_object_name(false)?)
+            }
+            _ => OracleAlterTarget::Name(self.parse_object_name(false)?),
+        };
+
+        let operation = match object_type {
+            OracleAlterObjectType::AnalyticView
+            | OracleAlterObjectType::AttributeDimension
+            | OracleAlterObjectType::Dimension
+            | OracleAlterObjectType::Hierarchy
+            | OracleAlterObjectType::Indextype
+            | OracleAlterObjectType::JavaSource
+            | OracleAlterObjectType::MleEnv
+            | OracleAlterObjectType::Operator
+            | OracleAlterObjectType::PropertyGraph
+            | OracleAlterObjectType::PublicSynonym
+            | OracleAlterObjectType::Synonym
+            | OracleAlterObjectType::View => {
+                self.expect_keyword(Keyword::COMPILE)?;
+                OracleAlterOperation::Compile
+            }
+            OracleAlterObjectType::Assertion => {
+                self.expect_oracle_words(&["ENABLE", "VALIDATE"])?;
+                OracleAlterOperation::EnableValidate
+            }
+            OracleAlterObjectType::AuditPolicy => {
+                self.expect_oracle_words(&["ADD", "ACTIONS"])?;
+                let actions = self.parse_comma_separated(Parser::parse_identifier)?;
+                self.expect_keyword(Keyword::ON)?;
+                OracleAlterOperation::AddAuditActions {
+                    actions,
+                    on: self.parse_object_name(false)?,
+                }
+            }
+            OracleAlterObjectType::Cluster => {
+                self.expect_oracle_words(&["SIZE"])?;
+                OracleAlterOperation::Size(self.parse_expr()?)
+            }
+            OracleAlterObjectType::Database => {
+                self.expect_oracle_words(&["FORCE", "LOGGING"])?;
+                OracleAlterOperation::ForceLogging
+            }
+            OracleAlterObjectType::DatabaseLink | OracleAlterObjectType::PublicDatabaseLink => {
+                self.expect_oracle_words(&["CONNECT", "TO"])?;
+                let user = self.parse_object_name(false)?;
+                self.expect_oracle_words(&["IDENTIFIED", "BY"])?;
+                OracleAlterOperation::ConnectTo {
+                    user,
+                    password: self.parse_identifier()?,
+                }
+            }
+            OracleAlterObjectType::DatabaseDictionary => {
+                self.expect_oracle_words(&["ENCRYPT", "CREDENTIALS"])?;
+                OracleAlterOperation::EncryptCredentials
+            }
+            OracleAlterObjectType::Directive | OracleAlterObjectType::Outline => {
+                self.expect_keyword(Keyword::ENABLE)?;
+                OracleAlterOperation::Enable
+            }
+            OracleAlterObjectType::Diskgroup => {
+                self.expect_oracle_words(&["CHECK", "ALL"])?;
+                OracleAlterOperation::CheckAll
+            }
+            OracleAlterObjectType::Domain => {
+                self.expect_oracle_words(&["ADD", "DISPLAY"])?;
+                OracleAlterOperation::AddDisplay(self.parse_identifier()?)
+            }
+            OracleAlterObjectType::EndUser => {
+                self.expect_oracle_words(&["ACCOUNT", "UNLOCK"])?;
+                OracleAlterOperation::AccountUnlock
+            }
+            OracleAlterObjectType::FlashbackArchive => {
+                self.expect_oracle_words(&["MODIFY", "RETENTION"])?;
+                OracleAlterOperation::ModifyRetention {
+                    value: self.parse_expr()?,
+                    unit: self.parse_identifier()?,
+                }
+            }
+            OracleAlterObjectType::InmemoryJoinGroup => {
+                self.expect_keyword(Keyword::ADD)?;
+                self.expect_token(&BorrowedToken::LParen)?;
+                let table = self.parse_object_name(false)?;
+                let columns = self.parse_parenthesized_identifiers()?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                OracleAlterOperation::AddJoinColumns { table, columns }
+            }
+            OracleAlterObjectType::Index => {
+                self.expect_oracle_words(&["REBUILD"])?;
+                OracleAlterOperation::RebuildIndex {
+                    online: self.consume_oracle_words(&["ONLINE"]),
+                }
+            }
+            OracleAlterObjectType::JsonRelationalDualityView => {
+                self.expect_oracle_words(&["ENABLE", "LOGICAL", "REPLICATION"])?;
+                OracleAlterOperation::EnableLogicalReplication
+            }
+            OracleAlterObjectType::LockdownProfile => {
+                self.expect_oracle_words(&["DISABLE", "STATEMENT"])?;
+                self.expect_token(&BorrowedToken::Eq)?;
+                self.expect_token(&BorrowedToken::LParen)?;
+                let statements = self.parse_comma_separated(Parser::parse_expr)?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                OracleAlterOperation::DisableStatements(statements)
+            }
+            OracleAlterObjectType::MaterializedViewLog => {
+                self.expect_keyword(Keyword::ADD)?;
+                OracleAlterOperation::AddColumns(self.parse_parenthesized_identifiers()?)
+            }
+            OracleAlterObjectType::MaterializedZonemap => {
+                self.expect_oracle_words(&["REBUILD"])?;
+                OracleAlterOperation::Rebuild
+            }
+            OracleAlterObjectType::MleModule => {
+                self.expect_oracle_words(&["SET", "METADATA", "USING"])?;
+                OracleAlterOperation::SetMetadata {
+                    data_type: self.parse_identifier()?,
+                    value: self.parse_expr()?,
+                }
+            }
+            OracleAlterObjectType::PluggableDatabase => {
+                self.expect_oracle_words(&["OPEN", "READ", "WRITE"])?;
+                OracleAlterOperation::OpenReadWrite
+            }
+            OracleAlterObjectType::PmemFilestore => {
+                self.expect_oracle_words(&["RESIZE"])?;
+                let value = self.parse_expr()?;
+                let unit = if matches!(self.peek_token().token, BorrowedToken::Word(_)) {
+                    Some(self.parse_identifier()?)
+                } else {
+                    None
+                };
+                OracleAlterOperation::Resize { value, unit }
+            }
+            OracleAlterObjectType::Profile => {
+                self.expect_keyword(Keyword::LIMIT)?;
+                let mut limits = vec![];
+                while !matches!(
+                    self.peek_token().token,
+                    BorrowedToken::EOF | BorrowedToken::SemiColon
+                ) {
+                    limits.push(OracleResourceValue {
+                        resource: self.parse_identifier()?,
+                        value: self.parse_expr()?,
+                    });
+                }
+                if limits.is_empty() {
+                    return self.expected("a profile resource limit", self.peek_token());
+                }
+                OracleAlterOperation::Limit(limits)
+            }
+            OracleAlterObjectType::ResourceCost => {
+                let mut values = vec![];
+                while !matches!(
+                    self.peek_token().token,
+                    BorrowedToken::EOF | BorrowedToken::SemiColon
+                ) {
+                    values.push(OracleResourceValue {
+                        resource: self.parse_identifier()?,
+                        value: self.parse_expr()?,
+                    });
+                }
+                if values.is_empty() {
+                    return self.expected("a resource cost", self.peek_token());
+                }
+                OracleAlterOperation::ResourceValues(values)
+            }
+            OracleAlterObjectType::Role => {
+                self.expect_oracle_words(&["NOT", "IDENTIFIED"])?;
+                OracleAlterOperation::NotIdentified
+            }
+            OracleAlterObjectType::RollbackSegment => {
+                self.expect_oracle_words(&["ONLINE"])?;
+                OracleAlterOperation::Online
+            }
+            OracleAlterObjectType::Session | OracleAlterObjectType::System => {
+                self.expect_keyword(Keyword::SET)?;
+                let parameter = self.parse_object_name(false)?;
+                self.expect_token(&BorrowedToken::Eq)?;
+                let value = self.parse_expr()?;
+                let scope = if self.parse_keyword(Keyword::SCOPE) {
+                    self.expect_token(&BorrowedToken::Eq)?;
+                    Some(self.parse_identifier()?)
+                } else {
+                    None
+                };
+                OracleAlterOperation::SetParameter {
+                    parameter,
+                    value,
+                    scope,
+                }
+            }
+            OracleAlterObjectType::Tablespace | OracleAlterObjectType::TablespaceSet => {
+                self.expect_oracle_words(&["READ", "ONLY"])?;
+                OracleAlterOperation::ReadOnly
+            }
+            OracleAlterObjectType::User => {
+                self.expect_oracle_words(&["QUOTA"])?;
+                let amount = self.parse_expr()?;
+                self.expect_keyword(Keyword::ON)?;
+                let tablespace = self.parse_object_name(false)?;
+                let account_unlock = if self.parse_keyword(Keyword::ACCOUNT) {
+                    self.expect_keyword(Keyword::UNLOCK)?;
+                    true
+                } else {
+                    false
+                };
+                OracleAlterOperation::UserQuota {
+                    amount,
+                    tablespace,
+                    account_unlock,
+                }
+            }
+        };
+
+        if !matches!(
+            self.peek_token().token,
+            BorrowedToken::EOF | BorrowedToken::SemiColon
+        ) {
+            return self.expected("end of Oracle ALTER statement", self.peek_token());
+        }
+
+        Ok(Statement::OracleAlter(OracleAlterStatement {
+            alter_token,
+            object_type,
+            target,
+            operation,
+        }))
+    }
+
+    fn parse_oracle_audit_outcome(&self) -> Result<OracleAuditOutcome, ParserError> {
+        if self.consume_oracle_words(&["SUCCESSFUL"]) {
+            Ok(OracleAuditOutcome::Successful)
+        } else if self.consume_oracle_words(&["NOT", "SUCCESSFUL"]) {
+            Ok(OracleAuditOutcome::NotSuccessful)
+        } else {
+            self.expected("SUCCESSFUL or NOT SUCCESSFUL", self.peek_token())
+        }
+    }
+
+    fn ensure_oracle_command_end(&self, expected: &str) -> Result<(), ParserError> {
+        if matches!(
+            self.peek_token().token,
+            BorrowedToken::EOF | BorrowedToken::SemiColon
+        ) {
+            Ok(())
+        } else {
+            self.expected(expected, self.peek_token())
+        }
+    }
+
+    fn parse_oracle_set_transaction(
+        &self,
+        command_token: AttachedToken,
+    ) -> Result<Statement, ParserError> {
+        self.expect_keyword(Keyword::TRANSACTION)?;
+        let modes = self.parse_transaction_modes()?;
+        if modes.is_empty() {
+            return self.expected("Oracle transaction mode", self.peek_token());
+        }
+        let name = if self.parse_keyword(Keyword::NAME) {
+            Some(self.parse_expr()?)
+        } else {
+            None
+        };
+        self.ensure_oracle_command_end("end of SET TRANSACTION statement")?;
+        Ok(Statement::OracleCommand(OracleCommandStatement {
+            command_token,
+            command: OracleCommand::SetTransaction { modes, name },
+        }))
+    }
+
+    fn parse_oracle_set_role(
+        &self,
+        command_token: AttachedToken,
+    ) -> Result<Statement, ParserError> {
+        self.expect_keyword(Keyword::ROLE)?;
+        let role = self.parse_object_name(false)?;
+        self.expect_oracle_words(&["IDENTIFIED", "BY"])?;
+        let password = self.parse_identifier()?;
+        self.ensure_oracle_command_end("end of SET ROLE statement")?;
+        Ok(Statement::OracleCommand(OracleCommandStatement {
+            command_token,
+            command: OracleCommand::SetRole { role, password },
+        }))
+    }
+
+    fn parse_oracle_explain_plan(
+        &self,
+        command_token: AttachedToken,
+    ) -> Result<Statement, ParserError> {
+        self.expect_keyword(Keyword::PLAN)?;
+        let statement_id = if self.consume_oracle_words(&["SET", "STATEMENT_ID"]) {
+            self.expect_token(&BorrowedToken::Eq)?;
+            Some(self.parse_expr()?)
+        } else {
+            None
+        };
+        self.expect_keyword(Keyword::INTO)?;
+        let into = self.parse_object_name(false)?;
+        self.expect_keyword(Keyword::FOR)?;
+        let statement = Box::new(self.parse_statement()?);
+        self.ensure_oracle_command_end("end of EXPLAIN PLAN statement")?;
+        Ok(Statement::OracleCommand(OracleCommandStatement {
+            command_token,
+            command: OracleCommand::ExplainPlan {
+                statement_id,
+                into,
+                statement,
+            },
+        }))
+    }
+
+    fn parse_oracle_grant_system(
+        &self,
+        command_token: AttachedToken,
+    ) -> Result<Statement, ParserError> {
+        let privileges = self.parse_comma_separated(|parser| {
+            parser.expect_keyword(Keyword::CREATE)?;
+            if parser.parse_keyword(Keyword::SESSION) {
+                Ok(OracleSystemPrivilege::CreateSession)
+            } else if parser.parse_keyword(Keyword::TABLE) {
+                Ok(OracleSystemPrivilege::CreateTable)
+            } else {
+                parser.expected("SESSION or TABLE after CREATE", parser.peek_token())
+            }
+        })?;
+        self.expect_keyword(Keyword::TO)?;
+        let grantees = self.parse_comma_separated(|parser| parser.parse_object_name(false))?;
+        let admin_option = self.parse_keywords(&[Keyword::WITH, Keyword::ADMIN, Keyword::OPTION]);
+        self.ensure_oracle_command_end("end of GRANT system privileges statement")?;
+        Ok(Statement::OracleCommand(OracleCommandStatement {
+            command_token,
+            command: OracleCommand::GrantSystemPrivileges {
+                privileges,
+                grantees,
+                admin_option,
+            },
+        }))
+    }
+
+    fn parse_oracle_command_statement(
+        &self,
+        command_token: AttachedToken,
+        action: OracleAdministrativeAction,
+        classified_type: &[Ident],
+    ) -> Result<Statement, ParserError> {
+        let object_type = classified_type
+            .iter()
+            .map(|ident| ident.value.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        let command = match action {
+            OracleAdministrativeAction::Administer if object_type == "KEY MANAGEMENT" => {
+                self.expect_oracle_words(&["KEY", "MANAGEMENT", "CREATE", "KEYSTORE"])?;
+                let path = self.parse_expr()?;
+                self.expect_oracle_words(&["IDENTIFIED", "BY"])?;
+                OracleCommand::AdministerKeyManagementCreateKeystore {
+                    path,
+                    password: self.parse_identifier()?,
+                }
+            }
+            OracleAdministrativeAction::Analyze if object_type == "TABLE" => {
+                self.expect_keyword(Keyword::TABLE)?;
+                let table = self.parse_object_name(false)?;
+                self.expect_oracle_words(&["VALIDATE", "STRUCTURE"])?;
+                let cascade = self.consume_oracle_words(&["CASCADE"]);
+                OracleCommand::AnalyzeTable { table, cascade }
+            }
+            OracleAdministrativeAction::Associate if object_type == "STATISTICS" => {
+                self.expect_oracle_words(&["STATISTICS", "WITH", "COLUMNS"])?;
+                let columns =
+                    self.parse_comma_separated(|parser| parser.parse_object_name(false))?;
+                self.expect_keyword(Keyword::USING)?;
+                OracleCommand::AssociateColumnStatistics {
+                    columns,
+                    using_type: self.parse_object_name(false)?,
+                }
+            }
+            OracleAdministrativeAction::Disassociate if object_type == "STATISTICS" => {
+                self.expect_oracle_words(&["STATISTICS", "FROM", "COLUMNS"])?;
+                let columns =
+                    self.parse_comma_separated(|parser| parser.parse_object_name(false))?;
+                let force = self.consume_oracle_words(&["FORCE"]);
+                OracleCommand::DisassociateColumnStatistics { columns, force }
+            }
+            OracleAdministrativeAction::Audit if object_type == "POLICY" => {
+                self.expect_keyword(Keyword::POLICY)?;
+                let policy = self.parse_object_name(false)?;
+                self.expect_keyword(Keyword::BY)?;
+                let users = self.parse_comma_separated(|parser| parser.parse_object_name(false))?;
+                self.expect_oracle_words(&["WHENEVER"])?;
+                OracleCommand::AuditPolicy {
+                    policy,
+                    users,
+                    outcome: self.parse_oracle_audit_outcome()?,
+                }
+            }
+            OracleAdministrativeAction::Flashback if object_type == "DATABASE" => {
+                self.expect_keyword(Keyword::DATABASE)?;
+                self.expect_oracle_words(&["TO", "RESTORE", "POINT"])?;
+                OracleCommand::FlashbackDatabaseToRestorePoint {
+                    restore_point: self.parse_object_name(false)?,
+                }
+            }
+            OracleAdministrativeAction::Flashback if object_type == "TABLE" => {
+                self.expect_keyword(Keyword::TABLE)?;
+                let table = self.parse_object_name(false)?;
+                self.expect_oracle_words(&["TO", "TIMESTAMP"])?;
+                let timestamp = self.parse_expr()?;
+                let enable_triggers = self.consume_oracle_words(&["ENABLE", "TRIGGERS"]);
+                OracleCommand::FlashbackTableToTimestamp {
+                    table,
+                    timestamp,
+                    enable_triggers,
+                }
+            }
+            OracleAdministrativeAction::Grant if object_type == "DATA ROLE" => {
+                self.expect_oracle_words(&["DATA", "ROLE"])?;
+                let role = self.parse_object_name(false)?;
+                self.expect_keyword(Keyword::TO)?;
+                let grantees =
+                    self.parse_comma_separated(|parser| parser.parse_object_name(false))?;
+                OracleCommand::GrantDataRole { role, grantees }
+            }
+            OracleAdministrativeAction::Revoke if object_type == "DATA ROLE" => {
+                self.expect_oracle_words(&["DATA", "ROLE"])?;
+                let role = self.parse_object_name(false)?;
+                self.expect_keyword(Keyword::FROM)?;
+                let grantees =
+                    self.parse_comma_separated(|parser| parser.parse_object_name(false))?;
+                OracleCommand::RevokeDataRole { role, grantees }
+            }
+            OracleAdministrativeAction::Noaudit if object_type == "POLICY" => {
+                self.expect_keyword(Keyword::POLICY)?;
+                let policy = self.parse_object_name(false)?;
+                self.expect_keyword(Keyword::BY)?;
+                let users = self.parse_comma_separated(|parser| parser.parse_object_name(false))?;
+                OracleCommand::NoauditPolicy { policy, users }
+            }
+            OracleAdministrativeAction::Noaudit => {
+                let audit_action = self.parse_identifier()?;
+                let audit_object_type = self.parse_identifier()?;
+                self.expect_keyword(Keyword::BY)?;
+                let users = self.parse_comma_separated(|parser| parser.parse_object_name(false))?;
+                self.expect_oracle_words(&["WHENEVER"])?;
+                OracleCommand::NoauditAction {
+                    action: audit_action,
+                    object_type: audit_object_type,
+                    users,
+                    outcome: self.parse_oracle_audit_outcome()?,
+                }
+            }
+            OracleAdministrativeAction::Purge if object_type == "RECYCLEBIN" => {
+                self.expect_oracle_words(&["RECYCLEBIN"])?;
+                OracleCommand::PurgeRecyclebin
+            }
+            OracleAdministrativeAction::Set if object_type == "USE DATA GRANTS" => {
+                self.expect_oracle_words(&["USE", "DATA", "GRANTS", "ONLY", "ON"])?;
+                let object = self.parse_object_name(false)?;
+                let enabled = if self.consume_oracle_words(&["ENABLED"]) {
+                    true
+                } else if self.consume_oracle_words(&["DISABLED"]) {
+                    false
+                } else {
+                    return self.expected("ENABLED or DISABLED", self.peek_token());
+                };
+                OracleCommand::SetUseDataGrantsOnly { object, enabled }
+            }
+            OracleAdministrativeAction::Truncate if object_type == "CLUSTER" => {
+                self.expect_oracle_words(&["CLUSTER"])?;
+                let cluster = self.parse_object_name(false)?;
+                let drop_storage = self.consume_oracle_words(&["DROP", "STORAGE"]);
+                OracleCommand::TruncateCluster {
+                    cluster,
+                    drop_storage,
+                }
+            }
+            _ => {
+                return parser_err!(
+                    "unsupported structured Oracle command: {action} {object_type}",
+                    self.peek_token().span.start
+                )
+            }
+        };
+        if !matches!(
+            self.peek_token().token,
+            BorrowedToken::EOF | BorrowedToken::SemiColon
+        ) {
+            return self.expected("end of Oracle command", self.peek_token());
+        }
+        Ok(Statement::OracleCommand(OracleCommandStatement {
+            command_token,
+            command,
+        }))
     }
 
     /// Parse a `CASE` statement.
@@ -1216,10 +3276,56 @@ impl<'a> Parser<'a> {
             Some(self.parse_expr()?)
         };
 
-        self.expect_keyword_is(Keyword::WHEN)?;
-        let when_blocks = self.parse_keyword_separated(Keyword::WHEN, |parser| {
-            parser.parse_conditional_statement_block(&[Keyword::WHEN, Keyword::ELSE, Keyword::END])
-        })?;
+        let (when_blocks, oracle_when_controls) = if self.dialect.is::<OracleDialect>() {
+            let mut when_blocks = vec![];
+            let mut oracle_when_controls = vec![];
+            while self.parse_keyword(Keyword::WHEN) {
+                let start_token = AttachedToken::from(self.get_current_token().clone());
+                let controls = self.parse_comma_separated(Parser::parse_oracle_case_control)?;
+                let then_token = self.expect_keyword(Keyword::THEN)?;
+                let conditional_statements = self.parse_conditional_statements(&[
+                    Keyword::WHEN,
+                    Keyword::ELSE,
+                    Keyword::END,
+                ])?;
+                let simple_condition = if controls.len() == 1 {
+                    match &controls[0] {
+                        OracleCaseControl::Expression(expression) => Some(expression.clone()),
+                        OracleCaseControl::Comparison { .. } => None,
+                    }
+                } else {
+                    None
+                };
+                let extended = if simple_condition.is_some() {
+                    None
+                } else {
+                    Some(controls)
+                };
+                when_blocks.push(ConditionalStatementBlock {
+                    start_token,
+                    condition: simple_condition,
+                    then_token: Some(AttachedToken::from(then_token)),
+                    conditional_statements,
+                });
+                oracle_when_controls.push(extended);
+            }
+            if when_blocks.is_empty() {
+                return self.expected("WHEN", self.peek_token());
+            }
+            (when_blocks, oracle_when_controls)
+        } else {
+            self.expect_keyword_is(Keyword::WHEN)?;
+            (
+                self.parse_keyword_separated(Keyword::WHEN, |parser| {
+                    parser.parse_conditional_statement_block(&[
+                        Keyword::WHEN,
+                        Keyword::ELSE,
+                        Keyword::END,
+                    ])
+                })?,
+                vec![],
+            )
+        };
 
         let else_block = if self.parse_keyword(Keyword::ELSE) {
             Some(self.parse_conditional_statement_block(&[Keyword::END])?)
@@ -1236,9 +3342,98 @@ impl<'a> Parser<'a> {
             case_token: AttachedToken::from(case_token),
             match_expr,
             when_blocks,
+            oracle_when_controls,
             else_block,
             end_case_token: AttachedToken::from(end_case_token),
         }))
+    }
+
+    fn parse_oracle_case_control(&self) -> Result<OracleCaseControl, ParserError> {
+        let operator = match self.peek_token().token {
+            BorrowedToken::Eq => Some(BinaryOperator::Eq),
+            BorrowedToken::Neq => Some(BinaryOperator::NotEq),
+            BorrowedToken::Lt => Some(BinaryOperator::Lt),
+            BorrowedToken::LtEq => Some(BinaryOperator::LtEq),
+            BorrowedToken::Gt => Some(BinaryOperator::Gt),
+            BorrowedToken::GtEq => Some(BinaryOperator::GtEq),
+            _ => None,
+        };
+        if let Some(operator) = operator {
+            self.advance_token();
+            Ok(OracleCaseControl::Comparison {
+                operator,
+                expression: self.parse_expr()?,
+            })
+        } else {
+            Ok(OracleCaseControl::Expression(self.parse_expr()?))
+        }
+    }
+
+    fn parse_plsql_conditional_compilation(&self) -> Result<Statement, ParserError> {
+        let mut branches = vec![];
+        loop {
+            let condition = self.parse_expr()?;
+            self.expect_plsql_directive("$THEN")?;
+            let statements = self.parse_plsql_conditional_compilation_statements()?;
+            branches.push(PlSqlConditionalCompilationBranch {
+                condition,
+                statements,
+            });
+            if self.consume_plsql_directive("$ELSIF") {
+                continue;
+            }
+            break;
+        }
+        let else_statements = if self.consume_plsql_directive("$ELSE") {
+            self.parse_plsql_conditional_compilation_statements()?
+        } else {
+            vec![]
+        };
+        self.expect_plsql_directive("$END")?;
+        Ok(Statement::PlSqlConditionalCompilation(
+            PlSqlConditionalCompilation {
+                branches,
+                else_statements,
+            },
+        ))
+    }
+
+    fn parse_plsql_conditional_compilation_statements(
+        &self,
+    ) -> Result<Vec<Statement>, ParserError> {
+        let mut statements = vec![];
+        while !matches!(
+            self.peek_token().token,
+            BorrowedToken::Placeholder(directive)
+                if directive.eq_ignore_ascii_case("$ELSIF")
+                    || directive.eq_ignore_ascii_case("$ELSE")
+                    || directive.eq_ignore_ascii_case("$END")
+        ) {
+            statements.push(self.parse_statement()?);
+            self.expect_token(&BorrowedToken::SemiColon)?;
+        }
+        Ok(statements)
+    }
+
+    fn consume_plsql_directive(&self, expected: &str) -> bool {
+        if matches!(
+            self.peek_token().token,
+            BorrowedToken::Placeholder(directive)
+                if directive.eq_ignore_ascii_case(expected)
+        ) {
+            self.advance_token();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn expect_plsql_directive(&self, expected: &str) -> Result<(), ParserError> {
+        if self.consume_plsql_directive(expected) {
+            Ok(())
+        } else {
+            self.expected(expected, self.peek_token())
+        }
     }
 
     /// Parse an `IF` statement.
@@ -1303,12 +3498,19 @@ impl<'a> Parser<'a> {
 
         // Check for DO keyword (SQL:2016 standard)
         let has_do_keyword = self.parse_keyword(Keyword::DO);
+        let has_loop_keyword =
+            self.dialect.is::<OracleDialect>() && self.parse_keyword(Keyword::LOOP);
 
-        if has_do_keyword {
+        if has_do_keyword || has_loop_keyword {
             // SQL:2016 syntax: WHILE condition DO statements; END WHILE
             let body = self.parse_conditional_statements(&[Keyword::END])?;
 
-            self.expect_keywords(&[Keyword::END, Keyword::WHILE])?;
+            self.expect_keyword(Keyword::END)?;
+            self.expect_keyword(if has_loop_keyword {
+                Keyword::LOOP
+            } else {
+                Keyword::WHILE
+            })?;
 
             // Parse optional end label
             let end_label = if self.peek_token().token != BorrowedToken::SemiColon
@@ -1329,7 +3531,8 @@ impl<'a> Parser<'a> {
                 condition: Some(condition),
                 body,
                 end_label,
-                has_do_keyword: true,
+                has_do_keyword,
+                has_loop_keyword,
                 while_block: None,
             }));
         }
@@ -1372,6 +3575,7 @@ impl<'a> Parser<'a> {
             body: ConditionalStatements::Sequence { statements: vec![] },
             end_label: None,
             has_do_keyword: false,
+            has_loop_keyword: false,
             while_block: Some(while_block),
         }))
     }
@@ -1455,7 +3659,17 @@ impl<'a> Parser<'a> {
         let loop_name = self.parse_identifier()?;
 
         // Determine which variant based on AS or IN keyword
-        let variant = if self.parse_keyword(Keyword::AS) {
+        let variant = if self.dialect.is::<OracleDialect>()
+            && (self.peek_keyword(Keyword::MUTABLE) || self.peek_keyword(Keyword::ITERATOR))
+        {
+            let mutable = self.parse_keyword(Keyword::MUTABLE);
+            self.expect_keyword(Keyword::ITERATOR)?;
+            self.expect_keyword(Keyword::IN)?;
+            ForLoopVariant::Iterator {
+                mutable,
+                collection: Box::new(self.parse_expr()?),
+            }
+        } else if self.parse_keyword(Keyword::AS) {
             // Query variant: FOR loop_name AS [cursor_name CURSOR FOR] query DO ... END FOR
             let cursor_name = self.maybe_parse(|parser| {
                 let name = parser.parse_identifier()?;
@@ -1531,22 +3745,26 @@ impl<'a> Parser<'a> {
                 let reverse = self.parse_keyword(Keyword::REVERSE);
                 let lower = Box::new(self.parse_expr()?);
 
-                if !self.parse_keyword(Keyword::TO) {
-                    self.expect_token(&BorrowedToken::DoubleDot)?;
-                }
-
-                let upper = Box::new(self.parse_expr()?);
-                let step = if self.parse_keyword(Keyword::BY) {
-                    Some(Box::new(self.parse_expr()?))
+                if self.dialect.is::<OracleDialect>() && self.peek_keyword(Keyword::LOOP) {
+                    ForLoopVariant::CursorVariable { cursor: lower }
                 } else {
-                    None
-                };
+                    if !self.parse_keyword(Keyword::TO) {
+                        self.expect_token(&BorrowedToken::DoubleDot)?;
+                    }
 
-                ForLoopVariant::IntegerRange {
-                    reverse,
-                    lower,
-                    upper,
-                    step,
+                    let upper = Box::new(self.parse_expr()?);
+                    let step = if self.parse_keyword(Keyword::BY) {
+                        Some(Box::new(self.parse_expr()?))
+                    } else {
+                        None
+                    };
+
+                    ForLoopVariant::IntegerRange {
+                        reverse,
+                        lower,
+                        upper,
+                        step,
+                    }
                 }
             }
         } else {
@@ -1570,7 +3788,10 @@ impl<'a> Parser<'a> {
                     (body, "LOOP")
                 }
             }
-            ForLoopVariant::IntegerRange { .. } | ForLoopVariant::DynamicQuery { .. } => {
+            ForLoopVariant::IntegerRange { .. }
+            | ForLoopVariant::DynamicQuery { .. }
+            | ForLoopVariant::CursorVariable { .. }
+            | ForLoopVariant::Iterator { .. } => {
                 // Integer range and dynamic query use LOOP ... END LOOP
                 self.expect_keyword_is(Keyword::LOOP)?;
                 let body = self.parse_conditional_statements(&[Keyword::END])?;
@@ -2418,6 +4639,19 @@ impl<'a> Parser<'a> {
 
         let mut identity = None;
         let mut cascade = None;
+        let oracle_storage = if self.dialect.is::<OracleDialect>() {
+            if self.consume_oracle_words(&["DROP", "ALL", "STORAGE"]) {
+                Some(OracleTruncateStorage::DropAll)
+            } else if self.consume_oracle_words(&["DROP", "STORAGE"]) {
+                Some(OracleTruncateStorage::Drop)
+            } else if self.consume_oracle_words(&["REUSE", "STORAGE"]) {
+                Some(OracleTruncateStorage::Reuse)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
 
         if dialect_of!(self is PostgreSqlDialect) {
             identity = if self.parse_keywords(&[Keyword::RESTART, Keyword::IDENTITY]) {
@@ -2429,6 +4663,12 @@ impl<'a> Parser<'a> {
             };
 
             cascade = self.parse_cascade_option();
+        } else if self.dialect.is::<OracleDialect>() {
+            cascade = if self.parse_keyword(Keyword::CASCADE) {
+                Some(CascadeOption::Cascade)
+            } else {
+                None
+            };
         };
 
         Ok(Truncate {
@@ -2437,6 +4677,7 @@ impl<'a> Parser<'a> {
             table,
             identity,
             cascade,
+            oracle_storage,
         }
         .into())
     }
@@ -2754,8 +4995,8 @@ impl<'a> Parser<'a> {
     /// Parses a `RENAME TABLE` statement. See [Statement::RenameTable]
     pub fn parse_rename(&self) -> Result<Statement, ParserError> {
         let token = self.attached_token_from_current();
-        if self.peek_keyword(Keyword::TABLE) {
-            self.expect_keyword(Keyword::TABLE)?;
+        if self.peek_keyword(Keyword::TABLE) || self.dialect.is::<OracleDialect>() {
+            let _ = self.parse_keyword(Keyword::TABLE);
             let rename_tables = self.parse_comma_separated(|parser| {
                 let old_name = parser.parse_object_name(false)?;
                 parser.expect_keyword(Keyword::TO)?;
@@ -2914,6 +5155,34 @@ impl<'a> Parser<'a> {
             }
             Keyword::OVERLAY => Ok(Some(self.parse_overlay_expr()?)),
             Keyword::TRIM => Ok(Some(self.parse_trim_expr()?)),
+            Keyword::TRANSLATE
+                if self.dialect.is::<OracleDialect>()
+                    && self.peek_token() == BorrowedToken::LParen =>
+            {
+                self.expect_token(&BorrowedToken::LParen)?;
+                let expr = self.parse_expr()?;
+                self.expect_keyword(Keyword::USING)?;
+                let character_set = self.parse_object_name(false)?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                Ok(Some(Expr::OracleTranslateUsing {
+                    expr: Box::new(expr),
+                    character_set,
+                }))
+            }
+            Keyword::TREAT
+                if self.dialect.is::<OracleDialect>()
+                    && self.peek_token() == BorrowedToken::LParen =>
+            {
+                self.expect_token(&BorrowedToken::LParen)?;
+                let expr = self.parse_expr()?;
+                self.expect_keyword(Keyword::AS)?;
+                let data_type = self.parse_data_type()?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                Ok(Some(Expr::OracleTreat {
+                    expr: Box::new(expr),
+                    data_type,
+                }))
+            }
             Keyword::XMLPARSE => Ok(Some(self.parse_xmlparse()?)),
             Keyword::XMLSERIALIZE => Ok(Some(self.parse_xmlserialize()?)),
             Keyword::XMLPI => Ok(Some(self.parse_xmlpi()?)),
@@ -2940,6 +5209,24 @@ impl<'a> Parser<'a> {
                     over: None,
                     within_group: vec![],
                 })))
+            }
+            Keyword::CURSOR
+                if self.dialect.is::<OracleDialect>()
+                    && self.peek_token() == BorrowedToken::LParen =>
+            {
+                self.expect_token(&BorrowedToken::LParen)?;
+                let query = self.parse_query()?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                Ok(Some(Expr::Cursor(query)))
+            }
+            Keyword::MULTISET
+                if self.dialect.is::<OracleDialect>()
+                    && self.peek_token() == BorrowedToken::LParen =>
+            {
+                self.expect_token(&BorrowedToken::LParen)?;
+                let query = self.parse_query()?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                Ok(Some(Expr::Multiset(query)))
             }
             // SQL/MDA MDARRAY constructor: MDARRAY[x(0:2), y(1:3)] [1, 2, 3, 4]
             Keyword::MDARRAY if *self.peek_token_ref() == BorrowedToken::LBracket => {
@@ -3217,6 +5504,7 @@ impl<'a> Parser<'a> {
             | BorrowedToken::DollarQuotedString(_)
             | BorrowedToken::SingleQuotedByteStringLiteral(_)
             | BorrowedToken::NationalStringLiteral(_)
+            | BorrowedToken::AlternativeQuotedString(_)
             | BorrowedToken::HexStringLiteral(_) => {
                 self.prev_token();
                 Ok(Expr::Value(self.parse_value()?))
@@ -3313,6 +5601,15 @@ impl<'a> Parser<'a> {
                         ));
                         chain.push(AccessExpr::Dot(expr));
                         self.advance_token(); // The consumed string
+                    }
+                    BorrowedToken::Word(word)
+                        if self.dialect.is::<OracleDialect>()
+                            && self.peek_nth_token_ref(1).token != BorrowedToken::LParen =>
+                    {
+                        chain.push(AccessExpr::Dot(Expr::Identifier(
+                            self.word_to_ident(word.clone(), next_token.span),
+                        )));
+                        self.advance_token();
                     }
                     // Fallback to parsing an arbitrary expression.
                     _ => match self.parse_subexpr(self.dialect.prec_value(Precedence::Period))? {
@@ -3637,7 +5934,28 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_function(&self, name: ObjectName) -> Result<Expr, ParserError> {
-        self.parse_function_call(name).map(Expr::Function)
+        let aggregate = Expr::Function(self.parse_function_call(name)?);
+        if self.dialect.is::<OracleDialect>() && self.parse_keyword(Keyword::KEEP) {
+            self.expect_token(&BorrowedToken::LParen)?;
+            self.expect_keyword(Keyword::DENSE_RANK)?;
+            let rank = if self.parse_keyword(Keyword::FIRST) {
+                OracleKeepRank::First
+            } else if self.parse_keyword(Keyword::LAST) {
+                OracleKeepRank::Last
+            } else {
+                return self.expected("FIRST or LAST after DENSE_RANK", self.peek_token());
+            };
+            self.expect_keywords(&[Keyword::ORDER, Keyword::BY])?;
+            let order_by = self.parse_comma_separated(Parser::parse_order_by_expr)?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            Ok(Expr::OracleKeep {
+                aggregate: Box::new(aggregate),
+                rank,
+                order_by,
+            })
+        } else {
+            Ok(aggregate)
+        }
     }
 
     fn parse_function_call(&self, name: ObjectName) -> Result<Function, ParserError> {
@@ -5356,9 +7674,55 @@ impl<'a> Parser<'a> {
                 })
             }
         } else if let BorrowedToken::Word(w) = &tok.token {
+            if self.dialect.is::<OracleDialect>() {
+                let like_kind = match w.value.to_ascii_uppercase().as_str() {
+                    "LIKEC" => Some(OracleLikeKind::LikeC),
+                    "LIKE2" => Some(OracleLikeKind::Like2),
+                    "LIKE4" => Some(OracleLikeKind::Like4),
+                    _ => None,
+                };
+                if let Some(kind) = like_kind {
+                    return Ok(Expr::OracleLike {
+                        kind,
+                        negated: false,
+                        expr: Box::new(expr),
+                        pattern: Box::new(
+                            self.parse_subexpr(self.dialect.prec_value(Precedence::Like))?,
+                        ),
+                        escape_char: self.parse_escape_char()?,
+                    });
+                }
+            }
             match w.keyword {
                 Keyword::IS => {
-                    if self.parse_keyword(Keyword::NULL) {
+                    let oracle_predicate = self.dialect.is::<OracleDialect>()
+                        && (self.peek_oracle_words(&["NAN"])
+                            || self.peek_oracle_words(&["INFINITE"])
+                            || self.peek_oracle_words(&["OF"])
+                            || self.peek_oracle_words(&["NOT", "NAN"])
+                            || self.peek_oracle_words(&["NOT", "INFINITE"])
+                            || self.peek_oracle_words(&["NOT", "OF"]));
+                    if oracle_predicate {
+                        let negated = self.parse_keyword(Keyword::NOT);
+                        let predicate = if self.consume_oracle_words(&["NAN"]) {
+                            OracleIsPredicate::Nan
+                        } else if self.consume_oracle_words(&["INFINITE"]) {
+                            OracleIsPredicate::Infinite
+                        } else {
+                            self.expect_keyword(Keyword::OF)?;
+                            self.expect_token(&BorrowedToken::LParen)?;
+                            let only = self.parse_keyword(Keyword::ONLY);
+                            let types = self
+                                .parse_comma_separated(|parser| parser.parse_object_name(false))?;
+                            self.expect_token(&BorrowedToken::RParen)?;
+                            OracleIsPredicate::Of { only, types }
+                        };
+                        Ok(Expr::OracleIs {
+                            expr: Box::new(expr),
+                            negated,
+                            predicate,
+                        })
+                    } else if self.parse_keyword(Keyword::NULL) {
                         let suffix_token = self.attached_token_from_current();
                         Ok(Expr::IsNull {
                             expr: Box::new(expr),
@@ -5479,11 +7843,17 @@ impl<'a> Parser<'a> {
                     }
                 }
                 Keyword::AT => {
-                    self.expect_keywords(&[Keyword::TIME, Keyword::ZONE])?;
-                    Ok(Expr::AtTimeZone {
-                        timestamp: Box::new(expr),
-                        time_zone: Box::new(self.parse_subexpr(precedence)?),
-                    })
+                    if self.dialect.is::<OracleDialect>() && self.parse_keyword(Keyword::LOCAL) {
+                        Ok(Expr::AtLocal {
+                            timestamp: Box::new(expr),
+                        })
+                    } else {
+                        self.expect_keywords(&[Keyword::TIME, Keyword::ZONE])?;
+                        Ok(Expr::AtTimeZone {
+                            timestamp: Box::new(expr),
+                            time_zone: Box::new(self.parse_subexpr(precedence)?),
+                        })
+                    }
                 }
                 Keyword::NOT
                 | Keyword::IN
@@ -5508,7 +7878,42 @@ impl<'a> Parser<'a> {
                     } else {
                         None
                     };
-                    if regexp || rlike {
+                    let oracle_like_kind = if self.dialect.is::<OracleDialect>() {
+                        match self.peek_token().token {
+                            BorrowedToken::Word(word) => {
+                                match word.value.to_ascii_uppercase().as_str() {
+                                    "LIKEC" => Some(OracleLikeKind::LikeC),
+                                    "LIKE2" => Some(OracleLikeKind::Like2),
+                                    "LIKE4" => Some(OracleLikeKind::Like4),
+                                    _ => None,
+                                }
+                            }
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    };
+                    if let Some(kind) = oracle_like_kind {
+                        self.next_token();
+                        Ok(Expr::OracleLike {
+                            kind,
+                            negated,
+                            expr: Box::new(expr),
+                            pattern: Box::new(
+                                self.parse_subexpr(self.dialect.prec_value(Precedence::Like))?,
+                            ),
+                            escape_char: self.parse_escape_char()?,
+                        })
+                    } else if self.dialect.is::<OracleDialect>()
+                        && self.parse_keyword(Keyword::MEMBER)
+                    {
+                        self.expect_keyword(Keyword::OF)?;
+                        Ok(Expr::OracleMemberOf {
+                            expr: Box::new(expr),
+                            collection: Box::new(self.parse_subexpr(precedence)?),
+                            negated,
+                        })
+                    } else if regexp || rlike {
                         Ok(Expr::RLike {
                             negated,
                             expr: Box::new(expr),
@@ -5568,13 +7973,21 @@ impl<'a> Parser<'a> {
                 }
                 Keyword::MEMBER => {
                     if self.parse_keyword(Keyword::OF) {
-                        self.expect_token(&BorrowedToken::LParen)?;
-                        let array = self.parse_expr()?;
-                        self.expect_token(&BorrowedToken::RParen)?;
-                        Ok(Expr::MemberOf(MemberOf {
-                            value: Box::new(expr),
-                            array: Box::new(array),
-                        }))
+                        if self.dialect.is::<OracleDialect>() {
+                            Ok(Expr::OracleMemberOf {
+                                expr: Box::new(expr),
+                                collection: Box::new(self.parse_subexpr(precedence)?),
+                                negated: false,
+                            })
+                        } else {
+                            self.expect_token(&BorrowedToken::LParen)?;
+                            let array = self.parse_expr()?;
+                            self.expect_token(&BorrowedToken::RParen)?;
+                            Ok(Expr::MemberOf(MemberOf {
+                                value: Box::new(expr),
+                                array: Box::new(array),
+                            }))
+                        }
                     } else {
                         self.expected("OF after MEMBER", self.peek_token())
                     }
@@ -5694,6 +8107,17 @@ impl<'a> Parser<'a> {
         } else {
             Some(self.parse_expr()?)
         };
+
+        if self.dialect.is::<OracleDialect>() && self.peek_token().token == BorrowedToken::Comma {
+            let Some(first_index) = lower_bound else {
+                return self.expected("an Oracle model cell index", self.peek_token());
+            };
+            let mut indexes = vec![first_index];
+            self.expect_token(&BorrowedToken::Comma)?;
+            indexes.extend(self.parse_comma_separated(Parser::parse_expr)?);
+            self.expect_token(&BorrowedToken::RBracket)?;
+            return Ok(Subscript::IndexList { indexes });
+        }
 
         // check for end
         if self.consume_token(&BorrowedToken::RBracket) {
@@ -6639,8 +9063,13 @@ impl<'a> Parser<'a> {
                 _ => {}
             }
 
-            values.push(self.parse_statement()?);
-            self.expect_token(&BorrowedToken::SemiColon)?;
+            let statement = self.parse_statement()?;
+            let delimiter_optional =
+                matches!(&statement, Statement::PlSqlConditionalCompilation(_));
+            values.push(statement);
+            if !delimiter_optional || self.peek_token().token == BorrowedToken::SemiColon {
+                self.expect_token(&BorrowedToken::SemiColon)?;
+            }
         }
         Ok(values)
     }
@@ -6715,6 +9144,66 @@ impl<'a> Parser<'a> {
         let create_token = self.attached_token_from_current();
         let or_replace = self.parse_keywords(&[Keyword::OR, Keyword::REPLACE]);
         let or_alter = self.parse_keywords(&[Keyword::OR, Keyword::ALTER]);
+        if self.dialect.is::<OracleDialect>() {
+            let editionable = if self.parse_keyword(Keyword::EDITIONABLE) {
+                Some(true)
+            } else if self.parse_keyword(Keyword::NONEDITIONABLE) {
+                Some(false)
+            } else {
+                None
+            };
+            let kind = if self.parse_keyword(Keyword::PROCEDURE) {
+                Some(OraclePlSqlRoutineKind::Procedure)
+            } else if self.parse_keyword(Keyword::FUNCTION) {
+                Some(OraclePlSqlRoutineKind::Function)
+            } else {
+                None
+            };
+            if let Some(kind) = kind {
+                return self.parse_oracle_create_plsql_routine(
+                    create_token,
+                    or_replace,
+                    editionable,
+                    kind,
+                );
+            }
+            if self.parse_keyword(Keyword::PACKAGE) {
+                return self.parse_oracle_create_package(create_token, or_replace, editionable);
+            }
+            if self.parse_keyword(Keyword::TRIGGER) {
+                return self.parse_oracle_create_trigger(create_token, or_replace, editionable);
+            }
+            if self.parse_keyword(Keyword::TYPE) {
+                return self.parse_oracle_create_type(create_token, or_replace, editionable);
+            }
+            if self.parse_keyword(Keyword::LIBRARY) {
+                return self.parse_oracle_create_library(create_token, or_replace);
+            }
+            if editionable.is_some() {
+                return self.expected(
+                    "PROCEDURE, FUNCTION, PACKAGE, TRIGGER, or TYPE",
+                    self.peek_token(),
+                );
+            }
+            let special_table_kind = if self.parse_keyword(Keyword::PRIVATE) {
+                self.expect_keyword(Keyword::TEMPORARY)?;
+                Some(OracleCreateTableKind::PrivateTemporary)
+            } else if self.parse_keyword(Keyword::BLOCKCHAIN) {
+                Some(OracleCreateTableKind::Blockchain)
+            } else if self.parse_keyword(Keyword::IMMUTABLE) {
+                Some(OracleCreateTableKind::Immutable)
+            } else {
+                None
+            };
+            if let Some(kind) = special_table_kind {
+                if or_replace {
+                    return Err(ParserError::ParserError(
+                        "OR REPLACE is not valid for this Oracle table kind".into(),
+                    ));
+                }
+                return self.parse_oracle_special_create_table(kind);
+            }
+        }
         let local = self.parse_one_of_keywords(&[Keyword::LOCAL]).is_some();
         let global = self.parse_one_of_keywords(&[Keyword::GLOBAL]).is_some();
         let global: Option<bool> = if global {
@@ -6730,7 +9219,16 @@ impl<'a> Parser<'a> {
         let create_view_params = self.parse_create_view_params()?;
         if self.parse_keyword(Keyword::TABLE) {
             self.parse_create_table(or_replace, temporary, global)
-        } else if self.peek_keyword(Keyword::MATERIALIZED) || self.peek_keyword(Keyword::VIEW) {
+        } else if self.peek_keyword(Keyword::MATERIALIZED)
+            || self.peek_keyword(Keyword::VIEW)
+            || (self.dialect.is::<OracleDialect>()
+                && (self.peek_keyword(Keyword::FORCE)
+                    || self.peek_keyword(Keyword::NOFORCE)
+                    || self.peek_keyword(Keyword::EDITIONING)
+                    || self.peek_keyword(Keyword::EDITIONABLE)
+                    || self.peek_keyword(Keyword::NONEDITIONING)
+                    || self.peek_keyword(Keyword::NONEDITIONABLE)))
+        {
             self.parse_create_view(or_alter, or_replace, temporary, create_view_params)
         } else if self.parse_keyword(Keyword::POLICY) {
             self.parse_create_policy()
@@ -6815,6 +9313,77 @@ impl<'a> Parser<'a> {
         } else {
             self.expected("an object type after CREATE", self.peek_token())
         }
+    }
+
+    fn parse_oracle_special_create_table(
+        &self,
+        kind: OracleCreateTableKind,
+    ) -> Result<Statement, ParserError> {
+        self.expect_keyword(Keyword::TABLE)?;
+        let name = self.parse_object_name(false)?;
+        let (columns, constraints) = self.parse_columns()?;
+        let options = match kind {
+            OracleCreateTableKind::PrivateTemporary => {
+                self.expect_keywords(&[Keyword::ON, Keyword::COMMIT])?;
+                let drop_definition = if self.parse_keyword(Keyword::DROP) {
+                    true
+                } else if self.parse_keyword(Keyword::PRESERVE) {
+                    false
+                } else {
+                    return self.expected("DROP or PRESERVE after ON COMMIT", self.peek_token());
+                };
+                self.expect_keyword(Keyword::DEFINITION)?;
+                OracleCreateTableOptions::PrivateTemporary { drop_definition }
+            }
+            OracleCreateTableKind::Blockchain | OracleCreateTableKind::Immutable => {
+                self.expect_keywords(&[Keyword::NO, Keyword::DROP, Keyword::UNTIL])?;
+                let no_drop_until = self.parse_expr()?;
+                let no_drop_unit = self.parse_identifier()?;
+                self.expect_keyword(Keyword::IDLE)?;
+                self.expect_keywords(&[Keyword::NO, Keyword::DELETE])?;
+                let (no_delete_until, no_delete_unit, no_delete_after_insert) =
+                    if self.parse_keyword(Keyword::UNTIL) {
+                        let value = self.parse_expr()?;
+                        let unit = self.parse_identifier()?;
+                        let after_insert = self.parse_keywords(&[Keyword::AFTER, Keyword::INSERT]);
+                        (Some(value), Some(unit), after_insert)
+                    } else {
+                        (None, None, false)
+                    };
+                let hashing = if self.parse_keyword(Keyword::HASHING) {
+                    self.expect_keyword(Keyword::USING)?;
+                    let algorithm = self.parse_identifier()?;
+                    self.expect_keyword(Keyword::VERSION)?;
+                    let version = self.parse_identifier()?;
+                    Some(OracleBlockchainHashing { algorithm, version })
+                } else {
+                    None
+                };
+                if kind == OracleCreateTableKind::Blockchain && hashing.is_none() {
+                    return self.expected("HASHING clause", self.peek_token());
+                }
+                if kind == OracleCreateTableKind::Immutable && hashing.is_some() {
+                    return Err(ParserError::ParserError(
+                        "HASHING is not valid for an immutable table".into(),
+                    ));
+                }
+                OracleCreateTableOptions::Retention {
+                    no_drop_until,
+                    no_drop_unit,
+                    no_delete_until,
+                    no_delete_unit,
+                    no_delete_after_insert,
+                    hashing,
+                }
+            }
+        };
+        Ok(Statement::OracleCreateTable(OracleCreateTable {
+            kind,
+            name,
+            columns,
+            constraints,
+            options,
+        }))
     }
 
     fn parse_create_user(&self, or_replace: bool) -> Result<Statement, ParserError> {
@@ -7379,8 +9948,822 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse a single SQL/PSM variable declaration
-    fn parse_sql_psm_declaration(&self) -> Result<SqlPsmDeclaration, ParserError> {
+    fn parse_sql_psm_declaration(&self) -> Result<PlSqlDeclaration, ParserError> {
+        if self.dialect.is::<OracleDialect>() {
+            let routine_kind = if self.parse_keyword(Keyword::PROCEDURE) {
+                Some(OraclePlSqlRoutineKind::Procedure)
+            } else if self.parse_keyword(Keyword::FUNCTION) {
+                Some(OraclePlSqlRoutineKind::Function)
+            } else {
+                None
+            };
+            if let Some(kind) = routine_kind {
+                return Ok(PlSqlDeclaration::Routine(Box::new(
+                    self.parse_oracle_plsql_routine(kind, true)?,
+                )));
+            }
+            if self.parse_keyword(Keyword::PRAGMA) {
+                return Ok(PlSqlDeclaration::Pragma(self.parse_pragma_body()?));
+            }
+            if self.parse_keyword(Keyword::SUBTYPE) {
+                let name = self.parse_identifier()?;
+                self.expect_keyword(Keyword::IS)?;
+                let data_type = self.parse_sql_psm_data_type()?;
+                let not_null = self.parse_keywords(&[Keyword::NOT, Keyword::NULL]);
+                return Ok(PlSqlDeclaration::Subtype {
+                    name,
+                    data_type,
+                    not_null,
+                });
+            }
+            if self.parse_keyword(Keyword::TYPE) {
+                return self.parse_plsql_type_declaration();
+            }
+            if self.parse_keyword(Keyword::CURSOR) {
+                return self.parse_plsql_cursor_declaration();
+            }
+        }
+
         let name = self.parse_identifier()?;
+        if self.dialect.is::<OracleDialect>() && self.parse_keyword(Keyword::EXCEPTION) {
+            return Ok(PlSqlDeclaration::Exception { name });
+        }
+        Ok(self
+            .parse_sql_psm_variable_declaration_after_name(name)?
+            .into())
+    }
+
+    fn parse_oracle_create_plsql_routine(
+        &self,
+        create_token: AttachedToken,
+        or_replace: bool,
+        editionable: Option<bool>,
+        kind: OraclePlSqlRoutineKind,
+    ) -> Result<Statement, ParserError> {
+        let if_not_exists = self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
+        let routine = self.parse_oracle_plsql_routine(kind, false)?;
+        Ok(Statement::OracleCreatePlSqlRoutine(
+            OracleCreatePlSqlRoutine {
+                create_token,
+                or_replace,
+                editionable,
+                if_not_exists,
+                routine,
+            },
+        ))
+    }
+
+    fn parse_oracle_create_package(
+        &self,
+        create_token: AttachedToken,
+        or_replace: bool,
+        editionable: Option<bool>,
+    ) -> Result<Statement, ParserError> {
+        let is_body = self.parse_keyword(Keyword::BODY);
+        let if_not_exists = self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
+        let name = self.parse_object_name(false)?;
+        let mut clauses = vec![];
+        loop {
+            if self.parse_keyword(Keyword::AUTHID) {
+                let authid = if self.parse_keyword(Keyword::CURRENT_USER) {
+                    OraclePlSqlAuthid::CurrentUser
+                } else if self.parse_keyword(Keyword::DEFINER) {
+                    OraclePlSqlAuthid::Definer
+                } else {
+                    return self.expected("CURRENT_USER or DEFINER", self.peek_token());
+                };
+                clauses.push(OraclePackageClause::Authid(authid));
+            } else if self.parse_keywords(&[Keyword::ACCESSIBLE, Keyword::BY]) {
+                self.expect_token(&BorrowedToken::LParen)?;
+                let accessors = self.parse_comma_separated(Parser::parse_oracle_plsql_accessor)?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                clauses.push(OraclePackageClause::AccessibleBy(accessors));
+            } else if self.parse_keyword(Keyword::RESETTABLE) {
+                clauses.push(OraclePackageClause::Resettable);
+            } else if self.parse_keyword(Keyword::SHARING) {
+                self.expect_token(&BorrowedToken::Eq)?;
+                clauses.push(OraclePackageClause::Sharing(self.parse_identifier()?));
+            } else {
+                break;
+            }
+        }
+        let is_as = if self.parse_keyword(Keyword::AS) {
+            true
+        } else {
+            self.expect_keyword(Keyword::IS)?;
+            false
+        };
+
+        let mut declarations = vec![];
+        while !self.peek_keyword(Keyword::BEGIN) && !self.peek_keyword(Keyword::END) {
+            declarations.push(self.parse_sql_psm_declaration()?);
+            self.expect_token(&BorrowedToken::SemiColon)?;
+        }
+        let (initialization, end_name) = if self.peek_keyword(Keyword::BEGIN) {
+            let block = self.parse_sql_psm_block()?;
+            (Some(block), None)
+        } else {
+            self.expect_keyword(Keyword::END)?;
+            let end_name = if self.peek_token() == BorrowedToken::SemiColon
+                || self.peek_token() == BorrowedToken::EOF
+            {
+                None
+            } else {
+                Some(self.parse_identifier()?)
+            };
+            (None, end_name)
+        };
+
+        Ok(Statement::OracleCreatePackage(OracleCreatePackage {
+            create_token,
+            or_replace,
+            editionable,
+            is_body,
+            if_not_exists,
+            name,
+            clauses,
+            is_as,
+            declarations,
+            initialization,
+            end_name,
+        }))
+    }
+
+    fn parse_oracle_create_trigger(
+        &self,
+        create_token: AttachedToken,
+        or_replace: bool,
+        editionable: Option<bool>,
+    ) -> Result<Statement, ParserError> {
+        let if_not_exists = self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
+        if if_not_exists && or_replace {
+            return parser_err!(
+                "CREATE OR REPLACE TRIGGER cannot include IF NOT EXISTS",
+                self.peek_token().span.start
+            );
+        }
+        let name = self.parse_object_name(false)?;
+        let timing = if self.parse_keyword(Keyword::BEFORE) {
+            Some(OracleTriggerTiming::Before)
+        } else if self.parse_keyword(Keyword::AFTER) {
+            Some(OracleTriggerTiming::After)
+        } else if self.parse_keywords(&[Keyword::INSTEAD, Keyword::OF]) {
+            Some(OracleTriggerTiming::InsteadOf)
+        } else {
+            None
+        };
+
+        if timing.is_none() {
+            let _ = self.parse_keyword(Keyword::FOR);
+        }
+        let mut events = vec![self.parse_oracle_trigger_event()?];
+        while self.parse_keyword(Keyword::OR) {
+            events.push(self.parse_oracle_trigger_event()?);
+        }
+        self.expect_keyword(Keyword::ON)?;
+        let target = if self.parse_keywords(&[Keyword::PLUGGABLE, Keyword::DATABASE]) {
+            OracleTriggerTarget::PluggableDatabase
+        } else if self.parse_keyword(Keyword::PLUGGABLE) {
+            return self.expected("DATABASE after PLUGGABLE", self.peek_token());
+        } else if self.parse_keyword(Keyword::SCHEMA) {
+            OracleTriggerTarget::Schema
+        } else if self.parse_keyword(Keyword::DATABASE) {
+            OracleTriggerTarget::Database
+        } else if self.peek_nth_token_ref(1).token == BorrowedToken::Period
+            && matches!(
+                self.peek_nth_token_ref(2).token,
+                BorrowedToken::Word(ref word) if word.keyword == Keyword::SCHEMA
+            )
+        {
+            let schema = self.parse_identifier()?;
+            self.expect_token(&BorrowedToken::Period)?;
+            self.expect_keyword(Keyword::SCHEMA)?;
+            OracleTriggerTarget::NamedSchema(schema)
+        } else {
+            OracleTriggerTarget::Object(self.parse_object_name(false)?)
+        };
+        let mut referencing = vec![];
+        if self.parse_keyword(Keyword::REFERENCING) {
+            loop {
+                let kind = match self.parse_one_of_keywords(&[
+                    Keyword::OLD,
+                    Keyword::NEW,
+                    Keyword::PARENT,
+                ]) {
+                    Some(Keyword::OLD) => OracleTriggerReferencingKind::Old,
+                    Some(Keyword::NEW) => OracleTriggerReferencingKind::New,
+                    Some(Keyword::PARENT) => OracleTriggerReferencingKind::Parent,
+                    _ => break,
+                };
+                if referencing
+                    .iter()
+                    .any(|item: &OracleTriggerReferencing| item.kind == kind)
+                {
+                    return parser_err!(
+                        format!("duplicate {kind} trigger referencing alias"),
+                        self.peek_token().span.start
+                    );
+                }
+                let is_as = self.parse_keyword(Keyword::AS);
+                referencing.push(OracleTriggerReferencing {
+                    kind,
+                    is_as,
+                    alias: self.parse_identifier()?,
+                });
+            }
+            if referencing.is_empty() {
+                return self.expected("OLD, NEW, or PARENT after REFERENCING", self.peek_token());
+            }
+        }
+        let for_each_row = self.parse_keywords(&[Keyword::FOR, Keyword::EACH, Keyword::ROW]);
+        let crossedition = if self.parse_keyword(Keyword::FORWARD) {
+            self.expect_keyword(Keyword::CROSSEDITION)?;
+            Some(OracleTriggerCrossedition::Forward)
+        } else if self.parse_keyword(Keyword::REVERSE) {
+            self.expect_keyword(Keyword::CROSSEDITION)?;
+            Some(OracleTriggerCrossedition::Reverse)
+        } else {
+            None
+        };
+        let ordering = if self.parse_keyword(Keyword::FOLLOWS) {
+            Some(OracleTriggerOrdering {
+                kind: OracleTriggerOrderingKind::Follows,
+                triggers: self.parse_comma_separated(|parser| parser.parse_object_name(false))?,
+            })
+        } else if self.parse_keyword(Keyword::PRECEDES) {
+            Some(OracleTriggerOrdering {
+                kind: OracleTriggerOrderingKind::Precedes,
+                triggers: self.parse_comma_separated(|parser| parser.parse_object_name(false))?,
+            })
+        } else {
+            None
+        };
+        let enabled = if self.parse_keyword(Keyword::ENABLE) {
+            Some(true)
+        } else if self.parse_keyword(Keyword::DISABLE) {
+            Some(false)
+        } else {
+            None
+        };
+        let when = if self.parse_keyword(Keyword::WHEN) {
+            if !for_each_row {
+                return parser_err!(
+                    "WHEN requires FOR EACH ROW in an Oracle DML trigger",
+                    self.peek_token().span.start
+                );
+            }
+            self.expect_token(&BorrowedToken::LParen)?;
+            let condition = self.parse_expr()?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            Some(condition)
+        } else {
+            None
+        };
+        let body = if self.parse_keywords(&[Keyword::COMPOUND, Keyword::TRIGGER]) {
+            self.parse_oracle_compound_trigger_body()?
+        } else if self.parse_keyword(Keyword::CALL) {
+            if !referencing.is_empty() {
+                return parser_err!(
+                    "a CALL trigger body cannot include a REFERENCING clause",
+                    self.peek_token().span.start
+                );
+            }
+            OracleTriggerBody::Call(self.parse_expr()?)
+        } else {
+            OracleTriggerBody::Block(self.parse_sql_psm_block()?)
+        };
+        Ok(Statement::OracleCreateTrigger(OracleCreateTrigger {
+            create_token,
+            or_replace,
+            editionable,
+            if_not_exists,
+            name,
+            timing,
+            events,
+            target,
+            referencing,
+            for_each_row,
+            crossedition,
+            ordering,
+            enabled,
+            when,
+            body,
+        }))
+    }
+
+    fn parse_oracle_create_type(
+        &self,
+        create_token: AttachedToken,
+        or_replace: bool,
+        editionable: Option<bool>,
+    ) -> Result<Statement, ParserError> {
+        let is_body = self.parse_keyword(Keyword::BODY);
+        let name = self.parse_object_name(false)?;
+        let definition = if is_body {
+            self.expect_keyword(Keyword::IS)?;
+            let mut methods = vec![];
+            while !self.peek_keyword(Keyword::END) {
+                methods.push(self.parse_oracle_object_type_method(false)?);
+                self.expect_token(&BorrowedToken::SemiColon)?;
+            }
+            self.expect_keyword(Keyword::END)?;
+            if self.peek_token() != BorrowedToken::SemiColon
+                && self.peek_token() != BorrowedToken::EOF
+            {
+                let _ = self.parse_identifier()?;
+            }
+            OracleTypeDefinition::Body { methods }
+        } else {
+            self.expect_keyword(Keyword::AS)?;
+            if self.parse_keyword(Keyword::TABLE) {
+                self.expect_keyword(Keyword::OF)?;
+                let element_type = self.parse_sql_psm_data_type()?;
+                let not_null = self.parse_keywords(&[Keyword::NOT, Keyword::NULL]);
+                OracleTypeDefinition::Collection {
+                    kind: PlSqlCollectionKind::NestedTable,
+                    element_type,
+                    not_null,
+                }
+            } else if self.parse_keyword(Keyword::VARRAY) {
+                self.expect_token(&BorrowedToken::LParen)?;
+                let size = self.parse_expr()?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                self.expect_keyword(Keyword::OF)?;
+                let element_type = self.parse_sql_psm_data_type()?;
+                let not_null = self.parse_keywords(&[Keyword::NOT, Keyword::NULL]);
+                OracleTypeDefinition::Collection {
+                    kind: PlSqlCollectionKind::Varray(size),
+                    element_type,
+                    not_null,
+                }
+            } else if self.parse_keyword(Keyword::OBJECT) {
+                self.expect_token(&BorrowedToken::LParen)?;
+                let elements =
+                    self.parse_comma_separated(Parser::parse_oracle_object_type_element)?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                let not_final = self.parse_keywords(&[Keyword::NOT, Keyword::FINAL]);
+                OracleTypeDefinition::Object {
+                    elements,
+                    not_final,
+                }
+            } else {
+                return self.expected("OBJECT, TABLE, or VARRAY", self.peek_token());
+            }
+        };
+        Ok(Statement::OracleCreateType(OracleCreateType {
+            create_token,
+            or_replace,
+            editionable,
+            is_body,
+            name,
+            definition,
+        }))
+    }
+
+    fn parse_oracle_object_type_element(&self) -> Result<OracleObjectTypeElement, ParserError> {
+        if self.peek_keyword(Keyword::MEMBER) || self.peek_keyword(Keyword::STATIC) {
+            Ok(OracleObjectTypeElement::Method(
+                self.parse_oracle_object_type_method(true)?,
+            ))
+        } else {
+            let name = self.parse_identifier()?;
+            let data_type = self.parse_sql_psm_data_type()?;
+            Ok(OracleObjectTypeElement::Attribute { name, data_type })
+        }
+    }
+
+    fn parse_oracle_object_type_method(
+        &self,
+        allow_declaration: bool,
+    ) -> Result<OracleObjectTypeMethod, ParserError> {
+        let modifier = if self.parse_keyword(Keyword::MEMBER) {
+            OracleObjectTypeMethodModifier::Member
+        } else if self.parse_keyword(Keyword::STATIC) {
+            OracleObjectTypeMethodModifier::Static
+        } else {
+            return self.expected("MEMBER or STATIC", self.peek_token());
+        };
+        let kind = if self.parse_keyword(Keyword::FUNCTION) {
+            OraclePlSqlRoutineKind::Function
+        } else if self.parse_keyword(Keyword::PROCEDURE) {
+            OraclePlSqlRoutineKind::Procedure
+        } else {
+            return self.expected("FUNCTION or PROCEDURE", self.peek_token());
+        };
+        let routine = self.parse_oracle_plsql_routine(kind, allow_declaration)?;
+        Ok(OracleObjectTypeMethod { modifier, routine })
+    }
+
+    fn parse_oracle_create_library(
+        &self,
+        create_token: AttachedToken,
+        or_replace: bool,
+    ) -> Result<Statement, ParserError> {
+        let name = self.parse_object_name(false)?;
+        self.expect_keyword(Keyword::AS)?;
+        let file = self.parse_expr()?;
+        let agent = if self.parse_keyword(Keyword::AGENT) {
+            Some(self.parse_expr()?)
+        } else {
+            None
+        };
+        let credential = if self.parse_keyword(Keyword::CREDENTIAL) {
+            Some(self.parse_object_name(false)?)
+        } else {
+            None
+        };
+        Ok(Statement::OracleCreateLibrary(OracleCreateLibrary {
+            create_token,
+            or_replace,
+            name,
+            file,
+            agent,
+            credential,
+        }))
+    }
+
+    fn parse_oracle_trigger_event(&self) -> Result<OracleTriggerEvent, ParserError> {
+        if self.parse_keyword(Keyword::INSERT) {
+            Ok(OracleTriggerEvent::Insert)
+        } else if self.parse_keyword(Keyword::UPDATE) {
+            let columns = if self.parse_keyword(Keyword::OF) {
+                self.parse_comma_separated(Parser::parse_identifier)?
+            } else {
+                vec![]
+            };
+            Ok(OracleTriggerEvent::Update(columns))
+        } else if self.parse_keyword(Keyword::DELETE) {
+            Ok(OracleTriggerEvent::Delete)
+        } else if self.parse_keyword(Keyword::CREATE) {
+            Ok(OracleTriggerEvent::Create)
+        } else if self.parse_keyword(Keyword::ALTER) {
+            Ok(OracleTriggerEvent::Alter)
+        } else if self.parse_keyword(Keyword::ANALYZE) {
+            Ok(OracleTriggerEvent::Analyze)
+        } else if self.parse_keywords(&[Keyword::ASSOCIATE, Keyword::STATISTICS]) {
+            Ok(OracleTriggerEvent::AssociateStatistics)
+        } else if self.parse_keyword(Keyword::AUDIT) {
+            Ok(OracleTriggerEvent::Audit)
+        } else if self.parse_keyword(Keyword::COMMENT) {
+            Ok(OracleTriggerEvent::Comment)
+        } else if self.parse_keywords(&[Keyword::DISASSOCIATE, Keyword::STATISTICS]) {
+            Ok(OracleTriggerEvent::DisassociateStatistics)
+        } else if self.parse_keyword(Keyword::DROP) {
+            Ok(OracleTriggerEvent::Drop)
+        } else if self.parse_keyword(Keyword::GRANT) {
+            Ok(OracleTriggerEvent::Grant)
+        } else if self.parse_keyword(Keyword::NOAUDIT) {
+            Ok(OracleTriggerEvent::NoAudit)
+        } else if self.parse_keyword(Keyword::RENAME) {
+            Ok(OracleTriggerEvent::Rename)
+        } else if self.parse_keyword(Keyword::REVOKE) {
+            Ok(OracleTriggerEvent::Revoke)
+        } else if self.parse_keyword(Keyword::TRUNCATE) {
+            Ok(OracleTriggerEvent::Truncate)
+        } else if self.parse_keyword(Keyword::DDL) {
+            Ok(OracleTriggerEvent::Ddl)
+        } else if self.parse_keyword(Keyword::STARTUP) {
+            Ok(OracleTriggerEvent::Startup)
+        } else if self.parse_keyword(Keyword::SHUTDOWN) {
+            Ok(OracleTriggerEvent::Shutdown)
+        } else if self.parse_keyword(Keyword::DB_ROLE_CHANGE) {
+            Ok(OracleTriggerEvent::DbRoleChange)
+        } else if self.parse_keyword(Keyword::SERVERERROR) {
+            Ok(OracleTriggerEvent::ServerError)
+        } else if self.parse_keyword(Keyword::LOGON) {
+            Ok(OracleTriggerEvent::Logon)
+        } else if self.parse_keyword(Keyword::LOGOFF) {
+            Ok(OracleTriggerEvent::Logoff)
+        } else if self.parse_keyword(Keyword::SUSPEND) {
+            Ok(OracleTriggerEvent::Suspend)
+        } else if self.parse_keyword(Keyword::CLONE) {
+            Ok(OracleTriggerEvent::Clone)
+        } else if self.parse_keyword(Keyword::UNPLUG) {
+            Ok(OracleTriggerEvent::Unplug)
+        } else if self.parse_keywords(&[Keyword::SET, Keyword::CONTAINER]) {
+            Ok(OracleTriggerEvent::SetContainer)
+        } else {
+            self.expected("an Oracle trigger event", self.peek_token())
+        }
+    }
+
+    fn parse_oracle_compound_trigger_body(&self) -> Result<OracleTriggerBody, ParserError> {
+        let mut declarations = vec![];
+        while !self.peek_keyword(Keyword::BEFORE)
+            && !self.peek_keyword(Keyword::AFTER)
+            && !self.peek_keyword(Keyword::END)
+        {
+            declarations.push(self.parse_sql_psm_declaration()?);
+            self.expect_token(&BorrowedToken::SemiColon)?;
+        }
+
+        let mut sections = vec![];
+        while !self.peek_keyword(Keyword::END) {
+            let timing = self.parse_oracle_compound_trigger_timing()?;
+            self.expect_keyword(Keyword::IS)?;
+            let mut section_declarations = vec![];
+            while !self.peek_keyword(Keyword::BEGIN) {
+                section_declarations.push(self.parse_sql_psm_declaration()?);
+                self.expect_token(&BorrowedToken::SemiColon)?;
+            }
+            let begin_token = self.expect_keyword(Keyword::BEGIN)?;
+            let statements = self.parse_statement_list(&[Keyword::END])?;
+            let end_token = self.expect_keyword(Keyword::END)?;
+            let end_timing = self.parse_oracle_compound_trigger_timing()?;
+            if timing != end_timing {
+                return parser_err!(
+                    "compound trigger section terminator does not match its header",
+                    self.peek_token().span.start
+                );
+            }
+            sections.push(OracleCompoundTriggerSection {
+                timing,
+                declarations: section_declarations,
+                block: BeginEndStatements {
+                    begin_token: AttachedToken::from(begin_token),
+                    label: None,
+                    declarations: vec![],
+                    statements,
+                    exception_handlers: None,
+                    end_token: AttachedToken::from(end_token),
+                    end_label: None,
+                },
+            });
+            self.expect_token(&BorrowedToken::SemiColon)?;
+        }
+        self.expect_keyword(Keyword::END)?;
+        Ok(OracleTriggerBody::Compound {
+            declarations,
+            sections,
+        })
+    }
+
+    fn parse_oracle_compound_trigger_timing(
+        &self,
+    ) -> Result<OracleCompoundTriggerTiming, ParserError> {
+        if self.parse_keyword(Keyword::BEFORE) {
+            if self.parse_keyword(Keyword::STATEMENT) {
+                Ok(OracleCompoundTriggerTiming::BeforeStatement)
+            } else {
+                self.expect_keywords(&[Keyword::EACH, Keyword::ROW])?;
+                Ok(OracleCompoundTriggerTiming::BeforeEachRow)
+            }
+        } else if self.parse_keyword(Keyword::AFTER) {
+            if self.parse_keyword(Keyword::STATEMENT) {
+                Ok(OracleCompoundTriggerTiming::AfterStatement)
+            } else {
+                self.expect_keywords(&[Keyword::EACH, Keyword::ROW])?;
+                Ok(OracleCompoundTriggerTiming::AfterEachRow)
+            }
+        } else {
+            self.expected("BEFORE or AFTER", self.peek_token())
+        }
+    }
+
+    fn parse_oracle_plsql_routine(
+        &self,
+        kind: OraclePlSqlRoutineKind,
+        allow_declaration: bool,
+    ) -> Result<OraclePlSqlRoutine, ParserError> {
+        let name = self.parse_object_name(false)?;
+        let has_parameter_list = self.consume_token(&BorrowedToken::LParen);
+        let parameters = if has_parameter_list {
+            if self.consume_token(&BorrowedToken::RParen) {
+                vec![]
+            } else {
+                let parameters =
+                    self.parse_comma_separated(Parser::parse_oracle_plsql_parameter)?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                parameters
+            }
+        } else {
+            vec![]
+        };
+
+        let return_type = match kind {
+            OraclePlSqlRoutineKind::Procedure => None,
+            OraclePlSqlRoutineKind::Function => {
+                self.expect_keyword(Keyword::RETURN)?;
+                Some(self.parse_sql_psm_data_type()?)
+            }
+        };
+
+        let mut clauses = vec![];
+        loop {
+            if self.parse_keyword(Keyword::AUTHID) {
+                let authid = if self.parse_keyword(Keyword::CURRENT_USER) {
+                    OraclePlSqlAuthid::CurrentUser
+                } else if self.parse_keyword(Keyword::DEFINER) {
+                    OraclePlSqlAuthid::Definer
+                } else {
+                    return self.expected("CURRENT_USER or DEFINER", self.peek_token());
+                };
+                clauses.push(OraclePlSqlRoutineClause::Authid(authid));
+            } else if self.parse_keywords(&[Keyword::ACCESSIBLE, Keyword::BY]) {
+                self.expect_token(&BorrowedToken::LParen)?;
+                let accessors = self.parse_comma_separated(Parser::parse_oracle_plsql_accessor)?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                clauses.push(OraclePlSqlRoutineClause::AccessibleBy(accessors));
+            } else if self.parse_keywords(&[Keyword::DEFAULT, Keyword::COLLATION]) {
+                clauses.push(OraclePlSqlRoutineClause::DefaultCollation(
+                    self.parse_identifier()?,
+                ));
+            } else if self.parse_keyword(Keyword::DETERMINISTIC) {
+                clauses.push(OraclePlSqlRoutineClause::Deterministic);
+            } else if self.parse_keyword(Keyword::RESULT_CACHE) {
+                let relies_on = if self.parse_keyword(Keyword::RELIES_ON) {
+                    self.expect_token(&BorrowedToken::LParen)?;
+                    let names =
+                        self.parse_comma_separated(|parser| parser.parse_object_name(false))?;
+                    self.expect_token(&BorrowedToken::RParen)?;
+                    names
+                } else {
+                    vec![]
+                };
+                clauses.push(OraclePlSqlRoutineClause::ResultCache { relies_on });
+            } else if self.parse_keyword(Keyword::PIPELINED) {
+                clauses.push(OraclePlSqlRoutineClause::Pipelined);
+            } else if self.parse_keyword(Keyword::PARALLEL_ENABLE) {
+                let (partition_parameter, partition_method) =
+                    if self.consume_token(&BorrowedToken::LParen) {
+                        self.expect_keyword(Keyword::PARTITION)?;
+                        let parameter = self.parse_identifier()?;
+                        self.expect_keyword(Keyword::BY)?;
+                        let method = self.parse_identifier()?;
+                        self.expect_token(&BorrowedToken::RParen)?;
+                        (Some(parameter), Some(method))
+                    } else {
+                        (None, None)
+                    };
+                clauses.push(OraclePlSqlRoutineClause::ParallelEnable {
+                    partition_parameter,
+                    partition_method,
+                });
+            } else if self.parse_keyword(Keyword::SQL_MACRO) {
+                let macro_kind = if self.consume_token(&BorrowedToken::LParen) {
+                    let kind = self.parse_identifier()?;
+                    self.expect_token(&BorrowedToken::RParen)?;
+                    Some(kind)
+                } else {
+                    None
+                };
+                clauses.push(OraclePlSqlRoutineClause::SqlMacro(macro_kind));
+            } else {
+                break;
+            }
+        }
+
+        let body = if self.parse_keyword(Keyword::AGGREGATE) {
+            self.expect_keyword(Keyword::USING)?;
+            OraclePlSqlRoutineBody::AggregateUsing(self.parse_object_name(false)?)
+        } else if allow_declaration
+            && matches!(
+                self.peek_token().token,
+                BorrowedToken::SemiColon | BorrowedToken::Comma | BorrowedToken::RParen
+            )
+        {
+            OraclePlSqlRoutineBody::Declaration
+        } else {
+            let is_as = if self.parse_keyword(Keyword::AS) {
+                true
+            } else {
+                self.expect_keyword(Keyword::IS)?;
+                false
+            };
+            if is_as && self.peek_keyword(Keyword::LANGUAGE) {
+                OraclePlSqlRoutineBody::CallSpec(self.parse_oracle_plsql_call_spec()?)
+            } else {
+                let mut declarations = vec![];
+                while !self.peek_keyword(Keyword::BEGIN) {
+                    declarations.push(self.parse_sql_psm_declaration()?);
+                    self.expect_token(&BorrowedToken::SemiColon)?;
+                }
+                let block = self.parse_sql_psm_block()?;
+                OraclePlSqlRoutineBody::Block {
+                    is_as,
+                    declarations,
+                    block,
+                }
+            }
+        };
+
+        Ok(OraclePlSqlRoutine {
+            kind,
+            name,
+            parameters,
+            has_parameter_list,
+            return_type,
+            clauses,
+            body,
+        })
+    }
+
+    fn parse_oracle_plsql_parameter(&self) -> Result<OraclePlSqlParameter, ParserError> {
+        let name = self.parse_identifier()?;
+        let mode = if self.parse_keyword(Keyword::IN) {
+            if self.parse_keyword(Keyword::OUT) {
+                Some(PlSqlParameterMode::InOut)
+            } else {
+                Some(PlSqlParameterMode::In)
+            }
+        } else if self.parse_keyword(Keyword::OUT) {
+            Some(PlSqlParameterMode::Out)
+        } else {
+            None
+        };
+        let nocopy = self.parse_keyword(Keyword::NOCOPY);
+        let data_type = self.parse_sql_psm_data_type()?;
+        let (default_operator, default) = if self.parse_keyword(Keyword::DEFAULT) {
+            (
+                Some(DeclarationAssignmentOperator::Default),
+                Some(self.parse_expr()?),
+            )
+        } else if self.consume_token(&BorrowedToken::Assignment) {
+            (
+                Some(DeclarationAssignmentOperator::Assignment),
+                Some(self.parse_expr()?),
+            )
+        } else {
+            (None, None)
+        };
+        Ok(OraclePlSqlParameter {
+            name,
+            mode,
+            nocopy,
+            data_type,
+            default_operator,
+            default,
+        })
+    }
+
+    fn parse_oracle_plsql_accessor(&self) -> Result<OraclePlSqlAccessor, ParserError> {
+        let unit_kind = match self.peek_token().token {
+            BorrowedToken::Word(word)
+                if matches!(
+                    word.keyword,
+                    Keyword::PACKAGE
+                        | Keyword::PROCEDURE
+                        | Keyword::FUNCTION
+                        | Keyword::TRIGGER
+                        | Keyword::TYPE
+                ) =>
+            {
+                Some(self.parse_identifier()?)
+            }
+            _ => None,
+        };
+        let name = self.parse_object_name(false)?;
+        Ok(OraclePlSqlAccessor { unit_kind, name })
+    }
+
+    fn parse_oracle_plsql_call_spec(&self) -> Result<OraclePlSqlCallSpec, ParserError> {
+        self.expect_keyword(Keyword::LANGUAGE)?;
+        let language = self.parse_identifier()?;
+        self.expect_keyword(Keyword::NAME)?;
+        let name = self.parse_expr()?;
+        let library = if self.parse_keyword(Keyword::LIBRARY) {
+            Some(self.parse_object_name(false)?)
+        } else {
+            None
+        };
+        let parameters = if self.parse_keyword(Keyword::PARAMETERS) {
+            self.expect_token(&BorrowedToken::LParen)?;
+            let parameters =
+                self.parse_comma_separated(Parser::parse_oracle_plsql_call_spec_parameter)?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            parameters
+        } else {
+            vec![]
+        };
+        Ok(OraclePlSqlCallSpec {
+            language,
+            name,
+            library,
+            parameters,
+        })
+    }
+
+    fn parse_oracle_plsql_call_spec_parameter(
+        &self,
+    ) -> Result<OraclePlSqlCallSpecParameter, ParserError> {
+        let return_value = self.parse_keyword(Keyword::RETURN);
+        let name = if return_value {
+            None
+        } else {
+            Some(self.parse_identifier()?)
+        };
+        let data_type = self.parse_sql_psm_data_type()?;
+        Ok(OraclePlSqlCallSpecParameter {
+            name,
+            return_value,
+            data_type,
+        })
+    }
+
+    fn parse_sql_psm_variable_declaration_after_name(
+        &self,
+        name: Ident,
+    ) -> Result<SqlPsmDeclaration, ParserError> {
         let constant = self.parse_keyword(Keyword::CONSTANT);
         let data_type = self.parse_sql_psm_data_type()?;
 
@@ -7423,8 +10806,84 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn parse_plsql_type_declaration(&self) -> Result<PlSqlDeclaration, ParserError> {
+        let name = self.parse_identifier()?;
+        self.expect_keyword(Keyword::IS)?;
+
+        if self.parse_keyword(Keyword::RECORD) {
+            self.expect_token(&BorrowedToken::LParen)?;
+            let fields = self.parse_comma_separated(|parser| {
+                let name = parser.parse_identifier()?;
+                parser.parse_sql_psm_variable_declaration_after_name(name)
+            })?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            return Ok(PlSqlDeclaration::RecordType { name, fields });
+        }
+
+        if self.parse_keyword(Keyword::REF) {
+            self.expect_keyword(Keyword::CURSOR)?;
+            let return_type = if self.parse_keyword(Keyword::RETURN) {
+                Some(self.parse_sql_psm_data_type()?)
+            } else {
+                None
+            };
+            return Ok(PlSqlDeclaration::RefCursorType { name, return_type });
+        }
+
+        let kind = if self.parse_keyword(Keyword::TABLE) {
+            PlSqlCollectionKind::NestedTable
+        } else if self.parse_keyword(Keyword::VARRAY) {
+            self.expect_token(&BorrowedToken::LParen)?;
+            let size = self.parse_expr()?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            PlSqlCollectionKind::Varray(size)
+        } else {
+            return self.expected("RECORD, REF CURSOR, TABLE, or VARRAY", self.peek_token());
+        };
+        self.expect_keyword(Keyword::OF)?;
+        let element_type = self.parse_sql_psm_data_type()?;
+        let index_by = if self.parse_keywords(&[Keyword::INDEX, Keyword::BY]) {
+            Some(self.parse_sql_psm_data_type()?)
+        } else {
+            None
+        };
+        Ok(PlSqlDeclaration::CollectionType {
+            name,
+            kind,
+            element_type,
+            index_by,
+        })
+    }
+
+    fn parse_plsql_cursor_declaration(&self) -> Result<PlSqlDeclaration, ParserError> {
+        let name = self.parse_identifier()?;
+        let parameters = if self.consume_token(&BorrowedToken::LParen) {
+            let parameters = self.parse_comma_separated(|parser| {
+                let name = parser.parse_identifier()?;
+                parser.parse_sql_psm_variable_declaration_after_name(name)
+            })?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            parameters
+        } else {
+            vec![]
+        };
+        let return_type = if self.parse_keyword(Keyword::RETURN) {
+            Some(self.parse_sql_psm_data_type()?)
+        } else {
+            None
+        };
+        self.expect_keyword(Keyword::IS)?;
+        let query = self.parse_query()?;
+        Ok(PlSqlDeclaration::Cursor {
+            name,
+            parameters,
+            return_type,
+            query,
+        })
+    }
+
     /// Parse the DECLARE section of a SQL/PSM block
-    fn parse_sql_psm_declarations(&self) -> Result<Vec<SqlPsmDeclaration>, ParserError> {
+    fn parse_sql_psm_declarations(&self) -> Result<Vec<PlSqlDeclaration>, ParserError> {
         let mut declarations = vec![];
 
         if !self.parse_keyword(Keyword::DECLARE) {
@@ -8255,6 +11714,35 @@ impl<'a> Parser<'a> {
         create_view_params: Option<CreateViewParams>,
     ) -> Result<Statement, ParserError> {
         let _secure = self.parse_keyword(Keyword::SECURE);
+        let mut oracle = if self.dialect.is::<OracleDialect>() {
+            let force = if self.parse_keyword(Keyword::FORCE) {
+                Some(true)
+            } else if self.parse_keyword(Keyword::NOFORCE) {
+                Some(false)
+            } else {
+                None
+            };
+            let editioning = if self.parse_keyword(Keyword::EDITIONING)
+                || self.parse_keyword(Keyword::EDITIONABLE)
+            {
+                Some(true)
+            } else if self.parse_keyword(Keyword::NONEDITIONING)
+                || self.parse_keyword(Keyword::NONEDITIONABLE)
+            {
+                Some(false)
+            } else {
+                None
+            };
+            Some(OracleCreateViewOptions {
+                force,
+                editioning,
+                object: None,
+                constraint: None,
+                materialized: None,
+            })
+        } else {
+            None
+        };
         let materialized = self.parse_keyword(Keyword::MATERIALIZED);
         self.expect_keyword_is(Keyword::VIEW)?;
 
@@ -8262,13 +11750,79 @@ impl<'a> Parser<'a> {
         // statement so downstream can silently accept it.
         if materialized && self.parse_keywords(&[Keyword::LOG, Keyword::ON]) {
             let table_name = self.parse_object_name(false)?;
-            return Ok(Statement::CreateMaterializedViewLog { table_name });
+            let mut with_primary_key = false;
+            let mut with_rowid = false;
+            let mut with_sequence = false;
+            if self.dialect.is::<OracleDialect>() && self.parse_keyword(Keyword::WITH) {
+                loop {
+                    if self.parse_keywords(&[Keyword::PRIMARY, Keyword::KEY]) {
+                        if with_primary_key {
+                            return Err(ParserError::ParserError(
+                                "duplicate PRIMARY KEY in materialized view log".into(),
+                            ));
+                        }
+                        with_primary_key = true;
+                    } else if self.parse_keyword(Keyword::ROWID) {
+                        if with_rowid {
+                            return Err(ParserError::ParserError(
+                                "duplicate ROWID in materialized view log".into(),
+                            ));
+                        }
+                        with_rowid = true;
+                    } else if self.parse_keyword(Keyword::SEQUENCE) {
+                        if with_sequence {
+                            return Err(ParserError::ParserError(
+                                "duplicate SEQUENCE in materialized view log".into(),
+                            ));
+                        }
+                        with_sequence = true;
+                    } else {
+                        return self.expected(
+                            "PRIMARY KEY, ROWID, or SEQUENCE after WITH",
+                            self.peek_token(),
+                        );
+                    }
+                    if !self.consume_token(&BorrowedToken::Comma) {
+                        break;
+                    }
+                }
+            }
+            let columns = if self.dialect.is::<OracleDialect>()
+                && self.consume_token(&BorrowedToken::LParen)
+            {
+                let columns = self.parse_comma_separated(Parser::parse_identifier)?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                columns
+            } else {
+                vec![]
+            };
+            let including_new_values = self.dialect.is::<OracleDialect>()
+                && self.parse_keywords(&[Keyword::INCLUDING, Keyword::NEW, Keyword::VALUES]);
+            return Ok(Statement::CreateMaterializedViewLog {
+                table_name,
+                with_primary_key,
+                with_rowid,
+                with_sequence,
+                columns,
+                including_new_values,
+            });
         }
 
         // IF NOT EXISTS (materialized views)
         let if_not_exists = self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
         let allow_unquoted_hyphen = false;
         let name = self.parse_object_name(allow_unquoted_hyphen)?;
+        if self.dialect.is::<OracleDialect>() && self.parse_keyword(Keyword::OF) {
+            let data_type = self.parse_object_name(false)?;
+            self.expect_keywords(&[Keyword::WITH, Keyword::OBJECT, Keyword::IDENTIFIER])?;
+            self.expect_token(&BorrowedToken::LParen)?;
+            let object_identifier = self.parse_comma_separated(Parser::parse_expr)?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            oracle.as_mut().expect("Oracle view options").object = Some(OracleObjectView {
+                data_type,
+                object_identifier,
+            });
+        }
         // Many dialects support `OR ALTER` right after `CREATE`, but we don't (yet).
         // The SQL standard and Postgres support RECURSIVE here, but we don't support it either.
         let columns = self.parse_view_columns()?;
@@ -8276,6 +11830,55 @@ impl<'a> Parser<'a> {
         let with_options = self.parse_options(Keyword::WITH)?;
         if !with_options.is_empty() {
             options = CreateTableOptions::With(with_options);
+        }
+
+        if self.dialect.is::<OracleDialect>() && materialized {
+            let build = if self.parse_keywords(&[Keyword::BUILD, Keyword::IMMEDIATE]) {
+                Some(OracleMaterializedViewBuild::Immediate)
+            } else if self.parse_keywords(&[Keyword::BUILD, Keyword::DEFERRED]) {
+                Some(OracleMaterializedViewBuild::Deferred)
+            } else {
+                None
+            };
+            let (refresh_method, refresh_mode) = if self.parse_keyword(Keyword::REFRESH) {
+                let method = if self.parse_keyword(Keyword::FAST) {
+                    OracleMaterializedViewRefreshMethod::Fast
+                } else if self.parse_keyword(Keyword::COMPLETE) {
+                    OracleMaterializedViewRefreshMethod::Complete
+                } else if self.parse_keyword(Keyword::FORCE) {
+                    OracleMaterializedViewRefreshMethod::Force
+                } else {
+                    return self
+                        .expected("FAST, COMPLETE, or FORCE after REFRESH", self.peek_token());
+                };
+                self.expect_keyword(Keyword::ON)?;
+                let mode = if self.parse_keyword(Keyword::COMMIT) {
+                    OracleMaterializedViewRefreshMode::Commit
+                } else if self.parse_keyword(Keyword::DEMAND) {
+                    OracleMaterializedViewRefreshMode::Demand
+                } else {
+                    return self.expected("COMMIT or DEMAND after ON", self.peek_token());
+                };
+                (Some(method), Some(mode))
+            } else {
+                (None, None)
+            };
+            let query_rewrite =
+                if self.parse_keywords(&[Keyword::ENABLE, Keyword::QUERY, Keyword::REWRITE]) {
+                    Some(true)
+                } else if self.parse_keywords(&[Keyword::DISABLE, Keyword::QUERY, Keyword::REWRITE])
+                {
+                    Some(false)
+                } else {
+                    None
+                };
+            oracle.as_mut().expect("Oracle view options").materialized =
+                Some(OracleCreateMaterializedViewOptions {
+                    build,
+                    refresh_method,
+                    refresh_mode,
+                    query_rewrite,
+                });
         }
 
         self.expect_keyword_is(Keyword::AS)?;
@@ -8360,6 +11963,23 @@ impl<'a> Parser<'a> {
                 None
             };
 
+        if self.dialect.is::<OracleDialect>() && !materialized {
+            let constraint = if self.parse_keywords(&[Keyword::WITH, Keyword::READ, Keyword::ONLY])
+            {
+                Some(OracleViewConstraint::ReadOnly)
+            } else if self.parse_keywords(&[Keyword::WITH, Keyword::CHECK, Keyword::OPTION]) {
+                let constraint = if self.parse_keyword(Keyword::CONSTRAINT) {
+                    Some(self.parse_identifier()?)
+                } else {
+                    None
+                };
+                Some(OracleViewConstraint::CheckOption { constraint })
+            } else {
+                None
+            };
+            oracle.as_mut().expect("Oracle view options").constraint = constraint;
+        }
+
         Ok(CreateView {
             or_alter,
             name,
@@ -8374,6 +11994,7 @@ impl<'a> Parser<'a> {
             schemabinding,
             late_options,
             refresh_schedule,
+            oracle,
         }
         .into())
     }
@@ -8687,6 +12308,26 @@ impl<'a> Parser<'a> {
     fn parse_create_domain(&self, token: AttachedToken) -> Result<Statement, ParserError> {
         let name = self.parse_object_name(false)?;
         self.expect_keyword_is(Keyword::AS)?;
+        if self.consume_token(&BorrowedToken::LParen) {
+            if !self.dialect.is::<OracleDialect>() {
+                return self.expected("a data type name", self.peek_token());
+            }
+            let columns = self.parse_comma_separated(|parser| {
+                let name = parser.parse_identifier()?;
+                parser.expect_keyword(Keyword::AS)?;
+                Ok(OracleTypedName {
+                    name,
+                    data_type: parser.parse_data_type()?,
+                })
+            })?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            return Ok(Statement::OracleCreate(OracleCreateStatement {
+                create_token: token,
+                or_replace: false,
+                and_compile: false,
+                definition: OracleCreateDefinition::MultiColumnDomain { name, columns },
+            }));
+        }
         let data_type = self.parse_data_type()?;
         let collation = if self.parse_keyword(Keyword::COLLATE) {
             Some(self.parse_identifier()?)
@@ -9291,6 +12932,38 @@ impl<'a> Parser<'a> {
 
     pub fn parse_drop(&self) -> Result<Statement, ParserError> {
         let drop_token = self.attached_token_from_current();
+        if self.dialect.is::<OracleDialect>() {
+            let kind = match self.parse_one_of_keywords(&[
+                Keyword::PROCEDURE,
+                Keyword::FUNCTION,
+                Keyword::PACKAGE,
+                Keyword::TRIGGER,
+                Keyword::TYPE,
+                Keyword::LIBRARY,
+            ]) {
+                Some(Keyword::PROCEDURE) => Some(OraclePlSqlUnitKind::Procedure),
+                Some(Keyword::FUNCTION) => Some(OraclePlSqlUnitKind::Function),
+                Some(Keyword::PACKAGE) => Some(OraclePlSqlUnitKind::Package),
+                Some(Keyword::TRIGGER) => Some(OraclePlSqlUnitKind::Trigger),
+                Some(Keyword::TYPE) => Some(OraclePlSqlUnitKind::Type),
+                Some(Keyword::LIBRARY) => Some(OraclePlSqlUnitKind::Library),
+                _ => None,
+            };
+            if let Some(kind) = kind {
+                let body = matches!(
+                    kind,
+                    OraclePlSqlUnitKind::Package | OraclePlSqlUnitKind::Type
+                ) && self.parse_keyword(Keyword::BODY);
+                let name = self.parse_object_name(false)?;
+                let force = self.parse_keyword(Keyword::FORCE);
+                return Ok(Statement::OracleDropPlSqlUnit(OracleDropPlSqlUnit {
+                    kind,
+                    body,
+                    name,
+                    force,
+                }));
+            }
+        }
         // MySQL dialect supports `TEMPORARY`
         let temporary = dialect_of!(self is MySqlDialect | PostgreSqlDialect)
             && self.parse_keyword(Keyword::TEMPORARY);
@@ -9381,6 +13054,24 @@ impl<'a> Parser<'a> {
         let names = self.parse_comma_separated(|p| p.parse_object_name(false))?;
 
         let loc = self.peek_token().span.start;
+        let oracle = if self.dialect.is::<OracleDialect>() {
+            let cascade_constraints = matches!(object_type, ObjectType::Table | ObjectType::View)
+                && self.consume_oracle_words(&["CASCADE", "CONSTRAINTS"]);
+            let preserve_table = object_type == ObjectType::MaterializedView
+                && self.consume_oracle_words(&["PRESERVE", "TABLE"]);
+            let online = object_type == ObjectType::Index && self.consume_oracle_words(&["ONLINE"]);
+            if cascade_constraints || preserve_table || online {
+                Some(OracleDropOptions {
+                    cascade_constraints,
+                    preserve_table,
+                    online,
+                })
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         let cascade = self.parse_keyword(Keyword::CASCADE);
         let restrict = self.parse_keyword(Keyword::RESTRICT);
         let purge = self.parse_keyword(Keyword::PURGE);
@@ -9392,6 +13083,11 @@ impl<'a> Parser<'a> {
                 "Cannot specify CASCADE, RESTRICT, or PURGE in DROP ROLE",
                 loc
             );
+        }
+        if self.dialect.is::<OracleDialect>()
+            && (cascade || restrict || (purge && object_type != ObjectType::Table))
+        {
+            return parser_err!("invalid Oracle DROP modifier", loc);
         }
         let table = if self.parse_keyword(Keyword::ON) {
             Some(self.parse_object_name(false)?)
@@ -9408,6 +13104,7 @@ impl<'a> Parser<'a> {
             purge,
             temporary,
             table,
+            oracle,
         })
     }
 
@@ -10307,6 +14004,103 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn parse_plsql_fetch(&self) -> Result<Statement, ParserError> {
+        let cursor = self.parse_identifier()?;
+        let bulk_collect = self.parse_keywords(&[Keyword::BULK, Keyword::COLLECT]);
+        self.expect_keyword(Keyword::INTO)?;
+        let targets = self.parse_comma_separated(Parser::parse_expr)?;
+        let limit = if self.parse_keyword(Keyword::LIMIT) {
+            Some(self.parse_expr()?)
+        } else {
+            None
+        };
+        Ok(Statement::PlSqlFetch(PlSqlFetch {
+            cursor,
+            bulk_collect,
+            targets,
+            limit,
+        }))
+    }
+
+    fn parse_plsql_forall(&self) -> Result<Statement, ParserError> {
+        let index = self.parse_identifier()?;
+        self.expect_keyword(Keyword::IN)?;
+        let bounds = if self.parse_keywords(&[Keyword::INDICES, Keyword::OF]) {
+            PlSqlForAllBounds::IndicesOf {
+                collection: self.parse_expr()?,
+            }
+        } else if self.parse_keywords(&[Keyword::VALUES, Keyword::OF]) {
+            PlSqlForAllBounds::ValuesOf {
+                collection: self.parse_expr()?,
+            }
+        } else {
+            let lower = self.parse_expr()?;
+            self.expect_token(&BorrowedToken::DoubleDot)?;
+            let upper = self.parse_expr()?;
+            PlSqlForAllBounds::Range { lower, upper }
+        };
+        let save_exceptions = self.parse_keywords(&[Keyword::SAVE, Keyword::EXCEPTIONS]);
+        let statement = Box::new(self.parse_statement()?);
+        Ok(Statement::PlSqlForAll(PlSqlForAll {
+            index,
+            bounds,
+            save_exceptions,
+            statement,
+        }))
+    }
+
+    fn parse_plsql_execute_immediate(&self) -> Result<Statement, ParserError> {
+        self.expect_keyword(Keyword::IMMEDIATE)?;
+        let sql = self.parse_expr()?;
+        let bulk_collect = self.parse_keywords(&[Keyword::BULK, Keyword::COLLECT]);
+        let into = if self.parse_keyword(Keyword::INTO) {
+            self.parse_comma_separated(Parser::parse_expr)?
+        } else {
+            vec![]
+        };
+        let using = if self.parse_keyword(Keyword::USING) {
+            self.parse_comma_separated(Parser::parse_plsql_using_argument)?
+        } else {
+            vec![]
+        };
+        let returning_into = if self.parse_keyword(Keyword::RETURNING) {
+            self.expect_keyword(Keyword::INTO)?;
+            self.parse_comma_separated(Parser::parse_expr)?
+        } else {
+            vec![]
+        };
+        Ok(Statement::PlSqlExecuteImmediate(PlSqlExecuteImmediate {
+            sql,
+            bulk_collect,
+            into,
+            using,
+            returning_into,
+        }))
+    }
+
+    fn parse_plsql_using_argument(&self) -> Result<PlSqlUsingArgument, ParserError> {
+        let mode = if self.parse_keywords(&[Keyword::IN, Keyword::OUT]) {
+            PlSqlParameterMode::InOut
+        } else if self.parse_keyword(Keyword::OUT) {
+            PlSqlParameterMode::Out
+        } else {
+            let _ = self.parse_keyword(Keyword::IN);
+            PlSqlParameterMode::In
+        };
+        Ok(PlSqlUsingArgument {
+            mode,
+            expr: self.parse_expr()?,
+        })
+    }
+
+    fn parse_plsql_pipe_row(&self) -> Result<Statement, ParserError> {
+        self.expect_keyword(Keyword::ROW)?;
+        self.expect_token(&BorrowedToken::LParen)?;
+        let row = self.parse_expr()?;
+        self.expect_token(&BorrowedToken::RParen)?;
+        Ok(Statement::PlSqlPipeRow(row))
+    }
+
     /// Parse MOVE statement for cursor positioning. Like
     /// [`Self::parse_fetch_statement`], the `MOVE` keyword has already been
     /// consumed by the statement dispatch.
@@ -10586,6 +14380,18 @@ impl<'a> Parser<'a> {
             };
         let comment_after_column_def = None;
 
+        if self.dialect.is::<OracleDialect>() && self.parse_keyword(Keyword::ORGANIZATION) {
+            self.expect_keyword(Keyword::EXTERNAL)?;
+            self.expect_token(&BorrowedToken::LParen)?;
+            let mut definition = self.parse_oracle_external_table_definition(columns)?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            definition.reject_limit = self.parse_oracle_reject_limit()?;
+            return Ok(Statement::OracleCreateExternalTable {
+                name: table_name,
+                definition,
+            });
+        }
+
         // Parse PARTITION BY { RANGE | LIST | HASH } ( ... )
         // This can appear on both regular tables and PARTITION OF (sub-partitioning)
         let partition_by = if self.parse_keywords(&[Keyword::PARTITION, Keyword::BY]) {
@@ -10662,6 +14468,49 @@ impl<'a> Parser<'a> {
             .partition_bound(partition_bound)
             .clustering_by(clustering_by)
             .build())
+    }
+
+    fn parse_oracle_external_table_definition(
+        &self,
+        columns: Vec<ColumnDef>,
+    ) -> Result<OracleExternalTableDefinition, ParserError> {
+        self.expect_keyword(Keyword::TYPE)?;
+        let access_driver = self.parse_identifier()?;
+        self.expect_keywords(&[Keyword::DEFAULT, Keyword::DIRECTORY])?;
+        let default_directory = self.parse_object_name(false)?;
+        self.expect_keywords(&[Keyword::ACCESS, Keyword::PARAMETERS])?;
+        self.expect_token(&BorrowedToken::LParen)?;
+        self.expect_keywords(&[
+            Keyword::RECORDS,
+            Keyword::DELIMITED,
+            Keyword::BY,
+            Keyword::NEWLINE,
+        ])?;
+        self.expect_token(&BorrowedToken::RParen)?;
+        self.expect_keyword(Keyword::LOCATION)?;
+        self.expect_token(&BorrowedToken::LParen)?;
+        let locations = self.parse_comma_separated(Parser::parse_expr)?;
+        self.expect_token(&BorrowedToken::RParen)?;
+        Ok(OracleExternalTableDefinition {
+            columns,
+            access_driver,
+            default_directory,
+            access_parameters: vec![OracleExternalAccessParameter::RecordsDelimitedByNewline],
+            locations,
+            reject_limit: None,
+        })
+    }
+
+    fn parse_oracle_reject_limit(&self) -> Result<Option<OracleRejectLimit>, ParserError> {
+        if !self.parse_keyword(Keyword::REJECT) {
+            return Ok(None);
+        }
+        self.expect_keyword(Keyword::LIMIT)?;
+        if self.parse_keyword(Keyword::UNLIMITED) {
+            Ok(Some(OracleRejectLimit::Unlimited))
+        } else {
+            Ok(Some(OracleRejectLimit::Value(self.parse_expr()?)))
+        }
     }
 
     fn parse_create_table_like_options(&self) -> Vec<CreateTableLikeOption> {
@@ -11428,6 +15277,28 @@ impl<'a> Parser<'a> {
                 generation_expr_mode: None,
                 generated_keyword: true,
             }))
+        } else if self.dialect.is::<OracleDialect>()
+            && self.parse_keywords(&[
+                Keyword::BY,
+                Keyword::DEFAULT,
+                Keyword::ON,
+                Keyword::NULL,
+                Keyword::AS,
+                Keyword::IDENTITY,
+            ])
+        {
+            let mut sequence_options = vec![];
+            if self.expect_token(&BorrowedToken::LParen).is_ok() {
+                sequence_options = self.parse_create_sequence_options()?;
+                self.expect_token(&BorrowedToken::RParen)?;
+            }
+            Ok(Some(ColumnOption::Generated {
+                generated_as: GeneratedAs::ByDefaultOnNull,
+                sequence_options: Some(sequence_options),
+                generation_expr: None,
+                generation_expr_mode: None,
+                generated_keyword: true,
+            }))
         } else if self.parse_keywords(&[
             Keyword::BY,
             Keyword::DEFAULT,
@@ -12072,7 +15943,11 @@ impl<'a> Parser<'a> {
 
     pub fn parse_alter_table_operation(&self) -> Result<AlterTableOperation, ParserError> {
         let operation = if self.parse_keyword(Keyword::ADD) {
-            if let Some(constraint) = self.parse_optional_table_constraint()? {
+            if self.dialect.is::<OracleDialect>() && self.consume_token(&BorrowedToken::LParen) {
+                let columns = self.parse_comma_separated(Parser::parse_column_def)?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                AlterTableOperation::OracleAddColumns { columns }
+            } else if let Some(constraint) = self.parse_optional_table_constraint()? {
                 let not_valid = self.parse_keywords(&[Keyword::NOT, Keyword::VALID]);
                 AlterTableOperation::AddConstraint {
                     constraint,
@@ -12308,21 +16183,27 @@ impl<'a> Parser<'a> {
                 column_position,
             }
         } else if self.parse_keyword(Keyword::MODIFY) {
-            let _ = self.parse_keyword(Keyword::COLUMN); // [ COLUMN ]
-            let col_name = self.parse_identifier()?;
-            let data_type = self.parse_data_type()?;
-            let mut options = vec![];
-            while let Some(option) = self.parse_optional_column_option()? {
-                options.push(option);
-            }
+            if self.dialect.is::<OracleDialect>() && self.consume_token(&BorrowedToken::LParen) {
+                let columns = self.parse_comma_separated(Parser::parse_column_def)?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                AlterTableOperation::OracleModifyColumns { columns }
+            } else {
+                let _ = self.parse_keyword(Keyword::COLUMN); // [ COLUMN ]
+                let col_name = self.parse_identifier()?;
+                let data_type = self.parse_data_type()?;
+                let mut options = vec![];
+                while let Some(option) = self.parse_optional_column_option()? {
+                    options.push(option);
+                }
 
-            let column_position = self.parse_column_position()?;
+                let column_position = self.parse_column_position()?;
 
-            AlterTableOperation::ModifyColumn {
-                col_name,
-                data_type,
-                options,
-                column_position,
+                AlterTableOperation::ModifyColumn {
+                    col_name,
+                    data_type,
+                    options,
+                    column_position,
+                }
             }
         } else if self.parse_keyword(Keyword::ALTER) {
             let _ = self.parse_keyword(Keyword::COLUMN); // [ COLUMN ]
@@ -12492,18 +16373,40 @@ impl<'a> Parser<'a> {
             }
         } else if self.parse_keywords(&[Keyword::SPLIT, Keyword::PARTITION]) {
             let partition_name = self.parse_object_name(false)?;
+            let at = if self.dialect.is::<OracleDialect>() {
+                self.expect_keyword(Keyword::AT)?;
+                self.expect_token(&BorrowedToken::LParen)?;
+                let at = self.parse_expr()?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                Some(at)
+            } else {
+                None
+            };
             self.expect_keyword(Keyword::INTO)?;
             self.expect_token(&BorrowedToken::LParen)?;
             let into = self.parse_comma_separated(|p| {
                 p.expect_keyword(Keyword::PARTITION)?;
                 let name = p.parse_object_name(false)?;
-                let bound = p.parse_partition_bound_spec()?;
+                let bound = if p.dialect.is::<OracleDialect>() {
+                    None
+                } else {
+                    Some(p.parse_partition_bound_spec()?)
+                };
                 Ok(SplitPartitionTarget { name, bound })
             })?;
             self.expect_token(&BorrowedToken::RParen)?;
+            if self.dialect.is::<OracleDialect>() && into.len() != 2 {
+                return Err(ParserError::ParserError(
+                    "Oracle range partition split requires exactly two target partitions".into(),
+                ));
+            }
+            let update_global_indexes = self.dialect.is::<OracleDialect>()
+                && self.parse_keywords(&[Keyword::UPDATE, Keyword::GLOBAL, Keyword::INDEXES]);
             AlterTableOperation::SplitPartition {
                 partition_name,
+                at,
                 into,
+                update_global_indexes,
             }
         } else if self.parse_keywords(&[Keyword::MERGE, Keyword::PARTITIONS]) {
             self.expect_token(&BorrowedToken::LParen)?;
@@ -12556,6 +16459,38 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_alter(&self) -> Result<Statement, ParserError> {
+        if self.dialect.is::<OracleDialect>() {
+            if self.parse_keyword(Keyword::TYPE) {
+                return self.parse_oracle_alter_type();
+            }
+            let kind = match self.parse_one_of_keywords(&[
+                Keyword::PROCEDURE,
+                Keyword::FUNCTION,
+                Keyword::PACKAGE,
+                Keyword::TRIGGER,
+                Keyword::LIBRARY,
+            ]) {
+                Some(Keyword::PROCEDURE) => Some(OraclePlSqlUnitKind::Procedure),
+                Some(Keyword::FUNCTION) => Some(OraclePlSqlUnitKind::Function),
+                Some(Keyword::PACKAGE) => Some(OraclePlSqlUnitKind::Package),
+                Some(Keyword::TRIGGER) => Some(OraclePlSqlUnitKind::Trigger),
+                Some(Keyword::LIBRARY) => Some(OraclePlSqlUnitKind::Library),
+                _ => None,
+            };
+            if let Some(kind) = kind {
+                return self.parse_oracle_alter_plsql_unit(kind);
+            }
+            if self.parse_keyword(Keyword::VIEW) {
+                let target = OracleAlterTarget::Name(self.parse_object_name(false)?);
+                self.expect_keyword(Keyword::COMPILE)?;
+                return Ok(Statement::OracleAlter(OracleAlterStatement {
+                    alter_token: AttachedToken::empty(),
+                    object_type: OracleAlterObjectType::View,
+                    target,
+                    operation: OracleAlterOperation::Compile,
+                }));
+            }
+        }
         if self.parse_keyword(Keyword::MATERIALIZED) {
             self.expect_keyword(Keyword::VIEW)?;
             return self.parse_alter_materialized_view();
@@ -12647,6 +16582,78 @@ impl<'a> Parser<'a> {
             // unreachable because expect_one_of_keywords used above
             _ => unreachable!(),
         }
+    }
+
+    fn parse_oracle_alter_type(&self) -> Result<Statement, ParserError> {
+        let name = self.parse_object_name(false)?;
+        let action = if self.parse_keywords(&[Keyword::ADD, Keyword::ATTRIBUTE]) {
+            self.expect_token(&BorrowedToken::LParen)?;
+            let attributes = self.parse_comma_separated(|parser| {
+                let name = parser.parse_identifier()?;
+                parser.parse_sql_psm_variable_declaration_after_name(name)
+            })?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            OracleAlterTypeAction::AddAttributes(attributes)
+        } else {
+            return self.expected("ADD ATTRIBUTE", self.peek_token());
+        };
+        let cascade = self.parse_keyword(Keyword::CASCADE);
+        let including_table_data =
+            self.parse_keywords(&[Keyword::INCLUDING, Keyword::TABLE, Keyword::DATA]);
+        Ok(Statement::OracleAlterType(OracleAlterType {
+            name,
+            action,
+            cascade,
+            including_table_data,
+        }))
+    }
+
+    fn parse_oracle_alter_plsql_unit(
+        &self,
+        kind: OraclePlSqlUnitKind,
+    ) -> Result<Statement, ParserError> {
+        let name = self.parse_object_name(false)?;
+        let action = if self.parse_keyword(Keyword::COMPILE) {
+            let target = if self.parse_keyword(Keyword::SPECIFICATION) {
+                Some(OraclePlSqlCompileTarget::Specification)
+            } else if self.parse_keyword(Keyword::BODY) {
+                Some(OraclePlSqlCompileTarget::Body)
+            } else {
+                None
+            };
+            let debug = self.parse_keyword(Keyword::DEBUG);
+            let mut parameters = vec![];
+            while self.peek_token() != BorrowedToken::EOF
+                && self.peek_token() != BorrowedToken::SemiColon
+                && !self.peek_keywords(&[Keyword::REUSE, Keyword::SETTINGS])
+            {
+                let parameter = self.parse_object_name(false)?;
+                self.expect_token(&BorrowedToken::Eq)?;
+                let value = self.parse_expr()?;
+                parameters.push(OraclePlSqlCompileParameter {
+                    name: parameter,
+                    value,
+                });
+            }
+            let reuse_settings = self.parse_keywords(&[Keyword::REUSE, Keyword::SETTINGS]);
+            OracleAlterPlSqlUnitAction::Compile {
+                target,
+                debug,
+                parameters,
+                reuse_settings,
+            }
+        } else if self.parse_keyword(Keyword::ENABLE) {
+            OracleAlterPlSqlUnitAction::Enable
+        } else if self.parse_keyword(Keyword::DISABLE) {
+            OracleAlterPlSqlUnitAction::Disable
+        } else {
+            return self.expected("COMPILE, ENABLE, or DISABLE", self.peek_token());
+        };
+        Ok(Statement::OracleAlterPlSqlUnit(OracleAlterPlSqlUnit {
+            kind,
+            name,
+            action,
+        }))
     }
 
     /// Parses `ALTER TENANT tenant_name { QUIESCE | RESUME }`.
@@ -12797,6 +16804,25 @@ impl<'a> Parser<'a> {
             AlterMaterializedViewOperation::DisableRewrite
         } else if self.parse_keywords(&[Keyword::OWNER, Keyword::TO]) {
             AlterMaterializedViewOperation::OwnerTo(self.parse_owner()?)
+        } else if self.dialect.is::<OracleDialect>() && self.parse_keyword(Keyword::REFRESH) {
+            let method = if self.parse_keyword(Keyword::FAST) {
+                OracleMaterializedViewRefreshMethod::Fast
+            } else if self.parse_keyword(Keyword::COMPLETE) {
+                OracleMaterializedViewRefreshMethod::Complete
+            } else if self.parse_keyword(Keyword::FORCE) {
+                OracleMaterializedViewRefreshMethod::Force
+            } else {
+                return self.expected("FAST, COMPLETE, or FORCE after REFRESH", self.peek_token());
+            };
+            self.expect_keyword(Keyword::ON)?;
+            let mode = if self.parse_keyword(Keyword::COMMIT) {
+                OracleMaterializedViewRefreshMode::Commit
+            } else if self.parse_keyword(Keyword::DEMAND) {
+                OracleMaterializedViewRefreshMode::Demand
+            } else {
+                return self.expected("COMMIT or DEMAND after ON", self.peek_token());
+            };
+            AlterMaterializedViewOperation::OracleRefresh { method, mode }
         } else if self.parse_keywords(&[Keyword::REFRESH, Keyword::SCHEDULE]) {
             if self.parse_keyword(Keyword::NONE) {
                 AlterMaterializedViewOperation::RefreshSchedule(None)
@@ -13076,7 +17102,19 @@ impl<'a> Parser<'a> {
         // Check for open_for variants
         let open_for = if self.consume_token(&BorrowedToken::LParen) {
             // OPEN cursor_name(args) - bound cursor with arguments
-            let args = self.parse_comma_separated(Parser::parse_expr)?;
+            let args = self.parse_comma_separated(|parser| {
+                let name = if parser.peek_nth_token_ref(1).token == BorrowedToken::RArrow {
+                    let name = parser.parse_identifier()?;
+                    parser.expect_token(&BorrowedToken::RArrow)?;
+                    Some(name)
+                } else {
+                    None
+                };
+                Ok(OracleCursorArgument {
+                    name,
+                    value: parser.parse_expr()?,
+                })
+            })?;
             self.expect_token(&BorrowedToken::RParen)?;
             Some(OpenFor::BoundCursorArgs(args))
         } else if self.parse_keyword(Keyword::FOR) {
@@ -13090,10 +17128,25 @@ impl<'a> Parser<'a> {
                     None
                 };
                 Some(OpenFor::Execute { query_expr, using })
+            } else if self.dialect.is::<OracleDialect>() && !self.peek_sub_query() {
+                let query_expr = Box::new(self.parse_expr()?);
+                let using = if self.parse_keyword(Keyword::USING) {
+                    self.parse_comma_separated(Parser::parse_plsql_using_argument)?
+                } else {
+                    vec![]
+                };
+                Some(OpenFor::OracleDynamic { query_expr, using })
             } else {
                 // OPEN cursor_name FOR query
                 let query = self.parse_query()?;
-                Some(OpenFor::Query(query))
+                if self.dialect.is::<OracleDialect>() && self.parse_keyword(Keyword::USING) {
+                    Some(OpenFor::OracleQuery {
+                        query,
+                        using: self.parse_comma_separated(Parser::parse_plsql_using_argument)?,
+                    })
+                } else {
+                    Some(OpenFor::Query(query))
+                }
             }
         } else {
             None
@@ -13529,6 +17582,9 @@ impl<'a> Parser<'a> {
             BorrowedToken::NationalStringLiteral(ref s) => {
                 ok_value(Value::NationalStringLiteral(s.to_string()))
             }
+            BorrowedToken::AlternativeQuotedString(ref s) => {
+                ok_value(Value::AlternativeQuotedString(s.clone()))
+            }
             BorrowedToken::EscapedStringLiteral(ref s) => {
                 ok_value(Value::EscapedStringLiteral(s.to_string()))
             }
@@ -13537,6 +17593,11 @@ impl<'a> Parser<'a> {
             }
             BorrowedToken::HexStringLiteral(ref s) => {
                 ok_value(Value::HexStringLiteral(s.to_string()))
+            }
+            BorrowedToken::Placeholder(ref s)
+                if self.dialect.is::<OracleDialect>() && s.starts_with("$$") =>
+            {
+                ok_value(Value::PlSqlInquiryDirective(s.to_string()))
             }
             BorrowedToken::Placeholder(ref s) => ok_value(Value::Placeholder(s.to_string())),
             tok @ BorrowedToken::Colon | tok @ BorrowedToken::AtSign => {
@@ -13919,8 +17980,17 @@ impl<'a> Parser<'a> {
                     }
                 }
                 Keyword::VARCHAR => Ok(DataType::Varchar(self.parse_optional_character_length()?)),
+                Keyword::VARCHAR2 if self.dialect.is::<OracleDialect>() => {
+                    Ok(DataType::Varchar2(self.parse_optional_character_length()?))
+                }
                 Keyword::NVARCHAR => {
                     Ok(DataType::Nvarchar(self.parse_optional_character_length()?))
+                }
+                Keyword::NVARCHAR2 if self.dialect.is::<OracleDialect>() => {
+                    Ok(DataType::Nvarchar2(self.parse_optional_character_length()?))
+                }
+                Keyword::NCHAR if self.dialect.is::<OracleDialect>() => {
+                    Ok(DataType::Nchar(self.parse_optional_character_length()?))
                 }
                 Keyword::CHARACTER => {
                     if self.parse_keyword(Keyword::VARYING) {
@@ -13947,6 +18017,17 @@ impl<'a> Parser<'a> {
                     }
                 }
                 Keyword::CLOB => Ok(DataType::Clob(self.parse_optional_precision()?)),
+                Keyword::NCLOB if self.dialect.is::<OracleDialect>() => {
+                    Ok(DataType::Nclob(self.parse_optional_precision()?))
+                }
+                Keyword::RAW if self.dialect.is::<OracleDialect>() => {
+                    Ok(DataType::Raw(self.parse_optional_precision()?))
+                }
+                Keyword::LONG if self.dialect.is::<OracleDialect>() => {
+                    self.expect_keyword(Keyword::RAW)?;
+                    Ok(DataType::LongRaw)
+                }
+                Keyword::BFILE if self.dialect.is::<OracleDialect>() => Ok(DataType::Bfile),
                 Keyword::BINARY => Ok(DataType::Binary(self.parse_optional_precision()?)),
                 Keyword::VARBINARY => Ok(DataType::Varbinary(self.parse_optional_binary_length()?)),
                 Keyword::BLOB => Ok(DataType::Blob(self.parse_optional_precision()?)),
@@ -13967,8 +18048,14 @@ impl<'a> Parser<'a> {
                 Keyword::TIMESTAMP => {
                     let precision = self.parse_optional_precision()?;
                     let tz = if self.parse_keyword(Keyword::WITH) {
-                        self.expect_keywords(&[Keyword::TIME, Keyword::ZONE])?;
-                        TimezoneInfo::WithTimeZone
+                        if self.dialect.is::<OracleDialect>() && self.parse_keyword(Keyword::LOCAL)
+                        {
+                            self.expect_keywords(&[Keyword::TIME, Keyword::ZONE])?;
+                            TimezoneInfo::WithLocalTimeZone
+                        } else {
+                            self.expect_keywords(&[Keyword::TIME, Keyword::ZONE])?;
+                            TimezoneInfo::WithTimeZone
+                        }
                     } else if self.parse_keyword(Keyword::WITHOUT) {
                         self.expect_keywords(&[Keyword::TIME, Keyword::ZONE])?;
                         TimezoneInfo::WithoutTimeZone
@@ -14002,7 +18089,37 @@ impl<'a> Parser<'a> {
                     TimezoneInfo::Tz,
                 )),
                 Keyword::INTERVAL => {
-                    if self.features.supports_interval_options {
+                    if self.dialect.is::<OracleDialect>()
+                        && matches!(
+                            self.peek_token().token,
+                            BorrowedToken::Word(word)
+                                if matches!(word.keyword, Keyword::YEAR | Keyword::DAY)
+                        )
+                    {
+                        let leading =
+                            self.expect_one_of_keywords(&[Keyword::YEAR, Keyword::DAY])?;
+                        let leading_precision = self.parse_optional_precision()?;
+                        self.expect_keyword(Keyword::TO)?;
+                        let (fields, fractional_seconds_precision) = match leading {
+                            Keyword::YEAR => {
+                                self.expect_keyword(Keyword::MONTH)?;
+                                (IntervalFields::YearToMonth, None)
+                            }
+                            Keyword::DAY => {
+                                self.expect_keyword(Keyword::SECOND)?;
+                                (
+                                    IntervalFields::DayToSecond,
+                                    self.parse_optional_precision()?,
+                                )
+                            }
+                            _ => unreachable!(),
+                        };
+                        Ok(DataType::OracleInterval {
+                            fields,
+                            leading_precision,
+                            fractional_seconds_precision,
+                        })
+                    } else if self.features.supports_interval_options {
                         let fields = self.maybe_parse_optional_interval_fields()?;
                         let precision = self.parse_optional_precision()?;
                         Ok(DataType::Interval { fields, precision })
@@ -14334,6 +18451,23 @@ impl<'a> Parser<'a> {
 
     pub fn parse_optional_group_by(&self) -> Result<Option<GroupByExpr>, ParserError> {
         if self.parse_keywords(&[Keyword::GROUP, Keyword::BY]) {
+            if self.dialect.is::<OracleDialect>() && self.parse_keyword(Keyword::VECTOR) {
+                self.expect_token(&BorrowedToken::LParen)?;
+                let vectors = self.parse_comma_separated(|parser| {
+                    parser.expect_token(&BorrowedToken::LParen)?;
+                    let expressions = if parser.consume_token(&BorrowedToken::RParen) {
+                        vec![]
+                    } else {
+                        let expressions =
+                            parser.parse_comma_separated(Parser::parse_group_by_expr)?;
+                        parser.expect_token(&BorrowedToken::RParen)?;
+                        expressions
+                    };
+                    Ok(expressions)
+                })?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                return Ok(Some(GroupByExpr::OracleVector(vectors)));
+            }
             let expressions = if self.parse_keyword(Keyword::ALL) {
                 None
             } else {
@@ -14389,21 +18523,29 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_optional_order_by(&self) -> Result<Option<OrderBy>, ParserError> {
-        if self.parse_keywords(&[Keyword::ORDER, Keyword::BY]) {
-            let order_by =
-                if self.features.supports_order_by_all && self.parse_keyword(Keyword::ALL) {
-                    let order_by_options = self.parse_order_by_options()?;
-                    OrderBy {
-                        kind: OrderByKind::All(order_by_options),
-                        interpolate: None,
-                    }
-                } else {
-                    let exprs = self.parse_comma_separated(Parser::parse_order_by_expr)?;
-                    OrderBy {
-                        kind: OrderByKind::Expressions(exprs),
-                        interpolate: None,
-                    }
-                };
+        if self.parse_keyword(Keyword::ORDER) {
+            let siblings = self.parse_keyword(Keyword::SIBLINGS);
+            self.expect_keyword(Keyword::BY)?;
+            let order_by = if !siblings
+                && self.features.supports_order_by_all
+                && self.parse_keyword(Keyword::ALL)
+            {
+                let order_by_options = self.parse_order_by_options()?;
+                OrderBy {
+                    kind: OrderByKind::All(order_by_options),
+                    interpolate: None,
+                }
+            } else {
+                let exprs = self.parse_comma_separated(Parser::parse_order_by_expr)?;
+                OrderBy {
+                    kind: if siblings {
+                        OrderByKind::Siblings(exprs)
+                    } else {
+                        OrderByKind::Expressions(exprs)
+                    },
+                    interpolate: None,
+                }
+            };
             Ok(Some(order_by))
         } else {
             Ok(None)
@@ -15026,6 +19168,10 @@ impl<'a> Parser<'a> {
             Some(CharLengthUnits::Characters)
         } else if self.parse_keyword(Keyword::OCTETS) {
             Some(CharLengthUnits::Octets)
+        } else if self.dialect.is::<OracleDialect>() && self.parse_keyword(Keyword::CHAR) {
+            Some(CharLengthUnits::Char)
+        } else if self.dialect.is::<OracleDialect>() && self.parse_keyword(Keyword::BYTE) {
+            Some(CharLengthUnits::Byte)
         } else {
             None
         };
@@ -15182,7 +19328,7 @@ impl<'a> Parser<'a> {
             None
         };
         let returning = if self.parse_keyword(Keyword::RETURNING) {
-            Some(self.parse_comma_separated(Parser::parse_select_item)?)
+            Some(self.parse_returning_clause()?)
         } else {
             None
         };
@@ -15319,7 +19465,34 @@ impl<'a> Parser<'a> {
         let with = if self.parse_keyword(Keyword::WITH) {
             let with_token = self.get_current_token().clone();
             let recursive = self.parse_keyword(Keyword::RECURSIVE);
-            let cte_tables = self.parse_comma_separated(Parser::parse_cte)?;
+            let mut oracle_declarations = vec![];
+            if self.dialect.is::<OracleDialect>() {
+                loop {
+                    let kind = if self.parse_keyword(Keyword::FUNCTION) {
+                        Some(OraclePlSqlRoutineKind::Function)
+                    } else if self.parse_keyword(Keyword::PROCEDURE) {
+                        Some(OraclePlSqlRoutineKind::Procedure)
+                    } else {
+                        None
+                    };
+                    let Some(kind) = kind else {
+                        break;
+                    };
+                    oracle_declarations.push(self.parse_oracle_plsql_routine(kind, false)?);
+                    self.expect_token(&BorrowedToken::SemiColon)?;
+                }
+            }
+            let cte_tables = if !oracle_declarations.is_empty()
+                && (self.peek_keyword(Keyword::SELECT)
+                    || self.peek_keyword(Keyword::INSERT)
+                    || self.peek_keyword(Keyword::UPDATE)
+                    || self.peek_keyword(Keyword::DELETE)
+                    || self.peek_keyword(Keyword::MERGE))
+            {
+                vec![]
+            } else {
+                self.parse_comma_separated(Parser::parse_cte)?
+            };
 
             // SQL:2016 T133: Parse optional SEARCH and CYCLE clauses for recursive CTEs
             let search = self.parse_cte_search_clause()?;
@@ -15328,6 +19501,7 @@ impl<'a> Parser<'a> {
             Some(Box::new(With {
                 with_token: with_token.into(),
                 recursive,
+                oracle_declarations,
                 cte_tables,
                 search,
                 cycle,
@@ -15612,10 +19786,10 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    /// Parse optional CYCLE clause for recursive CTEs (SQL:2016 T133, SQL:2023)
+    /// Parse an optional CYCLE clause for recursive CTEs.
     /// ```sql
     /// CYCLE col1, col2 SET is_cycle USING path
-    /// CYCLE col1, col2 SET is_cycle TO 'Y' DEFAULT 'N' USING path  -- SQL:2023
+    /// CYCLE col1, col2 SET is_cycle TO 'Y' DEFAULT 'N'
     /// ```
     pub fn parse_cte_cycle_clause(&self) -> Result<Option<CycleClause>, ParserError> {
         if !self.parse_keyword(Keyword::CYCLE) {
@@ -15626,21 +19800,28 @@ impl<'a> Parser<'a> {
         self.expect_keyword(Keyword::SET)?;
         let set_column = self.parse_identifier()?;
 
-        // SQL:2023: TO <cycle_value> DEFAULT <non_cycle_value>
-        let cycle_value = if self.parse_keyword(Keyword::TO) {
-            Some(self.parse_expr()?)
+        let (cycle_value, non_cycle_value, using_column) = if self.dialect.is::<OracleDialect>() {
+            self.expect_keyword(Keyword::TO)?;
+            let cycle_value = self.parse_expr()?;
+            self.expect_keyword(Keyword::DEFAULT)?;
+            let non_cycle_value = self.parse_expr()?;
+            (Some(cycle_value), Some(non_cycle_value), None)
         } else {
-            None
+            // SQL:2023: TO <cycle_value> DEFAULT <non_cycle_value>
+            let cycle_value = if self.parse_keyword(Keyword::TO) {
+                Some(self.parse_expr()?)
+            } else {
+                None
+            };
+            let non_cycle_value = if self.parse_keyword(Keyword::DEFAULT) {
+                Some(self.parse_expr()?)
+            } else {
+                None
+            };
+            self.expect_keyword(Keyword::USING)?;
+            let using_column = self.parse_identifier()?;
+            (cycle_value, non_cycle_value, Some(using_column))
         };
-
-        let non_cycle_value = if self.parse_keyword(Keyword::DEFAULT) {
-            Some(self.parse_expr()?)
-        } else {
-            None
-        };
-
-        self.expect_keyword(Keyword::USING)?;
-        let using_column = self.parse_identifier()?;
 
         Ok(Some(CycleClause {
             columns,
@@ -15665,7 +19846,15 @@ impl<'a> Parser<'a> {
         let expr = if self.peek_keyword(Keyword::SELECT)
             || (self.peek_keyword(Keyword::FROM) && self.features.supports_from_first_select)
         {
-            SetExpr::Select(self.parse_select().map(Box::new)?)
+            let select = self.parse_select().map(Box::new)?;
+            if dialect_of!(self is OracleDialect) && self.parse_keyword(Keyword::MODEL) {
+                SetExpr::OracleModel {
+                    select,
+                    model: self.parse_oracle_model_clause()?,
+                }
+            } else {
+                SetExpr::Select(select)
+            }
         } else if self.consume_token(&BorrowedToken::LParen) {
             // CTEs are not allowed here, but the parser currently accepts them
             let subquery = self.parse_query()?;
@@ -15687,6 +19876,362 @@ impl<'a> Parser<'a> {
         };
 
         self.parse_remaining_set_exprs(expr, precedence)
+    }
+
+    fn parse_oracle_model_clause(&self) -> Result<OracleModelClause, ParserError> {
+        let global_options = self.parse_oracle_model_cell_reference_options()?;
+        let return_rows = if self.parse_keyword(Keyword::RETURN) {
+            let value = match self.expect_one_of_keywords(&[Keyword::UPDATED, Keyword::ALL])? {
+                Keyword::UPDATED => OracleModelReturnRows::Updated,
+                Keyword::ALL => OracleModelReturnRows::All,
+                _ => unreachable!(),
+            };
+            self.expect_keyword(Keyword::ROWS)?;
+            Some(value)
+        } else {
+            None
+        };
+
+        let mut reference_models = vec![];
+        while self.parse_keyword(Keyword::REFERENCE) {
+            let name = self.parse_identifier()?;
+            self.expect_keyword(Keyword::ON)?;
+            let query = self.parse_parenthesized(Parser::parse_query)?;
+            let (partition_by, dimension_by, measures) = self.parse_oracle_model_columns()?;
+            let cell_reference_options = self.parse_oracle_model_cell_reference_options()?;
+            reference_models.push(OracleReferenceModel {
+                name,
+                query,
+                partition_by,
+                dimension_by,
+                measures,
+                cell_reference_options,
+            });
+        }
+
+        let name = if self.parse_keyword(Keyword::MAIN) {
+            Some(self.parse_identifier()?)
+        } else {
+            None
+        };
+        let (partition_by, dimension_by, measures) = self.parse_oracle_model_columns()?;
+        let cell_reference_options = self.parse_oracle_model_cell_reference_options()?;
+
+        let has_rules_keyword = self.parse_keyword(Keyword::RULES);
+        let rule_mode = self.parse_oracle_model_rule_mode();
+        let rule_order = if self.parse_keyword(Keyword::AUTOMATIC) {
+            self.expect_keyword(Keyword::ORDER)?;
+            Some(OracleModelRuleOrder::Automatic)
+        } else if self.parse_keyword(Keyword::SEQUENTIAL) {
+            self.expect_keyword(Keyword::ORDER)?;
+            Some(OracleModelRuleOrder::Sequential)
+        } else {
+            None
+        };
+        let iterate = if self.parse_keyword(Keyword::ITERATE) {
+            let iterations = self.parse_parenthesized(Parser::parse_expr)?;
+            let until = if self.parse_keyword(Keyword::UNTIL) {
+                Some(if self.consume_token(&BorrowedToken::LParen) {
+                    let condition = self.parse_expr()?;
+                    self.expect_token(&BorrowedToken::RParen)?;
+                    condition
+                } else {
+                    self.parse_expr()?
+                })
+            } else {
+                None
+            };
+            Some(OracleModelIterate { iterations, until })
+        } else {
+            None
+        };
+        if rule_order == Some(OracleModelRuleOrder::Automatic) && iterate.is_some() {
+            return parser_err!(
+                "AUTOMATIC ORDER cannot be combined with ITERATE",
+                self.peek_token().span.start
+            );
+        }
+        if !has_rules_keyword && (rule_mode.is_some() || rule_order.is_some() || iterate.is_some())
+        {
+            return self.expected("RULES before model rule options", self.peek_token());
+        }
+
+        let rules = self.parse_parenthesized(|parser| {
+            parser.parse_comma_separated(|parser| {
+                let mode = parser.parse_oracle_model_rule_mode();
+                let target = parser.parse_oracle_model_rule_target()?;
+                let order_by = if parser.parse_keyword(Keyword::ORDER) {
+                    parser.expect_keyword(Keyword::BY)?;
+                    parser.parse_comma_separated(Parser::parse_oracle_model_order_by_expr)?
+                } else {
+                    vec![]
+                };
+                if matches!(target, OracleModelRuleTarget::ForLoop(_)) && !order_by.is_empty() {
+                    return parser.expected(
+                        "a MODEL rule without ORDER BY when its target contains a FOR loop",
+                        parser.peek_token(),
+                    );
+                }
+                parser.expect_token(&BorrowedToken::Eq)?;
+                let value = parser.parse_expr()?;
+                Ok(OracleModelRule {
+                    mode,
+                    target,
+                    order_by,
+                    value,
+                })
+            })
+        })?;
+
+        Ok(OracleModelClause {
+            global_options,
+            return_rows,
+            reference_models,
+            name,
+            partition_by,
+            dimension_by,
+            measures,
+            cell_reference_options,
+            rule_mode,
+            rule_order,
+            iterate,
+            rules,
+        })
+    }
+
+    fn parse_oracle_model_columns(&self) -> Result<OracleModelColumns, ParserError> {
+        let partition_by = if self.parse_keywords(&[Keyword::PARTITION, Keyword::BY]) {
+            self.parse_parenthesized(|parser| {
+                parser.parse_comma_separated(Parser::parse_oracle_model_column)
+            })?
+        } else {
+            vec![]
+        };
+        self.expect_keywords(&[Keyword::DIMENSION, Keyword::BY])?;
+        let dimension_by = self.parse_parenthesized(|parser| {
+            parser.parse_comma_separated(Parser::parse_oracle_model_column)
+        })?;
+        self.expect_keyword(Keyword::MEASURES)?;
+        let measures = self.parse_parenthesized(|parser| {
+            parser.parse_comma_separated(Parser::parse_oracle_model_column)
+        })?;
+        Ok((partition_by, dimension_by, measures))
+    }
+
+    fn parse_oracle_model_column(&self) -> Result<ExprWithAlias, ParserError> {
+        let expr = self.parse_expr()?;
+        let alias = if self.parse_keyword(Keyword::AS)
+            || matches!(
+                self.peek_token().token,
+                BorrowedToken::Word(ref word) if word.keyword == Keyword::NoKeyword
+            ) {
+            Some(self.parse_identifier()?)
+        } else {
+            None
+        };
+        Ok(ExprWithAlias { expr, alias })
+    }
+
+    fn parse_oracle_model_cell_reference_options(
+        &self,
+    ) -> Result<OracleModelCellReferenceOptions, ParserError> {
+        let nav = if self.parse_keyword(Keyword::IGNORE) {
+            self.expect_keyword(Keyword::NAV)?;
+            Some(OracleModelNav::Ignore)
+        } else if self.parse_keyword(Keyword::KEEP) {
+            self.expect_keyword(Keyword::NAV)?;
+            Some(OracleModelNav::Keep)
+        } else {
+            None
+        };
+        let unique = if self.parse_keyword(Keyword::UNIQUE) {
+            if self.parse_keyword(Keyword::DIMENSION) {
+                Some(OracleModelUnique::Dimension)
+            } else {
+                self.expect_keywords(&[Keyword::SINGLE, Keyword::REFERENCE])?;
+                Some(OracleModelUnique::SingleReference)
+            }
+        } else {
+            None
+        };
+        Ok(OracleModelCellReferenceOptions { nav, unique })
+    }
+
+    fn parse_oracle_model_rule_target(&self) -> Result<OracleModelRuleTarget, ParserError> {
+        if !self.oracle_model_rule_target_has_for_loop() {
+            return self
+                .parse_subexpr(self.dialect.prec_value(Precedence::Eq))
+                .map(OracleModelRuleTarget::Expr);
+        }
+
+        let measure = self.parse_identifier()?;
+        self.expect_token(&BorrowedToken::LBracket)?;
+        let mut items = vec![];
+        let mut has_for_loop = false;
+
+        loop {
+            if self.parse_keyword(Keyword::FOR) {
+                has_for_loop = true;
+                if self.peek_token().token == BorrowedToken::LParen {
+                    if !items.is_empty() {
+                        return self.expected(
+                            "a multi-column FOR loop as the only cell selector",
+                            self.peek_token(),
+                        );
+                    }
+                    let for_loop = self.parse_oracle_model_multi_column_for_loop()?;
+                    self.expect_token(&BorrowedToken::RBracket)?;
+                    return Ok(OracleModelRuleTarget::ForLoop(
+                        OracleModelForLoopAssignment {
+                            measure,
+                            selectors: OracleModelForLoopSelectors::MultiColumn(for_loop),
+                        },
+                    ));
+                }
+                items.push(OracleModelCellSelector::For(
+                    self.parse_oracle_model_single_column_for_loop()?,
+                ));
+            } else {
+                items.push(OracleModelCellSelector::Expr(self.parse_expr()?));
+            }
+
+            if !self.consume_token(&BorrowedToken::Comma) {
+                break;
+            }
+        }
+        self.expect_token(&BorrowedToken::RBracket)?;
+        if !has_for_loop {
+            return self.expected(
+                "a FOR loop in an Oracle model cell assignment",
+                self.peek_token(),
+            );
+        }
+        Ok(OracleModelRuleTarget::ForLoop(
+            OracleModelForLoopAssignment {
+                measure,
+                selectors: OracleModelForLoopSelectors::Items(items),
+            },
+        ))
+    }
+
+    fn oracle_model_rule_target_has_for_loop(&self) -> bool {
+        let mut bracket_depth = 0_usize;
+        let mut offset = 0_usize;
+        loop {
+            match &self.peek_nth_token_ref(offset).token {
+                BorrowedToken::LBracket => bracket_depth += 1,
+                BorrowedToken::RBracket => bracket_depth = bracket_depth.saturating_sub(1),
+                BorrowedToken::Word(word) if bracket_depth > 0 && word.keyword == Keyword::FOR => {
+                    return true;
+                }
+                BorrowedToken::Eq if bracket_depth == 0 => return false,
+                BorrowedToken::EOF | BorrowedToken::SemiColon => return false,
+                _ => {}
+            }
+            offset += 1;
+        }
+    }
+
+    fn parse_oracle_model_single_column_for_loop(
+        &self,
+    ) -> Result<OracleModelSingleColumnForLoop, ParserError> {
+        let dimension = self.parse_identifier()?;
+        let values = if self.parse_keyword(Keyword::IN) {
+            self.expect_token(&BorrowedToken::LParen)?;
+            if self
+                .peek_one_of_keywords(&[Keyword::SELECT, Keyword::WITH])
+                .is_some()
+            {
+                let query = self.parse_query()?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                OracleModelSingleColumnForLoopValues::InQuery(query)
+            } else {
+                let values = self.parse_comma_separated(Parser::parse_expr)?;
+                if values.is_empty() {
+                    return self.expected("one or more FOR loop values", self.peek_token());
+                }
+                self.expect_token(&BorrowedToken::RParen)?;
+                OracleModelSingleColumnForLoopValues::InList(values)
+            }
+        } else {
+            let like = if self.parse_keyword(Keyword::LIKE) {
+                Some(self.parse_expr()?)
+            } else {
+                None
+            };
+            self.expect_keyword(Keyword::FROM)?;
+            let from = self.parse_expr()?;
+            self.expect_keyword(Keyword::TO)?;
+            let to = self.parse_expr()?;
+            let direction =
+                match self.expect_one_of_keywords(&[Keyword::INCREMENT, Keyword::DECREMENT])? {
+                    Keyword::INCREMENT => OracleModelForLoopDirection::Increment,
+                    Keyword::DECREMENT => OracleModelForLoopDirection::Decrement,
+                    _ => unreachable!(),
+                };
+            let step = self.parse_expr()?;
+            OracleModelSingleColumnForLoopValues::Range {
+                like,
+                from,
+                to,
+                direction,
+                step,
+            }
+        };
+        Ok(OracleModelSingleColumnForLoop { dimension, values })
+    }
+
+    fn parse_oracle_model_multi_column_for_loop(
+        &self,
+    ) -> Result<OracleModelMultiColumnForLoop, ParserError> {
+        let dimensions = self
+            .parse_parenthesized(|parser| parser.parse_comma_separated(Parser::parse_identifier))?;
+        if dimensions.is_empty() {
+            return self.expected("one or more dimensions in a FOR loop", self.peek_token());
+        }
+        self.expect_keyword(Keyword::IN)?;
+        self.expect_token(&BorrowedToken::LParen)?;
+        let values = if self
+            .peek_one_of_keywords(&[Keyword::SELECT, Keyword::WITH])
+            .is_some()
+        {
+            let query = self.parse_query()?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            OracleModelMultiColumnForLoopValues::Query(query)
+        } else {
+            let rows = self.parse_comma_separated(|parser| {
+                parser
+                    .parse_parenthesized(|parser| parser.parse_comma_separated(Parser::parse_expr))
+            })?;
+            if rows.is_empty() {
+                return self.expected("one or more rows in a FOR loop", self.peek_token());
+            }
+            self.expect_token(&BorrowedToken::RParen)?;
+            OracleModelMultiColumnForLoopValues::Rows(rows)
+        };
+        Ok(OracleModelMultiColumnForLoop { dimensions, values })
+    }
+
+    fn parse_oracle_model_rule_mode(&self) -> Option<OracleModelRuleMode> {
+        if self.parse_keyword(Keyword::UPDATE) {
+            Some(OracleModelRuleMode::Update)
+        } else if self.parse_keyword(Keyword::UPSERT) {
+            Some(if self.parse_keyword(Keyword::ALL) {
+                OracleModelRuleMode::UpsertAll
+            } else {
+                OracleModelRuleMode::Upsert
+            })
+        } else {
+            None
+        }
+    }
+
+    fn parse_oracle_model_order_by_expr(&self) -> Result<OrderByExpr, ParserError> {
+        Ok(OrderByExpr {
+            expr: self.parse_subexpr(self.dialect.prec_value(Precedence::Eq))?,
+            options: self.parse_order_by_options()?,
+            with_fill: None,
+        })
     }
 
     /// Parse any extra set expressions that may be present in a query body
@@ -15785,6 +20330,7 @@ impl<'a> Parser<'a> {
                     selection: None,
                     group_by: GroupByExpr::Expressions(vec![], vec![]),
                     having: None,
+                    qualify: None,
                     named_window: vec![],
                     connect_by: None,
                     flavor: SelectFlavor::FromFirstNoSelect,
@@ -15829,6 +20375,11 @@ impl<'a> Parser<'a> {
 
         let mut into = if self.parse_keyword(Keyword::INTO) {
             Some(self.parse_select_into()?)
+        } else if self.dialect.is::<OracleDialect>() && self.parse_keyword(Keyword::BULK) {
+            self.expect_keywords(&[Keyword::COLLECT, Keyword::INTO])?;
+            let mut into = self.parse_select_into()?;
+            into.bulk_collect = true;
+            Some(into)
         } else {
             None
         };
@@ -15857,6 +20408,13 @@ impl<'a> Parser<'a> {
             .unwrap_or_else(|| GroupByExpr::Expressions(vec![], vec![]));
 
         let having = if self.parse_keyword(Keyword::HAVING) {
+            Some(Box::new(self.parse_expr()?))
+        } else {
+            None
+        };
+
+        let qualify = if self.dialect.is::<OracleDialect>() && self.parse_keyword(Keyword::QUALIFY)
+        {
             Some(Box::new(self.parse_expr()?))
         } else {
             None
@@ -15895,6 +20453,7 @@ impl<'a> Parser<'a> {
             selection,
             group_by,
             having,
+            qualify,
             named_window: named_windows,
             connect_by,
             flavor: if from_first {
@@ -15920,24 +20479,31 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_connect_by(&self) -> Result<ConnectBy, ParserError> {
-        let (condition, relationships) = if self.parse_keywords(&[Keyword::CONNECT, Keyword::BY]) {
-            let relationships = self.with_state(ParserState::ConnectBy, |parser| {
-                parser.parse_comma_separated(Parser::parse_expr)
-            })?;
-            self.expect_keywords(&[Keyword::START, Keyword::WITH])?;
-            let condition = self.parse_expr()?;
-            (condition, relationships)
-        } else {
-            self.expect_keywords(&[Keyword::START, Keyword::WITH])?;
-            let condition = self.parse_expr()?;
-            self.expect_keywords(&[Keyword::CONNECT, Keyword::BY])?;
-            let relationships = self.with_state(ParserState::ConnectBy, |parser| {
-                parser.parse_comma_separated(Parser::parse_expr)
-            })?;
-            (condition, relationships)
-        };
+        let (condition, nocycle, relationships) =
+            if self.parse_keywords(&[Keyword::CONNECT, Keyword::BY]) {
+                let nocycle = self.parse_keyword(Keyword::NOCYCLE);
+                let relationships = self.with_state(ParserState::ConnectBy, |parser| {
+                    parser.parse_comma_separated(Parser::parse_expr)
+                })?;
+                let condition = if self.parse_keywords(&[Keyword::START, Keyword::WITH]) {
+                    Some(self.parse_expr()?)
+                } else {
+                    None
+                };
+                (condition, nocycle, relationships)
+            } else {
+                self.expect_keywords(&[Keyword::START, Keyword::WITH])?;
+                let condition = Some(self.parse_expr()?);
+                self.expect_keywords(&[Keyword::CONNECT, Keyword::BY])?;
+                let nocycle = self.parse_keyword(Keyword::NOCYCLE);
+                let relationships = self.with_state(ParserState::ConnectBy, |parser| {
+                    parser.parse_comma_separated(Parser::parse_expr)
+                })?;
+                (condition, nocycle, relationships)
+            };
         Ok(ConnectBy {
             condition,
+            nocycle,
             relationships,
         })
     }
@@ -16807,11 +21373,43 @@ impl<'a> Parser<'a> {
                     };
                 }
 
+                let oracle_partition_by = if self.dialect.is::<OracleDialect>()
+                    && self.parse_keywords(&[Keyword::PARTITION, Keyword::BY])
+                {
+                    self.expect_token(&BorrowedToken::LParen)?;
+                    let expressions = self.parse_comma_separated(Parser::parse_expr)?;
+                    self.expect_token(&BorrowedToken::RParen)?;
+                    Some(expressions)
+                } else {
+                    None
+                };
                 let join_constraint = self.parse_join_constraint(natural)?;
+                let join_operator = if let Some(partition_by) = oracle_partition_by {
+                    let kind = match join_operator_type(JoinConstraint::None) {
+                        JoinOperator::Left(_) => OraclePartitionedJoinKind::Left,
+                        JoinOperator::LeftOuter(_) => OraclePartitionedJoinKind::LeftOuter,
+                        JoinOperator::Right(_) => OraclePartitionedJoinKind::Right,
+                        JoinOperator::RightOuter(_) => OraclePartitionedJoinKind::RightOuter,
+                        JoinOperator::FullOuter(_) => OraclePartitionedJoinKind::FullOuter,
+                        _ => {
+                            return self.expected(
+                                "an outer join for Oracle PARTITION BY",
+                                self.peek_token(),
+                            )
+                        }
+                    };
+                    JoinOperator::OraclePartitioned {
+                        kind,
+                        partition_by,
+                        constraint: join_constraint,
+                    }
+                } else {
+                    join_operator_type(join_constraint)
+                };
                 Join {
                     relation,
                     global,
-                    join_operator: join_operator_type(join_constraint),
+                    join_operator,
                 }
             };
             joins.push(join);
@@ -16854,6 +21452,24 @@ impl<'a> Parser<'a> {
                     alias,
                 })
             }
+        } else if self.dialect.is::<OracleDialect>() && self.parse_keyword(Keyword::EXTERNAL) {
+            self.expect_token(&BorrowedToken::LParen)?;
+            let (columns, constraints) = self.parse_columns()?;
+            if columns.is_empty() {
+                return self.expected(
+                    "at least one inline external table column",
+                    self.peek_token(),
+                );
+            }
+            if !constraints.is_empty() {
+                return Err(ParserError::ParserError(
+                    "table constraints are not supported in an inline external table".into(),
+                ));
+            }
+            let definition = self.parse_oracle_external_table_definition(columns)?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            let alias = self.maybe_parse_table_alias()?;
+            Ok(TableFactor::OracleExternal { definition, alias })
         } else if self.parse_keyword(Keyword::TABLE) {
             // parse table function (SELECT * FROM TABLE (<expr>) [ AS <alias> ])
             self.expect_token(&BorrowedToken::LParen)?;
@@ -17020,7 +21636,7 @@ impl<'a> Parser<'a> {
                 _ => None,
             };
 
-            let partitions: Vec<Ident> = if dialect_of!(self is MySqlDialect | PostgreSqlDialect)
+            let partitions: Vec<Ident> = if dialect_of!(self is MySqlDialect | PostgreSqlDialect | OracleDialect)
                 && self.parse_keyword(Keyword::PARTITION)
             {
                 self.parse_parenthesized_identifiers()?
@@ -17823,8 +22439,13 @@ impl<'a> Parser<'a> {
 
         // Parse labels (can be multiple, separated by :)
         let mut labels = vec![];
-        while self.consume_token(&BorrowedToken::Colon) {
+        let is_label_syntax = self.dialect.is::<OracleDialect>() && self.parse_keyword(Keyword::IS);
+        if is_label_syntax {
             labels.push(self.parse_label_expression()?);
+        } else {
+            while self.consume_token(&BorrowedToken::Colon) {
+                labels.push(self.parse_label_expression()?);
+            }
         }
 
         // Parse optional properties
@@ -17848,6 +22469,7 @@ impl<'a> Parser<'a> {
         Ok(NodePattern {
             variable,
             labels,
+            is_label_syntax,
             properties,
             where_clause,
         })
@@ -17899,6 +22521,7 @@ impl<'a> Parser<'a> {
             return Ok(EdgePattern {
                 variable: None,
                 labels: vec![],
+                is_label_syntax: false,
                 properties: vec![],
                 where_clause: None,
                 direction,
@@ -17929,8 +22552,13 @@ impl<'a> Parser<'a> {
 
         // Parse labels (can be multiple, separated by :)
         let mut labels = vec![];
-        while self.consume_token(&BorrowedToken::Colon) {
+        let is_label_syntax = self.dialect.is::<OracleDialect>() && self.parse_keyword(Keyword::IS);
+        if is_label_syntax {
             labels.push(self.parse_label_expression()?);
+        } else {
+            while self.consume_token(&BorrowedToken::Colon) {
+                labels.push(self.parse_label_expression()?);
+            }
         }
 
         // Check if next token is quantifier or properties
@@ -18007,6 +22635,7 @@ impl<'a> Parser<'a> {
         Ok(EdgePattern {
             variable,
             labels,
+            is_label_syntax,
             properties,
             where_clause,
             direction,
@@ -18472,6 +23101,53 @@ impl<'a> Parser<'a> {
 
     /// Parses a the timestamp version specifier (i.e. query historical data)
     pub fn maybe_parse_table_version(&self) -> Result<Option<TableVersion>, ParserError> {
+        if self.dialect.is::<OracleDialect>() {
+            let parse_kind =
+                |parser: &Parser<'a>| -> Result<OracleFlashbackVersionKind, ParserError> {
+                    if parser.consume_oracle_words(&["SCN"]) {
+                        Ok(OracleFlashbackVersionKind::Scn)
+                    } else if parser.parse_keyword(Keyword::TIMESTAMP) {
+                        Ok(OracleFlashbackVersionKind::Timestamp)
+                    } else {
+                        parser.expected("SCN or TIMESTAMP", parser.peek_token())
+                    }
+                };
+            let parse_boundary = |parser: &Parser<'a>,
+                                  stop_at_and: bool|
+             -> Result<OracleFlashbackBoundary, ParserError> {
+                if parser.parse_keyword(Keyword::MINVALUE) {
+                    Ok(OracleFlashbackBoundary::MinValue)
+                } else if parser.parse_keyword(Keyword::MAXVALUE) {
+                    Ok(OracleFlashbackBoundary::MaxValue)
+                } else {
+                    let expr = if stop_at_and {
+                        parser.parse_subexpr(21)?
+                    } else {
+                        parser.parse_expr()?
+                    };
+                    Ok(OracleFlashbackBoundary::Expr(expr))
+                }
+            };
+
+            if self.consume_oracle_words(&["AS", "OF"]) {
+                let kind = parse_kind(self)?;
+                return Ok(Some(TableVersion::OracleAsOf {
+                    kind,
+                    expr: self.parse_expr()?,
+                }));
+            }
+            if self.consume_oracle_words(&["VERSIONS", "BETWEEN"]) {
+                let kind = parse_kind(self)?;
+                let start = parse_boundary(self, true)?;
+                self.expect_keyword(Keyword::AND)?;
+                let end = parse_boundary(self, false)?;
+                return Ok(Some(TableVersion::OracleVersionsBetween {
+                    kind,
+                    start,
+                    end,
+                }));
+            }
+        }
         if self.features.supports_timestamp_versioning {
             // CockroachDB-style bare `AS OF SYSTEM TIME <expr>` (used by gantry's
             // time-travel reads). parse_keywords backtracks if the full run is
@@ -18673,6 +23349,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_pivot_table_factor(&self, table: TableFactor) -> Result<TableFactor, ParserError> {
+        let xml = self.dialect.is::<OracleDialect>() && self.parse_keyword(Keyword::XML);
         self.expect_token(&BorrowedToken::LParen)?;
         let aggregate_functions = self.parse_comma_separated(Self::parse_aliased_function_call)?;
         self.expect_keyword_is(Keyword::FOR)?;
@@ -18699,6 +23376,21 @@ impl<'a> Parser<'a> {
             PivotValueSource::List(self.parse_comma_separated(Self::parse_expr_with_alias)?)
         };
         self.expect_token(&BorrowedToken::RParen)?;
+        if self.dialect.is::<OracleDialect>() {
+            match (xml, &value_source) {
+                (true, PivotValueSource::List(_)) => {
+                    return Err(ParserError::ParserError(
+                        "Oracle PIVOT XML requires ANY or a subquery in its IN clause".into(),
+                    ));
+                }
+                (false, PivotValueSource::Any(_) | PivotValueSource::Subquery(_)) => {
+                    return Err(ParserError::ParserError(
+                        "Oracle PIVOT without XML requires a value list in its IN clause".into(),
+                    ));
+                }
+                _ => {}
+            }
+        }
 
         let default_on_null =
             if self.parse_keywords(&[Keyword::DEFAULT, Keyword::ON, Keyword::NULL]) {
@@ -18714,6 +23406,7 @@ impl<'a> Parser<'a> {
         let alias = self.maybe_parse_table_alias()?;
         Ok(TableFactor::Pivot {
             table: Box::new(table),
+            xml,
             aggregate_functions,
             value_column,
             value_source,
@@ -19409,6 +24102,11 @@ impl<'a> Parser<'a> {
     /// Parse an INSERT statement
     pub fn parse_insert(&self, insert_token: TokenWithSpan) -> Result<Statement, ParserError> {
         let _guard = self.enter_context(ParseContext::InsertStatement);
+        if self.dialect.is::<OracleDialect>()
+            && (self.peek_keyword(Keyword::ALL) || self.peek_keyword(Keyword::FIRST))
+        {
+            return self.parse_oracle_multitable_insert();
+        }
         let priority = if !dialect_of!(self is MySqlDialect | PostgreSqlDialect) {
             None
         } else if self.parse_keyword(Keyword::LOW_PRIORITY) {
@@ -19451,8 +24149,14 @@ impl<'a> Parser<'a> {
                 let columns = self.parse_parenthesized_column_list(Optional, is_mysql)?;
 
                 let partitioned = self.parse_insert_partition()?;
-                // Reserved for potential future support of columns after partitions
-                let after_columns = vec![];
+                let after_columns = if self.dialect.is::<OracleDialect>()
+                    && partitioned.is_some()
+                    && self.peek_token() == BorrowedToken::LParen
+                {
+                    self.parse_parenthesized_column_list(IsOptional::Mandatory, false)?
+                } else {
+                    vec![]
+                };
                 (columns, partitioned, after_columns)
             } else {
                 Default::default()
@@ -19552,10 +24256,11 @@ impl<'a> Parser<'a> {
         };
 
         let returning = if self.parse_keyword(Keyword::RETURNING) {
-            Some(self.parse_comma_separated(Parser::parse_select_item)?)
+            Some(self.parse_returning_clause()?)
         } else {
             None
         };
+        let error_logging = self.parse_oracle_error_logging_clause()?;
 
         Ok(Statement::Insert(Insert {
             insert_token: insert_token.into(),
@@ -19576,7 +24281,85 @@ impl<'a> Parser<'a> {
             replace_into,
             priority,
             insert_alias,
+            error_logging,
         }))
+    }
+
+    fn parse_oracle_multitable_insert(&self) -> Result<Statement, ParserError> {
+        let mode = if self.parse_keyword(Keyword::ALL) {
+            OracleMultiTableInsertMode::All
+        } else {
+            self.expect_keyword(Keyword::FIRST)?;
+            OracleMultiTableInsertMode::First
+        };
+
+        let mut branches = vec![];
+        if self.peek_keyword(Keyword::INTO) {
+            if mode == OracleMultiTableInsertMode::First {
+                return self.expected("WHEN after INSERT FIRST", self.peek_token());
+            }
+            let mut targets = vec![];
+            while self.peek_keyword(Keyword::INTO) {
+                targets.push(self.parse_oracle_multitable_insert_target()?);
+            }
+            branches.push(OracleMultiTableInsertBranch {
+                condition: None,
+                targets,
+            });
+        } else {
+            while self.parse_keyword(Keyword::WHEN) {
+                let condition = self.parse_expr()?;
+                self.expect_keyword(Keyword::THEN)?;
+                let mut targets = vec![];
+                while self.peek_keyword(Keyword::INTO) {
+                    targets.push(self.parse_oracle_multitable_insert_target()?);
+                }
+                if targets.is_empty() {
+                    return self.expected("INTO after THEN", self.peek_token());
+                }
+                branches.push(OracleMultiTableInsertBranch {
+                    condition: Some(condition),
+                    targets,
+                });
+            }
+        }
+        if branches.is_empty() {
+            return self.expected("INTO or WHEN", self.peek_token());
+        }
+
+        let mut else_targets = vec![];
+        if self.parse_keyword(Keyword::ELSE) {
+            while self.peek_keyword(Keyword::INTO) {
+                else_targets.push(self.parse_oracle_multitable_insert_target()?);
+            }
+            if else_targets.is_empty() {
+                return self.expected("INTO after ELSE", self.peek_token());
+            }
+        }
+        let source = self.parse_query()?;
+        Ok(Statement::OracleMultiTableInsert(OracleMultiTableInsert {
+            mode,
+            branches,
+            else_targets,
+            source,
+        }))
+    }
+
+    fn parse_oracle_multitable_insert_target(
+        &self,
+    ) -> Result<OracleMultiTableInsertTarget, ParserError> {
+        self.expect_keyword(Keyword::INTO)?;
+        let table = self.parse_object_name(false)?;
+        let columns = self.parse_parenthesized_column_list(Optional, false)?;
+        self.expect_keyword(Keyword::VALUES)?;
+        self.expect_token(&BorrowedToken::LParen)?;
+        let values = self.parse_comma_separated(Parser::parse_expr)?;
+        self.expect_token(&BorrowedToken::RParen)?;
+        Ok(OracleMultiTableInsertTarget {
+            table,
+            columns,
+            values,
+        })
     }
 
     /// Returns true if the immediate tokens look like the
@@ -19642,17 +24425,12 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
-        let (returning, returning_into) = if self.parse_keyword(Keyword::RETURNING) {
-            let returning = Some(self.parse_comma_separated(Parser::parse_select_item)?);
-            let returning_into = if self.parse_keyword(Keyword::INTO) {
-                Some(self.parse_sql_psm_into_targets()?)
-            } else {
-                None
-            };
-            (returning, returning_into)
+        let returning = if self.parse_keyword(Keyword::RETURNING) {
+            Some(self.parse_returning_clause()?)
         } else {
-            (None, None)
+            None
         };
+        let error_logging = self.parse_oracle_error_logging_clause()?;
         let limit = if self.parse_keyword(Keyword::LIMIT) {
             Some(self.parse_expr()?)
         } else {
@@ -19666,14 +24444,62 @@ impl<'a> Parser<'a> {
             from,
             selection,
             returning,
-            returning_into,
             limit,
+            error_logging,
         }
         .into())
     }
 
-    fn parse_sql_psm_into_targets(&self) -> Result<Vec<ObjectName>, ParserError> {
-        self.parse_comma_separated(|p| p.parse_object_name(false))
+    fn parse_returning_clause(&self) -> Result<ReturningClause, ParserError> {
+        let expressions = self.parse_comma_separated(Parser::parse_select_item)?;
+        let bulk_collect = self.dialect.is::<OracleDialect>()
+            && self.parse_keywords(&[Keyword::BULK, Keyword::COLLECT]);
+        let into = if self.dialect.is::<OracleDialect>() && self.parse_keyword(Keyword::INTO) {
+            Some(self.parse_comma_separated(Parser::parse_expr)?)
+        } else {
+            None
+        };
+        Ok(ReturningClause {
+            expressions,
+            bulk_collect,
+            into,
+        })
+    }
+
+    fn parse_oracle_error_logging_clause(
+        &self,
+    ) -> Result<Option<OracleErrorLoggingClause>, ParserError> {
+        if !self.dialect.is::<OracleDialect>() || !self.parse_keyword(Keyword::LOG) {
+            return Ok(None);
+        }
+        self.expect_keyword(Keyword::ERRORS)?;
+        let table = if self.parse_keyword(Keyword::INTO) {
+            Some(self.parse_object_name(false)?)
+        } else {
+            None
+        };
+        let tag = if self.consume_token(&BorrowedToken::LParen) {
+            let tag = self.parse_expr()?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            Some(tag)
+        } else {
+            None
+        };
+        let reject_limit = if self.parse_keyword(Keyword::REJECT) {
+            self.expect_keyword(Keyword::LIMIT)?;
+            if self.parse_keyword(Keyword::UNLIMITED) {
+                Some(OracleRejectLimit::Unlimited)
+            } else {
+                Some(OracleRejectLimit::Value(self.parse_expr()?))
+            }
+        } else {
+            None
+        };
+        Ok(Some(OracleErrorLoggingClause {
+            table,
+            tag,
+            reject_limit,
+        }))
     }
 
     /// Parse a `var = expr` assignment, used in an UPDATE statement
@@ -20133,6 +24959,19 @@ impl<'a> Parser<'a> {
             clauses.push(FunctionArgumentClause::JsonUniqueKeys(unique_keys));
         }
 
+        if self.dialect.is::<OracleDialect>() && self.parse_keyword(Keyword::PASSING) {
+            let bindings = self.parse_comma_separated(|parser| {
+                let expr = parser.parse_expr()?;
+                parser.expect_keyword(Keyword::AS)?;
+                let alias = parser.parse_identifier()?;
+                Ok(ExprWithAlias {
+                    expr,
+                    alias: Some(alias),
+                })
+            })?;
+            clauses.push(FunctionArgumentClause::OracleJsonPassing(bindings));
+        }
+
         // Parse ON EMPTY and ON ERROR clauses (atomically with backtracking)
         if let Some(on_clause) = self.parse_json_on_clause()? {
             clauses.push(on_clause);
@@ -20183,6 +25022,12 @@ impl<'a> Parser<'a> {
             JsonOnBehavior::Null
         } else if self.parse_keyword(Keyword::ERROR) {
             JsonOnBehavior::Error
+        } else if self.parse_keyword(Keyword::TRUE) {
+            JsonOnBehavior::True
+        } else if self.parse_keyword(Keyword::FALSE) {
+            JsonOnBehavior::False
+        } else if self.parse_keyword(Keyword::UNKNOWN) {
+            JsonOnBehavior::Unknown
         } else if self.parse_keyword(Keyword::DEFAULT) {
             let expr = self.parse_expr()?;
             JsonOnBehavior::Default(Box::new(expr))
@@ -20665,7 +25510,12 @@ impl<'a> Parser<'a> {
 
     /// Parse a FETCH clause
     pub fn parse_fetch(&self) -> Result<Fetch, ParserError> {
-        let _ = self.parse_one_of_keywords(&[Keyword::FIRST, Keyword::NEXT]);
+        let approximate =
+            self.dialect.is::<OracleDialect>() && self.parse_keyword(Keyword::APPROXIMATE);
+        let direction = self.parse_one_of_keywords(&[Keyword::FIRST, Keyword::NEXT]);
+        if approximate && direction.is_none() {
+            return self.expected("FIRST or NEXT after APPROXIMATE", self.peek_token());
+        }
 
         let (quantity, percent) = if self
             .parse_one_of_keywords(&[Keyword::ROW, Keyword::ROWS])
@@ -20684,8 +25534,14 @@ impl<'a> Parser<'a> {
         } else {
             self.parse_keywords(&[Keyword::WITH, Keyword::TIES])
         };
+        if approximate && (percent || with_ties) {
+            return Err(ParserError::ParserError(
+                "Oracle FETCH APPROXIMATE does not support PERCENT or WITH TIES".into(),
+            ));
+        }
 
         Ok(Fetch {
+            approximate,
             with_ties,
             percent,
             quantity,
@@ -20722,6 +25578,46 @@ impl<'a> Parser<'a> {
             of,
             nonblock,
         })
+    }
+
+    /// Parse Oracle `LOCK TABLE name [, ...] IN lockmode MODE [NOWAIT | WAIT n]`.
+    fn parse_oracle_lock_table(&self, lock_token: TokenWithSpan) -> Result<Statement, ParserError> {
+        self.expect_keyword(Keyword::TABLE)?;
+        let tables = self.parse_comma_separated(|parser| parser.parse_object_name(false))?;
+        self.expect_keyword(Keyword::IN)?;
+        let mode = if self.parse_keyword(Keyword::ROW) {
+            if self.parse_keyword(Keyword::SHARE) {
+                OracleLockMode::RowShare
+            } else {
+                self.expect_keyword(Keyword::EXCLUSIVE)?;
+                OracleLockMode::RowExclusive
+            }
+        } else if self.parse_keyword(Keyword::SHARE) {
+            if self.parse_keyword(Keyword::UPDATE) {
+                OracleLockMode::ShareUpdate
+            } else if self.parse_keywords(&[Keyword::ROW, Keyword::EXCLUSIVE]) {
+                OracleLockMode::ShareRowExclusive
+            } else {
+                OracleLockMode::Share
+            }
+        } else {
+            self.expect_keyword(Keyword::EXCLUSIVE)?;
+            OracleLockMode::Exclusive
+        };
+        self.expect_keyword(Keyword::MODE)?;
+        let wait = if self.parse_keyword(Keyword::NOWAIT) {
+            Some(OracleLockWait::Nowait)
+        } else if self.parse_keyword(Keyword::WAIT) {
+            Some(OracleLockWait::Wait(self.parse_expr()?))
+        } else {
+            None
+        };
+        Ok(Statement::OracleLockTable(OracleLockTable {
+            lock_token: AttachedToken::from(lock_token),
+            tables,
+            mode,
+            wait,
+        }))
     }
 
     /// Parse PostgreSQL `LOCK [ TABLE ] [ ONLY ] name [, ...] [ IN lockmode MODE ] [ NOWAIT ]`
@@ -21009,6 +25905,7 @@ impl<'a> Parser<'a> {
             chain: self.parse_commit_rollback_chain()?,
             end: true,
             modifier,
+            oracle: None,
         })
     }
 
@@ -21052,11 +25949,63 @@ impl<'a> Parser<'a> {
 
     pub fn parse_commit(&self) -> Result<Statement, ParserError> {
         let commit_token = self.attached_token_from_current();
+        if self.dialect.is::<OracleDialect>() {
+            let work = self.parse_keyword(Keyword::WORK);
+            let comment = if self.parse_keyword(Keyword::COMMENT) {
+                Some(self.parse_literal_string()?)
+            } else {
+                None
+            };
+            let write = if self.parse_keyword(Keyword::WRITE) {
+                let mut wait = None;
+                let mut immediate = None;
+                loop {
+                    if self.parse_keyword(Keyword::WAIT) {
+                        wait = Some(true);
+                    } else if self.parse_keyword(Keyword::NOWAIT) {
+                        wait = Some(false);
+                    } else if self.parse_keyword(Keyword::IMMEDIATE) {
+                        immediate = Some(true);
+                    } else if self.parse_keyword(Keyword::BATCH) {
+                        immediate = Some(false);
+                    } else {
+                        break;
+                    }
+                }
+                Some(OracleCommitWrite { wait, immediate })
+            } else {
+                None
+            };
+            let force = if self.parse_keyword(Keyword::FORCE) {
+                let corrupt_xid = self.parse_literal_string()?;
+                let scn = if self.consume_token(&BorrowedToken::Comma) {
+                    Some(self.parse_literal_uint()?)
+                } else {
+                    None
+                };
+                Some(OracleCommitForce { corrupt_xid, scn })
+            } else {
+                None
+            };
+            return Ok(Statement::Commit {
+                commit_token,
+                chain: false,
+                end: false,
+                modifier: None,
+                oracle: Some(OracleCommitOptions {
+                    work,
+                    comment,
+                    write,
+                    force,
+                }),
+            });
+        }
         Ok(Statement::Commit {
             commit_token,
             chain: self.parse_commit_rollback_chain()?,
             end: false,
             modifier: None,
+            oracle: None,
         })
     }
 
@@ -21188,10 +26137,13 @@ impl<'a> Parser<'a> {
                         ParserError::ParserError(format!("invalid HLC value: {e}"))
                     })?);
             } else if self.parse_keyword(Keyword::LSN) {
-                let value = if matches!(self.peek_token_ref().token, BorrowedToken::SingleQuotedString(_)) {
-                    self.parse_literal_string()?.parse::<u64>().map_err(|e| {
-                        ParserError::ParserError(format!("invalid LSN value: {e}"))
-                    })?
+                let value = if matches!(
+                    self.peek_token_ref().token,
+                    BorrowedToken::SingleQuotedString(_)
+                ) {
+                    self.parse_literal_string()?
+                        .parse::<u64>()
+                        .map_err(|e| ParserError::ParserError(format!("invalid LSN value: {e}")))?
                 } else {
                     self.parse_literal_uint()?
                 };
@@ -21203,17 +26155,16 @@ impl<'a> Parser<'a> {
             }
         }
 
-        let as_new_tenant =
-            if self.parse_keywords(&[Keyword::AS, Keyword::NEW, Keyword::TENANT]) {
-                if tenant.is_none() {
-                    return Err(ParserError::ParserError(
-                        "AS NEW TENANT is only valid for RESTORE TENANT".to_string(),
-                    ));
-                }
-                Some(self.parse_identifier()?)
-            } else {
-                None
-            };
+        let as_new_tenant = if self.parse_keywords(&[Keyword::AS, Keyword::NEW, Keyword::TENANT]) {
+            if tenant.is_none() {
+                return Err(ParserError::ParserError(
+                    "AS NEW TENANT is only valid for RESTORE TENANT".to_string(),
+                ));
+            }
+            Some(self.parse_identifier()?)
+        } else {
+            None
+        };
 
         let dry_run = self.parse_keywords(&[Keyword::DRY, Keyword::RUN]);
 
@@ -21585,8 +26536,26 @@ impl<'a> Parser<'a> {
                         )));
                     }
                     self.expect_keyword_is(Keyword::SET)?;
+                    let assignments = self.parse_comma_separated(Parser::parse_assignment)?;
+                    let where_clause = if self.dialect.is::<OracleDialect>()
+                        && self.parse_keyword(Keyword::WHERE)
+                    {
+                        Some(self.parse_expr()?)
+                    } else {
+                        None
+                    };
+                    let delete_where = if self.dialect.is::<OracleDialect>()
+                        && self.parse_keyword(Keyword::DELETE)
+                    {
+                        self.expect_keyword(Keyword::WHERE)?;
+                        Some(self.parse_expr()?)
+                    } else {
+                        None
+                    };
                     MergeAction::Update {
-                        assignments: self.parse_comma_separated(Parser::parse_assignment)?,
+                        assignments,
+                        where_clause,
+                        delete_where,
                     }
                 }
                 Some(Keyword::DELETE) => {
@@ -21615,7 +26584,18 @@ impl<'a> Parser<'a> {
                     self.expect_keyword_is(Keyword::VALUES)?;
                     let values = self.parse_values(is_mysql, false)?;
                     let kind = MergeInsertKind::Values(values);
-                    MergeAction::Insert(MergeInsertExpr { columns, kind })
+                    let where_clause = if self.dialect.is::<OracleDialect>()
+                        && self.parse_keyword(Keyword::WHERE)
+                    {
+                        Some(self.parse_expr()?)
+                    } else {
+                        None
+                    };
+                    MergeAction::Insert(MergeInsertExpr {
+                        columns,
+                        kind,
+                        where_clause,
+                    })
                 }
                 _ => {
                     return Err(ParserError::ParserError(
@@ -21676,6 +26656,7 @@ impl<'a> Parser<'a> {
         }
 
         Ok(SelectInto {
+            bulk_collect: false,
             temporary,
             unlogged,
             table,
@@ -21700,6 +26681,7 @@ impl<'a> Parser<'a> {
             Some(start_keyword) => Some(self.parse_output(start_keyword)?),
             None => None,
         };
+        let error_logging = self.parse_oracle_error_logging_clause()?;
 
         Ok(Statement::Merge {
             merge_token,
@@ -21709,47 +26691,43 @@ impl<'a> Parser<'a> {
             on: Box::new(on),
             clauses,
             output,
+            error_logging,
         })
-    }
-
-    fn parse_pragma_value(&self) -> Result<Value, ParserError> {
-        match self.parse_value()?.value {
-            v @ Value::SingleQuotedString(_) => Ok(v),
-            v @ Value::DoubleQuotedString(_) => Ok(v),
-            v @ Value::Number(_, _) => Ok(v),
-            v @ Value::Placeholder(_) => Ok(v),
-            _ => {
-                self.prev_token();
-                self.expected("number or string or ? placeholder", self.peek_token())
-            }
-        }
     }
 
     // PRAGMA [schema-name '.'] pragma-name [('=' pragma-value) | '(' pragma-value ')']
     pub fn parse_pragma(&self) -> Result<Statement, ParserError> {
         let pragma_token = self.attached_token_from_current();
+        Ok(Statement::Pragma {
+            pragma_token,
+            pragma: self.parse_pragma_body()?,
+        })
+    }
+
+    fn parse_pragma_body(&self) -> Result<Pragma, ParserError> {
         let name = self.parse_object_name(false)?;
         if self.consume_token(&BorrowedToken::LParen) {
-            let value = self.parse_pragma_value()?;
+            let arguments = if self.peek_token() == BorrowedToken::RParen {
+                vec![]
+            } else {
+                self.parse_comma_separated(Parser::parse_expr)?
+            };
             self.expect_token(&BorrowedToken::RParen)?;
-            Ok(Statement::Pragma {
-                pragma_token,
+            Ok(Pragma {
                 name,
-                value: Some(value),
+                arguments,
                 is_eq: false,
             })
         } else if self.consume_token(&BorrowedToken::Eq) {
-            Ok(Statement::Pragma {
-                pragma_token,
+            Ok(Pragma {
                 name,
-                value: Some(self.parse_pragma_value()?),
+                arguments: vec![self.parse_expr()?],
                 is_eq: true,
             })
         } else {
-            Ok(Statement::Pragma {
-                pragma_token,
+            Ok(Pragma {
                 name,
-                value: None,
+                arguments: vec![],
                 is_eq: false,
             })
         }
@@ -21840,6 +26818,28 @@ impl<'a> Parser<'a> {
             data_type = Some(self.parse_data_type()?)
         }
         let sequence_options = self.parse_create_sequence_options()?;
+        if self.dialect.is::<OracleDialect>() {
+            let mut seen = [false; 7];
+            for option in &sequence_options {
+                let index = match option {
+                    SequenceOptions::IncrementBy(_, _) => 0,
+                    SequenceOptions::MinValue(_) => 1,
+                    SequenceOptions::MaxValue(_) => 2,
+                    SequenceOptions::StartWith(_, _) => 3,
+                    SequenceOptions::Cache(_) | SequenceOptions::NoCache => 4,
+                    SequenceOptions::Cycle(_) => 5,
+                    SequenceOptions::Order(_) => 6,
+                    SequenceOptions::Restart { .. } => continue,
+                };
+                if seen[index] {
+                    return parser_err!(
+                        "duplicate or conflicting Oracle sequence option",
+                        self.peek_token().span.start
+                    );
+                }
+                seen[index] = true;
+            }
+        }
         // [ OWNED BY { table_name.column_name | NONE } ]
         let owned_by = if self.parse_keywords(&[Keyword::OWNED, Keyword::BY]) {
             if self.parse_keywords(&[Keyword::NONE]) {
@@ -21864,6 +26864,33 @@ impl<'a> Parser<'a> {
     fn parse_create_sequence_options(&self) -> Result<Vec<SequenceOptions>, ParserError> {
         let mut sequence_options = vec![];
         loop {
+            if self.dialect.is::<OracleDialect>() {
+                if self.consume_oracle_words(&["NOMINVALUE"]) {
+                    sequence_options.push(SequenceOptions::MinValue(None));
+                    continue;
+                }
+                if self.consume_oracle_words(&["NOMAXVALUE"]) {
+                    sequence_options.push(SequenceOptions::MaxValue(None));
+                    continue;
+                }
+                if self.consume_oracle_words(&["NOCACHE"]) {
+                    sequence_options.push(SequenceOptions::NoCache);
+                    continue;
+                }
+                if self.consume_oracle_words(&["NOORDER"]) {
+                    sequence_options.push(SequenceOptions::Order(true));
+                    continue;
+                }
+                if self.consume_oracle_words(&["ORDER"]) {
+                    sequence_options.push(SequenceOptions::Order(false));
+                    continue;
+                }
+                if self.consume_oracle_words(&["NOCYCLE"]) {
+                    sequence_options.push(SequenceOptions::Cycle(true));
+                    continue;
+                }
+            }
+
             //[ INCREMENT [ BY ] increment ]
             if self.parse_keywords(&[Keyword::INCREMENT]) {
                 if self.parse_keywords(&[Keyword::BY]) {
@@ -22206,8 +27233,13 @@ impl<'a> Parser<'a> {
             PartitionStrategy::List
         } else if self.parse_keyword(Keyword::HASH) {
             PartitionStrategy::Hash
+        } else if self.dialect.is::<OracleDialect>() && self.parse_keyword(Keyword::REFERENCE) {
+            PartitionStrategy::Reference
         } else {
-            return self.expected("RANGE, LIST, or HASH after PARTITION BY", self.peek_token());
+            return self.expected(
+                "RANGE, LIST, HASH, or REFERENCE after PARTITION BY",
+                self.peek_token(),
+            );
         };
 
         self.expect_token(&BorrowedToken::LParen)?;
@@ -22257,7 +27289,43 @@ impl<'a> Parser<'a> {
         })?;
         self.expect_token(&BorrowedToken::RParen)?;
 
-        Ok(PartitionByClause { strategy, columns })
+        let interval = if self.dialect.is::<OracleDialect>()
+            && strategy == PartitionStrategy::Range
+            && self.parse_keyword(Keyword::INTERVAL)
+        {
+            self.expect_token(&BorrowedToken::LParen)?;
+            let interval = self.parse_expr()?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            Some(interval)
+        } else {
+            None
+        };
+        let partitions = if interval.is_some() {
+            self.expect_token(&BorrowedToken::LParen)?;
+            let partitions = self.parse_comma_separated(|parser| {
+                parser.expect_keyword(Keyword::PARTITION)?;
+                let name = parser.parse_object_name(false)?;
+                parser.expect_keywords(&[Keyword::VALUES, Keyword::LESS, Keyword::THAN])?;
+                parser.expect_token(&BorrowedToken::LParen)?;
+                let values_less_than = parser.parse_comma_separated(Parser::parse_expr)?;
+                parser.expect_token(&BorrowedToken::RParen)?;
+                Ok(OraclePartitionDefinition {
+                    name,
+                    values_less_than,
+                })
+            })?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            partitions
+        } else {
+            vec![]
+        };
+
+        Ok(PartitionByClause {
+            strategy,
+            columns,
+            interval,
+            partitions,
+        })
     }
 
     /// Parse a `ALTER FOREIGN TABLE` statement.

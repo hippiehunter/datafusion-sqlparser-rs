@@ -1502,6 +1502,7 @@ fn parse_copy_to() {
                     selection: None,
                     group_by: GroupByExpr::Expressions(vec![], vec![]),
                     having: None,
+                    qualify: None,
                     named_window: vec![],
                     connect_by: None,
                     flavor: SelectFlavor::Standard,
@@ -2215,10 +2216,8 @@ fn parse_pg_returning() {
     match stmt {
         Statement::Insert(Insert { returning, .. }) => {
             assert_eq!(
-                Some(vec![SelectItem::UnnamedExpr(Expr::Identifier(
-                    "did".into()
-                )),]),
-                returning
+                vec![SelectItem::UnnamedExpr(Expr::Identifier("did".into()))],
+                returning.expect("RETURNING clause").expressions
             );
         }
         _ => unreachable!(),
@@ -2235,7 +2234,7 @@ fn parse_pg_returning() {
     match stmt {
         Statement::Update(Update { returning, .. }) => {
             assert_eq!(
-                Some(vec![
+                vec![
                     SelectItem::ExprWithAlias {
                         expr: Expr::Identifier("temp_lo".into()),
                         alias: "lo".into()
@@ -2245,8 +2244,8 @@ fn parse_pg_returning() {
                         alias: "hi".into()
                     },
                     SelectItem::UnnamedExpr(Expr::Identifier("prcp".into())),
-                ]),
-                returning
+                ],
+                returning.expect("RETURNING clause").expressions
             );
         }
         _ => unreachable!(),
@@ -2256,10 +2255,8 @@ fn parse_pg_returning() {
     match stmt {
         Statement::Delete(Delete { returning, .. }) => {
             assert_eq!(
-                Some(vec![SelectItem::Wildcard(
-                    WildcardAdditionalOptions::default()
-                ),]),
-                returning
+                vec![SelectItem::Wildcard(WildcardAdditionalOptions::default())],
+                returning.expect("RETURNING clause").expressions
             );
         }
         _ => unreachable!(),
@@ -2267,36 +2264,11 @@ fn parse_pg_returning() {
 }
 
 #[test]
-fn parse_pg_update_returning_into() {
-    let stmt = pg_and_generic().verified_stmt(
-        "UPDATE warehouse SET w_ytd = w_ytd + p_h_amount WHERE w_id = p_w_id \
-         RETURNING w_street_1, w_street_2, w_city INTO p_w_street_1, p_w_street_2, p_w_city",
-    );
-    match stmt {
-        Statement::Update(Update {
-            returning,
-            returning_into,
-            ..
-        }) => {
-            assert_eq!(
-                returning,
-                Some(vec![
-                    SelectItem::UnnamedExpr(Expr::Identifier("w_street_1".into())),
-                    SelectItem::UnnamedExpr(Expr::Identifier("w_street_2".into())),
-                    SelectItem::UnnamedExpr(Expr::Identifier("w_city".into())),
-                ])
-            );
-            assert_eq!(
-                returning_into,
-                Some(vec![
-                    ObjectName::from(vec![Ident::new("p_w_street_1")]),
-                    ObjectName::from(vec![Ident::new("p_w_street_2")]),
-                    ObjectName::from(vec![Ident::new("p_w_city")]),
-                ])
-            );
-        }
-        other => panic!("expected update statement, got: {other:?}"),
-    }
+fn parse_pg_update_returning_into_is_rejected() {
+    let sql = "UPDATE warehouse SET w_ytd = w_ytd + p_h_amount WHERE w_id = p_w_id \
+               RETURNING w_street_1, w_street_2, w_city \
+               INTO p_w_street_1, p_w_street_2, p_w_city";
+    assert!(pg().parse_sql_statements(sql).is_err());
 }
 
 #[test]
@@ -3457,6 +3429,7 @@ fn parse_array_subquery_expr() {
                         selection: None,
                         group_by: GroupByExpr::Expressions(vec![], vec![]),
                         having: None,
+                        qualify: None,
                         named_window: vec![],
                         connect_by: None,
                         flavor: SelectFlavor::Standard,
@@ -3474,6 +3447,7 @@ fn parse_array_subquery_expr() {
                         selection: None,
                         group_by: GroupByExpr::Expressions(vec![], vec![]),
                         having: None,
+                        qualify: None,
                         named_window: vec![],
                         connect_by: None,
                         flavor: SelectFlavor::Standard,
@@ -5289,6 +5263,7 @@ fn parse_truncate() {
             table: false,
             identity: None,
             cascade: None,
+            oracle_storage: None,
         }),
         truncate
     );
@@ -5312,6 +5287,7 @@ fn parse_truncate_with_options() {
             table: true,
             identity: Some(TruncateIdentityOption::Restart),
             cascade: Some(CascadeOption::Cascade),
+            oracle_storage: None,
         }),
         truncate
     );
@@ -5344,6 +5320,7 @@ fn parse_truncate_with_table_list() {
             table: true,
             identity: Some(TruncateIdentityOption::Restart),
             cascade: Some(CascadeOption::Cascade),
+            oracle_storage: None,
         }),
         truncate
     );
@@ -5525,6 +5502,7 @@ fn test_simple_postgres_insert_with_alias() {
             replace_into: false,
             priority: None,
             insert_alias: None,
+            error_logging: None,
         })
     )
 }
@@ -5595,6 +5573,7 @@ fn test_simple_postgres_insert_with_alias() {
             replace_into: false,
             priority: None,
             insert_alias: None,
+            error_logging: None,
         })
     )
 }
@@ -5663,6 +5642,7 @@ fn test_simple_insert_with_quoted_alias() {
             replace_into: false,
             priority: None,
             insert_alias: None,
+            error_logging: None,
         })
     )
 }

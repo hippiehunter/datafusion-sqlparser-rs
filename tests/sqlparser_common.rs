@@ -316,7 +316,7 @@ fn parse_insert_select_returning() {
             returning: Some(ret),
             source: Some(_),
             ..
-        }) => assert_eq!(ret.len(), 1),
+        }) => assert_eq!(ret.expressions.len(), 1),
         _ => unreachable!(),
     }
 }
@@ -334,7 +334,7 @@ fn parse_insert_select_from_returning() {
             assert_eq!("table1", table_name.to_string());
             assert!(matches!(source.body.as_ref(), SetExpr::Select(_)));
             assert_eq!(
-                returning,
+                returning.expressions,
                 vec![SelectItem::UnnamedExpr(Expr::Identifier(Ident::new("id"))),]
             );
         }
@@ -442,6 +442,7 @@ fn parse_update_set_from() {
                                 vec![]
                             ),
                             having: None,
+                            qualify: None,
                             named_window: vec![],
                             connect_by: None,
                             flavor: SelectFlavor::Standard,
@@ -475,9 +476,9 @@ fn parse_update_set_from() {
                 .into()
             ),
             returning: None,
-            returning_into: None,
             limit: None,
             for_portion_of: None,
+            error_logging: None,
         })
     );
 
@@ -495,10 +496,10 @@ fn parse_update_with_table_alias() {
             from: _from,
             selection,
             returning,
-            returning_into: None,
             limit: None,
             update_token: _,
             for_portion_of: None,
+            error_logging: _,
         }) => {
             assert_eq!(
                 TableWithJoins {
@@ -1048,6 +1049,7 @@ fn parse_select_into() {
     let select = verified_only_select(sql);
     assert_eq!(
         &SelectInto {
+            bulk_collect: false,
             temporary: false,
             unlogged: false,
             table: false,
@@ -1076,6 +1078,7 @@ fn parse_select_into() {
     let select = verified_only_select(sql);
     assert_eq!(
         &SelectInto {
+            bulk_collect: false,
             temporary: false,
             unlogged: false,
             table: false,
@@ -1093,6 +1096,7 @@ fn parse_select_into() {
     );
     assert_eq!(
         &SelectInto {
+            bulk_collect: false,
             temporary: false,
             unlogged: false,
             table: false,
@@ -5614,6 +5618,7 @@ fn test_parse_named_window() {
         selection: None,
         group_by: GroupByExpr::Expressions(vec![], vec![]),
         having: None,
+        qualify: None,
         named_window: vec![
             NamedWindowDefinition(
                 Ident {
@@ -6288,6 +6293,7 @@ fn parse_interval_and_or_xor() {
             ),
             group_by: GroupByExpr::Expressions(vec![], vec![]),
             having: None,
+            qualify: None,
             named_window: vec![],
             connect_by: None,
             flavor: SelectFlavor::Standard,
@@ -8219,6 +8225,7 @@ fn parse_offset() {
 #[test]
 fn parse_fetch() {
     let fetch_first_two_rows_only = Some(Fetch {
+        approximate: false,
         with_ties: false,
         percent: false,
         quantity: Some(Expr::value(number("2"))),
@@ -8232,6 +8239,7 @@ fn parse_fetch() {
         ast.fetch.map(Box::into_owned),
         Some(
             Fetch {
+                approximate: false,
                 with_ties: false,
                 percent: false,
                 quantity: None,
@@ -8249,6 +8257,7 @@ fn parse_fetch() {
     assert_eq!(
         ast.fetch.map(Box::into_owned),
         Some(Fetch {
+            approximate: false,
             with_ties: true,
             percent: false,
             quantity: Some(Expr::value(number("2"))),
@@ -8258,6 +8267,7 @@ fn parse_fetch() {
     assert_eq!(
         ast.fetch.map(Box::into_owned),
         Some(Fetch {
+            approximate: false,
             with_ties: false,
             percent: true,
             quantity: Some(Expr::value(number("50"))),
@@ -8437,6 +8447,7 @@ fn lateral_function() {
         selection: None,
         group_by: GroupByExpr::Expressions(vec![], vec![]),
         having: None,
+        qualify: None,
         named_window: vec![],
         connect_by: None,
         flavor: SelectFlavor::Standard,
@@ -9415,6 +9426,7 @@ fn parse_merge() {
                             selection: None,
                             group_by: GroupByExpr::Expressions(vec![], vec![]),
                             having: None,
+                            qualify: None,
                             named_window: vec![],
                             connect_by: None,
                             flavor: SelectFlavor::Standard,
@@ -9494,6 +9506,7 @@ fn parse_merge() {
                                     ]),
                                 ]]
                             }),
+                            where_clause: None,
                         }),
                     },
                     MergeClause {
@@ -9531,6 +9544,8 @@ fn parse_merge() {
                                     ]),
                                 },
                             ],
+                            where_clause: None,
+                            delete_where: None,
                         },
                     },
                     MergeClause {
@@ -10837,6 +10852,7 @@ fn parse_pivot_table() {
                 sample: None,
                 index_hints: vec![],
             }),
+            xml: false,
             aggregate_functions: vec![
                 expected_function("a", None),
                 expected_function("b", Some("t")),
@@ -10917,6 +10933,7 @@ fn parse_pivot_table() {
                 sample: None,
                 index_hints: vec![],
             }),
+            xml: false,
             aggregate_functions: vec![
                 ExprWithAlias {
                     expr: call("SUM", [Expr::Identifier(Ident::new("age"))]),
@@ -11300,6 +11317,7 @@ fn parse_pivot_unpivot_table() {
                     implicit: false,
                 }),
             }),
+            xml: false,
             aggregate_functions: vec![ExprWithAlias {
                 expr: call("sum", [Expr::Identifier(Ident::new("population"))]),
                 alias: None
@@ -11849,6 +11867,7 @@ fn parse_unload() {
                     selection: None,
                     group_by: GroupByExpr::Expressions(vec![], vec![]),
                     having: None,
+                    qualify: None,
                     named_window: vec![],
                     connect_by: None,
                     flavor: SelectFlavor::Standard,
@@ -12092,16 +12111,18 @@ fn parse_connect_by() {
         selection: None,
         group_by: GroupByExpr::Expressions(vec![], vec![]),
         having: None,
+        qualify: None,
         named_window: vec![],
         connect_by: Some(
             ConnectBy {
-                condition: Expr::BinaryOp {
+                condition: Some(Expr::BinaryOp {
                     left: Box::new(Expr::Identifier(Ident::new("title"))),
                     op: BinaryOperator::Eq,
                     right: Box::new(Expr::Value(
                         Value::SingleQuotedString("president".to_owned()).with_empty_span(),
                     )),
-                },
+                }),
+                nocycle: false,
                 relationships: vec![Expr::BinaryOp {
                     left: Box::new(Expr::Identifier(Ident::new("manager_id"))),
                     op: BinaryOperator::Eq,
@@ -12175,16 +12196,18 @@ fn parse_connect_by() {
             ),
             group_by: GroupByExpr::Expressions(vec![], vec![]),
             having: None,
+            qualify: None,
             named_window: vec![],
             connect_by: Some(
                 ConnectBy {
-                    condition: Expr::BinaryOp {
+                    condition: Some(Expr::BinaryOp {
                         left: Box::new(Expr::Identifier(Ident::new("title"))),
                         op: BinaryOperator::Eq,
                         right: Box::new(Expr::Value(
                             (Value::SingleQuotedString("president".to_owned(),)).with_empty_span()
                         )),
-                    },
+                    }),
+                    nocycle: false,
                     relationships: vec![Expr::BinaryOp {
                         left: Box::new(Expr::Identifier(Ident::new("manager_id"))),
                         op: BinaryOperator::Eq,
@@ -12506,6 +12529,7 @@ fn test_extract_seconds_ok() {
             selection: None,
             group_by: GroupByExpr::Expressions(vec![], vec![]),
             having: None,
+            qualify: None,
             named_window: vec![],
             connect_by: None,
             flavor: SelectFlavor::Standard,
@@ -14394,6 +14418,7 @@ fn parse_truncate_only() {
             table: true,
             identity: None,
             cascade: None,
+            oracle_storage: None,
         }),
         truncate
     );

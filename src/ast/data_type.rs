@@ -68,6 +68,20 @@ pub enum DataType {
     Varchar(Option<CharacterLength>),
     /// Variable-length character type, e.g. NVARCHAR(10).
     Nvarchar(Option<CharacterLength>),
+    /// Oracle fixed-length national character type.
+    Nchar(Option<CharacterLength>),
+    /// Oracle variable-length character type.
+    Varchar2(Option<CharacterLength>),
+    /// Oracle variable-length national character type.
+    Nvarchar2(Option<CharacterLength>),
+    /// Oracle national character large object type.
+    Nclob(Option<u64>),
+    /// Oracle raw binary type.
+    Raw(Option<u64>),
+    /// Oracle legacy long raw binary type.
+    LongRaw,
+    /// Oracle external binary file type.
+    Bfile,
     /// Uuid type.
     Uuid,
     /// Large character object with optional length,
@@ -284,6 +298,13 @@ pub enum DataType {
         /// [PostgreSQL]: https://www.postgresql.org/docs/17/datatype-datetime.html
         precision: Option<u64>,
     },
+    /// Oracle interval type with independent leading and fractional-second
+    /// precisions.
+    OracleInterval {
+        fields: IntervalFields,
+        leading_precision: Option<u64>,
+        fractional_seconds_precision: Option<u64>,
+    },
     /// JSON type.
     JSON,
     /// Binary JSON type.
@@ -410,6 +431,13 @@ impl fmt::Display for DataType {
             DataType::CharVarying(size) => format_character_string_type(f, "CHAR VARYING", size),
             DataType::Varchar(size) => format_character_string_type(f, "VARCHAR", size),
             DataType::Nvarchar(size) => format_character_string_type(f, "NVARCHAR", size),
+            DataType::Nchar(size) => format_character_string_type(f, "NCHAR", size),
+            DataType::Varchar2(size) => format_character_string_type(f, "VARCHAR2", size),
+            DataType::Nvarchar2(size) => format_character_string_type(f, "NVARCHAR2", size),
+            DataType::Nclob(size) => format_type_with_optional_length(f, "NCLOB", size, false),
+            DataType::Raw(size) => format_type_with_optional_length(f, "RAW", size, false),
+            DataType::LongRaw => write!(f, "LONG RAW"),
+            DataType::Bfile => write!(f, "BFILE"),
             DataType::Uuid => write!(f, "UUID"),
             DataType::CharacterLargeObject(size) => {
                 format_type_with_optional_length(f, "CHARACTER LARGE OBJECT", size, false)
@@ -537,6 +565,40 @@ impl fmt::Display for DataType {
                     write!(f, "({precision})")?;
                 }
                 Ok(())
+            }
+            DataType::OracleInterval {
+                fields,
+                leading_precision,
+                fractional_seconds_precision,
+            } => {
+                write!(f, "INTERVAL")?;
+                match fields {
+                    IntervalFields::YearToMonth => {
+                        write!(f, " YEAR")?;
+                        if let Some(precision) = leading_precision {
+                            write!(f, "({precision})")?;
+                        }
+                        write!(f, " TO MONTH")
+                    }
+                    IntervalFields::DayToSecond => {
+                        write!(f, " DAY")?;
+                        if let Some(precision) = leading_precision {
+                            write!(f, "({precision})")?;
+                        }
+                        write!(f, " TO SECOND")?;
+                        if let Some(precision) = fractional_seconds_precision {
+                            write!(f, "({precision})")?;
+                        }
+                        Ok(())
+                    }
+                    _ => {
+                        write!(f, " {fields}")?;
+                        if let Some(precision) = leading_precision {
+                            write!(f, "({precision})")?;
+                        }
+                        Ok(())
+                    }
+                }
             }
             DataType::JSON => write!(f, "JSON"),
             DataType::JSONB => write!(f, "JSONB"),
@@ -723,6 +785,8 @@ pub enum TimezoneInfo {
     ///
     /// [SQL Standard]: https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#datetime-type
     WithTimeZone,
+    /// Oracle temporal type `WITH LOCAL TIME ZONE`.
+    WithLocalTimeZone,
     /// Temporal type 'WITHOUT TIME ZONE', e.g. TIME WITHOUT TIME ZONE, [SQL Standard], [Postgresql]
     ///
     /// [SQL Standard]: https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#datetime-type
@@ -742,6 +806,9 @@ impl fmt::Display for TimezoneInfo {
             }
             TimezoneInfo::WithTimeZone => {
                 write!(f, " WITH TIME ZONE")
+            }
+            TimezoneInfo::WithLocalTimeZone => {
+                write!(f, " WITH LOCAL TIME ZONE")
             }
             TimezoneInfo::WithoutTimeZone => {
                 write!(f, " WITHOUT TIME ZONE")
@@ -875,6 +942,10 @@ pub enum CharLengthUnits {
     Characters,
     /// OCTETS unit
     Octets,
+    /// Oracle `CHAR` length semantics.
+    Char,
+    /// Oracle `BYTE` length semantics.
+    Byte,
 }
 
 impl fmt::Display for CharLengthUnits {
@@ -886,6 +957,8 @@ impl fmt::Display for CharLengthUnits {
             Self::Octets => {
                 write!(f, "OCTETS")
             }
+            Self::Char => write!(f, "CHAR"),
+            Self::Byte => write!(f, "BYTE"),
         }
     }
 }

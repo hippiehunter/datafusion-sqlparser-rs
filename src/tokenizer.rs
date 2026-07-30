@@ -42,7 +42,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "visitor")]
 use sqlparser_derive::{Visit, VisitMut};
 
-use crate::ast::DollarQuotedString;
+use crate::ast::{AlternativeQuotedString, DollarQuotedString};
 use crate::dialect::{Dialect, DialectFeatures};
 use crate::dialect::{MySqlDialect, PostgreSqlDialect};
 use crate::keywords::Keyword;
@@ -71,6 +71,8 @@ pub enum BorrowedToken<'a> {
     SingleQuotedByteStringLiteral(String),
     /// "National" string literal: i.e: N'string'
     NationalStringLiteral(String),
+    /// Alternative quoted string: i.e: q'[string]'
+    AlternativeQuotedString(AlternativeQuotedString),
     /// "escaped" string literal, which are an extension to the SQL standard: i.e: e'first \n second' or E 'first \n second'
     EscapedStringLiteral(String),
     /// Unicode string literal: i.e: U&'first \000A second'
@@ -270,6 +272,7 @@ impl<'a> fmt::Display for BorrowedToken<'a> {
             BorrowedToken::DoubleQuotedString(ref s) => write!(f, "\"{s}\""),
             BorrowedToken::DollarQuotedString(ref s) => write!(f, "{s}"),
             BorrowedToken::NationalStringLiteral(ref s) => write!(f, "N'{s}'"),
+            BorrowedToken::AlternativeQuotedString(ref s) => write!(f, "{s}"),
             BorrowedToken::EscapedStringLiteral(ref s) => write!(f, "E'{s}'"),
             BorrowedToken::UnicodeStringLiteral(ref s) => write!(f, "U&'{s}'"),
             BorrowedToken::HexStringLiteral(ref s) => write!(f, "X'{s}'"),
@@ -382,6 +385,7 @@ impl<'a> BorrowedToken<'a> {
                 BorrowedToken::SingleQuotedByteStringLiteral(s)
             }
             BorrowedToken::NationalStringLiteral(s) => BorrowedToken::NationalStringLiteral(s),
+            BorrowedToken::AlternativeQuotedString(s) => BorrowedToken::AlternativeQuotedString(s),
             BorrowedToken::EscapedStringLiteral(s) => BorrowedToken::EscapedStringLiteral(s),
             BorrowedToken::UnicodeStringLiteral(s) => BorrowedToken::UnicodeStringLiteral(s),
             BorrowedToken::HexStringLiteral(s) => BorrowedToken::HexStringLiteral(s),
@@ -1191,6 +1195,20 @@ impl<'a> Tokenizer<'a> {
                             let first_char_byte_pos = chars.byte_pos.saturating_sub(n.len_utf8());
                             let s = self.tokenize_word_borrowed(first_char_byte_pos, chars)?;
                             Ok(Some(BorrowedToken::make_word_borrowed(s, None)))
+                        }
+                    }
+                }
+                q @ 'Q' | q @ 'q'
+                    if self.features.supports_alternative_quoted_string_literal
+                        && chars.peek_nth(1) == Some('\'') =>
+                {
+                    let starting_loc = chars.location();
+                    chars.next();
+                    match self.tokenize_alternative_quoted_string(starting_loc, chars) {
+                        Ok(value) => Ok(Some(Token::AlternativeQuotedString(value))),
+                        Err(error) => {
+                            let _ = q;
+                            Err(error)
                         }
                     }
                 }
@@ -2165,6 +2183,51 @@ impl<'a> Tokenizer<'a> {
                 backslash_escape,
             },
         )
+    }
+
+    fn tokenize_alternative_quoted_string(
+        &self,
+        starting_loc: Location,
+        chars: &mut State<'a>,
+    ) -> Result<AlternativeQuotedString, TokenizerError> {
+        if chars.next() != Some('\'') {
+            return self.tokenizer_error(starting_loc, "Expected opening quote");
+        }
+
+        let Some(delimiter) = chars.next() else {
+            return self.tokenizer_error(starting_loc, "Expected alternative quote delimiter");
+        };
+        if delimiter.is_whitespace() || delimiter == '\'' {
+            return self.tokenizer_error(starting_loc, "Invalid alternative quote delimiter");
+        }
+
+        let closing_delimiter = match delimiter {
+            '[' => ']',
+            '{' => '}',
+            '(' => ')',
+            '<' => '>',
+            delimiter => delimiter,
+        };
+        let content_start = chars.byte_pos;
+
+        loop {
+            let Some(&ch) = chars.peek() else {
+                return self.tokenizer_error(
+                    starting_loc,
+                    "Unterminated alternative quoted string literal",
+                );
+            };
+            if ch == closing_delimiter && chars.peek_nth(1) == Some('\'') {
+                let content_end = chars.byte_pos;
+                chars.next();
+                chars.next();
+                return Ok(AlternativeQuotedString {
+                    value: chars.source[content_start..content_end].to_string(),
+                    delimiter,
+                });
+            }
+            chars.next();
+        }
     }
 
     /// Reads a string literal quoted by a single quote character, returning Cow for zero-copy.

@@ -131,6 +131,8 @@ pub enum AlterTableOperation {
         /// MySQL `ALTER TABLE` only  [FIRST | AFTER column_name]
         column_position: Option<MySQLColumnPosition>,
     },
+    /// Oracle parenthesized multi-column ADD.
+    OracleAddColumns { columns: Vec<ColumnDef> },
     /// `DISABLE ROW LEVEL SECURITY`
     ///
     /// Note: this is a PostgreSQL-specific operation.
@@ -250,6 +252,8 @@ pub enum AlterTableOperation {
         /// MySQL `ALTER TABLE` only  [FIRST | AFTER column_name]
         column_position: Option<MySQLColumnPosition>,
     },
+    /// Oracle parenthesized multi-column MODIFY.
+    OracleModifyColumns { columns: Vec<ColumnDef> },
     /// `RENAME CONSTRAINT <old_constraint_name> TO <new_constraint_name>`
     ///
     /// Note: this is a PostgreSQL-specific operation.
@@ -328,7 +332,11 @@ pub enum AlterTableOperation {
     /// `ALTER TABLE ... SPLIT PARTITION name INTO (...)`
     SplitPartition {
         partition_name: ObjectName,
+        /// Oracle range split point.
+        at: Option<Expr>,
         into: Vec<SplitPartitionTarget>,
+        /// Oracle index-maintenance clause.
+        update_global_indexes: bool,
     },
     /// `ALTER TABLE ... MERGE PARTITIONS (p1, p2, ...) INTO name`
     MergePartitions {
@@ -499,6 +507,9 @@ impl fmt::Display for AlterTableOperation {
 
                 Ok(())
             }
+            AlterTableOperation::OracleAddColumns { columns } => {
+                write!(f, "ADD ({})", display_comma_separated(columns))
+            }
             AlterTableOperation::Algorithm { equals, algorithm } => {
                 write!(
                     f,
@@ -656,6 +667,9 @@ impl fmt::Display for AlterTableOperation {
 
                 Ok(())
             }
+            AlterTableOperation::OracleModifyColumns { columns } => {
+                write!(f, "MODIFY ({})", display_comma_separated(columns))
+            }
             AlterTableOperation::RenameConstraint { old_name, new_name } => {
                 write!(f, "RENAME CONSTRAINT {old_name} TO {new_name}")
             }
@@ -723,13 +737,19 @@ impl fmt::Display for AlterTableOperation {
             }
             AlterTableOperation::SplitPartition {
                 partition_name,
+                at,
                 into,
+                update_global_indexes,
             } => {
-                write!(
-                    f,
-                    "SPLIT PARTITION {partition_name} INTO ({})",
-                    display_comma_separated(into)
-                )
+                write!(f, "SPLIT PARTITION {partition_name}")?;
+                if let Some(at) = at {
+                    write!(f, " AT ({at})")?;
+                }
+                write!(f, " INTO ({})", display_comma_separated(into))?;
+                if *update_global_indexes {
+                    f.write_str(" UPDATE GLOBAL INDEXES")?;
+                }
+                Ok(())
             }
             AlterTableOperation::MergePartitions { partitions, into } => {
                 write!(
@@ -911,6 +931,7 @@ impl fmt::Display for AlterColumnOperation {
                 let generated_as = match generated_as {
                     Some(GeneratedAs::Always) => " ALWAYS",
                     Some(GeneratedAs::ByDefault) => " BY DEFAULT",
+                    Some(GeneratedAs::ByDefaultOnNull) => " BY DEFAULT ON NULL",
                     _ => "",
                 };
 
@@ -1513,6 +1534,7 @@ impl fmt::Display for ColumnOption {
                     let when = match generated_as {
                         GeneratedAs::Always => "ALWAYS",
                         GeneratedAs::ByDefault => "BY DEFAULT",
+                        GeneratedAs::ByDefaultOnNull => "BY DEFAULT ON NULL",
                         // ExpStored goes with an expression, handled above
                         GeneratedAs::ExpStored => unreachable!(),
                         GeneratedAs::RowStart => {
@@ -1564,6 +1586,7 @@ impl fmt::Display for ColumnOption {
 pub enum GeneratedAs {
     Always,
     ByDefault,
+    ByDefaultOnNull,
     ExpStored,
     /// `GENERATED ALWAYS AS ROW START` for temporal tables
     RowStart,
@@ -2252,6 +2275,10 @@ impl fmt::Display for CreateTableSystemVersioning {
 pub struct PartitionByClause {
     pub strategy: PartitionStrategy,
     pub columns: Vec<PartitionKeyDef>,
+    /// Oracle interval expression for range partitioning.
+    pub interval: Option<Expr>,
+    /// Oracle initial range partitions.
+    pub partitions: Vec<OraclePartitionDefinition>,
 }
 
 impl fmt::Display for PartitionByClause {
@@ -2261,7 +2288,14 @@ impl fmt::Display for PartitionByClause {
             "PARTITION BY {} ({})",
             self.strategy,
             display_comma_separated(&self.columns)
-        )
+        )?;
+        if let Some(interval) = &self.interval {
+            write!(f, " INTERVAL ({interval})")?;
+        }
+        if !self.partitions.is_empty() {
+            write!(f, " ({})", display_comma_separated(&self.partitions))?;
+        }
+        Ok(())
     }
 }
 
@@ -2272,6 +2306,7 @@ pub enum PartitionStrategy {
     Range,
     List,
     Hash,
+    Reference,
 }
 
 impl fmt::Display for PartitionStrategy {
@@ -2280,7 +2315,27 @@ impl fmt::Display for PartitionStrategy {
             PartitionStrategy::Range => write!(f, "RANGE"),
             PartitionStrategy::List => write!(f, "LIST"),
             PartitionStrategy::Hash => write!(f, "HASH"),
+            PartitionStrategy::Reference => write!(f, "REFERENCE"),
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OraclePartitionDefinition {
+    pub name: ObjectName,
+    pub values_less_than: Vec<Expr>,
+}
+
+impl fmt::Display for OraclePartitionDefinition {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "PARTITION {} VALUES LESS THAN ({})",
+            self.name,
+            display_comma_separated(&self.values_less_than)
+        )
     }
 }
 
@@ -2329,12 +2384,16 @@ impl fmt::Display for PartitionKeyExpr {
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct SplitPartitionTarget {
     pub name: ObjectName,
-    pub bound: PartitionBoundSpec,
+    pub bound: Option<PartitionBoundSpec>,
 }
 
 impl fmt::Display for SplitPartitionTarget {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "PARTITION {} {}", self.name, self.bound)
+        write!(f, "PARTITION {}", self.name)?;
+        if let Some(bound) = &self.bound {
+            write!(f, " {bound}")?;
+        }
+        Ok(())
     }
 }
 
@@ -3193,6 +3252,8 @@ pub struct Truncate {
     pub identity: Option<super::TruncateIdentityOption>,
     /// Postgres-specific option: [ CASCADE | RESTRICT ]
     pub cascade: Option<super::CascadeOption>,
+    /// Oracle storage disposition.
+    pub oracle_storage: Option<super::OracleTruncateStorage>,
 }
 
 impl fmt::Display for Truncate {
@@ -3211,16 +3272,18 @@ impl fmt::Display for Truncate {
                 super::TruncateIdentityOption::Continue => write!(f, " CONTINUE IDENTITY")?,
             }
         }
+        if let Some(ref parts) = &self.partitions {
+            if !parts.is_empty() {
+                write!(f, " PARTITION ({})", display_comma_separated(parts))?;
+            }
+        }
+        if let Some(storage) = &self.oracle_storage {
+            write!(f, " {storage}")?;
+        }
         if let Some(cascade) = &self.cascade {
             match cascade {
                 super::CascadeOption::Cascade => write!(f, " CASCADE")?,
                 super::CascadeOption::Restrict => write!(f, " RESTRICT")?,
-            }
-        }
-
-        if let Some(ref parts) = &self.partitions {
-            if !parts.is_empty() {
-                write!(f, " PARTITION ({})", display_comma_separated(parts))?;
             }
         }
         Ok(())
@@ -3270,6 +3333,53 @@ pub struct CreateView {
     pub late_options: Vec<SqlOption>,
     /// `REFRESH SCHEDULE EVERY '...' [START AT '...'] [METHOD ...]`
     pub refresh_schedule: Option<MaterializedViewRefreshSchedule>,
+    /// Oracle view-specific declaration and constraint clauses.
+    pub oracle: Option<OracleCreateViewOptions>,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleCreateViewOptions {
+    pub force: Option<bool>,
+    pub editioning: Option<bool>,
+    pub object: Option<OracleObjectView>,
+    pub constraint: Option<OracleViewConstraint>,
+    pub materialized: Option<OracleCreateMaterializedViewOptions>,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleCreateMaterializedViewOptions {
+    pub build: Option<OracleMaterializedViewBuild>,
+    pub refresh_method: Option<super::OracleMaterializedViewRefreshMethod>,
+    pub refresh_mode: Option<super::OracleMaterializedViewRefreshMode>,
+    pub query_rewrite: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleMaterializedViewBuild {
+    Immediate,
+    Deferred,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleObjectView {
+    pub data_type: ObjectName,
+    pub object_identifier: Vec<Expr>,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleViewConstraint {
+    ReadOnly,
+    CheckOption { constraint: Option<Ident> },
 }
 
 impl fmt::Display for CreateView {
@@ -3282,6 +3392,18 @@ impl fmt::Display for CreateView {
         )?;
         if let Some(ref params) = self.params {
             params.fmt(f)?;
+        }
+        if let Some(oracle) = &self.oracle {
+            match oracle.force {
+                Some(true) => f.write_str("FORCE ")?,
+                Some(false) => f.write_str("NOFORCE ")?,
+                None => {}
+            }
+            match oracle.editioning {
+                Some(true) => f.write_str("EDITIONING ")?,
+                Some(false) => f.write_str("NONEDITIONING ")?,
+                None => {}
+            }
         }
         write!(
             f,
@@ -3298,6 +3420,20 @@ impl fmt::Display for CreateView {
             },
             name = self.name,
         )?;
+        if let Some(OracleObjectView {
+            data_type,
+            object_identifier,
+        }) = self
+            .oracle
+            .as_ref()
+            .and_then(|oracle| oracle.object.as_ref())
+        {
+            write!(
+                f,
+                " OF {data_type} WITH OBJECT IDENTIFIER ({})",
+                display_comma_separated(object_identifier)
+            )?;
+        }
         if !self.columns.is_empty() {
             write!(f, " ({})", display_comma_separated(&self.columns))?;
         }
@@ -3306,6 +3442,32 @@ impl fmt::Display for CreateView {
         }
         if matches!(self.options, CreateTableOptions::Options(_)) {
             write!(f, " {}", self.options)?;
+        }
+        if let Some(options) = self
+            .oracle
+            .as_ref()
+            .and_then(|oracle| oracle.materialized.as_ref())
+        {
+            if let Some(build) = options.build {
+                write!(
+                    f,
+                    " BUILD {}",
+                    match build {
+                        OracleMaterializedViewBuild::Immediate => "IMMEDIATE",
+                        OracleMaterializedViewBuild::Deferred => "DEFERRED",
+                    }
+                )?;
+            }
+            if let (Some(method), Some(mode)) = (options.refresh_method, options.refresh_mode) {
+                write!(f, " REFRESH {method} ON {mode}")?;
+            }
+            if let Some(enabled) = options.query_rewrite {
+                write!(
+                    f,
+                    " {} QUERY REWRITE",
+                    if enabled { "ENABLE" } else { "DISABLE" }
+                )?;
+            }
         }
         f.write_str(" AS")?;
         SpaceOrNewline.fmt(f)?;
@@ -3327,6 +3489,21 @@ impl fmt::Display for CreateView {
         }
         if let Some(sched) = &self.refresh_schedule {
             write!(f, " REFRESH SCHEDULE {sched}")?;
+        }
+        if let Some(constraint) = self
+            .oracle
+            .as_ref()
+            .and_then(|oracle| oracle.constraint.as_ref())
+        {
+            match constraint {
+                OracleViewConstraint::ReadOnly => f.write_str(" WITH READ ONLY")?,
+                OracleViewConstraint::CheckOption { constraint } => {
+                    f.write_str(" WITH CHECK OPTION")?;
+                    if let Some(name) = constraint {
+                        write!(f, " CONSTRAINT {name}")?;
+                    }
+                }
+            }
         }
         Ok(())
     }

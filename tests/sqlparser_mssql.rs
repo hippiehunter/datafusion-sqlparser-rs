@@ -137,6 +137,7 @@ fn parse_create_procedure() {
                         selection: None,
                         group_by: GroupByExpr::Expressions(vec![], vec![]),
                         having: None,
+                        qualify: None,
                         named_window: vec![],
                         connect_by: None,
                         flavor: SelectFlavor::Standard,
@@ -1437,6 +1438,7 @@ fn parse_substring_in_select() {
                         selection: None,
                         group_by: GroupByExpr::Expressions(vec![], vec![]),
                         having: None,
+                        qualify: None,
                         named_window: vec![],
                         connect_by: None,
                         flavor: SelectFlavor::Standard,
@@ -1572,6 +1574,7 @@ fn parse_mssql_declare() {
                     selection: None,
                     group_by: GroupByExpr::Expressions(vec![], vec![]),
                     having: None,
+                    qualify: None,
                     named_window: vec![],
                     connect_by: None,
                     flavor: SelectFlavor::Standard,
@@ -1621,6 +1624,7 @@ fn test_mssql_while_statement() {
             body: ConditionalStatements::Sequence { statements: vec![] },
             end_label: None,
             has_do_keyword: false,
+            has_loop_keyword: false,
             while_block: Some(ConditionalStatementBlock {
                 start_token: AttachedToken::from(TokenWithSpan {
                     token: Token::Word(Word {
