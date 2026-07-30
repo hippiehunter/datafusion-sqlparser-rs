@@ -12721,6 +12721,10 @@ pub enum GrantObjects {
     Tables(Vec<ObjectName>),
     /// Grant privileges on specific materialized views
     MaterializedViews(Vec<ObjectName>),
+    /// Grant privileges on foreign-data wrappers.
+    ForeignDataWrappers(Vec<ObjectName>),
+    /// Grant privileges on foreign servers.
+    ForeignServers(Vec<ObjectName>),
     /// Grant privileges on specific views
     Views(Vec<ObjectName>),
     /// Grant privileges on specific warehouses
@@ -12801,6 +12805,16 @@ impl fmt::Display for GrantObjects {
                     "MATERIALIZED VIEW {}",
                     display_comma_separated(materialized_views)
                 )
+            }
+            GrantObjects::ForeignDataWrappers(wrappers) => {
+                write!(
+                    f,
+                    "FOREIGN DATA WRAPPER {}",
+                    display_comma_separated(wrappers)
+                )
+            }
+            GrantObjects::ForeignServers(servers) => {
+                write!(f, "FOREIGN SERVER {}", display_comma_separated(servers))
             }
             GrantObjects::Views(views) => {
                 write!(f, "VIEW {}", display_comma_separated(views))

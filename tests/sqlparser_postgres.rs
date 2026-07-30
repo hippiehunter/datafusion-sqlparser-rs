@@ -7723,6 +7723,16 @@ fn parse_alter_default_privileges() {
 }
 
 #[test]
+fn parse_grant_foreign_objects() {
+    for sql in [
+        "GRANT USAGE ON FOREIGN DATA WRAPPER custom_fdw TO reader",
+        "GRANT USAGE ON FOREIGN SERVER custom_server TO reader",
+    ] {
+        pg().one_statement_parses_to(sql, sql);
+    }
+}
+
+#[test]
 fn parse_postgresql_alter_view_operations() {
     for sql in [
         "ALTER VIEW old_view RENAME TO new_view",

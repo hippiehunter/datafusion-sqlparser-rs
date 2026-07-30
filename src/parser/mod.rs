@@ -23828,6 +23828,14 @@ impl<'a> Parser<'a> {
                 Some(GrantObjects::AllSequencesInSchema {
                     schemas: self.parse_comma_separated(|p| p.parse_object_name(false))?,
                 })
+            } else if self.parse_keywords(&[Keyword::FOREIGN, Keyword::DATA, Keyword::WRAPPER]) {
+                Some(GrantObjects::ForeignDataWrappers(
+                    self.parse_comma_separated(|p| p.parse_object_name(false))?,
+                ))
+            } else if self.parse_keywords(&[Keyword::FOREIGN, Keyword::SERVER]) {
+                Some(GrantObjects::ForeignServers(
+                    self.parse_comma_separated(|p| p.parse_object_name(false))?,
+                ))
             } else if self.parse_keywords(&[
                 Keyword::FUTURE,
                 Keyword::SEQUENCES,
