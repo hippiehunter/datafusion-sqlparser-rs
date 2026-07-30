@@ -7755,4 +7755,8 @@ fn parse_trifox_try_convert_with_postgresql_front_door() {
         "SELECT TRY_CONVERT(VARCHAR(20), value, 1)",
         "SELECT TRY_CONVERT(VARCHAR(20), value, 1)",
     );
+    pg().one_statement_parses_to(
+        "SELECT CONVERT(INTEGER, value, 1)",
+        "SELECT CONVERT(INTEGER, value, 1)",
+    );
 }

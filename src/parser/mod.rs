@@ -6298,6 +6298,7 @@ impl<'a> Parser<'a> {
         if self.features.convert_type_before_value || is_try {
             return self.parse_mssql_convert(is_try);
         }
+        let checkpoint = self.index.get();
         self.expect_token(&BorrowedToken::LParen)?;
         let expr = self.parse_expr()?;
         if self.parse_keyword(Keyword::USING) {
@@ -6314,6 +6315,14 @@ impl<'a> Parser<'a> {
         }
         self.expect_token(&BorrowedToken::Comma)?;
         let data_type = self.parse_data_type()?;
+        // A third argument is unambiguous MSSQL-style CONVERT(type, value,
+        // style). PostgreSQL-dialect consumers such as Gantry accept that
+        // compatibility form alongside the ordinary value-first SQL syntax.
+        if self.features.supports_try_convert && self.peek_token_ref().token == BorrowedToken::Comma
+        {
+            self.index.set(checkpoint);
+            return self.parse_mssql_convert(false);
+        }
         let charset = if self.parse_keywords(&[Keyword::CHARACTER, Keyword::SET]) {
             Some(self.parse_object_name(false)?)
         } else {
