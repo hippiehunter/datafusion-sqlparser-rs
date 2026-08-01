@@ -7616,6 +7616,9 @@ pub enum Statement {
         clone: Option<ObjectName>,
         comment: Option<String>,
         catalog_sync: Option<String>,
+        /// Gantry `COMPATIBILITY '<dialect>'` — the SQL dialect the new
+        /// database is permanently bound to.
+        compatibility: Option<String>,
     },
     /// ```sql
     /// CREATE FUNCTION
@@ -10779,6 +10782,7 @@ impl fmt::Display for Statement {
                 clone,
                 comment,
                 catalog_sync,
+                compatibility,
             } => {
                 write!(
                     f,
@@ -10808,6 +10812,10 @@ impl fmt::Display for Statement {
 
                 if let Some(sync) = catalog_sync {
                     write!(f, " CATALOG_SYNC = '{sync}'")?;
+                }
+
+                if let Some(compatibility) = compatibility {
+                    write!(f, " COMPATIBILITY '{compatibility}'")?;
                 }
                 Ok(())
             }

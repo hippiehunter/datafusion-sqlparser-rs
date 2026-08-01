@@ -64,6 +64,7 @@ pub struct CreateDatabaseBuilder {
     pub clone: Option<ObjectName>,
     pub comment: Option<String>,
     pub catalog_sync: Option<String>,
+    pub compatibility: Option<String>,
 }
 
 impl CreateDatabaseBuilder {
@@ -79,6 +80,7 @@ impl CreateDatabaseBuilder {
             clone: None,
             comment: None,
             catalog_sync: None,
+            compatibility: None,
         }
     }
 
@@ -127,6 +129,11 @@ impl CreateDatabaseBuilder {
         self
     }
 
+    pub fn compatibility(mut self, compatibility: Option<String>) -> Self {
+        self.compatibility = compatibility;
+        self
+    }
+
     pub fn build(self) -> Statement {
         Statement::CreateDatabase {
             create_token: AttachedToken::from(TokenWithSpan::wrap(Token::make_word(
@@ -142,6 +149,7 @@ impl CreateDatabaseBuilder {
             clone: self.clone,
             comment: self.comment,
             catalog_sync: self.catalog_sync,
+            compatibility: self.compatibility,
         }
     }
 }
@@ -163,6 +171,7 @@ impl TryFrom<Statement> for CreateDatabaseBuilder {
                 clone,
                 comment,
                 catalog_sync,
+                compatibility,
             } => Ok(Self {
                 db_name,
                 if_not_exists,
@@ -174,6 +183,7 @@ impl TryFrom<Statement> for CreateDatabaseBuilder {
                 clone,
                 comment,
                 catalog_sync,
+                compatibility,
             }),
             _ => Err(ParserError::ParserError(format!(
                 "Expected create database statement, but received: {stmt}"

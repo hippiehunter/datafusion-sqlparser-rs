@@ -240,6 +240,7 @@ define_keywords!(
     COMMIT,
     COMMITTED,
     COMMUTATOR,
+    COMPATIBILITY,
     COMPATIBLE,
     COMPILE,
     COMPLETE,

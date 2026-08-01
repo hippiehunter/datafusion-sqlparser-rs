@@ -9602,12 +9602,14 @@ impl<'a> Parser<'a> {
         let mut location = None;
         let mut managed_location = None;
         let mut owner = None;
+        let mut compatibility = None;
         let with_options = self.parse_keyword(Keyword::WITH);
         loop {
             match self.parse_one_of_keywords(&[
                 Keyword::LOCATION,
                 Keyword::MANAGEDLOCATION,
                 Keyword::OWNER,
+                Keyword::COMPATIBILITY,
             ]) {
                 Some(Keyword::LOCATION) => location = Some(self.parse_literal_string()?),
                 Some(Keyword::MANAGEDLOCATION) => {
@@ -9619,6 +9621,11 @@ impl<'a> Parser<'a> {
                     //   CREATE DATABASE db WITH OWNER = role
                     let _ = self.consume_token(&BorrowedToken::Eq);
                     owner = Some(self.parse_object_name(false)?);
+                }
+                Some(Keyword::COMPATIBILITY) => {
+                    // Gantry: CREATE DATABASE db COMPATIBILITY 'oracle'
+                    let _ = self.consume_token(&BorrowedToken::Eq);
+                    compatibility = Some(self.parse_literal_string()?);
                 }
                 _ => {
                     if !self.parse_create_database_option()? {
@@ -9648,6 +9655,7 @@ impl<'a> Parser<'a> {
             clone,
             comment: None,
             catalog_sync: None,
+            compatibility,
         })
     }
 

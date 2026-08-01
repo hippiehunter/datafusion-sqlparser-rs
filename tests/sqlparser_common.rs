@@ -4646,28 +4646,32 @@ fn parse_alter_index() {
 
 #[test]
 fn parse_alter_view() {
-    let sql = "ALTER VIEW myschema.myview AS SELECT foo FROM bar";
+    let sql = "ALTER VIEW myschema.myview RENAME TO newview";
     match verified_stmt(sql) {
-        Statement::AlterView {
-            name,
-            columns,
-            query,
-            with_options,
-        } => {
+        Statement::AlterView { name, operation } => {
             assert_eq!("myschema.myview", name.to_string());
-            assert_eq!(Vec::<Ident>::new(), columns);
-            assert_eq!("SELECT foo FROM bar", query.to_string());
-            assert_eq!(with_options, vec![]);
+            assert_eq!(
+                operation,
+                AlterViewOperation::Rename {
+                    new_name: Ident::new("newview")
+                }
+            );
         }
         _ => unreachable!(),
     }
+
+    verified_stmt("ALTER VIEW v SET SCHEMA other_schema");
+    verified_stmt("ALTER VIEW v OWNER TO alice");
 }
 
 #[test]
 fn parse_alter_view_with_options() {
-    let sql = "ALTER VIEW v WITH (foo = 'bar', a = 123) AS SELECT 1";
+    let sql = "ALTER VIEW v SET (foo = 'bar', a = 123)";
     match verified_stmt(sql) {
-        Statement::AlterView { with_options, .. } => {
+        Statement::AlterView {
+            operation: AlterViewOperation::SetOptions { options },
+            ..
+        } => {
             assert_eq!(
                 vec![
                     SqlOption::KeyValue {
@@ -4681,30 +4685,30 @@ fn parse_alter_view_with_options() {
                         value: Expr::value(number("123")),
                     },
                 ],
-                with_options
+                options
             );
+        }
+        _ => unreachable!(),
+    }
+
+    match verified_stmt("ALTER VIEW v RESET (foo, a)") {
+        Statement::AlterView {
+            operation: AlterViewOperation::ResetOptions { options },
+            ..
+        } => {
+            assert_eq!(vec![Ident::new("foo"), Ident::new("a")], options);
         }
         _ => unreachable!(),
     }
 }
 
 #[test]
-fn parse_alter_view_with_columns() {
-    let sql = "ALTER VIEW v (has, cols) AS SELECT 1, 2";
-    match verified_stmt(sql) {
-        Statement::AlterView {
-            name,
-            columns,
-            query,
-            with_options,
-        } => {
-            assert_eq!("v", name.to_string());
-            assert_eq!(columns, vec![Ident::new("has"), Ident::new("cols")]);
-            assert_eq!("SELECT 1, 2", query.to_string());
-            assert_eq!(with_options, vec![]);
-        }
-        _ => unreachable!(),
-    }
+fn parse_alter_view_as_select_rejected() {
+    // ALTER VIEW ... AS SELECT is MSSQL/MySQL surface; the PostgreSQL form
+    // supports only RENAME TO / SET SCHEMA / OWNER TO / SET (...) / RESET (...).
+    assert!(parse_sql_statements("ALTER VIEW v AS SELECT 1").is_err());
+    assert!(parse_sql_statements("ALTER VIEW v (has, cols) AS SELECT 1, 2").is_err());
+    assert!(parse_sql_statements("ALTER VIEW v WITH (foo = 'bar') AS SELECT 1").is_err());
 }
 
 #[test]
@@ -7819,6 +7823,49 @@ fn parse_create_database_with_owner() {
         Statement::CreateDatabase { db_name, owner, .. } => {
             assert_eq!("tpcc", db_name.to_string());
             assert_eq!(Some(ObjectName::from(vec![Ident::new("tpcc")])), owner);
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn parse_create_database_compatibility() {
+    let sql = "CREATE DATABASE app COMPATIBILITY 'oracle'";
+    match verified_stmt(sql) {
+        Statement::CreateDatabase {
+            db_name,
+            compatibility,
+            ..
+        } => {
+            assert_eq!("app", db_name.to_string());
+            assert_eq!(Some("oracle".to_string()), compatibility);
+        }
+        _ => unreachable!(),
+    }
+
+    let sql = "CREATE DATABASE app WITH COMPATIBILITY = 'postgresql'";
+    match one_statement_parses_to(sql, "CREATE DATABASE app COMPATIBILITY 'postgresql'") {
+        Statement::CreateDatabase { compatibility, .. } => {
+            assert_eq!(Some("postgresql".to_string()), compatibility);
+        }
+        _ => unreachable!(),
+    }
+
+    match verified_stmt("CREATE DATABASE app OWNER tpcc COMPATIBILITY 'oracle'") {
+        Statement::CreateDatabase {
+            owner,
+            compatibility,
+            ..
+        } => {
+            assert_eq!(Some(ObjectName::from(vec![Ident::new("tpcc")])), owner);
+            assert_eq!(Some("oracle".to_string()), compatibility);
+        }
+        _ => unreachable!(),
+    }
+
+    match verified_stmt("CREATE DATABASE plain") {
+        Statement::CreateDatabase { compatibility, .. } => {
+            assert_eq!(None, compatibility);
         }
         _ => unreachable!(),
     }
