@@ -25757,46 +25757,51 @@ impl<'a> Parser<'a> {
 
     /// Parse PostgreSQL `LOCK [ TABLE ] [ ONLY ] name [, ...] [ IN lockmode MODE ] [ NOWAIT ]`
     fn parse_pg_lock_table(&self, lock_token: TokenWithSpan) -> Result<Statement, ParserError> {
-        // Optional TABLE keyword
         let _ = self.parse_keyword(Keyword::TABLE);
-        // Optional ONLY keyword
-        let _ = self.parse_keyword(Keyword::ONLY);
-        // Parse table names (comma-separated, possibly schema-qualified)
-        let mut tables = vec![];
-        loop {
-            let name = self.parse_object_name(false)?;
-            let table_ident = name
-                .0
-                .last()
-                .and_then(|p| p.as_ident().cloned())
-                .unwrap_or_else(|| Ident::new(name.to_string()));
-            tables.push(LockTable {
-                table: table_ident,
-                alias: None,
-                lock_type: LockTableType::Read { local: false },
-            });
-            if !self.consume_token(&BorrowedToken::Comma) {
-                break;
-            }
-        }
-        // Optional IN ... MODE
-        if self.parse_keyword(Keyword::IN) {
-            // Consume all tokens until MODE keyword
-            while !self.parse_keyword(Keyword::MODE) {
-                if self.peek_token().token == BorrowedToken::SemiColon
-                    || self.peek_token().token == BorrowedToken::EOF
-                {
-                    break;
+        let only = self.parse_keyword(Keyword::ONLY);
+        let tables = self.parse_comma_separated(|p| p.parse_object_name(false))?;
+        let mode = if self.parse_keyword(Keyword::IN) {
+            let mode = if self.parse_keyword(Keyword::ACCESS) {
+                if self.parse_keyword(Keyword::SHARE) {
+                    PgLockTableMode::AccessShare
+                } else {
+                    self.expect_keyword(Keyword::EXCLUSIVE)?;
+                    PgLockTableMode::AccessExclusive
                 }
-                self.next_token();
-            }
-        }
-        // Optional NOWAIT
-        let _ = self.parse_keyword(Keyword::NOWAIT);
-        Ok(Statement::LockTables {
+            } else if self.parse_keyword(Keyword::ROW) {
+                if self.parse_keyword(Keyword::SHARE) {
+                    PgLockTableMode::RowShare
+                } else {
+                    self.expect_keyword(Keyword::EXCLUSIVE)?;
+                    PgLockTableMode::RowExclusive
+                }
+            } else if self.parse_keyword(Keyword::SHARE) {
+                if self.parse_keyword(Keyword::UPDATE) {
+                    self.expect_keyword(Keyword::EXCLUSIVE)?;
+                    PgLockTableMode::ShareUpdateExclusive
+                } else if self.parse_keyword(Keyword::ROW) {
+                    self.expect_keyword(Keyword::EXCLUSIVE)?;
+                    PgLockTableMode::ShareRowExclusive
+                } else {
+                    PgLockTableMode::Share
+                }
+            } else {
+                self.expect_keyword(Keyword::EXCLUSIVE)?;
+                PgLockTableMode::Exclusive
+            };
+            self.expect_keyword(Keyword::MODE)?;
+            Some(mode)
+        } else {
+            None
+        };
+        let nowait = self.parse_keyword(Keyword::NOWAIT);
+        Ok(Statement::PgLockTable(PgLockTable {
             lock_token: AttachedToken::from(lock_token),
+            only,
             tables,
-        })
+            mode,
+            nowait,
+        }))
     }
 
     pub fn parse_values(

@@ -283,6 +283,7 @@ impl Spanned for Statement {
             Statement::OracleAlter(statement) => statement.alter_token.0,
             Statement::OracleDrop(statement) => statement.drop_token.0,
             Statement::OracleLockTable(statement) => statement.lock_token.0,
+            Statement::PgLockTable(statement) => statement.lock_token.0,
             Statement::Analyze(analyze) => analyze.span(),
             Statement::Truncate(truncate) => truncate.span(),
             Statement::Query(query) => query.span(),

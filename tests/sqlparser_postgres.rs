@@ -7760,3 +7760,49 @@ fn parse_trifox_try_convert_with_postgresql_front_door() {
         "SELECT CONVERT(INTEGER, value, 1)",
     );
 }
+
+#[test]
+fn parse_pg_lock_table() {
+    for (sql, mode) in [
+        ("LOCK TABLE t IN ACCESS SHARE MODE", PgLockTableMode::AccessShare),
+        ("LOCK TABLE t IN ROW SHARE MODE", PgLockTableMode::RowShare),
+        ("LOCK TABLE t IN ROW EXCLUSIVE MODE", PgLockTableMode::RowExclusive),
+        (
+            "LOCK TABLE t IN SHARE UPDATE EXCLUSIVE MODE",
+            PgLockTableMode::ShareUpdateExclusive,
+        ),
+        ("LOCK TABLE t IN SHARE MODE", PgLockTableMode::Share),
+        (
+            "LOCK TABLE t IN SHARE ROW EXCLUSIVE MODE",
+            PgLockTableMode::ShareRowExclusive,
+        ),
+        ("LOCK TABLE t IN EXCLUSIVE MODE", PgLockTableMode::Exclusive),
+        ("LOCK TABLE t IN ACCESS EXCLUSIVE MODE", PgLockTableMode::AccessExclusive),
+    ] {
+        let Statement::PgLockTable(statement) = pg().verified_stmt(sql) else {
+            panic!("expected PgLockTable for {sql}");
+        };
+        assert_eq!(statement.mode, Some(mode));
+        assert!(!statement.only);
+        assert!(!statement.nowait);
+    }
+
+    let Statement::PgLockTable(statement) =
+        pg().verified_stmt("LOCK TABLE ONLY s.a, b IN SHARE MODE NOWAIT")
+    else {
+        panic!("expected PgLockTable");
+    };
+    assert!(statement.only);
+    assert!(statement.nowait);
+    assert_eq!(statement.tables.len(), 2);
+    assert_eq!(statement.tables[0].to_string(), "s.a");
+
+    let Statement::PgLockTable(statement) = pg().one_statement_parses_to("LOCK t", "LOCK TABLE t")
+    else {
+        panic!("expected PgLockTable");
+    };
+    assert_eq!(statement.mode, None);
+    assert!(!statement.nowait);
+
+    assert!(pg().parse_sql_statements("LOCK TABLE t IN SIDEWAYS MODE").is_err());
+}

@@ -6662,6 +6662,8 @@ pub enum Statement {
     OracleDrop(OracleDropStatement),
     /// Oracle `LOCK TABLE` statement.
     OracleLockTable(OracleLockTable),
+    /// PostgreSQL `LOCK TABLE` statement.
+    PgLockTable(PgLockTable),
     /// ```sql
     /// ANALYZE
     /// ```
@@ -10121,6 +10123,67 @@ impl fmt::Display for OracleLockTable {
     }
 }
 
+/// PostgreSQL `LOCK [ TABLE ] [ ONLY ] name [, ...] [ IN lockmode MODE ] [ NOWAIT ]`
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct PgLockTable {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub lock_token: AttachedToken,
+    pub only: bool,
+    pub tables: Vec<ObjectName>,
+    /// `None` means the mode was omitted; PostgreSQL defaults to ACCESS EXCLUSIVE.
+    pub mode: Option<PgLockTableMode>,
+    pub nowait: bool,
+}
+
+/// The eight PostgreSQL table lock modes.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum PgLockTableMode {
+    AccessShare,
+    RowShare,
+    RowExclusive,
+    ShareUpdateExclusive,
+    Share,
+    ShareRowExclusive,
+    Exclusive,
+    AccessExclusive,
+}
+
+impl fmt::Display for PgLockTableMode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            Self::AccessShare => "ACCESS SHARE",
+            Self::RowShare => "ROW SHARE",
+            Self::RowExclusive => "ROW EXCLUSIVE",
+            Self::ShareUpdateExclusive => "SHARE UPDATE EXCLUSIVE",
+            Self::Share => "SHARE",
+            Self::ShareRowExclusive => "SHARE ROW EXCLUSIVE",
+            Self::Exclusive => "EXCLUSIVE",
+            Self::AccessExclusive => "ACCESS EXCLUSIVE",
+        })
+    }
+}
+
+impl fmt::Display for PgLockTable {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "LOCK TABLE ")?;
+        if self.only {
+            write!(f, "ONLY ")?;
+        }
+        write!(f, "{}", display_comma_separated(&self.tables))?;
+        if let Some(mode) = &self.mode {
+            write!(f, " IN {mode} MODE")?;
+        }
+        if self.nowait {
+            write!(f, " NOWAIT")?;
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -10386,6 +10449,7 @@ impl fmt::Display for Statement {
             Statement::OracleAlter(statement) => statement.fmt(f),
             Statement::OracleDrop(statement) => statement.fmt(f),
             Statement::OracleLockTable(statement) => statement.fmt(f),
+            Statement::PgLockTable(statement) => statement.fmt(f),
             Statement::Flush {
                 flush_token: _,
                 object_type,
