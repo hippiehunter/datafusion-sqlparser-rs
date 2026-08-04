@@ -23790,6 +23790,24 @@ impl<'a> Parser<'a> {
                     schemas: self.parse_comma_separated(|p| p.parse_object_name(false))?,
                 })
             } else if self.parse_keywords(&[
+                Keyword::ALL,
+                Keyword::PROCEDURES,
+                Keyword::IN,
+                Keyword::SCHEMA,
+            ]) {
+                Some(GrantObjects::AllProceduresInSchema {
+                    schemas: self.parse_comma_separated(|p| p.parse_object_name(false))?,
+                })
+            } else if self.parse_keywords(&[
+                Keyword::ALL,
+                Keyword::ROUTINES,
+                Keyword::IN,
+                Keyword::SCHEMA,
+            ]) {
+                Some(GrantObjects::AllRoutinesInSchema {
+                    schemas: self.parse_comma_separated(|p| p.parse_object_name(false))?,
+                })
+            } else if self.parse_keywords(&[
                 Keyword::FUTURE,
                 Keyword::SCHEMAS,
                 Keyword::IN,

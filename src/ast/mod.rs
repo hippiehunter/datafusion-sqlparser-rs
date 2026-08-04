@@ -12771,6 +12771,10 @@ pub enum GrantObjects {
     AllExternalTablesInSchema { schemas: Vec<ObjectName> },
     /// Grant privileges on `ALL FUNCTIONS IN SCHEMA <schema_name> [, ...]`
     AllFunctionsInSchema { schemas: Vec<ObjectName> },
+    /// Grant privileges on `ALL PROCEDURES IN SCHEMA <schema_name> [, ...]`
+    AllProceduresInSchema { schemas: Vec<ObjectName> },
+    /// Grant privileges on `ALL ROUTINES IN SCHEMA <schema_name> [, ...]`
+    AllRoutinesInSchema { schemas: Vec<ObjectName> },
     /// Grant privileges on `FUTURE SCHEMAS IN DATABASE <database_name> [, ...]`
     FutureSchemasInDatabase { databases: Vec<ObjectName> },
     /// Grant privileges on `FUTURE TABLES IN SCHEMA <schema_name> [, ...]`
@@ -12936,6 +12940,20 @@ impl fmt::Display for GrantObjects {
                 write!(
                     f,
                     "ALL FUNCTIONS IN SCHEMA {}",
+                    display_comma_separated(schemas)
+                )
+            }
+            GrantObjects::AllProceduresInSchema { schemas } => {
+                write!(
+                    f,
+                    "ALL PROCEDURES IN SCHEMA {}",
+                    display_comma_separated(schemas)
+                )
+            }
+            GrantObjects::AllRoutinesInSchema { schemas } => {
+                write!(
+                    f,
+                    "ALL ROUTINES IN SCHEMA {}",
                     display_comma_separated(schemas)
                 )
             }
