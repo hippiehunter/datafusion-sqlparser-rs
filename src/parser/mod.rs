@@ -1006,26 +1006,30 @@ impl<'a> Parser<'a> {
         let next_token = self.next_token();
         match &next_token.token {
             BorrowedToken::Word(w) => {
-                if w.keyword == Keyword::ALTER
-                    && self.parse_keywords(&[
+                if w.keyword == Keyword::ALTER {
+                    let checkpoint = self.index.get();
+                    if self.parse_keywords(&[
                         Keyword::DATABASE,
                         Keyword::ROTATE,
                         Keyword::ENCRYPTION,
                         Keyword::KEY,
-                    ])
-                {
-                    return Ok(Statement::EncryptionKey {
-                        token: AttachedToken::from(next_token.clone()),
-                        operation: EncryptionKeyOperation::Rotate,
-                    });
+                    ]) {
+                        return Ok(Statement::EncryptionKey {
+                            token: AttachedToken::from(next_token.clone()),
+                            operation: EncryptionKeyOperation::Rotate,
+                        });
+                    }
+                    self.index.set(checkpoint);
                 }
-                if w.keyword == Keyword::VALIDATE
-                    && self.parse_keywords(&[Keyword::ENCRYPTION, Keyword::KEY])
-                {
-                    return Ok(Statement::EncryptionKey {
-                        token: AttachedToken::from(next_token.clone()),
-                        operation: EncryptionKeyOperation::Validate,
-                    });
+                if w.keyword == Keyword::VALIDATE {
+                    let checkpoint = self.index.get();
+                    if self.parse_keywords(&[Keyword::ENCRYPTION, Keyword::KEY]) {
+                        return Ok(Statement::EncryptionKey {
+                            token: AttachedToken::from(next_token.clone()),
+                            operation: EncryptionKeyOperation::Validate,
+                        });
+                    }
+                    self.index.set(checkpoint);
                 }
                 if self.dialect.is::<OracleDialect>() {
                     if let Some((action, object_type)) =

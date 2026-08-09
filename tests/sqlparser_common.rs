@@ -15293,6 +15293,15 @@ fn parse_encryption_key_custody_statements() {
             "{invalid}"
         );
     }
+
+    assert!(
+        Parser::parse_sql(
+            &PostgreSqlDialect {},
+            "ALTER DATABASE foo SET work_mem TO '4MB'",
+        )
+        .is_ok(),
+        "the encryption extension must not consume ordinary ALTER DATABASE syntax"
+    );
 }
 
 #[test]
