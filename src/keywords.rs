@@ -1013,6 +1013,7 @@ define_keywords!(
     ROLLBACK,
     ROLLUP,
     ROOT,
+    ROTATE,
     ROUTINES,
     ROW,
     ROWGROUPSIZE,

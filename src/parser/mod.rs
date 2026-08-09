@@ -321,6 +321,18 @@ impl Drop for ContextGuard<'_> {
     }
 }
 
+/// RAII guard for grammar that is valid only inside a procedural body.
+struct ProceduralBodyGuard<'a> {
+    depth: &'a Cell<usize>,
+    previous: usize,
+}
+
+impl Drop for ProceduralBodyGuard<'_> {
+    fn drop(&mut self) {
+        self.depth.set(self.previous);
+    }
+}
+
 #[cfg(feature = "std")]
 /// Implementation [`RecursionCounter`] if std is available
 mod recursion {
@@ -608,6 +620,9 @@ pub struct Parser<'a> {
     /// Build rich diagnostics. Successful full-statement parsing disables
     /// this and retries with it enabled only when the fast pass fails.
     detailed_errors: Cell<bool>,
+    /// Nesting depth of a PL/SQL or SQL/PSM body. Some tokens, including
+    /// PostgreSQL's procedural `RETURNING ... INTO`, are legal only here.
+    procedural_body_depth: Cell<usize>,
 }
 
 impl<'a> Parser<'a> {
@@ -639,6 +654,7 @@ impl<'a> Parser<'a> {
             options: ParserOptions::new().with_trailing_commas(dialect.supports_trailing_commas()),
             error_tracker: ErrorTracker::new(),
             detailed_errors: Cell::new(true),
+            procedural_body_depth: Cell::new(0),
         }
     }
 
@@ -656,6 +672,19 @@ impl<'a> Parser<'a> {
             tracker: &self.error_tracker,
             active,
         }
+    }
+
+    fn enter_procedural_body(&self) -> ProceduralBodyGuard<'_> {
+        let previous = self.procedural_body_depth.get();
+        self.procedural_body_depth.set(previous.saturating_add(1));
+        ProceduralBodyGuard {
+            depth: &self.procedural_body_depth,
+            previous,
+        }
+    }
+
+    fn in_procedural_body(&self) -> bool {
+        self.procedural_body_depth.get() != 0
     }
 
     /// Check if the current token is a typo of the expected keyword.
@@ -862,10 +891,18 @@ impl<'a> Parser<'a> {
     /// # }
     /// ```
     pub fn parse_statements(&self) -> Result<Vec<Statement>, ParserError> {
+        self.parse_statements_with_spans()
+            .map(|(statements, _)| statements)
+    }
+
+    /// Parse potentially multiple statements and return the exact source span
+    /// consumed for each top-level statement. Delimiters and surrounding
+    /// trivia are not part of a statement span.
+    pub fn parse_statements_with_spans(&self) -> Result<(Vec<Statement>, Vec<Span>), ParserError> {
         let start_index = self.index.get();
         let start_state = self.state.get();
         let previous_detailed_errors = self.detailed_errors.replace(false);
-        let result = self.parse_statements_inner();
+        let result = self.parse_statements_inner_with_spans();
         self.detailed_errors.set(previous_detailed_errors);
 
         if result.is_ok()
@@ -878,11 +915,14 @@ impl<'a> Parser<'a> {
         self.index.set(start_index);
         self.state.set(start_state);
         self.error_tracker.reset();
-        self.parse_statements_inner()
+        self.parse_statements_inner_with_spans()
     }
 
-    fn parse_statements_inner(&self) -> Result<Vec<Statement>, ParserError> {
+    fn parse_statements_inner_with_spans(
+        &self,
+    ) -> Result<(Vec<Statement>, Vec<Span>), ParserError> {
         let mut stmts = Vec::new();
+        let mut spans = Vec::new();
         let mut expecting_statement_delimiter = false;
         loop {
             // ignore empty statements (between successive statement delimiters)
@@ -910,14 +950,17 @@ impl<'a> Parser<'a> {
                 return self.expected("end of statement", self.peek_token());
             }
 
+            let start = self.peek_token_ref().span.start;
             let statement = match self.parse_statement() {
                 Ok(stmt) => stmt,
                 Err(e) => return self.build_best_error(e),
             };
+            let end = self.get_current_token().span.end;
             stmts.push(statement);
+            spans.push(Span::new(start, end));
             expecting_statement_delimiter = true;
         }
-        Ok(stmts)
+        Ok((stmts, spans))
     }
 
     /// Convenience method to parse a string with one or more SQL
@@ -939,6 +982,17 @@ impl<'a> Parser<'a> {
         Parser::new(dialect).try_with_sql(sql)?.parse_statements()
     }
 
+    /// Parse SQL and return the exact source span consumed for each top-level
+    /// statement alongside its AST.
+    pub fn parse_sql_with_spans(
+        dialect: &dyn Dialect,
+        sql: &str,
+    ) -> Result<(Vec<Statement>, Vec<Span>), ParserError> {
+        Parser::new(dialect)
+            .try_with_sql(sql)?
+            .parse_statements_with_spans()
+    }
+
     /// Parse a single top-level statement (such as SELECT, INSERT, CREATE, etc.),
     /// stopping before the statement separator, if any.
     pub fn parse_statement(&self) -> Result<Statement, ParserError> {
@@ -952,6 +1006,27 @@ impl<'a> Parser<'a> {
         let next_token = self.next_token();
         match &next_token.token {
             BorrowedToken::Word(w) => {
+                if w.keyword == Keyword::ALTER
+                    && self.parse_keywords(&[
+                        Keyword::DATABASE,
+                        Keyword::ROTATE,
+                        Keyword::ENCRYPTION,
+                        Keyword::KEY,
+                    ])
+                {
+                    return Ok(Statement::EncryptionKey {
+                        token: AttachedToken::from(next_token.clone()),
+                        operation: EncryptionKeyOperation::Rotate,
+                    });
+                }
+                if w.keyword == Keyword::VALIDATE
+                    && self.parse_keywords(&[Keyword::ENCRYPTION, Keyword::KEY])
+                {
+                    return Ok(Statement::EncryptionKey {
+                        token: AttachedToken::from(next_token.clone()),
+                        operation: EncryptionKeyOperation::Validate,
+                    });
+                }
                 if self.dialect.is::<OracleDialect>() {
                     if let Some((action, object_type)) =
                         self.classify_oracle_administrative_statement(w.value.as_ref())
@@ -10927,11 +11002,13 @@ impl<'a> Parser<'a> {
         let tokens = tokenizer.tokenize_with_location()?;
 
         let parser = Parser::new(dialect).with_tokens_with_locations(tokens);
+        let _procedural = parser.enter_procedural_body();
         parser.parse_sql_psm_block()
     }
 
     /// Parse a full SQL/PSM block structure
     fn parse_sql_psm_block(&self) -> Result<BeginEndStatements, ParserError> {
+        let _procedural = self.enter_procedural_body();
         // Parse optional label
         let label = self.parse_sql_psm_label()?;
 
@@ -11046,6 +11123,7 @@ impl<'a> Parser<'a> {
                 ensure_not_set(&body.function_body, "AS")?;
                 if self.peek_keyword(Keyword::BEGIN) {
                     // AS BEGIN...END block
+                    let _procedural = self.enter_procedural_body();
                     let begin_token = self.expect_keyword(Keyword::BEGIN)?;
                     let statements = self.parse_statement_list(&[Keyword::END])?;
                     let end_token = self.expect_keyword(Keyword::END)?;
@@ -11193,6 +11271,7 @@ impl<'a> Parser<'a> {
             } else if self.peek_keyword(Keyword::BEGIN) {
                 // SQL:2016 PSM BEGIN...END block (without AS prefix)
                 ensure_not_set(&body.function_body, "BEGIN...END")?;
+                let _procedural = self.enter_procedural_body();
                 let begin_token = self.expect_keyword(Keyword::BEGIN)?;
                 let statements = self.parse_statement_list(&[Keyword::END])?;
                 let end_token = self.expect_keyword(Keyword::END)?;
@@ -14446,6 +14525,16 @@ impl<'a> Parser<'a> {
 
         let create_table_config = self.parse_optional_create_table_config()?;
 
+        let distribution =
+            if self.parse_keywords(&[Keyword::DISTRIBUTE, Keyword::BY, Keyword::RANGE]) {
+                self.expect_token(&BorrowedToken::LParen)?;
+                self.expect_keywords(&[Keyword::PRIMARY, Keyword::KEY])?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                Some(TableDistribution::RangePrimaryKey)
+            } else {
+                None
+            };
+
         let on_commit = if self.parse_keywords(&[Keyword::ON, Keyword::COMMIT]) {
             Some(self.parse_create_table_on_commit()?)
         } else {
@@ -14484,6 +14573,7 @@ impl<'a> Parser<'a> {
             .partition_of(partition_of)
             .partition_bound(partition_bound)
             .clustering_by(clustering_by)
+            .distribution(distribution)
             .build())
     }
 
@@ -16098,6 +16188,26 @@ impl<'a> Parser<'a> {
             let columns = self.parse_comma_separated(Parser::parse_order_by_expr)?;
             self.expect_token(&BorrowedToken::RParen)?;
             AlterTableOperation::ClusteringBy { columns }
+        } else if self.parse_keywords(&[Keyword::SPLIT, Keyword::AT]) {
+            self.expect_token(&BorrowedToken::LParen)?;
+            let values = self.parse_comma_separated(Parser::parse_expr)?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            AlterTableOperation::SplitAt { values }
+        } else if self.parse_keywords(&[Keyword::MOVE, Keyword::RANGE, Keyword::FOR]) {
+            self.expect_token(&BorrowedToken::LParen)?;
+            let values = self.parse_comma_separated(Parser::parse_expr)?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            self.expect_keywords(&[Keyword::TO, Keyword::GROUP])?;
+            let destination_group = self.parse_literal_uint()?;
+            if destination_group == 0 {
+                return Err(ParserError::ParserError(
+                    "MOVE RANGE destination group must be non-zero".to_string(),
+                ));
+            }
+            AlterTableOperation::MoveRangeFor {
+                values,
+                destination_group,
+            }
         } else if self.parse_keywords(&[
             Keyword::NO,
             Keyword::FORCE,
@@ -24615,7 +24725,9 @@ impl<'a> Parser<'a> {
         let expressions = self.parse_comma_separated(Parser::parse_select_item)?;
         let bulk_collect = self.dialect.is::<OracleDialect>()
             && self.parse_keywords(&[Keyword::BULK, Keyword::COLLECT]);
-        let into = if self.dialect.is::<OracleDialect>() && self.parse_keyword(Keyword::INTO) {
+        let into = if (self.dialect.is::<OracleDialect>() || self.in_procedural_body())
+            && self.parse_keyword(Keyword::INTO)
+        {
             Some(self.parse_comma_separated(Parser::parse_expr)?)
         } else {
             None
@@ -25959,6 +26071,7 @@ impl<'a> Parser<'a> {
         &self,
         start_token: AttachedToken,
     ) -> Result<Statement, ParserError> {
+        let _procedural = self.enter_procedural_body();
         let statements = self.parse_statement_list(&[Keyword::EXCEPTION, Keyword::END])?;
 
         let exception = if self.parse_keyword(Keyword::EXCEPTION) {
@@ -26005,6 +26118,7 @@ impl<'a> Parser<'a> {
         &self,
         label: Option<Ident>,
     ) -> Result<Statement, ParserError> {
+        let _procedural = self.enter_procedural_body();
         let token = self.attached_token_from_current();
         self.expect_keyword_is(Keyword::BEGIN)?;
 
@@ -27827,6 +27941,7 @@ impl<'a> Parser<'a> {
     ) -> Result<Statement, ParserError> {
         let name = self.parse_object_name(false)?;
         let params = self.parse_optional_procedure_parameters()?;
+        let _procedural = self.enter_procedural_body();
 
         fn ensure_not_set<T>(field: &Option<T>, name: &str) -> Result<(), ParserError> {
             if field.is_some() {
@@ -28758,6 +28873,15 @@ impl<'a> Parser<'a> {
             return Ok(Statement::Reset(ResetStatement {
                 token,
                 reset: Reset::ALL,
+            }));
+        }
+
+        if self.parse_keywords(&[Keyword::SESSION, Keyword::AUTHORIZATION]) {
+            return Ok(Statement::Reset(ResetStatement {
+                token,
+                reset: Reset::ConfigurationParameter(ObjectName::from(vec![Ident::new(
+                    "session_authorization",
+                )])),
             }));
         }
 

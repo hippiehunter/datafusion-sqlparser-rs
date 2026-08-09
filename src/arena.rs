@@ -361,6 +361,7 @@ mod document {
     use crate::ast::Statement;
     use crate::dialect::Dialect;
     use crate::parser::{Parser, ParserError};
+    use crate::tokenizer::{Location, Span};
     use std::alloc::{alloc, dealloc, handle_alloc_error, Layout};
     use std::cell::{Cell, RefCell};
     use std::sync::Arc;
@@ -613,6 +614,7 @@ mod document {
         // Statements must drop before the bump storage they reference. Struct
         // fields are dropped in declaration order.
         statements: Vec<Statement>,
+        statement_spans: Vec<Span>,
         source: Arc<str>,
         arena: FrozenAstArena,
     }
@@ -647,13 +649,15 @@ mod document {
         ) -> Result<(Arc<Self>, R), ParserError> {
             let source = source.into();
             let arena = BuildingAstArena::new();
-            let (statements, edit_result) = with_arena(&arena, || {
-                let mut statements = Parser::parse_sql(dialect, &source)?;
+            let (statements, statement_spans, edit_result) = with_arena(&arena, || {
+                let (mut statements, statement_spans) =
+                    Parser::parse_sql_with_spans(dialect, &source)?;
                 let edit_result = edit(&mut statements);
-                Ok::<_, ParserError>((statements, edit_result))
+                Ok::<_, ParserError>((statements, statement_spans, edit_result))
             })?;
             let document = Arc::new(Self {
                 statements,
+                statement_spans,
                 source,
                 arena: arena.freeze(),
             });
@@ -678,6 +682,7 @@ mod document {
             });
             let document = Arc::new(Self {
                 statements,
+                statement_spans: self.statement_spans.clone(),
                 source: Arc::clone(&self.source),
                 arena: arena.freeze(),
             });
@@ -716,9 +721,11 @@ mod document {
         ) -> (Arc<Self>, R) {
             let source = source.into();
             let arena = BuildingAstArena::new();
+            let statement_spans = vec![Span::empty(); statements.len()];
             let edit_result = with_arena(&arena, || edit(&mut statements));
             let document = Arc::new(Self {
                 statements,
+                statement_spans,
                 source,
                 arena: arena.freeze(),
             });
@@ -735,6 +742,22 @@ mod document {
             &self.source
         }
 
+        /// Exact top-level source span consumed for a parsed statement.
+        /// Programmatically adopted statements have an empty span.
+        pub fn statement_span(&self, index: usize) -> Option<Span> {
+            self.statement_spans.get(index).copied()
+        }
+
+        /// Original source text consumed for one top-level statement.
+        /// Delimiters and surrounding trivia are excluded.
+        pub fn statement_source(&self, index: usize) -> Option<&str> {
+            let span = self.statement_span(index)?;
+            let start = source_location_to_offset(&self.source, span.start)?;
+            let end = source_location_to_offset(&self.source, span.end)?;
+            let statement = self.source.get(start..end)?.trim();
+            (!statement.is_empty()).then_some(statement)
+        }
+
         /// Recursive-node arena statistics.
         pub fn arena_stats(&self) -> AstArenaStats {
             self.arena.stats()
@@ -747,6 +770,31 @@ mod document {
                 index,
             })
         }
+    }
+
+    fn source_location_to_offset(source: &str, location: Location) -> Option<usize> {
+        if location.line == 0 || location.column == 0 {
+            return None;
+        }
+        let target_line = usize::try_from(location.line - 1).ok()?;
+        let line_start = if target_line == 0 {
+            0
+        } else {
+            source
+                .match_indices('\n')
+                .nth(target_line - 1)
+                .map(|(offset, _)| offset + 1)?
+        };
+        let line_end = source[line_start..]
+            .find('\n')
+            .map(|offset| line_start + offset)
+            .unwrap_or(source.len());
+        let line = source.get(line_start..line_end)?;
+        let target_column = usize::try_from(location.column - 1).ok()?;
+        if let Some((offset, _)) = line.char_indices().nth(target_column) {
+            return Some(line_start + offset);
+        }
+        (line.chars().count() == target_column).then_some(line_end)
     }
 
     impl Deref for ParsedSql {
@@ -784,6 +832,12 @@ mod document {
         /// Owning parsed document.
         pub fn document(&self) -> &Arc<ParsedSql> {
             &self.document
+        }
+
+        /// Original source text consumed for this statement, when the handle
+        /// came from a parser-owned document.
+        pub fn source(&self) -> Option<&str> {
+            self.document.statement_source(self.index)
         }
     }
 
@@ -978,6 +1032,20 @@ mod document {
             drop(document);
             assert_eq!(handle.get().to_string(), "SELECT 42");
             assert_eq!(handle.index(), 0);
+        }
+
+        #[test]
+        fn statement_handle_exposes_parser_owned_source_slice() {
+            let sql: Arc<str> = Arc::from(
+                "  SELECT 'é';\n\tCREATE FUNCTION f() RETURNS INT AS $$BEGIN RETURN 1; END$$ LANGUAGE plpgsql;  ",
+            );
+            let document = ParsedSql::parse(&PostgreSqlDialect {}, Arc::clone(&sql)).unwrap();
+            assert_eq!(document.statements().len(), 2);
+            assert_eq!(document.statement(0).unwrap().source(), Some("SELECT 'é'"));
+            assert_eq!(
+                document.statement(1).unwrap().source(),
+                Some("CREATE FUNCTION f() RETURNS INT AS $$BEGIN RETURN 1; END$$ LANGUAGE plpgsql")
+            );
         }
 
         #[cfg(feature = "std")]

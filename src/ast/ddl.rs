@@ -310,6 +310,14 @@ pub enum AlterTableOperation {
     RekeyStorage { columns: Vec<Ident> },
     /// `CLUSTERING BY (<order expression>, ...)` (table-organization extension)
     ClusteringBy { columns: Vec<OrderByExpr> },
+    /// `SPLIT AT (<key expression>, ...)` (range-distribution extension)
+    SplitAt { values: Vec<Expr> },
+    /// `MOVE RANGE FOR (<key expression>, ...) TO GROUP <group_id>`
+    /// (range-distribution extension)
+    MoveRangeFor {
+        values: Vec<Expr>,
+        destination_group: u64,
+    },
     /// Arbitrary parenthesized `SET` options.
     ///
     /// Example:
@@ -712,6 +720,17 @@ impl fmt::Display for AlterTableOperation {
             AlterTableOperation::ClusteringBy { columns } => {
                 write!(f, "CLUSTERING BY ({})", display_comma_separated(columns))
             }
+            AlterTableOperation::SplitAt { values } => {
+                write!(f, "SPLIT AT ({})", display_comma_separated(values))
+            }
+            AlterTableOperation::MoveRangeFor {
+                values,
+                destination_group,
+            } => write!(
+                f,
+                "MOVE RANGE FOR ({}) TO GROUP {destination_group}",
+                display_comma_separated(values)
+            ),
             AlterTableOperation::SetOptionsParens { options } => {
                 write!(f, "SET ({})", display_comma_separated(options))
             }
@@ -2470,6 +2489,25 @@ pub struct CreateTable {
     pub partition_bound: Option<PartitionBoundSpec>,
     /// Declarative physical organization requested for the table.
     pub clustering_by: Option<Vec<OrderByExpr>>,
+    /// Declarative horizontal distribution requested for the table.
+    pub distribution: Option<TableDistribution>,
+}
+
+/// Horizontal distribution clause attached to `CREATE TABLE`.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum TableDistribution {
+    /// `DISTRIBUTE BY RANGE (PRIMARY KEY)`
+    RangePrimaryKey,
+}
+
+impl fmt::Display for TableDistribution {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::RangePrimaryKey => f.write_str("DISTRIBUTE BY RANGE (PRIMARY KEY)"),
+        }
+    }
 }
 
 impl fmt::Display for CreateTable {
@@ -2557,6 +2595,10 @@ impl fmt::Display for CreateTable {
 
         if let Some(columns) = &self.clustering_by {
             write!(f, " CLUSTERING BY ({})", display_comma_separated(columns))?;
+        }
+
+        if let Some(distribution) = self.distribution {
+            write!(f, " {distribution}")?;
         }
 
         if self.external {

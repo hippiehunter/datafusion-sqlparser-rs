@@ -30,7 +30,7 @@ use crate::ast::ddl::PartitionByClause;
 use crate::ast::{
     ColumnDef, CommentDef, CreateTable, CreateTableLikeKind, CreateTableOptions,
     CreateTableSystemVersioning, ObjectName, OnCommit, OrderByExpr, PartitionBoundSpec, Query,
-    Statement, TableConstraint, TableVersion,
+    Statement, TableConstraint, TableDistribution, TableVersion,
 };
 
 use crate::parser::ParserError;
@@ -91,6 +91,7 @@ pub struct CreateTableBuilder {
     pub partition_of: Option<ObjectName>,
     pub partition_bound: Option<PartitionBoundSpec>,
     pub clustering_by: Option<Vec<OrderByExpr>>,
+    pub distribution: Option<TableDistribution>,
 }
 
 impl CreateTableBuilder {
@@ -121,6 +122,7 @@ impl CreateTableBuilder {
             partition_of: None,
             partition_bound: None,
             clustering_by: None,
+            distribution: None,
         }
     }
     pub fn or_replace(mut self, or_replace: bool) -> Self {
@@ -246,6 +248,11 @@ impl CreateTableBuilder {
         self
     }
 
+    pub fn distribution(mut self, distribution: Option<TableDistribution>) -> Self {
+        self.distribution = distribution;
+        self
+    }
+
     pub fn build(self) -> Statement {
         CreateTable {
             or_replace: self.or_replace,
@@ -273,6 +280,7 @@ impl CreateTableBuilder {
             partition_of: self.partition_of,
             partition_bound: self.partition_bound,
             clustering_by: self.clustering_by,
+            distribution: self.distribution,
         }
         .into()
     }
@@ -311,6 +319,7 @@ impl TryFrom<Statement> for CreateTableBuilder {
                 partition_of,
                 partition_bound,
                 clustering_by,
+                distribution,
             }) => Ok(Self {
                 or_replace,
                 temporary,
@@ -337,6 +346,7 @@ impl TryFrom<Statement> for CreateTableBuilder {
                 partition_of,
                 partition_bound,
                 clustering_by,
+                distribution,
             }),
             _ => Err(ParserError::ParserError(format!(
                 "Expected create table statement, but received: {stmt}"

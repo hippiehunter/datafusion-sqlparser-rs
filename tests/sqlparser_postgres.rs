@@ -70,6 +70,87 @@ fn parse_reindex() {
 }
 
 #[test]
+fn parse_horizontal_distribution_ddl() {
+    let Statement::CreateTable(create) = pg().verified_stmt(
+        "CREATE TABLE public.account (id BIGINT PRIMARY KEY) DISTRIBUTE BY RANGE (PRIMARY KEY)",
+    ) else {
+        panic!("expected CREATE TABLE");
+    };
+    assert_eq!(
+        create.distribution,
+        Some(TableDistribution::RangePrimaryKey)
+    );
+
+    let Statement::AlterTable(alter) =
+        pg().verified_stmt("ALTER TABLE public.account SPLIT AT (1000000, 'east')")
+    else {
+        panic!("expected ALTER TABLE");
+    };
+    assert!(matches!(
+        alter.operations.as_slice(),
+        [AlterTableOperation::SplitAt { values }] if values.len() == 2
+    ));
+
+    let Statement::AlterTable(alter) =
+        pg().verified_stmt("ALTER TABLE public.account MOVE RANGE FOR (1500000) TO GROUP 3")
+    else {
+        panic!("expected ALTER TABLE");
+    };
+    assert!(matches!(
+        alter.operations.as_slice(),
+        [AlterTableOperation::MoveRangeFor {
+            values,
+            destination_group: 3,
+        }] if values.len() == 1
+    ));
+
+    for invalid in [
+        "CREATE TABLE account (id BIGINT) DISTRIBUTE BY RANGE (id)",
+        "ALTER TABLE account SPLIT AT ()",
+        "ALTER TABLE account MOVE RANGE FOR (1) TO GROUP 0",
+        "ALTER TABLE account MOVE RANGE FOR (1) TO GROUP zero",
+    ] {
+        assert!(
+            Parser::parse_sql(&PostgreSqlDialect {}, invalid).is_err(),
+            "{invalid}"
+        );
+    }
+}
+
+#[test]
+fn returning_into_is_scoped_to_procedural_bodies() {
+    let sql = "CREATE FUNCTION capture_value() RETURNS INT AS $$BEGIN \
+               UPDATE account SET value = 1 RETURNING value INTO captured; \
+               RETURN captured; END$$ LANGUAGE plpgsql";
+    let Statement::CreateFunction(function) = pg().verified_stmt(sql) else {
+        panic!("expected CREATE FUNCTION");
+    };
+    let Some(CreateFunctionBody::AsBeginEnd(body)) = function.function_body else {
+        panic!("expected structured procedural body");
+    };
+    let Some(Statement::Update(update)) = body.statements.first() else {
+        panic!("expected UPDATE in procedural body");
+    };
+    assert_eq!(
+        update
+            .returning
+            .as_ref()
+            .and_then(|returning| returning.into.as_ref())
+            .map(Vec::len),
+        Some(1)
+    );
+
+    assert!(
+        Parser::parse_sql(
+            &PostgreSqlDialect {},
+            "UPDATE account SET value = 1 RETURNING value INTO captured",
+        )
+        .is_err(),
+        "RETURNING INTO must remain invalid in top-level PostgreSQL DML"
+    );
+}
+
+#[test]
 fn parse_create_table_generated_always_as_identity() {
     //With primary key
     let sql = "CREATE TABLE table2 (
@@ -7764,9 +7845,15 @@ fn parse_trifox_try_convert_with_postgresql_front_door() {
 #[test]
 fn parse_pg_lock_table() {
     for (sql, mode) in [
-        ("LOCK TABLE t IN ACCESS SHARE MODE", PgLockTableMode::AccessShare),
+        (
+            "LOCK TABLE t IN ACCESS SHARE MODE",
+            PgLockTableMode::AccessShare,
+        ),
         ("LOCK TABLE t IN ROW SHARE MODE", PgLockTableMode::RowShare),
-        ("LOCK TABLE t IN ROW EXCLUSIVE MODE", PgLockTableMode::RowExclusive),
+        (
+            "LOCK TABLE t IN ROW EXCLUSIVE MODE",
+            PgLockTableMode::RowExclusive,
+        ),
         (
             "LOCK TABLE t IN SHARE UPDATE EXCLUSIVE MODE",
             PgLockTableMode::ShareUpdateExclusive,
@@ -7777,7 +7864,10 @@ fn parse_pg_lock_table() {
             PgLockTableMode::ShareRowExclusive,
         ),
         ("LOCK TABLE t IN EXCLUSIVE MODE", PgLockTableMode::Exclusive),
-        ("LOCK TABLE t IN ACCESS EXCLUSIVE MODE", PgLockTableMode::AccessExclusive),
+        (
+            "LOCK TABLE t IN ACCESS EXCLUSIVE MODE",
+            PgLockTableMode::AccessExclusive,
+        ),
     ] {
         let Statement::PgLockTable(statement) = pg().verified_stmt(sql) else {
             panic!("expected PgLockTable for {sql}");
@@ -7804,5 +7894,7 @@ fn parse_pg_lock_table() {
     assert_eq!(statement.mode, None);
     assert!(!statement.nowait);
 
-    assert!(pg().parse_sql_statements("LOCK TABLE t IN SIDEWAYS MODE").is_err());
+    assert!(pg()
+        .parse_sql_statements("LOCK TABLE t IN SIDEWAYS MODE")
+        .is_err());
 }

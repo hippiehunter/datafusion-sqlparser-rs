@@ -15260,6 +15260,39 @@ fn parse_reset_statement() {
         Statement::Reset(ResetStatement { reset, .. }) => assert_eq!(reset, Reset::ALL),
         _ => unreachable!(),
     }
+    match verified_stmt("RESET SESSION AUTHORIZATION") {
+        Statement::Reset(ResetStatement {
+            reset: Reset::ConfigurationParameter(name),
+            ..
+        }) => assert_eq!(name.to_string(), "session_authorization"),
+        other => panic!("expected RESET SESSION AUTHORIZATION, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_encryption_key_custody_statements() {
+    for (sql, expected) in [
+        (
+            "ALTER DATABASE ROTATE ENCRYPTION KEY",
+            EncryptionKeyOperation::Rotate,
+        ),
+        ("VALIDATE ENCRYPTION KEY", EncryptionKeyOperation::Validate),
+    ] {
+        match all_dialects().verified_stmt(sql) {
+            Statement::EncryptionKey { operation, .. } => assert_eq!(operation, expected),
+            other => panic!("expected encryption-key statement, got {other:?}"),
+        }
+    }
+
+    for invalid in [
+        "ALTER DATABASE ROTATE ENCRYPTION KEY EXTRA",
+        "VALIDATE ENCRYPTION KEY EXTRA",
+    ] {
+        assert!(
+            all_dialects().parse_sql_statements(invalid).is_err(),
+            "{invalid}"
+        );
+    }
 }
 
 #[test]

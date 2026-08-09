@@ -71,10 +71,10 @@ pub use self::ddl::{
     OracleCreateViewOptions, OracleMaterializedViewBuild, OracleObjectView,
     OraclePartitionDefinition, OracleViewConstraint, Owner, Partition, PartitionByClause,
     PartitionKeyDef, PartitionKeyExpr, PartitionStrategy, ProcedureParam, ReferentialAction,
-    RenameTableNameKind, ReplicaIdentity, SplitPartitionTarget, TriggerObjectKind, Truncate,
-    UserDefinedTypeCompositeAttributeDef, UserDefinedTypeInternalLength,
-    UserDefinedTypeRangeOption, UserDefinedTypeRepresentation, UserDefinedTypeSqlDefinitionOption,
-    UserDefinedTypeStorage, ViewColumnDef,
+    RenameTableNameKind, ReplicaIdentity, SplitPartitionTarget, TableDistribution,
+    TriggerObjectKind, Truncate, UserDefinedTypeCompositeAttributeDef,
+    UserDefinedTypeInternalLength, UserDefinedTypeRangeOption, UserDefinedTypeRepresentation,
+    UserDefinedTypeSqlDefinitionOption, UserDefinedTypeStorage, ViewColumnDef,
 };
 pub use self::dml::{
     Delete, ForPortionOf, Insert, OracleErrorLoggingClause, OracleMultiTableInsert,
@@ -6642,6 +6642,15 @@ impl fmt::Display for TenantMaintenanceAction {
     }
 }
 
+/// Datafile encryption-key custody operation.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum EncryptionKeyOperation {
+    Rotate,
+    Validate,
+}
+
 /// A top-level statement (SELECT, INSERT, CREATE, etc.)
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
@@ -7482,6 +7491,15 @@ pub enum Statement {
     Checkpoint {
         /// The `CHECKPOINT` token
         checkpoint_token: AttachedToken,
+    },
+    /// ```sql
+    /// ALTER DATABASE ROTATE ENCRYPTION KEY
+    /// VALIDATE ENCRYPTION KEY
+    /// ```
+    EncryptionKey {
+        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+        token: AttachedToken,
+        operation: EncryptionKeyOperation,
     },
     /// ```sql
     /// BACKUP DATABASE [TO '<s3_uri>'] [ESTIMATE] [INCREMENTAL] [WITH (reset_pitr_chain)]
@@ -11507,6 +11525,12 @@ impl fmt::Display for Statement {
                 Ok(())
             }
             Statement::Checkpoint { .. } => write!(f, "CHECKPOINT"),
+            Statement::EncryptionKey { operation, .. } => match operation {
+                EncryptionKeyOperation::Rotate => {
+                    f.write_str("ALTER DATABASE ROTATE ENCRYPTION KEY")
+                }
+                EncryptionKeyOperation::Validate => f.write_str("VALIDATE ENCRYPTION KEY"),
+            },
             Statement::Backup {
                 object_type,
                 location,

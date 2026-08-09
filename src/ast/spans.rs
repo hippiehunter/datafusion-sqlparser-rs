@@ -425,6 +425,7 @@ impl Spanned for Statement {
                 .0
                 .union_opt(&savepoint.as_ref().map(|i| i.span)),
             Statement::Checkpoint { checkpoint_token } => checkpoint_token.0,
+            Statement::EncryptionKey { token, .. } => token.0,
             Statement::Backup { .. }
             | Statement::Restore { .. }
             | Statement::RecoverPage { .. }
@@ -651,6 +652,7 @@ impl Spanned for CreateTable {
             partition_of: _,
             partition_bound: _,
             clustering_by,
+            distribution: _,
         } = self;
 
         union_spans(
@@ -1318,6 +1320,10 @@ impl Spanned for AlterTableOperation {
             }
             AlterTableOperation::ClusteringBy { columns } => {
                 union_spans(columns.iter().map(|column| column.span()))
+            }
+            AlterTableOperation::SplitAt { values }
+            | AlterTableOperation::MoveRangeFor { values, .. } => {
+                union_spans(values.iter().map(Spanned::span))
             }
             AlterTableOperation::SetOptionsParens { options } => {
                 union_spans(options.iter().map(|i| i.span()))
