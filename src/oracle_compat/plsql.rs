@@ -14,7 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::common::{assert_all_parse, assert_unique_case_ids, OracleCase};
+use super::OracleCase;
 
 pub const PLSQL_CASES: &[OracleCase] = &[
     OracleCase {
@@ -798,13 +798,3 @@ pub const PLSQL_CASES: &[OracleCase] = &[
         sql: "DECLARE CURSOR c(p_department_id NUMBER, p_active BOOLEAN DEFAULT TRUE) IS SELECT employee_id FROM employees WHERE department_id = p_department_id AND active = p_active; BEGIN OPEN c(p_active => FALSE, p_department_id => 20); CLOSE c; END;",
     },
 ];
-
-#[test]
-fn plsql_case_ids_are_unique() {
-    assert_unique_case_ids(PLSQL_CASES);
-}
-
-#[test]
-fn oracle_plsql_frontier() {
-    assert_all_parse(PLSQL_CASES);
-}

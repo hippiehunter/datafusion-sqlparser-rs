@@ -170,6 +170,8 @@ pub mod ast;
 pub mod dialect;
 mod display_utils;
 pub mod keywords;
+#[cfg(feature = "std")]
+pub mod oracle_compat;
 pub mod parser;
 pub mod tokenizer;
 

@@ -14,7 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::common::{assert_all_parse, assert_unique_case_ids, OracleCase};
+use super::OracleCase;
 
 pub const RELATIONAL_CASES: &[OracleCase] = &[
     // Lexical structure, names, literals, binds, and expressions.
@@ -1154,13 +1154,3 @@ pub const RELATIONAL_CASES: &[OracleCase] = &[
         sql: "SELECT product, year, sales FROM sales_view MODEL DIMENSION BY (product, year) MEASURES (sales) RULES (sales[FOR (product, year) IN (SELECT product_name, forecast_year FROM forecast_targets)] = 0)",
     },
 ];
-
-#[test]
-fn relational_case_ids_are_unique() {
-    assert_unique_case_ids(RELATIONAL_CASES);
-}
-
-#[test]
-fn oracle_relational_sql_frontier() {
-    assert_all_parse(RELATIONAL_CASES);
-}

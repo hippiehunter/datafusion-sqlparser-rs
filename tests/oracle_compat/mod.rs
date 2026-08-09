@@ -15,9 +15,6 @@
 // limitations under the License.
 
 mod common;
+mod corpus;
 mod grammar;
 mod inventory;
-mod negative;
-mod plsql;
-mod relational;
-mod statements;

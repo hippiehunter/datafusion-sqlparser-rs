@@ -16,10 +16,9 @@
 
 use std::collections::BTreeSet;
 
+use sqlparser::oracle_compat::{PLSQL_CASES, RELATIONAL_CASES, STATEMENT_CASES};
+
 use super::common::covered_features;
-use super::plsql::PLSQL_CASES;
-use super::relational::RELATIONAL_CASES;
-use super::statements::STATEMENT_CASES;
 
 const SQL_STATEMENTS: &[&str] = &[
     "ADMINISTER KEY MANAGEMENT",

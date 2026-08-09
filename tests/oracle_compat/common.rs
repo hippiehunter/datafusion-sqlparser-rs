@@ -18,14 +18,8 @@ use std::collections::BTreeSet;
 
 use sqlparser::ast::Statement;
 use sqlparser::dialect::OracleDialect;
+pub use sqlparser::oracle_compat::OracleCase;
 use sqlparser::parser::{Parser, ParserError};
-
-#[derive(Debug, Clone, Copy)]
-pub struct OracleCase {
-    pub id: &'static str,
-    pub feature: &'static str,
-    pub sql: &'static str,
-}
 
 pub fn parse_oracle(sql: &str) -> Result<Vec<Statement>, ParserError> {
     Parser::parse_sql(&OracleDialect {}, sql)

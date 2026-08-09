@@ -14,17 +14,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::BTreeSet;
-
-use sqlparser::dialect::OracleDialect;
-use sqlparser::parser::Parser;
-
-pub(super) struct NegativeCase {
+#[derive(Debug, Clone, Copy)]
+pub struct NegativeCase {
     pub id: &'static str,
-    sql: &'static str,
+    pub sql: &'static str,
 }
 
-pub(super) const NEGATIVE_CASES: &[NegativeCase] = &[
+pub const NEGATIVE_CASES: &[NegativeCase] = &[
     NegativeCase {
         id: "lex.alternative_quote.unclosed",
         sql: "SELECT q'[Oracle text' FROM dual",
@@ -634,27 +630,3 @@ pub(super) const NEGATIVE_CASES: &[NegativeCase] = &[
         sql: "SELECT TREAT(VALUE(p) AS) FROM persons p",
     },
 ];
-
-#[test]
-fn oracle_rejects_invalid_grammar_cases() {
-    let failures = NEGATIVE_CASES
-        .iter()
-        .filter(|case| Parser::parse_sql(&OracleDialect {}, case.sql).is_ok())
-        .map(|case| format!("{}: {}", case.id, case.sql))
-        .collect::<Vec<_>>();
-    assert!(
-        failures.is_empty(),
-        "Oracle parser accepted {} invalid cases:\n{}",
-        failures.len(),
-        failures.join("\n")
-    );
-}
-
-#[test]
-fn negative_case_ids_are_unique() {
-    let ids = NEGATIVE_CASES
-        .iter()
-        .map(|case| case.id)
-        .collect::<BTreeSet<_>>();
-    assert_eq!(ids.len(), NEGATIVE_CASES.len());
-}

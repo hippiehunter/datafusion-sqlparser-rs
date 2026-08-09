@@ -14,7 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::common::{assert_all_parse, assert_unique_case_ids, OracleCase};
+use super::OracleCase;
 
 macro_rules! case {
     ($id:literal, $feature:literal, $sql:literal) => {
@@ -180,13 +180,3 @@ pub const STATEMENT_CASES: &[OracleCase] = &[
     case!("drop.data_role.if_exists", "DROP DATA ROLE", "DROP DATA ROLE IF EXISTS app_data_role"),
     case!("drop.mv_log.if_exists", "DROP MATERIALIZED VIEW LOG", "DROP MATERIALIZED VIEW LOG IF EXISTS ON employees"),
 ];
-
-#[test]
-fn statement_case_ids_are_unique() {
-    assert_unique_case_ids(STATEMENT_CASES);
-}
-
-#[test]
-fn oracle_statement_frontier() {
-    assert_all_parse(STATEMENT_CASES);
-}
