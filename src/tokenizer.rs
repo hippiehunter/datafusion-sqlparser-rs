@@ -956,6 +956,9 @@ pub struct Tokenizer<'a> {
     /// If true (the default), the tokenizer will un-escape literal
     /// SQL strings See [`Tokenizer::with_unescape`] for more details.
     unescape: bool,
+    /// Admit bracket-delimited identifiers without changing the selected SQL
+    /// dialect. The parser owns this opt-in compatibility grammar.
+    bracket_quoted_identifiers: bool,
 }
 
 impl<'a> Tokenizer<'a> {
@@ -982,7 +985,15 @@ impl<'a> Tokenizer<'a> {
             features,
             query,
             unescape: true,
+            bracket_quoted_identifiers: false,
         }
+    }
+
+    /// Set whether bracket-delimited identifiers are recognized in lexical
+    /// positions where `[` is not an array subscript opener.
+    pub fn with_bracket_quoted_identifiers(mut self, enabled: bool) -> Self {
+        self.bracket_quoted_identifiers = enabled;
+        self
     }
 
     /// Set unescape mode
@@ -1287,6 +1298,12 @@ impl<'a> Tokenizer<'a> {
                     Ok(Some(Token::DoubleQuotedString(s)))
                 }
                 // delimited (quoted) identifier
+                '[' if self.bracket_quoted_identifiers
+                    && self.is_compat_bracket_identifier(chars) =>
+                {
+                    let word = self.tokenize_quoted_identifier('[', chars)?;
+                    Ok(Some(Token::make_word(&word, Some('['))))
+                }
                 quote_start if self.dialect.is_delimited_identifier_start(ch) => {
                     let word = self.tokenize_quoted_identifier(quote_start, chars)?;
                     Ok(Some(Token::make_word(&word, Some(quote_start))))
@@ -2153,6 +2170,29 @@ impl<'a> Tokenizer<'a> {
                 format!("Expected close delimiter '{quote_end}' before EOF."),
             )
         }
+    }
+
+    /// Match the server's historical bracket-identifier admission rule at
+    /// the lexer boundary. Immediate identifier/subscript predecessors retain
+    /// PostgreSQL array semantics; only the deliberately narrow identifier
+    /// alphabet is admitted as compatibility syntax.
+    fn is_compat_bracket_identifier(&self, chars: &State<'a>) -> bool {
+        let previous = chars.source[..chars.byte_pos].chars().next_back();
+        if previous.is_some_and(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | ')' | ']')) {
+            return false;
+        }
+
+        let Some(rest) = chars.source.get(chars.byte_pos + 1..) else {
+            return false;
+        };
+        let Some(close) = rest.find(']') else {
+            return false;
+        };
+        let content = &rest[..close];
+        !content.is_empty()
+            && content
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '.' | ' '))
     }
 
     /// Read a single quoted string, starting with the opening quote.

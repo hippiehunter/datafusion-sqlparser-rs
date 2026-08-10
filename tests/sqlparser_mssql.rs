@@ -2352,6 +2352,7 @@ fn tsql() -> TestedDialects {
         vec![std::boxed::Box::new(MsSqlDialect {})],
         ParserOptions {
             trailing_commas: false,
+            bracket_quoted_identifiers: false,
             unescape: true,
             require_semicolon_stmt_delimiter: false,
         },

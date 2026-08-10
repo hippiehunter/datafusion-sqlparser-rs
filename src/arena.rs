@@ -360,7 +360,8 @@ mod document {
     use super::*;
     use crate::ast::Statement;
     use crate::dialect::Dialect;
-    use crate::parser::{Parser, ParserError};
+    use crate::optimizer_hints::{parse_optimizer_hints, OptimizerHint};
+    use crate::parser::{Parser, ParserError, ParserOptions};
     use crate::tokenizer::{Location, Span};
     use std::alloc::{alloc, dealloc, handle_alloc_error, Layout};
     use std::cell::{Cell, RefCell};
@@ -615,6 +616,7 @@ mod document {
         // fields are dropped in declaration order.
         statements: Vec<Statement>,
         statement_spans: Vec<Span>,
+        optimizer_hints: Vec<OptimizerHint>,
         source: Arc<str>,
         arena: FrozenAstArena,
     }
@@ -628,6 +630,19 @@ mod document {
             // SAFETY: The no-op callback cannot move an arena node out of the
             // document under construction.
             unsafe { Self::parse_and_edit(dialect, source, |_| ()) }.map(|(document, ())| document)
+        }
+
+        /// Parse SQL with explicit parser options into one shareable,
+        /// arena-owned syntax document.
+        pub fn parse_with_options(
+            dialect: &dyn Dialect,
+            source: impl Into<Arc<str>>,
+            options: ParserOptions,
+        ) -> Result<Arc<Self>, ParserError> {
+            // SAFETY: The no-op callback cannot move an arena node out of the
+            // document under construction.
+            unsafe { Self::parse_and_edit_with_options(dialect, source, options, |_| ()) }
+                .map(|(document, ())| document)
         }
 
         /// Parse and mutate a document while its arena is still in the
@@ -647,17 +662,39 @@ mod document {
             source: impl Into<Arc<str>>,
             edit: impl FnOnce(&mut [Statement]) -> R,
         ) -> Result<(Arc<Self>, R), ParserError> {
+            let options =
+                ParserOptions::new().with_trailing_commas(dialect.supports_trailing_commas());
+            // SAFETY: The caller accepts and must uphold the same syntax
+            // ownership contract documented on this method.
+            unsafe { Self::parse_and_edit_with_options(dialect, source, options, edit) }
+        }
+
+        /// Parse and mutate a document with explicit parser options before
+        /// freezing it.
+        ///
+        /// # Safety
+        ///
+        /// `edit` must obey the same ownership contract as
+        /// [`Self::parse_and_edit`].
+        pub unsafe fn parse_and_edit_with_options<R>(
+            dialect: &dyn Dialect,
+            source: impl Into<Arc<str>>,
+            options: ParserOptions,
+            edit: impl FnOnce(&mut [Statement]) -> R,
+        ) -> Result<(Arc<Self>, R), ParserError> {
             let source = source.into();
+            let optimizer_hints = parse_optimizer_hints(dialect, &source)?;
             let arena = BuildingAstArena::new();
             let (statements, statement_spans, edit_result) = with_arena(&arena, || {
                 let (mut statements, statement_spans) =
-                    Parser::parse_sql_with_spans(dialect, &source)?;
+                    Parser::parse_sql_with_spans_and_options(dialect, &source, options)?;
                 let edit_result = edit(&mut statements);
                 Ok::<_, ParserError>((statements, statement_spans, edit_result))
             })?;
             let document = Arc::new(Self {
                 statements,
                 statement_spans,
+                optimizer_hints,
                 source,
                 arena: arena.freeze(),
             });
@@ -683,6 +720,7 @@ mod document {
             let document = Arc::new(Self {
                 statements,
                 statement_spans: self.statement_spans.clone(),
+                optimizer_hints: self.optimizer_hints.clone(),
                 source: Arc::clone(&self.source),
                 arena: arena.freeze(),
             });
@@ -726,6 +764,7 @@ mod document {
             let document = Arc::new(Self {
                 statements,
                 statement_spans,
+                optimizer_hints: Vec::new(),
                 source,
                 arena: arena.freeze(),
             });
@@ -740,6 +779,28 @@ mod document {
         /// Original SQL source retained by the document.
         pub fn source(&self) -> &str {
             &self.source
+        }
+
+        /// Optimizer hints recognized by the parser's SQL tokenizer.
+        pub fn optimizer_hints(&self) -> &[OptimizerHint] {
+            &self.optimizer_hints
+        }
+
+        /// Optimizer hints whose complete comment block lies inside `span`.
+        /// This lets consumers associate hints with nested statements without
+        /// slicing and reparsing their SQL text.
+        pub fn optimizer_hints_for_span(&self, span: Span) -> Vec<OptimizerHint> {
+            let Some(start) = source_location_to_offset(&self.source, span.start) else {
+                return Vec::new();
+            };
+            let Some(end) = source_location_to_offset(&self.source, span.end) else {
+                return Vec::new();
+            };
+            self.optimizer_hints
+                .iter()
+                .filter(|hint| hint.span.0 >= start && hint.span.1 <= end)
+                .cloned()
+                .collect()
         }
 
         /// Exact top-level source span consumed for a parsed statement.

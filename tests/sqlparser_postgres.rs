@@ -29,7 +29,39 @@ use test_utils::*;
 use sqlparser::ast::AstBox as Box;
 use sqlparser::ast::*;
 use sqlparser::dialect::PostgreSqlDialect;
-use sqlparser::parser::{Parser, ParserError};
+use sqlparser::parser::{Parser, ParserError, ParserOptions};
+
+#[test]
+fn bracket_identifiers_are_parser_owned_and_opt_in() {
+    let dialect = PostgreSqlDialect {};
+    let sql = "SELECT 1 AS [C1], [GroupBy1].[K1] FROM public.[AUTHORS] AS [Extent1]";
+    assert!(Parser::parse_sql(&dialect, sql).is_err());
+
+    let statements = Parser::new(&dialect)
+        .with_options(ParserOptions::new().with_bracket_quoted_identifiers(true))
+        .try_with_sql(sql)
+        .unwrap()
+        .parse_statements()
+        .unwrap();
+    assert_eq!(statements.len(), 1);
+    assert_eq!(
+        statements[0].to_string(),
+        "SELECT 1 AS [c1], [groupby1].[k1] FROM public.[authors] AS [extent1]"
+    );
+
+    // Enabling the compatibility grammar must not consume PostgreSQL array
+    // constructors or immediately-adjacent subscripts as identifiers.
+    let arrays = Parser::new(&dialect)
+        .with_options(ParserOptions::new().with_bracket_quoted_identifiers(true))
+        .try_with_sql("SELECT ARRAY[1, 2], values[1], (values)[2]")
+        .unwrap()
+        .parse_statements()
+        .unwrap();
+    assert_eq!(
+        arrays[0].to_string(),
+        "SELECT ARRAY[1, 2], values[1], (values)[2]"
+    );
+}
 
 #[test]
 fn parse_reindex() {

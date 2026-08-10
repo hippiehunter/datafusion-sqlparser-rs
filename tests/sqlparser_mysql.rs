@@ -1490,6 +1490,7 @@ fn parse_escaped_quote_identifiers_with_no_escape() {
             vec![std::boxed::Box::new(MySqlDialect {})],
             ParserOptions {
                 trailing_commas: false,
+                bracket_quoted_identifiers: false,
                 unescape: false,
                 require_semicolon_stmt_delimiter: true,
             }

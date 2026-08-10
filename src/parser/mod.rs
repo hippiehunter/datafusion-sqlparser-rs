@@ -494,6 +494,10 @@ type OracleModelColumns = (Vec<ExprWithAlias>, Vec<ExprWithAlias>, Vec<ExprWithA
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParserOptions {
     pub trailing_commas: bool,
+    /// Admit SQL Server-style bracket-delimited identifiers while retaining
+    /// the base dialect's grammar. This is deliberately opt-in so PostgreSQL
+    /// array subscripts keep their normal meaning.
+    pub bracket_quoted_identifiers: bool,
     /// Controls how literal values are unescaped. See
     /// [`Tokenizer::with_unescape`] for more details.
     pub unescape: bool,
@@ -506,6 +510,7 @@ impl Default for ParserOptions {
     fn default() -> Self {
         Self {
             trailing_commas: false,
+            bracket_quoted_identifiers: false,
             unescape: true,
             require_semicolon_stmt_delimiter: true,
         }
@@ -531,6 +536,13 @@ impl ParserOptions {
     /// ```
     pub fn with_trailing_commas(mut self, trailing_commas: bool) -> Self {
         self.trailing_commas = trailing_commas;
+        self
+    }
+
+    /// Set whether SQL Server-style bracket-delimited identifiers are
+    /// accepted in addition to identifiers supported by the base dialect.
+    pub fn with_bracket_quoted_identifiers(mut self, enabled: bool) -> Self {
+        self.bracket_quoted_identifiers = enabled;
         self
     }
 
@@ -871,6 +883,7 @@ impl<'a> Parser<'a> {
         debug!("Parsing sql '{sql}'...");
         let (tokens, tokens_include_whitespace) = Tokenizer::new(self.dialect, sql)
             .with_unescape(self.options.unescape)
+            .with_bracket_quoted_identifiers(self.options.bracket_quoted_identifiers)
             .tokenize_for_parser()?;
         Ok(self.with_tokens_with_locations_and_whitespace(tokens, tokens_include_whitespace))
     }
@@ -989,6 +1002,19 @@ impl<'a> Parser<'a> {
         sql: &str,
     ) -> Result<(Vec<Statement>, Vec<Span>), ParserError> {
         Parser::new(dialect)
+            .try_with_sql(sql)?
+            .parse_statements_with_spans()
+    }
+
+    /// Parse SQL with explicit parser options and return each top-level
+    /// statement's exact source span.
+    pub fn parse_sql_with_spans_and_options(
+        dialect: &dyn Dialect,
+        sql: &str,
+        options: ParserOptions,
+    ) -> Result<(Vec<Statement>, Vec<Span>), ParserError> {
+        Parser::new(dialect)
+            .with_options(options)
             .try_with_sql(sql)?
             .parse_statements_with_spans()
     }
@@ -19048,9 +19074,19 @@ impl<'a> Parser<'a> {
 
     fn word_to_ident(&self, word: Word<'a>, span: Span) -> Ident {
         let quote_style = word.quote_style;
+        // The compatibility form behaves like an unquoted identifier for
+        // dialect folding, but remains delimited in the AST. In particular,
+        // PostgreSQL `[MixedCase]` resolves the same way the former server
+        // rewrite's `"mixedcase"` did without changing the source string.
+        let canonical_quote_style =
+            if self.options.bracket_quoted_identifiers && quote_style == Some('[') {
+                None
+            } else {
+                quote_style
+            };
         let value = self
             .dialect
-            .canonicalize_identifier(word.value.as_ref(), quote_style);
+            .canonicalize_identifier(word.value.as_ref(), canonical_quote_style);
         Ident {
             value,
             quote_style,
