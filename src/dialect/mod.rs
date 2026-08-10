@@ -1299,7 +1299,7 @@ pub trait Dialect: Debug + Any {
 }
 
 /// Cached snapshot of every boolean capability flag on a [`Dialect`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DialectFeatures {
     pub supports_filter_during_aggregation: bool,
     pub supports_within_after_array_aggregation: bool,
@@ -1420,6 +1420,261 @@ pub enum Precedence {
     Assignment,
 }
 
+/// A transparent wrapper that delegates the complete [`Dialect`] contract to
+/// an inner dialect.
+///
+/// This is useful when downstream consumers need to carry additional context
+/// beside a dialect without accidentally falling back to defaults for newly
+/// added grammar capabilities. The wrapper deliberately forwards every trait
+/// method, including parser hooks and the cached feature snapshot.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DelegatingDialect<D>(pub D);
+
+impl<D> DelegatingDialect<D> {
+    pub const fn new(inner: D) -> Self {
+        Self(inner)
+    }
+
+    pub fn inner(&self) -> &D {
+        &self.0
+    }
+
+    pub fn into_inner(self) -> D {
+        self.0
+    }
+}
+
+macro_rules! delegate_boolean_dialect_methods {
+    ($($method:ident),+ $(,)?) => {
+        $(
+            fn $method(&self) -> bool {
+                self.0.$method()
+            }
+        )+
+    };
+}
+
+impl<D: Dialect> Dialect for DelegatingDialect<D> {
+    fn dialect(&self) -> TypeId {
+        self.0.dialect()
+    }
+
+    fn is_delimited_identifier_start(&self, ch: char) -> bool {
+        self.0.is_delimited_identifier_start(ch)
+    }
+
+    fn is_nested_delimited_identifier_start(&self, ch: char) -> bool {
+        self.0.is_nested_delimited_identifier_start(ch)
+    }
+
+    fn peek_nested_delimited_identifier_quotes(
+        &self,
+        chars: Peekable<Chars<'_>>,
+    ) -> Option<(char, Option<char>)> {
+        self.0.peek_nested_delimited_identifier_quotes(chars)
+    }
+
+    fn identifier_quote_style(&self, identifier: &str) -> Option<char> {
+        self.0.identifier_quote_style(identifier)
+    }
+
+    fn canonicalize_identifier(&self, identifier: &str, quote_style: Option<char>) -> String {
+        self.0.canonicalize_identifier(identifier, quote_style)
+    }
+
+    fn is_identifier_start(&self, ch: char) -> bool {
+        self.0.is_identifier_start(ch)
+    }
+
+    fn is_identifier_part(&self, ch: char) -> bool {
+        self.0.is_identifier_part(ch)
+    }
+
+    fn is_custom_operator_part(&self, ch: char) -> bool {
+        self.0.is_custom_operator_part(ch)
+    }
+
+    delegate_boolean_dialect_methods!(
+        supports_string_literal_backslash_escape,
+        ignores_wildcard_escapes,
+        supports_unicode_string_literal,
+        supports_alternative_quoted_string_literal,
+        supports_filter_during_aggregation,
+        supports_window_clause_named_window_reference,
+        supports_within_after_array_aggregation,
+        supports_group_by_expr,
+        supports_group_by_with_modifier,
+        supports_left_associative_joins_without_parens,
+        supports_outer_join_operator,
+        supports_cross_join_constraint,
+        supports_connect_by,
+        supports_execute_immediate,
+        supports_match_recognize,
+        supports_in_empty_list,
+        supports_start_transaction_modifier,
+        supports_end_transaction_modifier,
+        supports_named_fn_args_with_eq_operator,
+        supports_named_fn_args_with_colon_operator,
+        supports_named_fn_args_with_assignment_operator,
+        supports_named_fn_args_with_rarrow_operator,
+        supports_named_fn_args_with_expr_name,
+        supports_numeric_prefix,
+        supports_numeric_literal_underscores,
+        supports_window_function_null_treatment_arg,
+        supports_lambda_functions,
+        supports_parenthesized_set_variables,
+        supports_comma_separated_set_assignments,
+        supports_select_wildcard_except,
+        convert_type_before_value,
+        supports_trailing_commas,
+        supports_limit_comma,
+        supports_string_literal_concatenation,
+        supports_projection_trailing_commas,
+        supports_from_trailing_commas,
+        supports_column_definition_trailing_commas,
+        supports_object_name_double_dot_notation,
+        supports_struct_literal,
+        supports_empty_projections,
+        supports_select_expr_star,
+        supports_variadic_function_args,
+        supports_from_first_select,
+        supports_user_host_grantee,
+        supports_match_against,
+        supports_select_wildcard_exclude,
+        supports_select_exclude,
+        supports_create_table_multi_schema_info_sources,
+        describe_requires_table_keyword,
+        allow_extract_custom,
+        allow_extract_single_quotes,
+        supports_dollar_placeholder,
+        supports_create_index_with_clause,
+        require_interval_qualifier,
+        supports_explain_with_utility_options,
+        supports_asc_desc_in_column_definition,
+        supports_factorial_operator,
+        supports_nested_comments,
+        supports_eq_alias_assignment,
+        supports_try_convert,
+        supports_bang_not_operator,
+        supports_listen_notify,
+        supports_load_data,
+        supports_top_before_distinct,
+        supports_boolean_literals,
+        supports_show_like_before_in,
+        supports_comment_on,
+        supports_create_table_select,
+        supports_partiql,
+        supports_table_sample_before_alias,
+        supports_insert_set,
+        supports_insert_table_function,
+        supports_insert_format,
+        supports_set_stmt_without_operator,
+        supports_timestamp_versioning,
+        supports_string_escape_constant,
+        supports_table_hints,
+        requires_single_line_comment_whitespace,
+        supports_array_typedef_with_brackets,
+        supports_geometric_types,
+        supports_order_by_all,
+        supports_set_names,
+        supports_space_separated_column_options,
+        supports_alter_column_type_using,
+        supports_comma_separated_drop_column_list,
+        supports_notnull_operator,
+        supports_data_type_signed_suffix,
+        supports_interval_options,
+        supports_create_table_like_parenthesized,
+        supports_wait_for_lsn,
+        supports_table_maintenance_commands,
+        supports_tenant_maintenance_commands,
+    );
+
+    fn parse_prefix(&self, parser: &Parser) -> Option<Result<Expr, ParserError>> {
+        self.0.parse_prefix(parser)
+    }
+
+    fn parse_infix(
+        &self,
+        parser: &Parser,
+        expr: &Expr,
+        precedence: u8,
+    ) -> Option<Result<Expr, ParserError>> {
+        self.0.parse_infix(parser, expr, precedence)
+    }
+
+    fn get_next_precedence(&self, parser: &Parser) -> Option<Result<u8, ParserError>> {
+        self.0.get_next_precedence(parser)
+    }
+
+    fn get_next_precedence_default(&self, parser: &Parser) -> Result<u8, ParserError> {
+        self.0.get_next_precedence_default(parser)
+    }
+
+    fn parse_statement(&self, parser: &Parser) -> Option<Result<Statement, ParserError>> {
+        self.0.parse_statement(parser)
+    }
+
+    fn parse_column_option(
+        &self,
+        parser: &Parser,
+    ) -> Result<Option<Result<Option<ColumnOption>, ParserError>>, ParserError> {
+        self.0.parse_column_option(parser)
+    }
+
+    fn prec_value(&self, prec: Precedence) -> u8 {
+        self.0.prec_value(prec)
+    }
+
+    fn prec_unknown(&self) -> u8 {
+        self.0.prec_unknown()
+    }
+
+    fn is_reserved_for_identifier(&self, kw: Keyword) -> bool {
+        self.0.is_reserved_for_identifier(kw)
+    }
+
+    fn get_reserved_keywords_for_select_item_operator(&self) -> &[Keyword] {
+        self.0.get_reserved_keywords_for_select_item_operator()
+    }
+
+    fn get_reserved_grantees_types(&self) -> &[GranteesType] {
+        self.0.get_reserved_grantees_types()
+    }
+
+    fn is_column_alias(&self, kw: &Keyword, parser: &Parser) -> bool {
+        self.0.is_column_alias(kw, parser)
+    }
+
+    fn is_select_item_alias(&self, explicit: bool, kw: &Keyword, parser: &Parser) -> bool {
+        self.0.is_select_item_alias(explicit, kw, parser)
+    }
+
+    fn is_table_factor(&self, kw: &Keyword, parser: &Parser) -> bool {
+        self.0.is_table_factor(kw, parser)
+    }
+
+    fn is_table_alias(&self, kw: &Keyword, parser: &Parser) -> bool {
+        self.0.is_table_alias(kw, parser)
+    }
+
+    fn is_table_factor_alias(&self, explicit: bool, kw: &Keyword, parser: &Parser) -> bool {
+        self.0.is_table_factor_alias(explicit, kw, parser)
+    }
+
+    fn is_identifier_generating_function_name(
+        &self,
+        ident: &Ident,
+        name_parts: &[ObjectNamePart],
+    ) -> bool {
+        self.0
+            .is_identifier_generating_function_name(ident, name_parts)
+    }
+
+    fn features(&self) -> DialectFeatures {
+        self.0.features()
+    }
+}
+
 impl dyn Dialect {
     #[inline]
     pub fn is<T: Dialect>(&self) -> bool {
@@ -1505,104 +1760,29 @@ mod tests {
 
     #[test]
     fn parse_with_wrapped_dialect() {
-        /// Wrapper for a dialect. In a real-world example, this wrapper
-        /// would tweak the behavior of the dialect. For the test case,
-        /// it wraps all methods unaltered.
-        #[derive(Debug)]
-        struct WrappedDialect(MySqlDialect);
-
-        impl Dialect for WrappedDialect {
-            fn dialect(&self) -> std::any::TypeId {
-                self.0.dialect()
-            }
-
-            fn is_identifier_start(&self, ch: char) -> bool {
-                self.0.is_identifier_start(ch)
-            }
-
-            fn is_delimited_identifier_start(&self, ch: char) -> bool {
-                self.0.is_delimited_identifier_start(ch)
-            }
-
-            fn is_nested_delimited_identifier_start(&self, ch: char) -> bool {
-                self.0.is_nested_delimited_identifier_start(ch)
-            }
-
-            fn peek_nested_delimited_identifier_quotes(
-                &self,
-                chars: std::iter::Peekable<std::str::Chars<'_>>,
-            ) -> Option<(char, Option<char>)> {
-                self.0.peek_nested_delimited_identifier_quotes(chars)
-            }
-
-            fn identifier_quote_style(&self, identifier: &str) -> Option<char> {
-                self.0.identifier_quote_style(identifier)
-            }
-
-            fn supports_string_literal_backslash_escape(&self) -> bool {
-                self.0.supports_string_literal_backslash_escape()
-            }
-
-            fn supports_filter_during_aggregation(&self) -> bool {
-                self.0.supports_filter_during_aggregation()
-            }
-
-            fn supports_within_after_array_aggregation(&self) -> bool {
-                self.0.supports_within_after_array_aggregation()
-            }
-
-            fn supports_group_by_expr(&self) -> bool {
-                self.0.supports_group_by_expr()
-            }
-
-            fn supports_in_empty_list(&self) -> bool {
-                self.0.supports_in_empty_list()
-            }
-
-            fn convert_type_before_value(&self) -> bool {
-                self.0.convert_type_before_value()
-            }
-
-            fn parse_prefix(
-                &self,
-                parser: &sqlparser::parser::Parser,
-            ) -> Option<Result<Expr, sqlparser::parser::ParserError>> {
-                self.0.parse_prefix(parser)
-            }
-
-            fn parse_infix(
-                &self,
-                parser: &sqlparser::parser::Parser,
-                expr: &Expr,
-                precedence: u8,
-            ) -> Option<Result<Expr, sqlparser::parser::ParserError>> {
-                self.0.parse_infix(parser, expr, precedence)
-            }
-
-            fn get_next_precedence(
-                &self,
-                parser: &sqlparser::parser::Parser,
-            ) -> Option<Result<u8, sqlparser::parser::ParserError>> {
-                self.0.get_next_precedence(parser)
-            }
-
-            fn parse_statement(
-                &self,
-                parser: &sqlparser::parser::Parser,
-            ) -> Option<Result<Statement, sqlparser::parser::ParserError>> {
-                self.0.parse_statement(parser)
-            }
-
-            fn is_identifier_part(&self, ch: char) -> bool {
-                self.0.is_identifier_part(ch)
-            }
-        }
-
         #[allow(clippy::needless_raw_string_hashes)]
         let statement = r#"SELECT 'Wayne\'s World'"#;
         let res1 = Parser::parse_sql(&MySqlDialect {}, statement);
-        let res2 = Parser::parse_sql(&WrappedDialect(MySqlDialect {}), statement);
+        let res2 = Parser::parse_sql(&DelegatingDialect::new(MySqlDialect {}), statement);
         assert!(res1.is_ok());
         assert_eq!(res1, res2);
+    }
+
+    #[test]
+    fn oracle_wrapper_delegates_features_and_complete_positive_corpus() {
+        let oracle = OracleDialect {};
+        let wrapped = DelegatingDialect::new(OracleDialect {});
+
+        assert_eq!(oracle.features(), wrapped.features());
+        assert!((&wrapped as &dyn Dialect).is::<OracleDialect>());
+
+        for case in crate::oracle_compat::positive_cases() {
+            assert_eq!(
+                Parser::parse_sql(&oracle, case.sql),
+                Parser::parse_sql(&wrapped, case.sql),
+                "wrapper diverged for {}",
+                case.id,
+            );
+        }
     }
 }
