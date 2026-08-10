@@ -27,6 +27,33 @@ fn parse_one(sql: &str) -> Statement {
 }
 
 #[test]
+fn oracle_decode_exposes_a_typed_argument_shape() {
+    let statement =
+        parse_one("SELECT DECODE(status, q'[keep]', 1, q'[skip]', 2, 0) FROM identity_probe");
+    let Statement::Query(query) = statement else {
+        panic!("expected query");
+    };
+    let SetExpr::Select(select) = query.body.as_ref() else {
+        panic!("expected SELECT");
+    };
+    let SelectItem::UnnamedExpr(Expr::Function(function)) = &select.projection[0] else {
+        panic!("expected DECODE function AST");
+    };
+    let arguments = function
+        .oracle_decode_arguments()
+        .expect("valid Oracle DECODE shape")
+        .expect("DECODE recognition");
+    assert_eq!(arguments.expression.to_string(), "STATUS");
+    assert_eq!(arguments.pairs.len(), 2);
+    assert_eq!(arguments.pairs[0].0.to_string(), "q'[keep]'");
+    assert_eq!(arguments.pairs[1].1.to_string(), "2");
+    assert_eq!(
+        arguments.default.map(ToString::to_string).as_deref(),
+        Some("0")
+    );
+}
+
+#[test]
 fn oracle_unquoted_identifiers_fold_to_uppercase() {
     let statement = parse_one("SELECT employee_id, \"MixedCase\" FROM hr.employees");
     let Statement::Query(ref query) = statement else {

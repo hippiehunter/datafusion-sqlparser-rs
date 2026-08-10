@@ -13595,6 +13595,116 @@ impl fmt::Display for Function {
     }
 }
 
+/// Borrowed, validated arguments of Oracle's scalar
+/// `DECODE(expr, search, result [, search, result]... [, default])` form.
+///
+/// This is a parser-AST shape: it does not assign result types or execute the
+/// function. Consumers perform those semantic steps without inspecting or
+/// reconstructing SQL source text.
+#[derive(Debug, Clone)]
+pub struct OracleDecodeArguments<'a> {
+    pub expression: &'a Expr,
+    pub pairs: Vec<(&'a Expr, &'a Expr)>,
+    pub default: Option<&'a Expr>,
+}
+
+/// Why a function spelled as Oracle `DECODE` is not a valid scalar call
+/// shape.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OracleDecodeArgumentsError {
+    CallModifiers,
+    ArgumentClauses,
+    NonPositionalArgument,
+    InvalidArity(usize),
+}
+
+impl fmt::Display for OracleDecodeArgumentsError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::CallModifiers => {
+                f.write_str("Oracle DECODE does not accept aggregate or window call modifiers")
+            }
+            Self::ArgumentClauses => {
+                f.write_str("Oracle DECODE does not accept argument-list clauses")
+            }
+            Self::NonPositionalArgument => {
+                f.write_str("Oracle DECODE accepts only positional scalar arguments")
+            }
+            Self::InvalidArity(count) => write!(
+                f,
+                "Oracle DECODE requires between 3 and 255 arguments, got {count}"
+            ),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for OracleDecodeArgumentsError {}
+
+impl Function {
+    /// Return the typed Oracle `DECODE` argument shape when this is an
+    /// unqualified, unquoted `DECODE` call.
+    ///
+    /// Dialect selection remains the caller's responsibility because an AST
+    /// intentionally carries no ambient parser dialect. `Ok(None)` means this
+    /// is some other function; `Err` means it is spelled as Oracle `DECODE`
+    /// but has an invalid call shape.
+    pub fn oracle_decode_arguments(
+        &self,
+    ) -> Result<Option<OracleDecodeArguments<'_>>, OracleDecodeArgumentsError> {
+        let [ObjectNamePart::Identifier(name)] = self.name.0.as_slice() else {
+            return Ok(None);
+        };
+        if name.quote_style.is_some() || !name.value.eq_ignore_ascii_case("decode") {
+            return Ok(None);
+        }
+        if self.uses_odbc_syntax
+            || !matches!(self.parameters, FunctionArguments::None)
+            || self.filter.is_some()
+            || self.nth_value_order.is_some()
+            || self.null_treatment.is_some()
+            || self.over.is_some()
+            || !self.within_group.is_empty()
+        {
+            return Err(OracleDecodeArgumentsError::CallModifiers);
+        }
+        let FunctionArguments::List(arguments) = &self.args else {
+            return Err(OracleDecodeArgumentsError::InvalidArity(0));
+        };
+        if arguments.duplicate_treatment.is_some() || !arguments.clauses.is_empty() {
+            return Err(OracleDecodeArgumentsError::ArgumentClauses);
+        }
+
+        let expressions = arguments
+            .args
+            .iter()
+            .map(|argument| match argument {
+                FunctionArg::Unnamed(FunctionArgExpr::Expr(expression)) => Ok(expression),
+                _ => Err(OracleDecodeArgumentsError::NonPositionalArgument),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if !(3..=255).contains(&expressions.len()) {
+            return Err(OracleDecodeArgumentsError::InvalidArity(expressions.len()));
+        }
+
+        let remaining = &expressions[1..];
+        let (pair_expressions, default) = if remaining.len() % 2 == 0 {
+            (remaining, None)
+        } else {
+            (&remaining[..remaining.len() - 1], remaining.last().copied())
+        };
+        let pairs = pair_expressions
+            .chunks_exact(2)
+            .map(|pair| (pair[0], pair[1]))
+            .collect();
+        Ok(Some(OracleDecodeArguments {
+            expression: expressions[0],
+            pairs,
+            default,
+        }))
+    }
+}
+
 /// The arguments passed to a function call.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
