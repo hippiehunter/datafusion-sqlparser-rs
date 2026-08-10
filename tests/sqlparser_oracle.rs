@@ -18,7 +18,7 @@ use sqlparser::ast::{
     AlternativeQuotedString, DataType, Expr, GraphPropertiesClause, Ident, SelectItem, SetExpr,
     Statement, Value,
 };
-use sqlparser::dialect::OracleDialect;
+use sqlparser::dialect::{OracleDialect, PostgreSqlDialect};
 use sqlparser::parser::Parser;
 
 fn parse_one(sql: &str) -> Statement {
@@ -52,6 +52,28 @@ fn oracle_decode_exposes_a_typed_argument_shape() {
         arguments.default.map(ToString::to_string).as_deref(),
         Some("0")
     );
+}
+
+#[test]
+fn postgres_decode_does_not_acquire_oracle_argument_semantics() {
+    let mut statements = Parser::parse_sql(
+        &PostgreSqlDialect {},
+        "SELECT DECODE(status, 'keep', 1, 0) FROM identity_probe",
+    )
+    .expect("PostgreSQL function-call grammar");
+    let Statement::Query(query) = statements.pop().expect("one statement") else {
+        panic!("expected query");
+    };
+    let SetExpr::Select(select) = query.body.as_ref() else {
+        panic!("expected SELECT");
+    };
+    let SelectItem::UnnamedExpr(Expr::Function(function)) = &select.projection[0] else {
+        panic!("expected function AST");
+    };
+    assert!(function
+        .oracle_decode_arguments()
+        .expect("non-Oracle function shape")
+        .is_none());
 }
 
 #[test]

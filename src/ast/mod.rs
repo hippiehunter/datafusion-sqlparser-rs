@@ -13643,7 +13643,7 @@ impl std::error::Error for OracleDecodeArgumentsError {}
 
 impl Function {
     /// Return the typed Oracle `DECODE` argument shape when this is an
-    /// unqualified, unquoted `DECODE` call.
+    /// unqualified, unquoted, Oracle-folded `DECODE` call.
     ///
     /// Dialect selection remains the caller's responsibility because an AST
     /// intentionally carries no ambient parser dialect. `Ok(None)` means this
@@ -13655,7 +13655,11 @@ impl Function {
         let [ObjectNamePart::Identifier(name)] = self.name.0.as_slice() else {
             return Ok(None);
         };
-        if name.quote_style.is_some() || !name.value.eq_ignore_ascii_case("decode") {
+        // Oracle's parser-owned identifier fold is the dialect provenance.
+        // PostgreSQL folds the same unquoted token to `decode`, so downstream
+        // planners can consume this typed shape without an ambient dialect or
+        // accidentally changing PostgreSQL's binary `decode(text, format)`.
+        if name.quote_style.is_some() || name.value != "DECODE" {
             return Ok(None);
         }
         if self.uses_odbc_syntax
