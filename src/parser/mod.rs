@@ -1577,7 +1577,6 @@ impl<'a> Parser<'a> {
                     "PLUGGABLE" => "PLUGGABLE DATABASE",
                     "PMEM" => "PMEM FILESTORE",
                     "PROFILE" => "PROFILE",
-                    "PROPERTY" => "PROPERTY GRAPH",
                     "PUBLIC" if second == "DATABASE" && third == "LINK" => "PUBLIC DATABASE LINK",
                     "PUBLIC" if second == "SYNONYM" => "PUBLIC SYNONYM",
                     "RESTORE" => "RESTORE POINT",
@@ -1686,7 +1685,6 @@ impl<'a> Parser<'a> {
                     "PLUGGABLE" => "PLUGGABLE DATABASE",
                     "PMEM" => "PMEM FILESTORE",
                     "PROFILE" => "PROFILE",
-                    "PROPERTY" => "PROPERTY GRAPH",
                     "PUBLIC" if second == "DATABASE" && third == "LINK" => "PUBLIC DATABASE LINK",
                     "PUBLIC" if second == "SYNONYM" => "PUBLIC SYNONYM",
                     "RESTORE" => "RESTORE POINT",
@@ -12563,7 +12561,10 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
-        let properties = if self.parse_keyword(Keyword::PROPERTIES) {
+        let properties = if self.parse_keyword(Keyword::NO) {
+            self.expect_keyword(Keyword::PROPERTIES)?;
+            Some(GraphPropertiesClause::NoProperties)
+        } else if self.parse_keyword(Keyword::PROPERTIES) {
             Some(self.parse_graph_properties_clause()?)
         } else {
             None
@@ -12579,6 +12580,11 @@ impl<'a> Parser<'a> {
 
     fn parse_graph_edge_table_definition(&self) -> Result<GraphEdgeTableDefinition, ParserError> {
         let table = self.parse_object_name(false)?;
+        let key = if self.parse_keyword(Keyword::KEY) {
+            Some(self.parse_graph_key_clause()?)
+        } else {
+            None
+        };
         self.expect_keyword(Keyword::SOURCE)?;
         let source = self.parse_graph_edge_endpoint()?;
         self.expect_keyword(Keyword::DESTINATION)?;
@@ -12589,7 +12595,10 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
-        let properties = if self.parse_keyword(Keyword::PROPERTIES) {
+        let properties = if self.parse_keyword(Keyword::NO) {
+            self.expect_keyword(Keyword::PROPERTIES)?;
+            Some(GraphPropertiesClause::NoProperties)
+        } else if self.parse_keyword(Keyword::PROPERTIES) {
             Some(self.parse_graph_properties_clause()?)
         } else {
             None
@@ -12597,6 +12606,7 @@ impl<'a> Parser<'a> {
 
         Ok(GraphEdgeTableDefinition {
             table,
+            key,
             source,
             destination,
             label,
@@ -12612,8 +12622,19 @@ impl<'a> Parser<'a> {
         };
         self.expect_keyword(Keyword::REFERENCES)?;
         let references = self.parse_object_name(false)?;
+        let referenced_columns = if self.consume_token(&BorrowedToken::LParen) {
+            let columns = self.parse_comma_separated(|parser| parser.parse_identifier())?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            Some(columns)
+        } else {
+            None
+        };
 
-        Ok(GraphEdgeEndpoint { key, references })
+        Ok(GraphEdgeEndpoint {
+            key,
+            references,
+            referenced_columns,
+        })
     }
 
     fn parse_graph_key_clause(&self) -> Result<GraphKeyClause, ParserError> {
@@ -12625,11 +12646,33 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_graph_properties_clause(&self) -> Result<GraphPropertiesClause, ParserError> {
+        let _ = self.parse_keyword(Keyword::ARE);
+        if self.parse_keyword(Keyword::ALL) {
+            self.expect_keyword(Keyword::COLUMNS)?;
+            let except = if self.parse_keyword(Keyword::EXCEPT) {
+                self.expect_token(&Token::LParen)?;
+                let columns = self.parse_comma_separated(|parser| parser.parse_identifier())?;
+                self.expect_token(&Token::RParen)?;
+                columns
+            } else {
+                Vec::new()
+            };
+            return Ok(GraphPropertiesClause::AllColumns { except });
+        }
+
         self.expect_token(&Token::LParen)?;
-        let columns = self.parse_comma_separated(|p| p.parse_identifier())?;
+        let properties = self.parse_comma_separated(|parser| {
+            let expression = parser.parse_expr()?;
+            let alias = if parser.parse_keyword(Keyword::AS) {
+                Some(parser.parse_identifier()?)
+            } else {
+                None
+            };
+            Ok(GraphPropertyDefinition { expression, alias })
+        })?;
         self.expect_token(&Token::RParen)?;
 
-        Ok(GraphPropertiesClause { columns })
+        Ok(GraphPropertiesClause::Named(properties))
     }
 
     /// ```sql

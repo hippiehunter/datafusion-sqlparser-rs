@@ -3975,17 +3975,57 @@ impl fmt::Display for GraphKeyClause {
     }
 }
 
-/// Graph PROPERTIES clause: `PROPERTIES (column, ...)`
+/// One explicit graph-property selection.
+///
+/// SQL property graphs can rename an underlying column with `AS`. Expression
+/// properties remain represented by [`Expr`] so consumers can either lower
+/// them or reject them without recovering structure from SQL text.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct GraphPropertiesClause {
-    pub columns: Vec<Ident>,
+pub struct GraphPropertyDefinition {
+    pub expression: Expr,
+    pub alias: Option<Ident>,
+}
+
+impl fmt::Display for GraphPropertyDefinition {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.expression.fmt(f)?;
+        if let Some(alias) = &self.alias {
+            write!(f, " AS {alias}")?;
+        }
+        Ok(())
+    }
+}
+
+/// Typed graph-property exposure mode.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum GraphPropertiesClause {
+    /// `PROPERTIES [ARE] ALL COLUMNS [EXCEPT (...)]`
+    AllColumns { except: Vec<Ident> },
+    /// `PROPERTIES (expression [AS property], ...)`
+    Named(Vec<GraphPropertyDefinition>),
+    /// `NO PROPERTIES`
+    NoProperties,
 }
 
 impl fmt::Display for GraphPropertiesClause {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "PROPERTIES ({})", display_comma_separated(&self.columns))
+        match self {
+            Self::AllColumns { except } => {
+                f.write_str("PROPERTIES ALL COLUMNS")?;
+                if !except.is_empty() {
+                    write!(f, " EXCEPT ({})", display_comma_separated(except))?;
+                }
+                Ok(())
+            }
+            Self::Named(properties) => {
+                write!(f, "PROPERTIES ({})", display_comma_separated(properties))
+            }
+            Self::NoProperties => f.write_str("NO PROPERTIES"),
+        }
     }
 }
 
@@ -3997,6 +4037,7 @@ pub struct GraphEdgeEndpoint {
     pub key: Option<GraphKeyClause>,
     #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
     pub references: ObjectName,
+    pub referenced_columns: Option<Vec<Ident>>,
 }
 
 impl fmt::Display for GraphEdgeEndpoint {
@@ -4004,7 +4045,11 @@ impl fmt::Display for GraphEdgeEndpoint {
         if let Some(key) = &self.key {
             write!(f, "{} ", key)?;
         }
-        write!(f, "REFERENCES {}", self.references)
+        write!(f, "REFERENCES {}", self.references)?;
+        if let Some(columns) = &self.referenced_columns {
+            write!(f, "({})", display_comma_separated(columns))?;
+        }
+        Ok(())
     }
 }
 
@@ -4043,6 +4088,7 @@ impl fmt::Display for GraphVertexTableDefinition {
 pub struct GraphEdgeTableDefinition {
     #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
     pub table: ObjectName,
+    pub key: Option<GraphKeyClause>,
     pub source: GraphEdgeEndpoint,
     pub destination: GraphEdgeEndpoint,
     pub label: Option<Ident>,
@@ -4051,10 +4097,14 @@ pub struct GraphEdgeTableDefinition {
 
 impl fmt::Display for GraphEdgeTableDefinition {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.table)?;
+        if let Some(key) = &self.key {
+            write!(f, " {key}")?;
+        }
         write!(
             f,
-            "{} SOURCE {} DESTINATION {}",
-            self.table, self.source, self.destination
+            " SOURCE {} DESTINATION {}",
+            self.source, self.destination
         )?;
         if let Some(label) = &self.label {
             write!(f, " LABEL {}", label)?;

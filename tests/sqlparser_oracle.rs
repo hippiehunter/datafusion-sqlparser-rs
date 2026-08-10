@@ -15,7 +15,8 @@
 // limitations under the License.
 
 use sqlparser::ast::{
-    AlternativeQuotedString, DataType, Expr, Ident, SelectItem, SetExpr, Statement, Value,
+    AlternativeQuotedString, DataType, Expr, GraphPropertiesClause, Ident, SelectItem, SetExpr,
+    Statement, Value,
 };
 use sqlparser::dialect::OracleDialect;
 use sqlparser::parser::Parser;
@@ -1148,19 +1149,49 @@ fn oracle_create_families_build_nested_ast() {
          SOURCE KEY (from_id) REFERENCES persons(person_id) \
          DESTINATION KEY (to_id) REFERENCES persons(person_id))",
     );
-    let Statement::OracleCreate(create) = &graph else {
-        panic!("expected Oracle CREATE");
+    let Statement::CreatePropertyGraph(create) = &graph else {
+        panic!("expected typed CREATE PROPERTY GRAPH");
     };
+    assert_eq!(create.vertex_tables.len(), 1);
+    assert_eq!(create.edge_tables.len(), 1);
+    assert_eq!(
+        create.edge_tables[0].source.key.as_ref().unwrap().columns[0].value,
+        "FROM_ID"
+    );
+    assert_eq!(
+        create.edge_tables[0]
+            .destination
+            .key
+            .as_ref()
+            .unwrap()
+            .columns[0]
+            .value,
+        "TO_ID"
+    );
+    assert_eq!(
+        create.edge_tables[0]
+            .source
+            .referenced_columns
+            .as_ref()
+            .unwrap()[0]
+            .value,
+        "PERSON_ID"
+    );
+
+    let graph_with_properties = parse_one(
+        "CREATE PROPERTY GRAPH restart_graph VERTEX TABLES \
+         (graph_vertex KEY (id) LABEL person PROPERTIES ARE ALL COLUMNS)",
+    );
+    let Statement::CreatePropertyGraph(create) = &graph_with_properties else {
+        panic!("expected typed CREATE PROPERTY GRAPH");
+    };
+    assert_eq!(
+        create.vertex_tables[0].label.as_ref().unwrap().value,
+        "PERSON"
+    );
     assert!(matches!(
-        &create.definition,
-        sqlparser::ast::OracleCreateDefinition::PropertyGraph {
-            vertices,
-            edges,
-            ..
-        } if vertices.len() == 1
-            && edges.len() == 1
-            && edges[0].source_key[0].value == "FROM_ID"
-            && edges[0].destination_key[0].value == "TO_ID"
+        create.vertex_tables[0].properties,
+        Some(GraphPropertiesClause::AllColumns { ref except }) if except.is_empty()
     ));
 
     let schema = parse_one(
@@ -1176,7 +1207,7 @@ fn oracle_create_families_build_nested_ast() {
             if matches!(statements.as_slice(), [Statement::CreateTable(_)])
     ));
 
-    for statement in [analytic, attribute, graph, schema] {
+    for statement in [analytic, attribute, graph, graph_with_properties, schema] {
         assert_eq!(parse_one(&statement.to_string()), statement);
     }
 }
