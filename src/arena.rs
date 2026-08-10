@@ -752,6 +752,16 @@ mod document {
         /// Delimiters and surrounding trivia are excluded.
         pub fn statement_source(&self, index: usize) -> Option<&str> {
             let span = self.statement_span(index)?;
+            self.source_for_span(span)
+        }
+
+        /// Original source text covered by an AST span.
+        ///
+        /// This keeps nested-source extraction in the parser, alongside the
+        /// location-to-byte-offset rules used for top-level statements. Empty
+        /// spans and spans that do not map cleanly into the retained source
+        /// return `None`.
+        pub fn source_for_span(&self, span: Span) -> Option<&str> {
             let start = source_location_to_offset(&self.source, span.start)?;
             let end = source_location_to_offset(&self.source, span.end)?;
             let statement = self.source.get(start..end)?.trim();
@@ -889,7 +899,7 @@ mod document {
     #[cfg(test)]
     mod tests {
         use super::*;
-        use crate::ast::Statement;
+        use crate::ast::{Spanned, Statement};
         use crate::dialect::PostgreSqlDialect;
 
         #[test]
@@ -1045,6 +1055,22 @@ mod document {
             assert_eq!(
                 document.statement(1).unwrap().source(),
                 Some("CREATE FUNCTION f() RETURNS INT AS $$BEGIN RETURN 1; END$$ LANGUAGE plpgsql")
+            );
+        }
+
+        #[test]
+        fn document_exposes_exact_nested_statement_source_by_span() {
+            let sql: Arc<str> = Arc::from(
+                "PREPARE lookup (INT) AS\n  SELECT /* retain */ name FROM accounts WHERE id = $1",
+            );
+            let document = ParsedSql::parse(&PostgreSqlDialect {}, Arc::clone(&sql)).unwrap();
+            let Statement::Prepare { statement, .. } = &document.statements()[0] else {
+                panic!("expected PREPARE")
+            };
+
+            assert_eq!(
+                document.source_for_span(statement.span()),
+                Some("SELECT /* retain */ name FROM accounts WHERE id = $1")
             );
         }
 
