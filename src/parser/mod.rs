@@ -9273,6 +9273,9 @@ impl<'a> Parser<'a> {
             let kind = if self.parse_keyword(Keyword::PROCEDURE) {
                 Some(OraclePlSqlRoutineKind::Procedure)
             } else if self.parse_keyword(Keyword::FUNCTION) {
+                if editionable.is_none() && self.oracle_function_uses_returns_clause() {
+                    return self.parse_create_function(create_token, or_alter, or_replace, false);
+                }
                 Some(OraclePlSqlRoutineKind::Function)
             } else {
                 None
@@ -9882,7 +9885,7 @@ impl<'a> Parser<'a> {
         or_replace: bool,
         temporary: bool,
     ) -> Result<Statement, ParserError> {
-        if dialect_of!(self is PostgreSqlDialect) {
+        if dialect_of!(self is PostgreSqlDialect | OracleDialect) {
             self.parse_postgres_create_function(token, or_replace, temporary)
         } else if dialect_of!(self is MsSqlDialect) {
             self.parse_mssql_create_function(token, or_alter, or_replace, temporary)
@@ -10411,6 +10414,20 @@ impl<'a> Parser<'a> {
                             if matches!(next.keyword, Keyword::FUNCTION | Keyword::PROCEDURE)
                     );
                 }
+                _ => offset += 1,
+            }
+        }
+    }
+
+    /// Recognize the PostgreSQL-compatible `RETURNS` spelling before choosing
+    /// Oracle's native `RETURN` routine grammar. This is token-level grammar
+    /// disambiguation; the exact source and function body remain untouched.
+    fn oracle_function_uses_returns_clause(&self) -> bool {
+        let mut offset = 0;
+        loop {
+            match self.peek_nth_token_ref(offset).token {
+                BorrowedToken::EOF | BorrowedToken::SemiColon => return false,
+                BorrowedToken::Word(ref word) if word.keyword == Keyword::RETURNS => return true,
                 _ => offset += 1,
             }
         }
@@ -18085,7 +18102,8 @@ impl<'a> Parser<'a> {
         let peek_token = self.peek_token();
         let span = peek_token.span;
         match peek_token.token {
-            BorrowedToken::DollarQuotedString(s) if dialect_of!(self is PostgreSqlDialect) => {
+            BorrowedToken::DollarQuotedString(s) if dialect_of!(self is PostgreSqlDialect | OracleDialect) =>
+            {
                 self.advance_token();
                 Ok(Expr::Value(Value::DollarQuotedString(s).with_span(span)))
             }

@@ -1003,6 +1003,12 @@ fn oracle_triggers_types_and_libraries_are_typed() {
 
 #[test]
 fn oracle_mode_keeps_trigger_function_extensions_typed_without_rewriting_source() {
+    let function = parse_one(
+        "CREATE FUNCTION stored_trigger_fn() RETURNS TRIGGER LANGUAGE plpgsql \
+         AS 'BEGIN RETURN NEW; END'",
+    );
+    assert!(matches!(function, Statement::CreateFunction(_)));
+
     let sql = "CREATE TRIGGER stored_condition BEFORE INSERT ON trigger_base \
                FOR EACH ROW WHEN (DECODE(NEW.kind, q'[fire]', 1, 0) = 1) \
                EXECUTE FUNCTION missing_trigger()";
