@@ -3418,6 +3418,24 @@ pub struct OracleCreateViewOptions {
     pub materialized: Option<OracleCreateMaterializedViewOptions>,
 }
 
+impl OracleCreateViewOptions {
+    /// Whether the statement used any Oracle-specific view clause.
+    ///
+    /// The Oracle dialect also accepts the common `CREATE [MATERIALIZED] VIEW`
+    /// shape. An otherwise-empty options record must not make that common
+    /// shape look Oracle-specific to downstream planners.
+    pub const fn is_empty(&self) -> bool {
+        self.force.is_none()
+            && self.editioning.is_none()
+            && self.object.is_none()
+            && self.constraint.is_none()
+            && match &self.materialized {
+                Some(materialized) => materialized.is_empty(),
+                None => true,
+            }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -3426,6 +3444,15 @@ pub struct OracleCreateMaterializedViewOptions {
     pub refresh_method: Option<super::OracleMaterializedViewRefreshMethod>,
     pub refresh_mode: Option<super::OracleMaterializedViewRefreshMode>,
     pub query_rewrite: Option<bool>,
+}
+
+impl OracleCreateMaterializedViewOptions {
+    pub const fn is_empty(&self) -> bool {
+        self.build.is_none()
+            && self.refresh_method.is_none()
+            && self.refresh_mode.is_none()
+            && self.query_rewrite.is_none()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]

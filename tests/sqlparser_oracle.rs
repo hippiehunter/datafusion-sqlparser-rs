@@ -1980,6 +1980,21 @@ fn oracle_relational_and_object_views_are_typed() {
 }
 
 #[test]
+fn common_view_shapes_do_not_mint_empty_oracle_options() {
+    for sql in [
+        "CREATE VIEW active_employees AS SELECT employee_id FROM employees",
+        "CREATE MATERIALIZED VIEW active_employees AS SELECT employee_id FROM employees",
+    ] {
+        let statement = parse_one(sql);
+        assert!(matches!(
+            &statement,
+            Statement::CreateView(sqlparser::ast::CreateView { oracle: None, .. })
+        ));
+        assert_eq!(parse_one(&statement.to_string()), statement);
+    }
+}
+
+#[test]
 fn oracle_create_materialized_view_options_are_typed() {
     let statement = parse_one(
         "CREATE MATERIALIZED VIEW department_totals \

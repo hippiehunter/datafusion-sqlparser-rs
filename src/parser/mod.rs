@@ -12110,6 +12110,8 @@ impl<'a> Parser<'a> {
             oracle.as_mut().expect("Oracle view options").constraint = constraint;
         }
 
+        let oracle = oracle.filter(|options| !options.is_empty());
+
         Ok(CreateView {
             or_alter,
             name,
