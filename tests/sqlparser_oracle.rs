@@ -1002,6 +1002,29 @@ fn oracle_triggers_types_and_libraries_are_typed() {
 }
 
 #[test]
+fn oracle_mode_keeps_trigger_function_extensions_typed_without_rewriting_source() {
+    let sql = "CREATE TRIGGER stored_condition BEFORE INSERT ON trigger_base \
+               FOR EACH ROW WHEN (DECODE(NEW.kind, q'[fire]', 1, 0) = 1) \
+               EXECUTE FUNCTION missing_trigger()";
+    let statement = parse_one(sql);
+    let Statement::CreateTrigger(create) = &statement else {
+        panic!("expected the typed trigger-function extension");
+    };
+    assert_eq!(create.name.to_string(), "STORED_CONDITION");
+    assert_eq!(create.table_name.to_string(), "TRIGGER_BASE");
+    assert_eq!(
+        create
+            .condition
+            .as_ref()
+            .map(ToString::to_string)
+            .as_deref(),
+        Some("(DECODE(NEW.KIND, q'[fire]', 1, 0) = 1)")
+    );
+    assert!(create.exec_body.is_some());
+    assert_eq!(parse_one(&statement.to_string()), statement);
+}
+
+#[test]
 fn oracle_extended_controls_and_directives_are_typed() {
     let statement = parse_one(
         "BEGIN CASE selector WHEN 1, 2 THEN result := 'small'; \

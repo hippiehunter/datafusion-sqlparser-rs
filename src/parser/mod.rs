@@ -9289,6 +9289,21 @@ impl<'a> Parser<'a> {
                 return self.parse_oracle_create_package(create_token, or_replace, editionable);
             }
             if self.parse_keyword(Keyword::TRIGGER) {
+                // Gantry exposes PostgreSQL trigger-function syntax as an
+                // extension while the database is using Oracle grammar. Keep
+                // the decision in the parser: the source remains untouched,
+                // and downstream code receives the same typed `CreateTrigger`
+                // node it receives in PostgreSQL mode. Native Oracle trigger
+                // bodies continue to produce `OracleCreateTrigger`.
+                if self.oracle_trigger_uses_execute_function_body() {
+                    return self.parse_create_trigger(
+                        create_token,
+                        false,
+                        or_alter,
+                        or_replace,
+                        false,
+                    );
+                }
                 return self.parse_oracle_create_trigger(create_token, or_replace, editionable);
             }
             if self.parse_keyword(Keyword::TYPE) {
@@ -10375,6 +10390,30 @@ impl<'a> Parser<'a> {
             when,
             body,
         }))
+    }
+
+    /// Distinguish the PostgreSQL-compatible trigger-function extension from
+    /// a native Oracle trigger without changing or reparsing the SQL source.
+    ///
+    /// At this point `CREATE [OR REPLACE] TRIGGER` has been consumed. Oracle
+    /// trigger bodies start with `BEGIN`, `CALL`, or `COMPOUND TRIGGER`; the
+    /// extension is uniquely identified by its `EXECUTE FUNCTION/PROCEDURE`
+    /// body. Token lookahead is deliberately bounded by the statement end.
+    fn oracle_trigger_uses_execute_function_body(&self) -> bool {
+        let mut offset = 0;
+        loop {
+            match self.peek_nth_token_ref(offset).token {
+                BorrowedToken::EOF | BorrowedToken::SemiColon => return false,
+                BorrowedToken::Word(ref word) if word.keyword == Keyword::EXECUTE => {
+                    return matches!(
+                        self.peek_nth_token_ref(offset + 1).token,
+                        BorrowedToken::Word(ref next)
+                            if matches!(next.keyword, Keyword::FUNCTION | Keyword::PROCEDURE)
+                    );
+                }
+                _ => offset += 1,
+            }
+        }
     }
 
     fn parse_oracle_create_type(
@@ -11582,7 +11621,7 @@ impl<'a> Parser<'a> {
     /// DROP TRIGGER [ IF EXISTS ] name ON table_name [ CASCADE | RESTRICT ]
     /// ```
     pub fn parse_drop_trigger(&self, token: AttachedToken) -> Result<Statement, ParserError> {
-        if !dialect_of!(self is PostgreSqlDialect |MySqlDialect | MsSqlDialect) {
+        if !dialect_of!(self is PostgreSqlDialect | OracleDialect | MySqlDialect | MsSqlDialect) {
             self.prev_token();
             return self.expected("an object type after DROP", self.peek_token());
         }
@@ -11617,7 +11656,7 @@ impl<'a> Parser<'a> {
         or_replace: bool,
         is_constraint: bool,
     ) -> Result<Statement, ParserError> {
-        if !dialect_of!(self is PostgreSqlDialect |MySqlDialect | MsSqlDialect) {
+        if !dialect_of!(self is PostgreSqlDialect | OracleDialect | MySqlDialect | MsSqlDialect) {
             self.prev_token();
             return self.expected("an object type after CREATE", self.peek_token());
         }
