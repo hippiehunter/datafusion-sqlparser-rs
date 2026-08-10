@@ -18305,8 +18305,11 @@ impl<'a> Parser<'a> {
                     Ok(DataType::Raw(self.parse_optional_precision()?))
                 }
                 Keyword::LONG if self.dialect.is::<OracleDialect>() => {
-                    self.expect_keyword(Keyword::RAW)?;
-                    Ok(DataType::LongRaw)
+                    if self.parse_keyword(Keyword::RAW) {
+                        Ok(DataType::LongRaw)
+                    } else {
+                        Ok(DataType::Long)
+                    }
                 }
                 Keyword::BFILE if self.dialect.is::<OracleDialect>() => Ok(DataType::Bfile),
                 Keyword::BINARY => Ok(DataType::Binary(self.parse_optional_precision()?)),

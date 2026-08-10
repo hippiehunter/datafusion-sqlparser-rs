@@ -14,7 +14,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use sqlparser::ast::{AlternativeQuotedString, Expr, Ident, SelectItem, SetExpr, Statement, Value};
+use sqlparser::ast::{
+    AlternativeQuotedString, DataType, Expr, Ident, SelectItem, SetExpr, Statement, Value,
+};
 use sqlparser::dialect::OracleDialect;
 use sqlparser::parser::Parser;
 
@@ -118,6 +120,42 @@ fn oracle_alternative_quoted_strings_preserve_content_and_delimiter() {
         statement.to_string(),
         "SELECT q'[Sam's string]', q'{SELECT ''x'' FROM dual}' FROM DUAL"
     );
+}
+
+#[test]
+fn oracle_long_and_long_raw_are_distinct_typed_data_types() {
+    let statement = parse_one("CREATE TABLE legacy_values (text_value LONG, raw_value LONG RAW)");
+    let Statement::CreateTable(create) = statement else {
+        panic!("expected CREATE TABLE");
+    };
+    assert_eq!(create.columns[0].data_type, DataType::Long);
+    assert_eq!(create.columns[1].data_type, DataType::LongRaw);
+    assert_eq!(create.columns[0].data_type.to_string(), "LONG");
+    assert_eq!(create.columns[1].data_type.to_string(), "LONG RAW");
+}
+
+#[cfg(feature = "visitor")]
+#[test]
+fn data_type_visitor_observes_oracle_types_in_nested_ast_positions() {
+    use core::ops::ControlFlow;
+    use sqlparser::ast::{Visit, Visitor};
+
+    struct TypeVisitor(Vec<DataType>);
+
+    impl Visitor for TypeVisitor {
+        type Break = ();
+
+        fn pre_visit_data_type(&mut self, data_type: &DataType) -> ControlFlow<Self::Break> {
+            self.0.push(data_type.clone());
+            ControlFlow::Continue(())
+        }
+    }
+
+    let statement = parse_one("CREATE TABLE legacy_values (text_value LONG, raw_value LONG RAW)");
+    let mut visitor = TypeVisitor(Vec::new());
+    assert!(statement.visit(&mut visitor).is_continue());
+    assert!(visitor.0.contains(&DataType::Long));
+    assert!(visitor.0.contains(&DataType::LongRaw));
 }
 
 #[test]

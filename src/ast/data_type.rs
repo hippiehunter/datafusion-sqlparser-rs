@@ -40,7 +40,11 @@ pub enum EnumMember {
 /// SQL data types
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+#[cfg_attr(
+    feature = "visitor",
+    derive(Visit, VisitMut),
+    visit(with = "visit_data_type")
+)]
 pub enum DataType {
     /// Table type in [PostgreSQL], e.g. CREATE FUNCTION RETURNS TABLE(...).
     ///
@@ -78,6 +82,8 @@ pub enum DataType {
     Nclob(Option<u64>),
     /// Oracle raw binary type.
     Raw(Option<u64>),
+    /// Oracle legacy long character type.
+    Long,
     /// Oracle legacy long raw binary type.
     LongRaw,
     /// Oracle external binary file type.
@@ -436,6 +442,7 @@ impl fmt::Display for DataType {
             DataType::Nvarchar2(size) => format_character_string_type(f, "NVARCHAR2", size),
             DataType::Nclob(size) => format_type_with_optional_length(f, "NCLOB", size, false),
             DataType::Raw(size) => format_type_with_optional_length(f, "RAW", size, false),
+            DataType::Long => write!(f, "LONG"),
             DataType::LongRaw => write!(f, "LONG RAW"),
             DataType::Bfile => write!(f, "BFILE"),
             DataType::Uuid => write!(f, "UUID"),

@@ -24,7 +24,7 @@ use std::borrow::Cow;
 
 use crate::ast::helpers::attached_token::AttachedToken;
 use crate::ast::Box;
-use crate::ast::{Expr, ObjectName, Query, Statement, TableFactor, Value};
+use crate::ast::{DataType, Expr, ObjectName, Query, Statement, TableFactor, Value};
 use core::ops::ControlFlow;
 
 /// A type that can be visited by a [`Visitor`]. See [`Visitor`] for
@@ -268,6 +268,16 @@ pub trait Visitor {
         ControlFlow::Continue(())
     }
 
+    /// Invoked for any data type before visiting nested type components.
+    fn pre_visit_data_type(&mut self, _data_type: &DataType) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
+
+    /// Invoked for any data type after visiting nested type components.
+    fn post_visit_data_type(&mut self, _data_type: &DataType) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
+
     /// Invoked for any AttachedToken that appear in the AST before visiting children
     fn pre_visit_token(&mut self, _token: &AttachedToken) -> ControlFlow<Self::Break> {
         ControlFlow::Continue(())
@@ -393,6 +403,16 @@ pub trait VisitorMut {
 
     /// Invoked for any statements that appear in the AST after visiting children
     fn post_visit_value(&mut self, _value: &mut Value) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
+
+    /// Invoked for any data type before visiting nested type components.
+    fn pre_visit_data_type(&mut self, _data_type: &mut DataType) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
+
+    /// Invoked for any data type after visiting nested type components.
+    fn post_visit_data_type(&mut self, _data_type: &mut DataType) -> ControlFlow<Self::Break> {
         ControlFlow::Continue(())
     }
 
