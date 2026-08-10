@@ -347,6 +347,21 @@ fn oracle_plsql_procedure_invocations_are_typed() {
 }
 
 #[test]
+fn oracle_bare_begin_is_a_transaction_but_begin_end_is_plsql() {
+    for sql in ["BEGIN", "BEGIN;", "BEGIN TRANSACTION", "BEGIN WORK"] {
+        assert!(
+            matches!(parse_one(sql), Statement::StartTransaction { .. }),
+            "expected a transaction for {sql}"
+        );
+    }
+
+    assert!(matches!(
+        parse_one("BEGIN NULL; END;"),
+        Statement::PlSqlBlock(_)
+    ));
+}
+
+#[test]
 fn oracle_plsql_block_declarations_are_typed() {
     let statement = parse_one(
         "DECLARE \

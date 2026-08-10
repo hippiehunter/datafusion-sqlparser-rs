@@ -1211,6 +1211,12 @@ impl<'a> Parser<'a> {
                     }
                     Keyword::REVOKE => self.parse_revoke(),
                     Keyword::START => self.parse_start_transaction(),
+                    Keyword::BEGIN
+                        if self.dialect.is::<OracleDialect>()
+                            && self.begin_starts_transaction() =>
+                    {
+                        self.parse_begin()
+                    }
                     Keyword::BEGIN if self.dialect.is::<OracleDialect>() => {
                         self.prev_token();
                         self.parse_sql_psm_block().map(Statement::PlSqlBlock)
@@ -26007,38 +26013,10 @@ impl<'a> Parser<'a> {
         // - If we see EOF or semicolon immediately after BEGIN, it's a transaction
         // - Otherwise, it's a procedural block
 
-        let is_transaction = if self.features.supports_start_transaction_modifier {
-            self.peek_keyword(Keyword::DEFERRED)
-                || self.peek_keyword(Keyword::IMMEDIATE)
-                || self.peek_keyword(Keyword::EXCLUSIVE)
-                || self.peek_keyword(Keyword::TRY)
-                || self.peek_keyword(Keyword::CATCH)
-                || self.peek_keyword(Keyword::TRANSACTION)
-                || self.peek_keyword(Keyword::WORK)
-                || self.peek_keyword(Keyword::ISOLATION)
-                || self.peek_keyword(Keyword::READ)
-        } else {
-            self.peek_keyword(Keyword::TRANSACTION)
-                || self.peek_keyword(Keyword::WORK)
-                || self.peek_keyword(Keyword::ISOLATION)
-                || self.peek_keyword(Keyword::READ)
-        };
-
-        // Also check if we're at EOF or semicolon (bare BEGIN for transaction)
-        let at_end = matches!(
-            self.peek_token().token,
-            BorrowedToken::SemiColon | BorrowedToken::EOF
-        );
-
-        // If we have transaction keywords or are at end, parse as transaction
-        if is_transaction || at_end {
-            // Parse as transaction
-        } else {
-            // Try to parse as BEGIN...EXCEPTION...END block
+        if !self.begin_starts_transaction() {
             return self.parse_begin_exception_end(start_token);
         }
 
-        // Otherwise, parse as transaction
         let modifier = if !self.features.supports_start_transaction_modifier {
             None
         } else if self.parse_keyword(Keyword::DEFERRED) {
@@ -26069,6 +26047,31 @@ impl<'a> Parser<'a> {
             exception: None,
             has_end_keyword: false,
         })
+    }
+
+    fn begin_starts_transaction(&self) -> bool {
+        let has_transaction_syntax = if self.features.supports_start_transaction_modifier {
+            self.peek_keyword(Keyword::DEFERRED)
+                || self.peek_keyword(Keyword::IMMEDIATE)
+                || self.peek_keyword(Keyword::EXCLUSIVE)
+                || self.peek_keyword(Keyword::TRY)
+                || self.peek_keyword(Keyword::CATCH)
+                || self.peek_keyword(Keyword::TRANSACTION)
+                || self.peek_keyword(Keyword::WORK)
+                || self.peek_keyword(Keyword::ISOLATION)
+                || self.peek_keyword(Keyword::READ)
+        } else {
+            self.peek_keyword(Keyword::TRANSACTION)
+                || self.peek_keyword(Keyword::WORK)
+                || self.peek_keyword(Keyword::ISOLATION)
+                || self.peek_keyword(Keyword::READ)
+        };
+
+        has_transaction_syntax
+            || matches!(
+                self.peek_token().token,
+                BorrowedToken::SemiColon | BorrowedToken::EOF
+            )
     }
 
     pub fn parse_begin_exception_end(
