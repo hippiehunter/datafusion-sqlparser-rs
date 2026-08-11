@@ -222,6 +222,10 @@ impl Dialect for PostgreSqlDialect {
         true
     }
 
+    fn supports_tablespace_commands(&self) -> bool {
+        true
+    }
+
     fn supports_tenant_maintenance_commands(&self) -> bool {
         true
     }

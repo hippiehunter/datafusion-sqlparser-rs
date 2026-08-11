@@ -1655,7 +1655,11 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_oracle_word_ident(&self) -> Result<Ident, ParserError> {
+    /// Reads one word token as an identifier without applying the dialect's
+    /// identifier canonicalization, for grammar positions that are not
+    /// identifiers at all — unit suffixes and the like — and must render back
+    /// exactly as written.
+    fn parse_verbatim_word_ident(&self) -> Result<Ident, ParserError> {
         let token = self.next_token();
         match token.token {
             BorrowedToken::Word(word) => Ok(Ident {
@@ -1670,7 +1674,7 @@ impl<'a> Parser<'a> {
     fn parse_oracle_size(&self) -> Result<OracleSize, ParserError> {
         let value = self.parse_expr()?;
         let unit = if matches!(self.peek_token().token, BorrowedToken::Word(_)) {
-            Some(self.parse_oracle_word_ident()?)
+            Some(self.parse_verbatim_word_ident()?)
         } else {
             None
         };
@@ -1787,9 +1791,9 @@ impl<'a> Parser<'a> {
             "AUDIT POLICY" => {
                 let name = self.parse_object_name(false)?;
                 self.expect_oracle_words(&["ACTIONS"])?;
-                let mut actions = vec![self.parse_oracle_word_ident()?];
+                let mut actions = vec![self.parse_verbatim_word_ident()?];
                 while self.consume_token(&BorrowedToken::Comma) {
-                    actions.push(self.parse_oracle_word_ident()?);
+                    actions.push(self.parse_verbatim_word_ident()?);
                 }
                 self.expect_keyword(Keyword::ON)?;
                 OracleCreateDefinition::AuditPolicy {
@@ -1939,7 +1943,7 @@ impl<'a> Parser<'a> {
             }
             "DISKGROUP" => {
                 let name = self.parse_object_name(false)?;
-                let redundancy_word = self.parse_oracle_word_ident()?;
+                let redundancy_word = self.parse_verbatim_word_ident()?;
                 let redundancy = match redundancy_word.value.to_ascii_uppercase().as_str() {
                     "EXTERNAL" => OracleDiskgroupRedundancy::External,
                     "NORMAL" => OracleDiskgroupRedundancy::Normal,
@@ -4977,18 +4981,115 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// Parses `{ QUIESCE | UNQUIESCE } TABLE table_name`.
+    /// Parses `{ QUIESCE | UNQUIESCE } { TABLE table_name | TABLESPACE tablespace_name }`.
     pub fn parse_table_maintenance(
         &self,
         action: TableMaintenanceAction,
     ) -> Result<Statement, ParserError> {
         let maintenance_token = self.attached_token_from_current();
+        if self.features.supports_tablespace_commands && self.parse_keyword(Keyword::TABLESPACE) {
+            let tablespace_name = self.parse_object_name(false)?;
+            return Ok(Statement::TablespaceMaintenance {
+                maintenance_token,
+                action,
+                tablespace_name,
+            });
+        }
         self.expect_keyword(Keyword::TABLE)?;
         let table_name = self.parse_object_name(false)?;
         Ok(Statement::TableMaintenance {
             maintenance_token,
             action,
             table_name,
+        })
+    }
+
+    /// Parses a storage size: a byte count with an optional unit suffix, as in
+    /// `SIZE 1G` or `MAXSIZE 67108864`.
+    ///
+    /// `1G` reaches the parser as a number token followed by a word token. The
+    /// unit is read verbatim rather than as an identifier so a dialect that
+    /// case-folds identifiers does not render `1G` back as `1g`.
+    fn parse_storage_size(&self) -> Result<StorageSize, ParserError> {
+        let value = self.parse_expr()?;
+        let unit = if matches!(self.peek_token().token, BorrowedToken::Word(_)) {
+            Some(self.parse_verbatim_word_ident()?)
+        } else {
+            None
+        };
+        Ok(StorageSize { value, unit })
+    }
+
+    /// Parses `CREATE TABLESPACE [IF NOT EXISTS] name LOCATION 'directory' [ WITH ( ... ) ]`.
+    pub fn parse_create_tablespace(
+        &self,
+        create_token: AttachedToken,
+    ) -> Result<Statement, ParserError> {
+        let if_not_exists = self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
+        let name = self.parse_identifier()?;
+        self.expect_keyword(Keyword::LOCATION)?;
+        let location = self.parse_value()?.value;
+        let options = self.parse_options(Keyword::WITH)?;
+        Ok(Statement::CreateTablespace {
+            create_token,
+            if_not_exists,
+            name,
+            location,
+            options,
+        })
+    }
+
+    /// Parses the operation half of `ALTER TABLESPACE name <operation>`.
+    pub fn parse_alter_tablespace(
+        &self,
+        alter_token: AttachedToken,
+    ) -> Result<Statement, ParserError> {
+        let name = self.parse_identifier()?;
+        let operation = if self.parse_keywords(&[Keyword::ADD, Keyword::DATAFILE]) {
+            let path = self.parse_value()?.value;
+            self.expect_keyword(Keyword::SIZE)?;
+            let size = self.parse_storage_size()?;
+            let max_size = if self.parse_keyword(Keyword::MAXSIZE) {
+                if self.parse_keyword(Keyword::UNLIMITED) {
+                    Some(DatafileMaxSize::Unlimited)
+                } else {
+                    Some(DatafileMaxSize::Size(self.parse_storage_size()?))
+                }
+            } else {
+                None
+            };
+            let autoextend = if self.parse_keyword(Keyword::AUTOEXTEND) {
+                match self.expect_one_of_keywords(&[Keyword::ON, Keyword::OFF])? {
+                    Keyword::ON => Some(true),
+                    _ => Some(false),
+                }
+            } else {
+                None
+            };
+            AlterTablespaceOperation::AddDatafile {
+                path,
+                size,
+                max_size,
+                autoextend,
+            }
+        } else if self.parse_keywords(&[Keyword::DROP, Keyword::DATAFILE]) {
+            AlterTablespaceOperation::DropDatafile {
+                path: self.parse_value()?.value,
+            }
+        } else if self.parse_keywords(&[Keyword::RENAME, Keyword::TO]) {
+            AlterTablespaceOperation::RenameTo {
+                name: self.parse_identifier()?,
+            }
+        } else {
+            match self.expect_one_of_keywords(&[Keyword::ONLINE, Keyword::OFFLINE])? {
+                Keyword::ONLINE => AlterTablespaceOperation::SetStatus { online: true },
+                _ => AlterTablespaceOperation::SetStatus { online: false },
+            }
+        };
+        Ok(Statement::AlterTablespace {
+            alter_token,
+            name,
+            operation,
         })
     }
 
@@ -9282,6 +9383,10 @@ impl<'a> Parser<'a> {
             self.parse_create_index(true)
         } else if self.parse_keyword(Keyword::SCHEMA) {
             self.parse_create_schema(create_token)
+        } else if self.features.supports_tablespace_commands
+            && self.parse_keyword(Keyword::TABLESPACE)
+        {
+            self.parse_create_tablespace(create_token)
         } else if self.parse_keyword(Keyword::DATABASE) {
             self.parse_create_database(create_token)
         } else if self.parse_keyword(Keyword::ROLE) {
@@ -13002,6 +13107,10 @@ impl<'a> Parser<'a> {
             ObjectType::Role
         } else if self.parse_keyword(Keyword::SCHEMA) {
             ObjectType::Schema
+        } else if self.features.supports_tablespace_commands
+            && self.parse_keyword(Keyword::TABLESPACE)
+        {
+            ObjectType::Tablespace
         } else if self.parse_keyword(Keyword::DATABASE) {
             ObjectType::Database
         } else if self.parse_keyword(Keyword::SEQUENCE) {
@@ -16514,6 +16623,9 @@ impl<'a> Parser<'a> {
         }
         if self.parse_keywords(&[Keyword::DEFAULT, Keyword::PRIVILEGES]) {
             return self.parse_alter_default_privileges();
+        }
+        if self.features.supports_tablespace_commands && self.parse_keyword(Keyword::TABLESPACE) {
+            return self.parse_alter_tablespace(self.get_alter_token());
         }
 
         let object_type = self.expect_one_of_keywords(&[
