@@ -771,6 +771,46 @@ mod document {
             (document, edit_result)
         }
 
+        /// Adopt statements together with their own source spans, so
+        /// [`Self::statement_source`] works on the resulting document.
+        ///
+        /// Unlike [`Self::from_statements_and_edit`] — whose adopted
+        /// statements deliberately carry empty spans because nothing ties
+        /// their spans to `source` — the caller here guarantees that
+        /// `source` is the exact text the statements' spans index. For a
+        /// nested statement extracted from a larger document (`PREPARE name
+        /// AS <stmt>`), that is the larger document's full source. Spans are
+        /// captured before `edit` runs, so `statement_source` reflects the
+        /// original text exactly as [`Self::parse_and_edit`] does.
+        ///
+        /// # Safety
+        ///
+        /// `edit` must not let an arena-backed node escape independently of
+        /// the returned document. See [`Self::parse_and_edit`].
+        pub unsafe fn from_spanned_statements_and_edit<R>(
+            source: impl Into<Arc<str>>,
+            mut statements: Vec<Statement>,
+            edit: impl FnOnce(&mut [Statement]) -> R,
+        ) -> (Arc<Self>, R) {
+            use crate::ast::Spanned;
+
+            let source = source.into();
+            let arena = BuildingAstArena::new();
+            let statement_spans = statements
+                .iter()
+                .map(|statement| statement.span())
+                .collect();
+            let edit_result = with_arena(&arena, || edit(&mut statements));
+            let document = Arc::new(Self {
+                statements,
+                statement_spans,
+                optimizer_hints: Vec::new(),
+                source,
+                arena: arena.freeze(),
+            });
+            (document, edit_result)
+        }
+
         /// Parsed statement roots. Their lifetime is tied to this document.
         pub fn statements(&self) -> &[Statement] {
             &self.statements
