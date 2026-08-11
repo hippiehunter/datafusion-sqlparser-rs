@@ -44,7 +44,7 @@ use sqlparser_derive::{Visit, VisitMut};
 
 use crate::ast::{AlternativeQuotedString, DollarQuotedString};
 use crate::dialect::{Dialect, DialectFeatures};
-use crate::dialect::{MySqlDialect, PostgreSqlDialect};
+use crate::dialect::{MySqlDialect, OracleDialect, PostgreSqlDialect};
 use crate::keywords::Keyword;
 
 /// SQL Token enumeration with lifetime parameter for future zero-copy support
@@ -1479,6 +1479,18 @@ impl<'a> Tokenizer<'a> {
                             // If the previous token was a period, thus not belonging to a number,
                             // the value we have is part of an identifier.
                             return Ok(Some(Token::make_word(s.as_str(), None)));
+                        }
+                    }
+
+                    // Oracle's binary floating-point literal suffix is part of
+                    // the literal token. Leaving it for the word tokenizer
+                    // turns `1.25f` into numeric `1.25` with an implicit `F`
+                    // alias, which is a different AST and observable result.
+                    if self.dialect.is::<OracleDialect>()
+                        && matches!(chars.peek(), Some('f' | 'F' | 'd' | 'D'))
+                    {
+                        if let Some(suffix) = chars.next() {
+                            s.push(suffix);
                         }
                     }
 

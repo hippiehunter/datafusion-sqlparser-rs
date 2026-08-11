@@ -17948,6 +17948,17 @@ impl<'a> Parser<'a> {
             // The call to n.parse() returns a bigdecimal when the
             // bigdecimal feature is enabled, and is otherwise a no-op
             // (i.e., it returns the input string).
+            BorrowedToken::Number(n, false) if self.dialect.is::<OracleDialect>() => {
+                match n.as_bytes().last().copied() {
+                    Some(b'f' | b'F') => {
+                        ok_value(Value::OracleBinaryFloat(n[..n.len() - 1].to_string()))
+                    }
+                    Some(b'd' | b'D') => {
+                        ok_value(Value::OracleBinaryDouble(n[..n.len() - 1].to_string()))
+                    }
+                    _ => ok_value(Value::Number(Self::parse(n, span.start)?, false)),
+                }
+            }
             BorrowedToken::Number(n, l) => ok_value(Value::Number(Self::parse(n, span.start)?, l)),
             BorrowedToken::SingleQuotedString(ref s) => ok_value(Value::SingleQuotedString(
                 self.maybe_concat_string_literal(s.to_string()),
@@ -18035,7 +18046,9 @@ impl<'a> Parser<'a> {
     pub fn parse_number_value(&self) -> Result<ValueWithSpan, ParserError> {
         let value_wrapper = self.parse_value()?;
         match &value_wrapper.value {
-            Value::Number(_, _) => Ok(value_wrapper),
+            Value::Number(_, _) | Value::OracleBinaryFloat(_) | Value::OracleBinaryDouble(_) => {
+                Ok(value_wrapper)
+            }
             Value::Placeholder(_) => Ok(value_wrapper),
             _ => {
                 self.prev_token();

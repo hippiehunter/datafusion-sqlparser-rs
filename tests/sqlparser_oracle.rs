@@ -173,6 +173,41 @@ fn oracle_alternative_quoted_strings_preserve_content_and_delimiter() {
 }
 
 #[test]
+fn oracle_binary_float_suffixes_belong_to_the_literal_not_an_alias() {
+    let statement = parse_one("SELECT 1.25f, 6.022D, -0.0F FROM dual");
+    let Statement::Query(ref query) = statement else {
+        panic!("expected query");
+    };
+    let SetExpr::Select(select) = query.body.as_ref() else {
+        panic!("expected select");
+    };
+
+    assert!(matches!(
+        &select.projection[0],
+        SelectItem::UnnamedExpr(Expr::Value(value))
+            if value.value == Value::OracleBinaryFloat("1.25".to_string())
+    ));
+    assert!(matches!(
+        &select.projection[1],
+        SelectItem::UnnamedExpr(Expr::Value(value))
+            if value.value == Value::OracleBinaryDouble("6.022".to_string())
+    ));
+    assert!(matches!(
+        &select.projection[2],
+        SelectItem::UnnamedExpr(Expr::UnaryOp { expr, .. })
+            if matches!(
+                expr.as_ref(),
+                Expr::Value(value)
+                    if value.value == Value::OracleBinaryFloat("0.0".to_string())
+            )
+    ));
+    assert_eq!(
+        statement.to_string(),
+        "SELECT 1.25f, 6.022d, -0.0f FROM DUAL"
+    );
+}
+
+#[test]
 fn oracle_long_and_long_raw_are_distinct_typed_data_types() {
     let statement = parse_one("CREATE TABLE legacy_values (text_value LONG, raw_value LONG RAW)");
     let Statement::CreateTable(create) = statement else {

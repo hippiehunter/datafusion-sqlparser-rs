@@ -125,6 +125,10 @@ pub enum Value {
     // Value::Number This might help if you your tests pass locally
     // but fail on CI with the `--all-features` flag enabled
     Number(BigDecimal, bool),
+    /// Oracle binary single-precision floating-point literal (`1.25f`).
+    OracleBinaryFloat(String),
+    /// Oracle binary double-precision floating-point literal (`6.022d`).
+    OracleBinaryDouble(String),
     /// 'string value'
     SingleQuotedString(String),
     // $<tag_name>$string value$<tag_name>$ (postgres syntax)
@@ -200,6 +204,8 @@ impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Value::Number(v, l) => write!(f, "{}{long}", v, long = if *l { "L" } else { "" }),
+            Value::OracleBinaryFloat(v) => write!(f, "{v}f"),
+            Value::OracleBinaryDouble(v) => write!(f, "{v}d"),
             Value::DoubleQuotedString(v) => write!(f, "\"{}\"", escape_double_quote_string(v)),
             Value::SingleQuotedString(v) => write!(f, "'{}'", escape_single_quote_string(v)),
             Value::DollarQuotedString(v) => write!(f, "{v}"),
