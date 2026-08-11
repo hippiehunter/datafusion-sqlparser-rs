@@ -1962,6 +1962,34 @@ impl<'a> Parser<'a> {
             }
             "DATABASE" => {
                 let name = self.parse_object_name(false)?;
+                // The Gantry administrative form — `CREATE DATABASE db
+                // [COMPATIBILITY 'mode']` — must be expressible from an
+                // Oracle-bound session or a server whose default mode is
+                // oracle cannot administer databases at all. It is
+                // distinguished from Oracle's physical form by the physical
+                // form's mandatory USER SYS clause.
+                if !or_replace && !and_compile && !self.peek_oracle_words(&["USER", "SYS"]) {
+                    let compatibility = if self.parse_keyword(Keyword::COMPATIBILITY) {
+                        let _ = self.consume_token(&BorrowedToken::Eq);
+                        Some(self.parse_literal_string()?)
+                    } else {
+                        None
+                    };
+                    return Ok(Statement::CreateDatabase {
+                        create_token: create_token.clone(),
+                        db_name: name,
+                        if_not_exists: false,
+                        location: None,
+                        managed_location: None,
+                        owner: None,
+                        or_replace: false,
+                        transient: false,
+                        clone: None,
+                        comment: None,
+                        catalog_sync: None,
+                        compatibility,
+                    });
+                }
                 self.expect_oracle_words(&["USER", "SYS", "IDENTIFIED", "BY"])?;
                 let sys_password = self.parse_identifier()?;
                 self.expect_oracle_words(&["USER", "SYSTEM", "IDENTIFIED", "BY"])?;

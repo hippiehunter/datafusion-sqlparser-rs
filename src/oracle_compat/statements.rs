@@ -79,6 +79,7 @@ pub const STATEMENT_CASES: &[OracleCase] = &[
     case!("create.data_grant", "CREATE DATA GRANT", "CREATE DATA GRANT active_employees AS SELECT ON hr.employees WHERE active = TRUE TO app_role"),
     case!("create.data_role", "CREATE DATA ROLE", "CREATE DATA ROLE app_data_role LOCAL"),
     case!("create.database", "CREATE DATABASE", "CREATE DATABASE appdb USER SYS IDENTIFIED BY password USER SYSTEM IDENTIFIED BY password CHARACTER SET AL32UTF8"),
+    case!("create.database.gantry_administrative", "CREATE DATABASE", "CREATE DATABASE appdb COMPATIBILITY 'oracle'"),
     case!("create.dimension", "CREATE DIMENSION", "CREATE DIMENSION products_dim LEVEL product IS products.product_id LEVEL category IS products.category_id HIERARCHY product_rollup (product CHILD OF category)"),
     case!("create.directive", "CREATE DIRECTIVE (VALIDATE)", "CREATE DIRECTIVE validate_email AS VALIDATE email_address USING email_domain"),
     case!("create.diskgroup", "CREATE DISKGROUP", "CREATE DISKGROUP data NORMAL REDUNDANCY DISK '/dev/oracleasm/disks/DATA1'"),
