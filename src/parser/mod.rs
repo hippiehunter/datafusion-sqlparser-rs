@@ -2641,6 +2641,41 @@ impl<'a> Parser<'a> {
         ) {
             return self.expected("end of Oracle CREATE statement", self.peek_token());
         }
+        if let OracleCreateDefinition::Index {
+            kind: OracleIndexKind::Standard,
+            unique,
+            name,
+            table,
+            columns,
+            options,
+        } = &definition {
+            if !or_replace
+                && !and_compile
+                && !options.online
+                && !options.local
+                && options.indextype.is_none()
+                && options.parameters.is_none()
+                && options.vector_distance.is_none()
+                && options.target_accuracy.is_none()
+                && options.vector_parameters.is_empty()
+            {
+                return Ok(Statement::CreateIndex(CreateIndex {
+                    name: Some(name.clone()),
+                    table_name: table.clone(),
+                    using: None,
+                    columns: columns.clone(),
+                    unique: *unique,
+                    concurrently: false,
+                    if_not_exists: false,
+                    include: vec![],
+                    nulls_distinct: None,
+                    with: vec![],
+                    predicate: None,
+                    index_options: vec![],
+                    alter_options: vec![],
+                }));
+            }
+        }
         Ok(Statement::OracleCreate(OracleCreateStatement {
             create_token,
             or_replace,

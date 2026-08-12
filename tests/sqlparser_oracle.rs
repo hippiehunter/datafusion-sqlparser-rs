@@ -1654,6 +1654,9 @@ fn oracle_drop_and_truncate_modifiers_are_typed() {
 
 #[test]
 fn oracle_index_families_are_typed() {
+    let plain = parse_one("CREATE INDEX employees_id_ix ON employees (employee_id)");
+    assert!(matches!(plain, Statement::CreateIndex(_)));
+
     let standard = parse_one(
         "CREATE UNIQUE INDEX employees_email_uix \
          ON employees (LOWER(email), employee_id DESC) ONLINE",
