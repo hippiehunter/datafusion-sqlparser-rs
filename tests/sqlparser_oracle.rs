@@ -1617,6 +1617,23 @@ fn oracle_drop_and_truncate_modifiers_are_typed() {
         }
     ));
 
+    // Gantry's Oracle compatibility surface accepts bare CASCADE for dependent
+    // non-constraint objects (for example property graphs) and carries it in
+    // the dialect-neutral DROP behavior field.
+    let drop_table_cascade = parse_one("DROP TABLE graph_a.vertex CASCADE");
+    assert!(matches!(
+        &drop_table_cascade,
+        Statement::Drop {
+            object_type: sqlparser::ast::ObjectType::Table,
+            cascade: true,
+            ..
+        }
+    ));
+    assert_eq!(
+        drop_table_cascade.to_string(),
+        "DROP TABLE GRAPH_A.VERTEX CASCADE"
+    );
+
     let drop_view = parse_one("DROP VIEW active_employees CASCADE CONSTRAINTS");
     assert!(matches!(
         &drop_view,

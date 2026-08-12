@@ -13389,7 +13389,9 @@ impl<'a> Parser<'a> {
             );
         }
         if self.dialect.is::<OracleDialect>()
-            && (cascade || restrict || (purge && object_type != ObjectType::Table))
+            && ((cascade && object_type != ObjectType::Table)
+                || restrict
+                || (purge && object_type != ObjectType::Table))
         {
             return parser_err!("invalid Oracle DROP modifier", loc);
         }
