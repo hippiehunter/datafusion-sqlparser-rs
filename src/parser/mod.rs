@@ -19692,6 +19692,20 @@ impl<'a> Parser<'a> {
                     BorrowedToken::Word(w) => modifiers.push(w.to_string()),
                     BorrowedToken::Number(n, _) => modifiers.push(n),
                     BorrowedToken::SingleQuotedString(s) => modifiers.push(s.into_owned()),
+                    BorrowedToken::Minus => {
+                        let number = self.next_token();
+                        match number.token {
+                            BorrowedToken::Number(n, _) => modifiers.push(format!("-{n}")),
+                            _ => self.expected("numeric type modifier", number)?,
+                        }
+                    }
+                    BorrowedToken::Plus => {
+                        let number = self.next_token();
+                        match number.token {
+                            BorrowedToken::Number(n, _) => modifiers.push(format!("+{n}")),
+                            _ => self.expected("numeric type modifier", number)?,
+                        }
+                    }
 
                     BorrowedToken::Comma => {
                         continue;
@@ -29420,6 +29434,15 @@ mod tests {
                 DataType::Custom(
                     ObjectName::from(vec!["geometry".into()]),
                     vec!["POINT".to_string(), "4326".to_string()]
+                )
+            );
+
+            test_parse_data_type!(
+                dialect,
+                "number(5, -2)",
+                DataType::Custom(
+                    ObjectName::from(vec!["number".into()]),
+                    vec!["5".to_string(), "-2".to_string()]
                 )
             );
         }
