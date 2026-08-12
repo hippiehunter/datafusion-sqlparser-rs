@@ -1359,6 +1359,18 @@ fn oracle_transaction_privilege_and_explain_commands_are_typed() {
 }
 
 #[test]
+fn oracle_mode_accepts_gantry_named_schema_extension() {
+    let statement = parse_one("CREATE SCHEMA graph_a");
+    assert!(matches!(
+        statement,
+        Statement::CreateSchema {
+            schema_name: sqlparser::ast::SchemaName::Simple(ref name),
+            ..
+        } if name.to_string() == "GRAPH_A"
+    ));
+}
+
+#[test]
 fn oracle_interval_and_character_data_types_are_typed() {
     let statement = parse_one(
         "CREATE TABLE typed_values (\

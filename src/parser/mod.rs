@@ -1816,6 +1816,14 @@ impl<'a> Parser<'a> {
             .collect::<Vec<_>>();
         self.expect_oracle_words(&header)?;
 
+        // Gantry exposes named schemas inside an Oracle-bound database even
+        // though native Oracle CREATE SCHEMA requires AUTHORIZATION and an
+        // inline statement list. Keep the native form below; route the named
+        // extension through the standard typed CreateSchema AST.
+        if phrase == "SCHEMA" && !self.peek_keyword(Keyword::AUTHORIZATION) {
+            return self.parse_create_schema(create_token);
+        }
+
         let definition = match phrase.as_str() {
             "ANALYTIC VIEW" => {
                 let name = self.parse_object_name(false)?;
