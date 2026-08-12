@@ -2656,7 +2656,8 @@ impl<'a> Parser<'a> {
             table,
             columns,
             options,
-        } = &definition {
+        } = &definition
+        {
             if !or_replace
                 && !and_compile
                 && !options.online
@@ -3213,10 +3214,21 @@ impl<'a> Parser<'a> {
             None
         };
         self.ensure_oracle_command_end("end of SET TRANSACTION statement")?;
-        Ok(Statement::OracleCommand(OracleCommandStatement {
-            command_token,
-            command: OracleCommand::SetTransaction { modes, name },
-        }))
+        if name.is_none() {
+            Ok(Statement::Set(SetStatement {
+                token: command_token,
+                inner: Set::SetTransaction {
+                    modes,
+                    snapshot: None,
+                    session: false,
+                },
+            }))
+        } else {
+            Ok(Statement::OracleCommand(OracleCommandStatement {
+                command_token,
+                command: OracleCommand::SetTransaction { modes, name },
+            }))
+        }
     }
 
     fn parse_oracle_set_role(
@@ -26094,6 +26106,8 @@ impl<'a> Parser<'a> {
             Some(NonBlock::Nowait)
         } else if self.parse_keywords(&[Keyword::SKIP, Keyword::LOCKED]) {
             Some(NonBlock::SkipLocked)
+        } else if self.dialect.is::<OracleDialect>() && self.parse_keyword(Keyword::WAIT) {
+            Some(NonBlock::Wait(self.parse_literal_uint()?))
         } else {
             None
         };

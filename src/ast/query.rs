@@ -3882,6 +3882,8 @@ impl fmt::Display for LockType {
 pub enum NonBlock {
     Nowait,
     SkipLocked,
+    /// Oracle `WAIT n`, where `n` is a whole number of seconds.
+    Wait(u64),
 }
 
 impl fmt::Display for NonBlock {
@@ -3889,6 +3891,7 @@ impl fmt::Display for NonBlock {
         let nonblock = match self {
             NonBlock::Nowait => "NOWAIT",
             NonBlock::SkipLocked => "SKIP LOCKED",
+            NonBlock::Wait(seconds) => return write!(f, "WAIT {seconds}"),
         };
         write!(f, "{nonblock}")
     }

@@ -1311,6 +1311,29 @@ fn oracle_transaction_privilege_and_explain_commands_are_typed() {
         )] && name.is_some()
     ));
 
+    let unnamed_transaction = parse_one("SET TRANSACTION READ ONLY");
+    assert!(matches!(
+        &unnamed_transaction,
+        Statement::Set(sqlparser::ast::SetStatement {
+            inner: sqlparser::ast::Set::SetTransaction { modes, snapshot: None, session: false },
+            ..
+        }) if modes == &[sqlparser::ast::TransactionMode::AccessMode(
+            sqlparser::ast::TransactionAccessMode::ReadOnly
+        )]
+    ));
+
+    let wait = parse_one("SELECT * FROM jobs FOR UPDATE WAIT 7");
+    let Statement::Query(query) = &wait else {
+        panic!("expected SELECT");
+    };
+    assert!(matches!(
+        query.locks.as_slice(),
+        [sqlparser::ast::LockClause {
+            nonblock: Some(sqlparser::ast::NonBlock::Wait(7)),
+            ..
+        }]
+    ));
+
     let role = parse_one("SET ROLE reporting_role IDENTIFIED BY secret");
     assert!(matches!(
         &role,
