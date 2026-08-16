@@ -1342,6 +1342,22 @@ PHP	₱ USD $
 }
 
 #[test]
+fn parse_protocol_copy_from_stdin_with_trailing_semicolon() {
+    for sql in [
+        "COPY copy_probe FROM STDIN BINARY;",
+        "COPY copy_probe FROM STDIN WITH (FORMAT BINARY);",
+    ] {
+        let stmts = pg().parse_sql_statements(sql).unwrap();
+        assert_eq!(stmts.len(), 1);
+        let Statement::Copy { target, values, .. } = &stmts[0] else {
+            panic!("expected COPY statement")
+        };
+        assert_eq!(*target, CopyTarget::Stdin);
+        assert!(values.is_empty());
+    }
+}
+
+#[test]
 fn test_copy_from() {
     let stmt = pg().verified_stmt("COPY users FROM 'data.csv'");
     assert_eq!(

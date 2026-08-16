@@ -1160,6 +1160,19 @@ mod document {
         }
 
         #[test]
+        fn protocol_copy_from_stdin_keeps_exact_source_at_semicolon_eof() {
+            for sql in [
+                "COPY copy_probe FROM STDIN BINARY;",
+                "COPY copy_probe FROM STDIN WITH (FORMAT BINARY);",
+            ] {
+                let document =
+                    ParsedSql::parse(&PostgreSqlDialect {}, Arc::<str>::from(sql)).unwrap();
+                assert_eq!(document.statements().len(), 1);
+                assert_eq!(document.statement(0).unwrap().source(), Some(sql));
+            }
+        }
+
+        #[test]
         fn document_exposes_exact_nested_statement_source_by_span() {
             let sql: Arc<str> = Arc::from(
                 "PREPARE lookup (INT) AS\n  SELECT /* retain */ name FROM accounts WHERE id = $1",

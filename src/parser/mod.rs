@@ -17655,7 +17655,16 @@ impl<'a> Parser<'a> {
             legacy_options.push(opt);
         }
         let values = if let CopyTarget::Stdin = target {
-            if self.consume_token(&BorrowedToken::SemiColon) {
+            if self.consume_token(&BorrowedToken::SemiColon)
+                && self.peek_token_ref().token != BorrowedToken::EOF
+            {
+                // A COPY statement embedded in a SQL script owns the inline
+                // tab-separated payload that follows its terminator.  The
+                // PostgreSQL wire protocol, however, sends only the COPY
+                // command here and carries its rows in later CopyData
+                // messages.  In that form the semicolon is followed by EOF;
+                // entering parse_tsv() would consume the EOF token and make
+                // the top-level statement span end at Location(0, 0).
                 self.parse_tsv()
             } else {
                 vec![]
