@@ -569,6 +569,17 @@ impl Spanned for Statement {
                 table_name,
                 ..
             } => maintenance_token.0.union(&table_name.span()),
+            Statement::TablespaceMaintenance {
+                maintenance_token,
+                tablespace_name,
+                ..
+            } => maintenance_token.0.union(&tablespace_name.span()),
+            Statement::CreateTablespace {
+                create_token, name, ..
+            } => create_token.0.union(&name.span),
+            Statement::AlterTablespace {
+                alter_token, name, ..
+            } => alter_token.0.union(&name.span),
             Statement::AlterTenant {
                 alter_token,
                 action_token,

@@ -6622,6 +6622,96 @@ impl fmt::Display for TableMaintenanceAction {
     }
 }
 
+/// A storage size written as a bare byte count or a count with a unit suffix,
+/// such as `1G`, `512M`, or `67108864`.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct StorageSize {
+    pub value: Expr,
+    /// `K`, `KB`, `M`, `MB`, `G`, `GB`, `T`, or `TB`. Absent means bytes.
+    pub unit: Option<Ident>,
+}
+
+impl fmt::Display for StorageSize {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.value)?;
+        if let Some(unit) = &self.unit {
+            write!(f, "{unit}")?;
+        }
+        Ok(())
+    }
+}
+
+/// The growth ceiling of a datafile added by [`AlterTablespaceOperation::AddDatafile`].
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum DatafileMaxSize {
+    /// `MAXSIZE UNLIMITED` — the datafile grows until the device refuses.
+    Unlimited,
+    /// `MAXSIZE <size>` — the datafile refuses to grow past this bound.
+    Size(StorageSize),
+}
+
+impl fmt::Display for DatafileMaxSize {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            DatafileMaxSize::Unlimited => f.write_str("UNLIMITED"),
+            DatafileMaxSize::Size(size) => write!(f, "{size}"),
+        }
+    }
+}
+
+/// An operation applied by [`Statement::AlterTablespace`].
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum AlterTablespaceOperation {
+    /// `ADD DATAFILE '<path>' SIZE <size> [ MAXSIZE { <size> | UNLIMITED } ] [ AUTOEXTEND { ON | OFF } ]`
+    AddDatafile {
+        path: Value,
+        size: StorageSize,
+        max_size: Option<DatafileMaxSize>,
+        autoextend: Option<bool>,
+    },
+    /// `DROP DATAFILE '<path>'`
+    DropDatafile { path: Value },
+    /// `RENAME TO <name>`
+    RenameTo { name: Ident },
+    /// `{ ONLINE | OFFLINE }`
+    SetStatus { online: bool },
+}
+
+impl fmt::Display for AlterTablespaceOperation {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            AlterTablespaceOperation::AddDatafile {
+                path,
+                size,
+                max_size,
+                autoextend,
+            } => {
+                write!(f, "ADD DATAFILE {path} SIZE {size}")?;
+                if let Some(max_size) = max_size {
+                    write!(f, " MAXSIZE {max_size}")?;
+                }
+                match autoextend {
+                    Some(true) => write!(f, " AUTOEXTEND ON")?,
+                    Some(false) => write!(f, " AUTOEXTEND OFF")?,
+                    None => {}
+                }
+                Ok(())
+            }
+            AlterTablespaceOperation::DropDatafile { path } => write!(f, "DROP DATAFILE {path}"),
+            AlterTablespaceOperation::RenameTo { name } => write!(f, "RENAME TO {name}"),
+            AlterTablespaceOperation::SetStatus { online } => {
+                f.write_str(if *online { "ONLINE" } else { "OFFLINE" })
+            }
+        }
+    }
+}
+
 /// The admission change requested by a [`Statement::AlterTenant`] command.
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -8098,6 +8188,41 @@ pub enum Statement {
         maintenance_token: AttachedToken,
         action: TableMaintenanceAction,
         table_name: ObjectName,
+    },
+    /// ```sql
+    /// { QUIESCE | UNQUIESCE } TABLESPACE tablespace_name
+    /// ```
+    /// Changes mutation admission for every table in a tablespace, so the
+    /// operator can take its datafiles out of service.
+    TablespaceMaintenance {
+        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+        maintenance_token: AttachedToken,
+        action: TableMaintenanceAction,
+        tablespace_name: ObjectName,
+    },
+    /// ```sql
+    /// CREATE TABLESPACE tablespace_name LOCATION 'directory' [ WITH ( option = value, ... ) ]
+    /// ```
+    CreateTablespace {
+        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+        create_token: AttachedToken,
+        if_not_exists: bool,
+        name: Ident,
+        /// The directory new datafiles are created in. PostgreSQL spells this
+        /// `LOCATION`; it is mandatory because a tablespace with no location
+        /// has nowhere to put the datafiles `ALTER TABLESPACE … ADD DATAFILE`
+        /// creates.
+        location: Value,
+        options: Vec<SqlOption>,
+    },
+    /// ```sql
+    /// ALTER TABLESPACE tablespace_name <operation>
+    /// ```
+    AlterTablespace {
+        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+        alter_token: AttachedToken,
+        name: Ident,
+        operation: AlterTablespaceOperation,
     },
     /// ```sql
     /// ALTER TENANT tenant_name { QUIESCE | RESUME }
@@ -12116,6 +12241,31 @@ impl fmt::Display for Statement {
             Statement::TableMaintenance {
                 action, table_name, ..
             } => write!(f, "{action} TABLE {table_name}"),
+            Statement::TablespaceMaintenance {
+                action,
+                tablespace_name,
+                ..
+            } => write!(f, "{action} TABLESPACE {tablespace_name}"),
+            Statement::CreateTablespace {
+                if_not_exists,
+                name,
+                location,
+                options,
+                ..
+            } => {
+                write!(f, "CREATE TABLESPACE ")?;
+                if *if_not_exists {
+                    write!(f, "IF NOT EXISTS ")?;
+                }
+                write!(f, "{name} LOCATION {location}")?;
+                if !options.is_empty() {
+                    write!(f, " WITH ({})", display_comma_separated(options))?;
+                }
+                Ok(())
+            }
+            Statement::AlterTablespace {
+                name, operation, ..
+            } => write!(f, "ALTER TABLESPACE {name} {operation}"),
             Statement::AlterTenant {
                 tenant_name,
                 action,
@@ -14034,6 +14184,7 @@ pub enum ObjectType {
     Type,
     User,
     Stream,
+    Tablespace,
 }
 
 impl fmt::Display for ObjectType {
@@ -14050,6 +14201,7 @@ impl fmt::Display for ObjectType {
             ObjectType::Type => "TYPE",
             ObjectType::User => "USER",
             ObjectType::Stream => "STREAM",
+            ObjectType::Tablespace => "TABLESPACE",
         })
     }
 }

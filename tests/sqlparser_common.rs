@@ -15919,11 +15919,7 @@ fn parse_table_maintenance() {
         .unwrap();
     assert_eq!(2, statements.len());
 
-    for invalid in [
-        "QUIESCE TABLE",
-        "UNQUIESCE TABLE",
-        "QUIESCE TABLESPACE fast",
-    ] {
+    for invalid in ["QUIESCE TABLE", "UNQUIESCE TABLE"] {
         assert!(dialects.parse_sql_statements(invalid).is_err(), "{invalid}");
     }
 
@@ -15934,6 +15930,170 @@ fn parse_table_maintenance() {
     assert!(dialects
         .parse_sql_statements("UNQUIESCE TABLE public.orders")
         .is_err());
+}
+
+#[test]
+fn parse_tablespace_maintenance() {
+    let dialects = all_dialects_where(|dialect| dialect.supports_tablespace_commands());
+
+    for (sql, expected_action, expected_name) in [
+        ("QUIESCE TABLESPACE fast", TableMaintenanceAction::Quiesce, "fast"),
+        (
+            "UNQUIESCE TABLESPACE \"Cold Storage\"",
+            TableMaintenanceAction::Unquiesce,
+            "\"Cold Storage\"",
+        ),
+    ] {
+        match dialects.verified_stmt(sql) {
+            Statement::TablespaceMaintenance {
+                action,
+                tablespace_name,
+                ..
+            } => {
+                assert_eq!(expected_action, action);
+                assert_eq!(expected_name, tablespace_name.to_string());
+            }
+            other => panic!("expected tablespace maintenance statement, got {other:?}"),
+        }
+    }
+
+    for invalid in ["QUIESCE TABLESPACE", "UNQUIESCE TABLESPACE"] {
+        assert!(dialects.parse_sql_statements(invalid).is_err(), "{invalid}");
+    }
+
+    let dialects = all_dialects_where(|dialect| !dialect.supports_tablespace_commands());
+    assert!(dialects
+        .parse_sql_statements("QUIESCE TABLESPACE fast")
+        .is_err());
+}
+
+#[test]
+fn parse_create_tablespace() {
+    let dialects = all_dialects_where(|dialect| dialect.supports_tablespace_commands());
+
+    match dialects.verified_stmt("CREATE TABLESPACE fast LOCATION '/mnt/nvme'") {
+        Statement::CreateTablespace {
+            if_not_exists,
+            name,
+            location,
+            options,
+            ..
+        } => {
+            assert!(!if_not_exists);
+            assert_eq!("fast", name.to_string());
+            assert_eq!("'/mnt/nvme'", location.to_string());
+            assert!(options.is_empty());
+        }
+        other => panic!("expected CREATE TABLESPACE, got {other:?}"),
+    }
+
+    match dialects
+        .verified_stmt("CREATE TABLESPACE IF NOT EXISTS cold LOCATION '/mnt/hdd' WITH (a = 'b')")
+    {
+        Statement::CreateTablespace {
+            if_not_exists,
+            options,
+            ..
+        } => {
+            assert!(if_not_exists);
+            assert_eq!(1, options.len());
+        }
+        other => panic!("expected CREATE TABLESPACE, got {other:?}"),
+    }
+
+    // LOCATION is mandatory: a tablespace with no directory has nowhere to
+    // create the datafiles ALTER TABLESPACE ... ADD DATAFILE asks for.
+    assert!(dialects
+        .parse_sql_statements("CREATE TABLESPACE fast")
+        .is_err());
+
+    let dialects = all_dialects_where(|dialect| !dialect.supports_tablespace_commands());
+    assert!(dialects
+        .parse_sql_statements("CREATE TABLESPACE fast LOCATION '/mnt/nvme'")
+        .is_err());
+}
+
+#[test]
+fn parse_alter_tablespace() {
+    let dialects = all_dialects_where(|dialect| dialect.supports_tablespace_commands());
+
+    match dialects
+        .verified_stmt("ALTER TABLESPACE fast ADD DATAFILE '/mnt/nvme/gantry2.dat' SIZE 1G")
+    {
+        Statement::AlterTablespace {
+            name, operation, ..
+        } => {
+            assert_eq!("fast", name.to_string());
+            match operation {
+                AlterTablespaceOperation::AddDatafile {
+                    path,
+                    size,
+                    max_size,
+                    autoextend,
+                } => {
+                    assert_eq!("'/mnt/nvme/gantry2.dat'", path.to_string());
+                    assert_eq!("1G", size.to_string());
+                    assert!(max_size.is_none());
+                    assert!(autoextend.is_none());
+                }
+                other => panic!("expected ADD DATAFILE, got {other:?}"),
+            }
+        }
+        other => panic!("expected ALTER TABLESPACE, got {other:?}"),
+    }
+
+    // A bare byte count carries no unit.
+    match dialects.verified_stmt("ALTER TABLESPACE fast ADD DATAFILE '/d.dat' SIZE 67108864") {
+        Statement::AlterTablespace {
+            operation:
+                AlterTablespaceOperation::AddDatafile {
+                    size, max_size, ..
+                },
+            ..
+        } => {
+            assert_eq!("67108864", size.to_string());
+            assert!(max_size.is_none());
+        }
+        other => panic!("expected ADD DATAFILE, got {other:?}"),
+    }
+
+    for sql in [
+        "ALTER TABLESPACE fast ADD DATAFILE '/d.dat' SIZE 64M MAXSIZE 1G",
+        "ALTER TABLESPACE fast ADD DATAFILE '/d.dat' SIZE 64M MAXSIZE UNLIMITED",
+        "ALTER TABLESPACE fast ADD DATAFILE '/d.dat' SIZE 64M MAXSIZE 1G AUTOEXTEND ON",
+        "ALTER TABLESPACE fast ADD DATAFILE '/d.dat' SIZE 64M AUTOEXTEND OFF",
+        "ALTER TABLESPACE fast DROP DATAFILE '/d.dat'",
+        "ALTER TABLESPACE fast RENAME TO quick",
+        "ALTER TABLESPACE fast ONLINE",
+        "ALTER TABLESPACE fast OFFLINE",
+    ] {
+        dialects.verified_stmt(sql);
+    }
+
+    for invalid in [
+        "ALTER TABLESPACE fast ADD DATAFILE '/d.dat'",
+        "ALTER TABLESPACE fast ADD DATAFILE SIZE 1G",
+        "ALTER TABLESPACE fast",
+    ] {
+        assert!(dialects.parse_sql_statements(invalid).is_err(), "{invalid}");
+    }
+}
+
+#[test]
+fn parse_drop_tablespace() {
+    let dialects = all_dialects_where(|dialect| dialect.supports_tablespace_commands());
+
+    match dialects.verified_stmt("DROP TABLESPACE fast") {
+        Statement::Drop {
+            object_type, names, ..
+        } => {
+            assert_eq!(ObjectType::Tablespace, object_type);
+            assert_eq!("fast", names[0].to_string());
+        }
+        other => panic!("expected DROP TABLESPACE, got {other:?}"),
+    }
+
+    dialects.verified_stmt("DROP TABLESPACE IF EXISTS fast");
 }
 
 #[test]
