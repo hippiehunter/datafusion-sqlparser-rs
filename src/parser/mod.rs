@@ -24389,6 +24389,10 @@ impl<'a> Parser<'a> {
                 Some(GrantObjects::MaterializedViews(
                     self.parse_comma_separated(|p| p.parse_object_name_inner(false, true))?,
                 ))
+            } else if self.parse_keywords(&[Keyword::PROPERTY, Keyword::GRAPH]) {
+                Some(GrantObjects::PropertyGraphs(
+                    self.parse_comma_separated(|p| p.parse_object_name_inner(false, true))?,
+                ))
             } else {
                 let object_type = self.parse_one_of_keywords(&[
                     Keyword::SEQUENCE,

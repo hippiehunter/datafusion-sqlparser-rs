@@ -9353,6 +9353,24 @@ fn test_revoke() {
         },
         _ => unreachable!(),
     }
+
+    let sql7 = "GRANT SELECT ON PROPERTY GRAPH social_graph, org_graph TO analyst";
+    match verified_stmt(sql7) {
+        Statement::Grant {
+            privileges,
+            objects,
+            grantees,
+            ..
+        } => match (privileges, objects) {
+            (Privileges::Actions(actions), Some(GrantObjects::PropertyGraphs(graphs))) => {
+                assert_eq!(vec![Action::Select { columns: None }], actions);
+                assert_eq_vec(&["social_graph", "org_graph"], &graphs);
+                assert_eq_vec(&["analyst"], &grantees);
+            }
+            _ => unreachable!(),
+        },
+        _ => unreachable!(),
+    }
 }
 
 #[test]

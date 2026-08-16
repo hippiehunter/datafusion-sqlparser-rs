@@ -12971,6 +12971,8 @@ pub enum GrantObjects {
     Tables(Vec<ObjectName>),
     /// Grant privileges on specific materialized views
     MaterializedViews(Vec<ObjectName>),
+    /// Grant privileges on specific property graphs
+    PropertyGraphs(Vec<ObjectName>),
     /// Grant privileges on foreign-data wrappers.
     ForeignDataWrappers(Vec<ObjectName>),
     /// Grant privileges on foreign servers.
@@ -13055,6 +13057,9 @@ impl fmt::Display for GrantObjects {
                     "MATERIALIZED VIEW {}",
                     display_comma_separated(materialized_views)
                 )
+            }
+            GrantObjects::PropertyGraphs(graphs) => {
+                write!(f, "PROPERTY GRAPH {}", display_comma_separated(graphs))
             }
             GrantObjects::ForeignDataWrappers(wrappers) => {
                 write!(
