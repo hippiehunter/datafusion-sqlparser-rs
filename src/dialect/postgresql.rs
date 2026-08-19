@@ -63,6 +63,10 @@ impl Dialect for PostgreSqlDialect {
         Some('"')
     }
 
+    fn interval_requires_literal_value(&self) -> bool {
+        true
+    }
+
     fn canonicalize_identifier(&self, identifier: &str, quote_style: Option<char>) -> String {
         if quote_style.is_none() {
             identifier.to_lowercase()

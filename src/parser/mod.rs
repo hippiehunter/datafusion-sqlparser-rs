@@ -5481,7 +5481,9 @@ impl<'a> Parser<'a> {
             Keyword::XMLPI => Ok(Some(self.parse_xmlpi()?)),
             Keyword::XMLELEMENT => Ok(Some(self.parse_xmlelement()?)),
             Keyword::XMLFOREST => Ok(Some(self.parse_xmlforest()?)),
-            Keyword::INTERVAL => Ok(Some(self.parse_interval()?)),
+            Keyword::INTERVAL if self.next_token_can_begin_interval_literal() => {
+                Ok(Some(self.parse_interval()?))
+            }
             // Treat ARRAY[1,2,3] as an array [1,2,3], otherwise try as subquery or a function call
             Keyword::ARRAY if *self.peek_token_ref() == BorrowedToken::LBracket => {
                 self.expect_token(&BorrowedToken::LBracket)?;
@@ -5639,7 +5641,13 @@ impl<'a> Parser<'a> {
         let loc = self.peek_token_ref().span.start;
         let opt_expr = self.maybe_parse(|parser| {
             match parser.parse_data_type()? {
-                DataType::Interval { .. } => parser.parse_interval(),
+                DataType::Interval { .. } if parser.next_token_can_begin_interval_literal() => {
+                    parser.parse_interval()
+                }
+                // In dialects where INTERVAL only begins a literal before a
+                // value token, back out so the word resolves as an ordinary
+                // identifier (PostgreSQL: `SELECT interval FROM t`).
+                DataType::Interval { .. } => parser_err!("dummy", loc),
                 // PostgreSQL allows almost any identifier to be used as custom data type name,
                 // and we support that in `parse_data_type()`. But unlike Postgres we don't
                 // have a list of globally reserved keywords (since they vary across dialects),
@@ -7449,6 +7457,31 @@ impl<'a> Parser<'a> {
             match_value,
             opt_search_modifier,
         })
+    }
+
+    /// Whether the next token can begin an interval literal's value in a
+    /// dialect where `INTERVAL` is otherwise an ordinary identifier
+    /// (PostgreSQL admits an unquoted column named `interval`). A quoted
+    /// value, a number, or a sign commits to the literal; any other token
+    /// leaves the word to the identifier grammar.
+    fn next_token_can_begin_interval_literal(&self) -> bool {
+        if !self.features.interval_requires_literal_value {
+            return true;
+        }
+        matches!(
+            self.peek_token_ref().token,
+            BorrowedToken::SingleQuotedString(_)
+                | BorrowedToken::EscapedStringLiteral(_)
+                | BorrowedToken::NationalStringLiteral(_)
+                | BorrowedToken::UnicodeStringLiteral(_)
+                | BorrowedToken::DollarQuotedString(_)
+                | BorrowedToken::SingleQuotedByteStringLiteral(_)
+                | BorrowedToken::HexStringLiteral(_)
+                | BorrowedToken::AlternativeQuotedString(_)
+                | BorrowedToken::Number(_, _)
+                | BorrowedToken::Plus
+                | BorrowedToken::Minus
+        )
     }
 
     /// Parse an `INTERVAL` expression.

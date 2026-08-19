@@ -862,6 +862,15 @@ pub trait Dialect: Debug + Any {
         false
     }
 
+    /// Returns true if `INTERVAL` only begins an interval literal when the
+    /// following token can start one (a quoted value, a number, or a sign).
+    /// PostgreSQL admits `interval` as an ordinary unquoted identifier, so
+    /// `SELECT interval FROM t` is a column reference there, while
+    /// `INTERVAL '1 hour'` remains an interval literal.
+    fn interval_requires_literal_value(&self) -> bool {
+        false
+    }
+
     fn supports_explain_with_utility_options(&self) -> bool {
         false
     }
@@ -1253,6 +1262,7 @@ pub trait Dialect: Debug + Any {
             supports_dollar_placeholder: self.supports_dollar_placeholder(),
             supports_create_index_with_clause: self.supports_create_index_with_clause(),
             require_interval_qualifier: self.require_interval_qualifier(),
+            interval_requires_literal_value: self.interval_requires_literal_value(),
             supports_explain_with_utility_options: self.supports_explain_with_utility_options(),
             supports_asc_desc_in_column_definition: self.supports_asc_desc_in_column_definition(),
             supports_factorial_operator: self.supports_factorial_operator(),
@@ -1358,6 +1368,7 @@ pub struct DialectFeatures {
     pub supports_dollar_placeholder: bool,
     pub supports_create_index_with_clause: bool,
     pub require_interval_qualifier: bool,
+    pub interval_requires_literal_value: bool,
     pub supports_explain_with_utility_options: bool,
     pub supports_asc_desc_in_column_definition: bool,
     pub supports_factorial_operator: bool,
@@ -1558,6 +1569,7 @@ impl<D: Dialect> Dialect for DelegatingDialect<D> {
         supports_dollar_placeholder,
         supports_create_index_with_clause,
         require_interval_qualifier,
+        interval_requires_literal_value,
         supports_explain_with_utility_options,
         supports_asc_desc_in_column_definition,
         supports_factorial_operator,

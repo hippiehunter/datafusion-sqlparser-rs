@@ -7946,3 +7946,31 @@ fn parse_pg_lock_table() {
         .parse_sql_statements("LOCK TABLE t IN SIDEWAYS MODE")
         .is_err());
 }
+
+#[test]
+fn parse_bare_interval_identifier_as_column_reference() {
+    // PostgreSQL permits an unquoted column named `interval`; the interval
+    // literal grammar only engages when a value token follows the keyword.
+    for sql in [
+        "SELECT interval FROM temp_table",
+        "SELECT interval AS value FROM temp_table",
+        "SELECT max(interval) FROM temp_table",
+        "SELECT interval",
+    ] {
+        pg().verified_stmt(sql);
+    }
+
+    let select = pg().verified_only_select("SELECT interval FROM temp_table");
+    assert_eq!(
+        select.projection[0],
+        SelectItem::UnnamedExpr(Expr::Identifier(Ident::new("interval")))
+    );
+}
+
+#[test]
+fn parse_interval_literals_still_commit_on_value_tokens() {
+    pg().verified_stmt("SELECT INTERVAL '1 hour' FROM temp_table");
+    pg().verified_stmt("SELECT CAST('1 hour' AS INTERVAL)");
+    let expr = pg().verified_expr("INTERVAL '1 hour'");
+    assert!(matches!(expr, Expr::Interval(_)));
+}
