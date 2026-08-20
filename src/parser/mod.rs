@@ -17811,16 +17811,14 @@ impl<'a> Parser<'a> {
             Keyword::DEFAULT,
         ]) {
             Some(Keyword::FORMAT) => CopyOption::Format(self.parse_identifier()?),
-            Some(Keyword::FREEZE) => CopyOption::Freeze(!matches!(
-                self.parse_one_of_keywords(&[Keyword::TRUE, Keyword::FALSE]),
-                Some(Keyword::FALSE)
-            )),
+            Some(Keyword::FREEZE) => {
+                CopyOption::Freeze(self.parse_optional_copy_boolean().unwrap_or(true))
+            }
             Some(Keyword::DELIMITER) => CopyOption::Delimiter(self.parse_literal_char()?),
             Some(Keyword::NULL) => CopyOption::Null(self.parse_literal_string()?),
-            Some(Keyword::HEADER) => CopyOption::Header(!matches!(
-                self.parse_one_of_keywords(&[Keyword::TRUE, Keyword::FALSE]),
-                Some(Keyword::FALSE)
-            )),
+            Some(Keyword::HEADER) => {
+                CopyOption::Header(self.parse_optional_copy_boolean().unwrap_or(true))
+            }
             Some(Keyword::QUOTE) => CopyOption::Quote(self.parse_literal_char()?),
             Some(Keyword::ESCAPE) => CopyOption::Escape(self.parse_literal_char()?),
             Some(Keyword::FORCE_QUOTE) => {
@@ -17841,6 +17839,23 @@ impl<'a> Parser<'a> {
             _ => self.expected("option", self.peek_token())?,
         };
         Ok(ret)
+    }
+
+    /// Parse PostgreSQL's canonical boolean option spellings without
+    /// consuming a token when the option omits its optional value.
+    fn parse_optional_copy_boolean(&self) -> Option<bool> {
+        let value = match &self.peek_token_ref().token {
+            BorrowedToken::Word(word) => match word.value.to_ascii_lowercase().as_str() {
+                "true" | "on" | "yes" => true,
+                "false" | "off" | "no" => false,
+                _ => return None,
+            },
+            BorrowedToken::Number(value, false) if value == "1" => true,
+            BorrowedToken::Number(value, false) if value == "0" => false,
+            _ => return None,
+        };
+        self.next_token();
+        Some(value)
     }
 
     fn parse_copy_legacy_option(&self) -> Result<CopyLegacyOption, ParserError> {
