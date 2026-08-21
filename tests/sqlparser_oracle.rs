@@ -1842,6 +1842,43 @@ fn oracle_identity_and_parenthesized_column_changes_are_typed() {
 }
 
 #[test]
+fn oracle_modify_column_default_needs_no_data_type() {
+    // `MODIFY <col> DEFAULT <expr>` changes only the default, so it carries no
+    // data type and means what ALTER COLUMN ... SET DEFAULT means.
+    let modify = parse_one("ALTER TABLE employees MODIFY salary DEFAULT 0");
+    assert!(
+        matches!(
+            &modify,
+            Statement::AlterTable(sqlparser::ast::AlterTable { operations, .. })
+                if matches!(
+                operations.as_slice(),
+                [sqlparser::ast::AlterTableOperation::AlterColumn {
+                    column_name,
+                    op: sqlparser::ast::AlterColumnOperation::SetDefault { .. },
+                }] if column_name.value == "SALARY"
+            )
+        ),
+        "unexpected parse for MODIFY ... DEFAULT: {modify:?}"
+    );
+    assert_eq!(parse_one(&modify.to_string()), modify);
+
+    // A MODIFY that does carry a data type still reads as a column change.
+    let retyped = parse_one("ALTER TABLE employees MODIFY salary NUMBER(10)");
+    assert!(
+        matches!(
+            &retyped,
+            Statement::AlterTable(sqlparser::ast::AlterTable { operations, .. })
+                if matches!(
+                operations.as_slice(),
+                [sqlparser::ast::AlterTableOperation::ModifyColumn { col_name, .. }]
+                    if col_name.value == "SALARY"
+            )
+        ),
+        "unexpected parse for MODIFY with a type: {retyped:?}"
+    );
+}
+
+#[test]
 fn oracle_recursive_search_and_cycle_are_typed() {
     let statement = parse_one(
         "WITH org(emp_id, manager_id) AS (\

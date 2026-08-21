@@ -16690,6 +16690,20 @@ impl<'a> Parser<'a> {
             } else {
                 let _ = self.parse_keyword(Keyword::COLUMN); // [ COLUMN ]
                 let col_name = self.parse_identifier()?;
+                // Oracle's `MODIFY <col> DEFAULT <expr>` changes the default
+                // and leaves the type alone, so there is no data type to read.
+                // It means what `ALTER COLUMN ... SET DEFAULT` means; without
+                // this, DEFAULT parses as a custom type name and the value
+                // after it has nowhere to go.
+                if self.peek_keyword(Keyword::DEFAULT) {
+                    self.expect_keyword(Keyword::DEFAULT)?;
+                    return Ok(AlterTableOperation::AlterColumn {
+                        column_name: col_name,
+                        op: AlterColumnOperation::SetDefault {
+                            value: self.parse_expr()?,
+                        },
+                    });
+                }
                 let data_type = self.parse_data_type()?;
                 let mut options = vec![];
                 while let Some(option) = self.parse_optional_column_option()? {
