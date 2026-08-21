@@ -8740,9 +8740,13 @@ pub enum OracleCreateDefinition {
     User {
         name: ObjectName,
         password: Ident,
-        default_tablespace: ObjectName,
-        quota: OracleSize,
-        quota_tablespace: ObjectName,
+        /// `DEFAULT TABLESPACE <name>`, optional in Oracle: a user created
+        /// without one takes the database default.
+        default_tablespace: Option<ObjectName>,
+        /// `QUOTA <size> ON <tablespace>`, optional and independent of
+        /// `DEFAULT TABLESPACE`.
+        quota: Option<OracleSize>,
+        quota_tablespace: Option<ObjectName>,
     },
 }
 
@@ -9329,10 +9333,19 @@ impl fmt::Display for OracleCreateStatement {
                 default_tablespace,
                 quota,
                 quota_tablespace,
-            } => write!(
-                f,
-                " USER {name} IDENTIFIED BY {password} DEFAULT TABLESPACE {default_tablespace} QUOTA {quota} ON {quota_tablespace}"
-            ),
+            } => {
+                write!(f, " USER {name} IDENTIFIED BY {password}")?;
+                if let Some(default_tablespace) = default_tablespace {
+                    write!(f, " DEFAULT TABLESPACE {default_tablespace}")?;
+                }
+                if let Some(quota) = quota {
+                    write!(f, " QUOTA {quota}")?;
+                    if let Some(quota_tablespace) = quota_tablespace {
+                        write!(f, " ON {quota_tablespace}")?;
+                    }
+                }
+                Ok(())
+            }
         }
     }
 }

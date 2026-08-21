@@ -2626,17 +2626,26 @@ impl<'a> Parser<'a> {
                 let name = self.parse_object_name(false)?;
                 self.expect_oracle_words(&["IDENTIFIED", "BY"])?;
                 let password = self.parse_identifier()?;
-                self.expect_oracle_words(&["DEFAULT", "TABLESPACE"])?;
-                let default_tablespace = self.parse_object_name(false)?;
-                self.expect_oracle_words(&["QUOTA"])?;
-                let quota = self.parse_oracle_size()?;
-                self.expect_keyword(Keyword::ON)?;
+                // Oracle requires only IDENTIFIED BY; DEFAULT TABLESPACE and
+                // QUOTA are independent optional clauses.
+                let default_tablespace = if self.consume_oracle_words(&["DEFAULT", "TABLESPACE"]) {
+                    Some(self.parse_object_name(false)?)
+                } else {
+                    None
+                };
+                let (quota, quota_tablespace) = if self.consume_oracle_words(&["QUOTA"]) {
+                    let quota = self.parse_oracle_size()?;
+                    self.expect_keyword(Keyword::ON)?;
+                    (Some(quota), Some(self.parse_object_name(false)?))
+                } else {
+                    (None, None)
+                };
                 OracleCreateDefinition::User {
                     name,
                     password,
                     default_tablespace,
                     quota,
-                    quota_tablespace: self.parse_object_name(false)?,
+                    quota_tablespace,
                 }
             }
             _ => {
