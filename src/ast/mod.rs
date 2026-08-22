@@ -59,15 +59,16 @@ pub use self::ddl::{
     AlterSchemaOperation, AlterTable, AlterTableAlgorithm, AlterTableLock, AlterTableOperation,
     AlterType, AlterTypeAddValue, AlterTypeAddValuePosition, AlterTypeOperation, AlterTypeRename,
     AlterTypeRenameValue, AlterViewOperation, ColumnDef, ColumnOption, ColumnOptionDef,
-    ColumnOptions, ConstraintCharacteristics, CreateAssertion, CreateDomain, CreateExtension,
-    CreateFunction, CreateIndex, CreateOperator, CreateOperatorClass, CreateOperatorFamily,
-    CreatePropertyGraph, CreateTable, CreateTableSystemVersioning, CreateTrigger, CreateView,
-    Deduplicate, DeferrableInitial, DropBehavior, DropExtension, DropFunction, DropPropertyGraph,
-    DropTrigger, GeneratedAs, GeneratedExpressionMode, GraphEdgeEndpoint, GraphEdgeTableDefinition,
-    GraphKeyClause, GraphPropertiesClause, GraphPropertyDefinition, GraphVertexTableDefinition,
-    IdentityParameters, IdentityProperty, IdentityPropertyFormatKind, IdentityPropertyKind,
-    IdentityPropertyOrder, IndexColumn, IndexOption, IndexType, KeyOrIndexDisplay,
-    NullsDistinctOption, OperatorArgTypes, OperatorClassItem, OperatorPurpose,
+    ColumnOptions, ConstraintCharacteristics, CreateAggregate, CreateAssertion, CreateCast,
+    CreateCastContext, CreateCastMethod, CreateDomain, CreateExtension, CreateFunction,
+    CreateIndex, CreateOperator, CreateOperatorClass, CreateOperatorFamily, CreatePropertyGraph,
+    CreateStatistics, CreateTable, CreateTableSystemVersioning, CreateTrigger, CreateTypedTable,
+    CreateView, Deduplicate, DeferrableInitial, DropBehavior, DropExtension, DropFunction,
+    DropPropertyGraph, DropTrigger, GeneratedAs, GeneratedExpressionMode, GraphEdgeEndpoint,
+    GraphEdgeTableDefinition, GraphKeyClause, GraphPropertiesClause, GraphPropertyDefinition,
+    GraphVertexTableDefinition, IdentityParameters, IdentityProperty, IdentityPropertyFormatKind,
+    IdentityPropertyKind, IdentityPropertyOrder, IndexColumn, IndexOption, IndexType,
+    KeyOrIndexDisplay, NullsDistinctOption, OperatorArgTypes, OperatorClassItem, OperatorPurpose,
     OracleCreateMaterializedViewOptions, OracleCreateViewOptions, OracleMaterializedViewBuild,
     OracleObjectView, OraclePartitionDefinition, OracleViewConstraint, Owner, Partition,
     PartitionByClause, PartitionKeyDef, PartitionKeyExpr, PartitionStrategy, ProcedureParam,
@@ -7008,6 +7009,14 @@ pub enum Statement {
     /// ```
     /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-createoperator.html)
     CreateOperator(CreateOperator),
+    /// PostgreSQL `CREATE AGGREGATE`.
+    CreateAggregate(CreateAggregate),
+    /// PostgreSQL `CREATE CAST`.
+    CreateCast(CreateCast),
+    /// PostgreSQL `CREATE STATISTICS`.
+    CreateStatistics(CreateStatistics),
+    /// PostgreSQL typed table declaration (`CREATE TABLE name OF type`).
+    CreateTypedTable(CreateTypedTable),
     /// ```sql
     /// CREATE OPERATOR FAMILY
     /// ```
@@ -11166,6 +11175,10 @@ impl fmt::Display for Statement {
                 Ok(())
             }
             Statement::CreateOperator(create_operator) => create_operator.fmt(f),
+            Statement::CreateAggregate(create_aggregate) => create_aggregate.fmt(f),
+            Statement::CreateCast(create_cast) => create_cast.fmt(f),
+            Statement::CreateStatistics(create_statistics) => create_statistics.fmt(f),
+            Statement::CreateTypedTable(create_typed_table) => create_typed_table.fmt(f),
             Statement::CreateOperatorFamily(create_operator_family) => {
                 create_operator_family.fmt(f)
             }
@@ -16302,6 +16315,7 @@ pub enum ArgMode {
     In,
     Out,
     InOut,
+    Variadic,
 }
 
 impl fmt::Display for ArgMode {
@@ -16310,6 +16324,7 @@ impl fmt::Display for ArgMode {
             ArgMode::In => write!(f, "IN"),
             ArgMode::Out => write!(f, "OUT"),
             ArgMode::InOut => write!(f, "INOUT"),
+            ArgMode::Variadic => write!(f, "VARIADIC"),
         }
     }
 }

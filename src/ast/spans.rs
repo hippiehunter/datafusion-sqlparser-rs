@@ -17,8 +17,8 @@
 
 use crate::ast::{
     ddl::AlterSchema, query::SelectItemQualifiedWildcardKind, AlterSchemaOperation, AlterTable,
-    ColumnOptions, CreateOperator, CreateOperatorClass, CreateOperatorFamily, CreateView, Owner,
-    TypedString,
+    ColumnOptions, CreateAggregate, CreateCast, CreateOperator, CreateOperatorClass,
+    CreateOperatorFamily, CreateStatistics, CreateTypedTable, CreateView, Owner, TypedString,
 };
 use core::iter;
 
@@ -337,6 +337,10 @@ impl Spanned for Statement {
             Statement::DropUserMapping(stmt) => stmt.token.0,
             Statement::ImportForeignSchema(stmt) => stmt.token.0,
             Statement::CreateOperator(create_operator) => create_operator.span(),
+            Statement::CreateAggregate(create_aggregate) => create_aggregate.span(),
+            Statement::CreateCast(create_cast) => create_cast.span(),
+            Statement::CreateStatistics(create_statistics) => create_statistics.span(),
+            Statement::CreateTypedTable(create_typed_table) => create_typed_table.span(),
             Statement::CreateOperatorFamily(create_operator_family) => {
                 create_operator_family.span()
             }
@@ -2954,6 +2958,30 @@ impl Spanned for AlterTable {
 }
 
 impl Spanned for CreateOperator {
+    fn span(&self) -> Span {
+        Span::empty()
+    }
+}
+
+impl Spanned for CreateAggregate {
+    fn span(&self) -> Span {
+        Span::empty()
+    }
+}
+
+impl Spanned for CreateCast {
+    fn span(&self) -> Span {
+        Span::empty()
+    }
+}
+
+impl Spanned for CreateStatistics {
+    fn span(&self) -> Span {
+        Span::empty()
+    }
+}
+
+impl Spanned for CreateTypedTable {
     fn span(&self) -> Span {
         Span::empty()
     }

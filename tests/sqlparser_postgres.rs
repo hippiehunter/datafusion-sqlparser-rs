@@ -8035,3 +8035,25 @@ fn parse_vacuum_analyze_table_as_one_typed_statement() {
         Some("public.events".to_owned())
     );
 }
+
+#[test]
+fn parse_postgres_extensibility_ddl_as_typed_statements() {
+    assert!(matches!(
+        pg().verified_stmt(
+            "CREATE AGGREGATE product (int) (SFUNC = int4mul, STYPE = int, INITCOND = '1')"
+        ),
+        Statement::CreateAggregate(_)
+    ));
+    assert!(matches!(
+        pg().verified_stmt("CREATE CAST (cast_src AS integer) WITH INOUT AS ASSIGNMENT"),
+        Statement::CreateCast(_)
+    ));
+    assert!(matches!(
+        pg().verified_stmt("CREATE STATISTICS t_ab_stats (dependencies, mcv) ON a, b FROM t"),
+        Statement::CreateStatistics(_)
+    ));
+    assert!(matches!(
+        pg().verified_stmt("CREATE TABLE t OF pair_t"),
+        Statement::CreateTypedTable(_)
+    ));
+}

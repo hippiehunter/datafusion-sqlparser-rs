@@ -217,9 +217,13 @@ fn test_create_function_equals_default_syntax() {
 fn test_create_function_variadic_parameter() {
     // https://www.postgresql.org/docs/current/sql-createfunction.html
     // VARIADIC allows variable number of arguments
-    // EXPECTED TO FAIL: VARIADIC not yet in AST
-    pg_expect_parse_error!(
-        "CREATE FUNCTION sum_all(VARIADIC numbers INTEGER[]) RETURNS INTEGER LANGUAGE SQL AS $$ SELECT SUM(n) FROM unnest(numbers) AS n $$"
+    pg_test!(
+        "CREATE FUNCTION sum_all(VARIADIC numbers INTEGER[]) RETURNS INTEGER LANGUAGE SQL AS $$ SELECT SUM(n) FROM unnest(numbers) AS n $$",
+        |stmt: Statement| {
+            let args = extract_create_function(&stmt).args.as_ref().unwrap();
+            assert_eq!(args[0].mode, Some(ArgMode::Variadic));
+            assert_eq!(args[0].name.as_ref().unwrap().value, "numbers");
+        }
     );
 }
 
@@ -227,21 +231,25 @@ fn test_create_function_variadic_parameter() {
 fn test_create_function_variadic_any() {
     // https://www.postgresql.org/docs/current/sql-createfunction.html
     // VARIADIC "any" accepts variable arguments of any type
-    // NOTE: Parser currently accepts VARIADIC as a parameter name, not a keyword
-    // This test documents that VARIADIC is parsed but not as the intended keyword
-    pg_roundtrip_only!(
-        r#"CREATE FUNCTION concat_all(VARIADIC "any") RETURNS TEXT LANGUAGE SQL AS $$ SELECT array_to_string(ARRAY[$1], ',') $$"#
+    pg_test!(
+        r#"CREATE FUNCTION concat_all(VARIADIC "any") RETURNS TEXT LANGUAGE SQL AS $$ SELECT array_to_string(ARRAY[$1], ',') $$"#,
+        |stmt: Statement| {
+            let args = extract_create_function(&stmt).args.as_ref().unwrap();
+            assert_eq!(args[0].mode, Some(ArgMode::Variadic));
+        }
     );
-    // TODO: Verify that VARIADIC is parsed as a mode/keyword, not just a parameter name
 }
 
 #[test]
 fn test_create_function_variadic_with_other_params() {
     // https://www.postgresql.org/docs/current/sql-createfunction.html
     // VARIADIC must be the last parameter
-    // EXPECTED TO FAIL: VARIADIC not yet in AST
-    pg_expect_parse_error!(
-        "CREATE FUNCTION make_array(prefix TEXT, VARIADIC elements INTEGER[]) RETURNS INTEGER[] LANGUAGE SQL AS $$ SELECT elements $$"
+    pg_test!(
+        "CREATE FUNCTION make_array(prefix TEXT, VARIADIC elements INTEGER[]) RETURNS INTEGER[] LANGUAGE SQL AS $$ SELECT elements $$",
+        |stmt: Statement| {
+            let args = extract_create_function(&stmt).args.as_ref().unwrap();
+            assert_eq!(args[1].mode, Some(ArgMode::Variadic));
+        }
     );
 }
 
@@ -249,9 +257,13 @@ fn test_create_function_variadic_with_other_params() {
 fn test_create_function_variadic_with_default() {
     // https://www.postgresql.org/docs/current/sql-createfunction.html
     // VARIADIC parameter can have default value
-    // EXPECTED TO FAIL: VARIADIC not yet in AST
-    pg_expect_parse_error!(
-        "CREATE FUNCTION sum_values(VARIADIC vals INTEGER[] DEFAULT ARRAY[]::INTEGER[]) RETURNS INTEGER LANGUAGE SQL AS $$ SELECT COALESCE(SUM(v), 0) FROM unnest(vals) AS v $$"
+    pg_test!(
+        "CREATE FUNCTION sum_values(VARIADIC vals INTEGER[] DEFAULT ARRAY[]::INTEGER[]) RETURNS INTEGER LANGUAGE SQL AS $$ SELECT COALESCE(SUM(v), 0) FROM unnest(vals) AS v $$",
+        |stmt: Statement| {
+            let args = extract_create_function(&stmt).args.as_ref().unwrap();
+            assert_eq!(args[0].mode, Some(ArgMode::Variadic));
+            assert!(args[0].default_expr.is_some());
+        }
     );
 }
 

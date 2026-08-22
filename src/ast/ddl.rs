@@ -3786,6 +3786,71 @@ pub struct CreateOperator {
     pub merges: bool,
 }
 
+/// PostgreSQL `CREATE AGGREGATE`.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct CreateAggregate {
+    pub or_replace: bool,
+    pub if_not_exists: bool,
+    pub name: ObjectName,
+    pub args: Vec<OperateFunctionArg>,
+    pub options: Vec<SqlOption>,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum CreateCastMethod {
+    Function(ObjectName),
+    InOut,
+    Binary,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum CreateCastContext {
+    Explicit,
+    Assignment,
+    Implicit,
+}
+
+/// PostgreSQL `CREATE CAST`.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct CreateCast {
+    pub source_type: DataType,
+    pub target_type: DataType,
+    pub method: CreateCastMethod,
+    pub context: CreateCastContext,
+}
+
+/// PostgreSQL `CREATE STATISTICS`.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct CreateStatistics {
+    pub if_not_exists: bool,
+    pub name: ObjectName,
+    pub kinds: Vec<Ident>,
+    pub expressions: Vec<Expr>,
+    #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
+    pub table_name: ObjectName,
+}
+
+/// PostgreSQL `CREATE TABLE name OF composite_type`.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct CreateTypedTable {
+    pub if_not_exists: bool,
+    #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
+    pub name: ObjectName,
+    pub of_type: ObjectName,
+}
+
 /// CREATE OPERATOR FAMILY statement
 /// See <https://www.postgresql.org/docs/current/sql-createopfamily.html>
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
@@ -3856,6 +3921,89 @@ impl fmt::Display for CreateOperator {
 
         write!(f, "{}", params.join(", "))?;
         write!(f, ")")
+    }
+}
+
+impl fmt::Display for CreateAggregate {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "CREATE {}AGGREGATE {}{} ({}) ({})",
+            if self.or_replace { "OR REPLACE " } else { "" },
+            if self.if_not_exists {
+                "IF NOT EXISTS "
+            } else {
+                ""
+            },
+            self.name,
+            display_comma_separated(&self.args),
+            display_comma_separated(&self.options)
+        )
+    }
+}
+
+impl fmt::Display for CreateCastMethod {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Function(function) => write!(f, "WITH FUNCTION {function}"),
+            Self::InOut => f.write_str("WITH INOUT"),
+            Self::Binary => f.write_str("WITHOUT FUNCTION"),
+        }
+    }
+}
+
+impl fmt::Display for CreateCast {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "CREATE CAST ({} AS {}) {}",
+            self.source_type, self.target_type, self.method
+        )?;
+        match self.context {
+            CreateCastContext::Explicit => Ok(()),
+            CreateCastContext::Assignment => f.write_str(" AS ASSIGNMENT"),
+            CreateCastContext::Implicit => f.write_str(" AS IMPLICIT"),
+        }
+    }
+}
+
+impl fmt::Display for CreateStatistics {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "CREATE STATISTICS {}{}",
+            if self.if_not_exists {
+                "IF NOT EXISTS "
+            } else {
+                ""
+            },
+            self.name
+        )?;
+        if !self.kinds.is_empty() {
+            write!(f, " ({})", display_comma_separated(&self.kinds))?;
+        }
+        write!(
+            f,
+            " ON {} FROM {}",
+            display_comma_separated(&self.expressions),
+            self.table_name
+        )
+    }
+}
+
+impl fmt::Display for CreateTypedTable {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "CREATE TABLE {}{} OF {}",
+            if self.if_not_exists {
+                "IF NOT EXISTS "
+            } else {
+                ""
+            },
+            self.name,
+            self.of_type
+        )
     }
 }
 

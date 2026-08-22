@@ -9622,6 +9622,8 @@ impl<'a> Parser<'a> {
             self.parse_create_procedure(create_token, or_alter)
         } else if self.parse_keyword(Keyword::RULE) {
             self.parse_create_rule(or_replace)
+        } else if self.parse_keyword(Keyword::AGGREGATE) {
+            self.parse_create_aggregate(or_replace)
         } else if or_replace {
             self.expected(
                 "[EXTERNAL] TABLE or [MATERIALIZED] VIEW or FUNCTION or PROCEDURE or RULE after CREATE OR REPLACE",
@@ -9656,6 +9658,10 @@ impl<'a> Parser<'a> {
             } else {
                 self.parse_create_operator()
             }
+        } else if self.parse_keyword(Keyword::CAST) {
+            self.parse_create_cast()
+        } else if self.parse_keyword(Keyword::STATISTICS) {
+            self.parse_create_statistics()
         } else if self.parse_keyword(Keyword::SERVER) {
             self.parse_pg_create_server(create_token)
         } else if self.parse_keyword(Keyword::FOREIGN) {
@@ -11806,6 +11812,8 @@ impl<'a> Parser<'a> {
             Some(ArgMode::Out)
         } else if self.parse_keyword(Keyword::INOUT) {
             Some(ArgMode::InOut)
+        } else if self.parse_keyword(Keyword::VARIADIC) {
+            Some(ArgMode::Variadic)
         } else {
             None
         };
@@ -13102,6 +13110,89 @@ impl<'a> Parser<'a> {
             }
         }
         Ok(ObjectName(parts))
+    }
+
+    /// Parse a PostgreSQL [Statement::CreateAggregate].
+    fn parse_create_aggregate(&self, or_replace: bool) -> Result<Statement, ParserError> {
+        let if_not_exists = self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
+        let name = self.parse_object_name(false)?;
+        self.expect_token(&Token::LParen)?;
+        let args = self.parse_comma_separated0(Parser::parse_function_arg, Token::RParen)?;
+        self.expect_token(&Token::RParen)?;
+        self.expect_token(&Token::LParen)?;
+        let options = self.parse_comma_separated0(Parser::parse_sql_option, Token::RParen)?;
+        self.expect_token(&Token::RParen)?;
+        Ok(Statement::CreateAggregate(CreateAggregate {
+            or_replace,
+            if_not_exists,
+            name,
+            args,
+            options,
+        }))
+    }
+
+    /// Parse a PostgreSQL [Statement::CreateCast].
+    fn parse_create_cast(&self) -> Result<Statement, ParserError> {
+        self.expect_token(&Token::LParen)?;
+        let source_type = self.parse_data_type()?;
+        self.expect_keyword(Keyword::AS)?;
+        let target_type = self.parse_data_type()?;
+        self.expect_token(&Token::RParen)?;
+        let method = if self.parse_keyword(Keyword::WITH) {
+            if self.parse_keyword(Keyword::FUNCTION) {
+                let function = self.parse_object_name(false)?;
+                if self.consume_token(&Token::LParen) {
+                    let _ = self.parse_comma_separated0(Parser::parse_data_type, Token::RParen)?;
+                    self.expect_token(&Token::RParen)?;
+                }
+                CreateCastMethod::Function(function)
+            } else if self.parse_keyword(Keyword::INOUT) {
+                CreateCastMethod::InOut
+            } else {
+                return self.expected("FUNCTION or INOUT after WITH", self.peek_token());
+            }
+        } else if self.parse_keywords(&[Keyword::WITHOUT, Keyword::FUNCTION]) {
+            CreateCastMethod::Binary
+        } else {
+            return self.expected("WITH or WITHOUT after cast signature", self.peek_token());
+        };
+        let context = if self.parse_keywords(&[Keyword::AS, Keyword::ASSIGNMENT]) {
+            CreateCastContext::Assignment
+        } else if self.parse_keywords(&[Keyword::AS, Keyword::IMPLICIT]) {
+            CreateCastContext::Implicit
+        } else {
+            CreateCastContext::Explicit
+        };
+        Ok(Statement::CreateCast(CreateCast {
+            source_type,
+            target_type,
+            method,
+            context,
+        }))
+    }
+
+    /// Parse a PostgreSQL [Statement::CreateStatistics].
+    fn parse_create_statistics(&self) -> Result<Statement, ParserError> {
+        let if_not_exists = self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
+        let name = self.parse_object_name(false)?;
+        let kinds = if self.consume_token(&Token::LParen) {
+            let kinds = self.parse_comma_separated(Parser::parse_identifier)?;
+            self.expect_token(&Token::RParen)?;
+            kinds
+        } else {
+            Vec::new()
+        };
+        self.expect_keyword(Keyword::ON)?;
+        let expressions = self.parse_comma_separated(Parser::parse_expr)?;
+        self.expect_keyword(Keyword::FROM)?;
+        let table_name = self.parse_object_name(false)?;
+        Ok(Statement::CreateStatistics(CreateStatistics {
+            if_not_exists,
+            name,
+            kinds,
+            expressions,
+            table_name,
+        }))
     }
 
     /// Parse a [Statement::CreateOperator]
@@ -14879,6 +14970,14 @@ impl<'a> Parser<'a> {
         let allow_unquoted_hyphen = false;
         let if_not_exists = self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
         let table_name = self.parse_object_name(allow_unquoted_hyphen)?;
+
+        if self.parse_keyword(Keyword::OF) {
+            return Ok(Statement::CreateTypedTable(CreateTypedTable {
+                if_not_exists,
+                name: table_name,
+                of_type: self.parse_object_name(allow_unquoted_hyphen)?,
+            }));
+        }
 
         // Check for PARTITION OF parent_table (must come before column list)
         let (partition_of, partition_bound) =
