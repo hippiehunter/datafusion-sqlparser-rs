@@ -7634,6 +7634,36 @@ fn parse_drop_subscription() {
 }
 
 #[test]
+fn parse_alter_subscription() {
+    use sqlparser::ast::AlterSubscriptionAction;
+
+    let cases = [
+        "ALTER SUBSCRIPTION my_sub ENABLE",
+        "ALTER SUBSCRIPTION my_sub DISABLE",
+        "ALTER SUBSCRIPTION my_sub CONNECTION 'host=publisher password=''secret'''",
+        "ALTER SUBSCRIPTION my_sub SET PUBLICATION pub1, \"Pub Two\" WITH (copy_data = false)",
+        "ALTER SUBSCRIPTION my_sub ADD PUBLICATION pub3 WITH (copy_data = true)",
+        "ALTER SUBSCRIPTION my_sub DROP PUBLICATION pub1 WITH (refresh = true)",
+        "ALTER SUBSCRIPTION my_sub REFRESH PUBLICATION WITH (copy_data = false)",
+        "ALTER SUBSCRIPTION my_sub SKIP (lsn = '1/2A')",
+        "ALTER SUBSCRIPTION my_sub SET (binary = true, streaming = parallel)",
+    ];
+
+    for sql in cases {
+        pg_and_generic().verified_stmt(sql);
+    }
+
+    let statement = pg().verified_stmt("ALTER SUBSCRIPTION my_sub DISABLE");
+    assert!(matches!(
+        statement,
+        Statement::AlterSubscription {
+            name,
+            action: AlterSubscriptionAction::Enable(false),
+        } if name.value == "my_sub"
+    ));
+}
+
+#[test]
 fn parse_create_rule() {
     // Basic rule with NOTHING
     let sql = "CREATE RULE notify_me AS ON INSERT TO mytable DO NOTHING";

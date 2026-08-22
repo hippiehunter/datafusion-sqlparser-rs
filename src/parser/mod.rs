@@ -13770,6 +13770,70 @@ impl<'a> Parser<'a> {
     }
 
     /// ```sql
+    /// ALTER SUBSCRIPTION name action
+    /// ```
+    ///
+    /// [PostgreSQL Documentation](https://www.postgresql.org/docs/current/sql-altersubscription.html)
+    fn parse_alter_subscription(&self) -> Result<Statement, ParserError> {
+        let name = self.parse_identifier()?;
+        let action = if self.parse_keyword(Keyword::ENABLE) {
+            AlterSubscriptionAction::Enable(true)
+        } else if self.parse_keyword(Keyword::DISABLE) {
+            AlterSubscriptionAction::Enable(false)
+        } else if self.parse_keyword(Keyword::CONNECTION) {
+            AlterSubscriptionAction::Connection(self.parse_literal_string()?)
+        } else if self.parse_keyword(Keyword::SET) {
+            if self.parse_keyword(Keyword::PUBLICATION) {
+                let publications = self.parse_comma_separated(|p| p.parse_identifier())?;
+                let with_options = self.parse_options(Keyword::WITH)?;
+                AlterSubscriptionAction::SetPublications {
+                    publications,
+                    with_options,
+                }
+            } else {
+                AlterSubscriptionAction::SetOptions(self.parse_parenthesized_sql_options()?)
+            }
+        } else if self.parse_keyword(Keyword::ADD) {
+            self.expect_keyword_is(Keyword::PUBLICATION)?;
+            let publications = self.parse_comma_separated(|p| p.parse_identifier())?;
+            let with_options = self.parse_options(Keyword::WITH)?;
+            AlterSubscriptionAction::AddPublications {
+                publications,
+                with_options,
+            }
+        } else if self.parse_keyword(Keyword::DROP) {
+            self.expect_keyword_is(Keyword::PUBLICATION)?;
+            let publications = self.parse_comma_separated(|p| p.parse_identifier())?;
+            let with_options = self.parse_options(Keyword::WITH)?;
+            AlterSubscriptionAction::DropPublications {
+                publications,
+                with_options,
+            }
+        } else if self.parse_keyword(Keyword::REFRESH) {
+            self.expect_keyword_is(Keyword::PUBLICATION)?;
+            AlterSubscriptionAction::RefreshPublication {
+                with_options: self.parse_options(Keyword::WITH)?,
+            }
+        } else if self.parse_keyword(Keyword::SKIP) {
+            AlterSubscriptionAction::Skip(self.parse_parenthesized_sql_options()?)
+        } else {
+            return self.expected(
+                "ENABLE, DISABLE, CONNECTION, SET, ADD, DROP, REFRESH, or SKIP",
+                self.peek_token(),
+            );
+        };
+        Ok(Statement::AlterSubscription { name, action })
+    }
+
+    fn parse_parenthesized_sql_options(&self) -> Result<Vec<SqlOption>, ParserError> {
+        self.expect_token(&BorrowedToken::LParen)?;
+        let options =
+            self.parse_comma_separated0(Parser::parse_sql_option, BorrowedToken::RParen)?;
+        self.expect_token(&BorrowedToken::RParen)?;
+        Ok(options)
+    }
+
+    /// ```sql
     /// DROP SUBSCRIPTION [ IF EXISTS ] name [ CASCADE | RESTRICT ]
     /// ```
     ///
@@ -17025,6 +17089,7 @@ impl<'a> Parser<'a> {
             Keyword::ROLE,
             Keyword::POLICY,
             Keyword::PUBLICATION,
+            Keyword::SUBSCRIPTION,
             Keyword::ICEBERG,
             Keyword::SCHEMA,
             Keyword::SYSTEM,
@@ -17065,6 +17130,7 @@ impl<'a> Parser<'a> {
             Keyword::ROLE => self.parse_alter_role(),
             Keyword::POLICY => self.parse_alter_policy(),
             Keyword::PUBLICATION => self.parse_alter_publication(),
+            Keyword::SUBSCRIPTION => self.parse_alter_subscription(),
             Keyword::SYSTEM => self.parse_alter_system(),
             Keyword::USER => {
                 // Check if this is ALTER USER MAPPING

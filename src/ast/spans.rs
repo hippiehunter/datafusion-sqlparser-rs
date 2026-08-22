@@ -612,6 +612,7 @@ impl Spanned for Statement {
             Statement::AlterPublication { .. } => Span::empty(),
             Statement::DropPublication { .. } => Span::empty(),
             Statement::CreateSubscription { .. } => Span::empty(),
+            Statement::AlterSubscription { .. } => Span::empty(),
             Statement::DropSubscription { .. } => Span::empty(),
             Statement::CreateRule { .. } => Span::empty(),
             Statement::DropRule { .. } => Span::empty(),

@@ -6188,6 +6188,40 @@ pub enum AlterPublicationAction {
     SetParameters(Vec<SqlOption>),
 }
 
+/// An action of a PostgreSQL `ALTER SUBSCRIPTION` statement.
+///
+/// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-altersubscription.html)
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum AlterSubscriptionAction {
+    /// `ENABLE` or `DISABLE`.
+    Enable(bool),
+    /// `CONNECTION 'conninfo'`.
+    Connection(String),
+    /// `SET PUBLICATION name [, ...] [ WITH ( option = value [, ...] ) ]`.
+    SetPublications {
+        publications: Vec<Ident>,
+        with_options: Vec<SqlOption>,
+    },
+    /// `ADD PUBLICATION name [, ...] [ WITH ( option = value [, ...] ) ]`.
+    AddPublications {
+        publications: Vec<Ident>,
+        with_options: Vec<SqlOption>,
+    },
+    /// `DROP PUBLICATION name [, ...] [ WITH ( option = value [, ...] ) ]`.
+    DropPublications {
+        publications: Vec<Ident>,
+        with_options: Vec<SqlOption>,
+    },
+    /// `REFRESH PUBLICATION [ WITH ( option = value [, ...] ) ]`.
+    RefreshPublication { with_options: Vec<SqlOption> },
+    /// `SKIP ( option = value [, ...] )`.
+    Skip(Vec<SqlOption>),
+    /// `SET ( option = value [, ...] )`.
+    SetOptions(Vec<SqlOption>),
+}
+
 /// The event type for a PostgreSQL `CREATE RULE` statement.
 ///
 /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-createrule.html)
@@ -7226,6 +7260,17 @@ pub enum Statement {
         publications: Vec<Ident>,
         /// `WITH ( param = value, ... )`
         with_options: Vec<SqlOption>,
+    },
+    /// ```sql
+    /// ALTER SUBSCRIPTION name action;
+    /// ```
+    ///
+    /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-altersubscription.html)
+    AlterSubscription {
+        /// Subscription name.
+        name: Ident,
+        /// The modification applied to the subscription.
+        action: AlterSubscriptionAction,
     },
     /// ```sql
     /// DROP SUBSCRIPTION [ IF EXISTS ] name [ CASCADE | RESTRICT ];
@@ -11343,6 +11388,57 @@ impl fmt::Display for Statement {
                     write!(f, " WITH ({})", display_comma_separated(with_options))?;
                 }
                 Ok(())
+            }
+            Statement::AlterSubscription { name, action } => {
+                write!(f, "ALTER SUBSCRIPTION {name} ")?;
+                match action {
+                    AlterSubscriptionAction::Enable(true) => write!(f, "ENABLE"),
+                    AlterSubscriptionAction::Enable(false) => write!(f, "DISABLE"),
+                    AlterSubscriptionAction::Connection(connection_string) => {
+                        write!(f, "CONNECTION '{connection_string}'")
+                    }
+                    AlterSubscriptionAction::SetPublications {
+                        publications,
+                        with_options,
+                    }
+                    | AlterSubscriptionAction::AddPublications {
+                        publications,
+                        with_options,
+                    }
+                    | AlterSubscriptionAction::DropPublications {
+                        publications,
+                        with_options,
+                    } => {
+                        let verb = match action {
+                            AlterSubscriptionAction::SetPublications { .. } => "SET",
+                            AlterSubscriptionAction::AddPublications { .. } => "ADD",
+                            AlterSubscriptionAction::DropPublications { .. } => "DROP",
+                            _ => unreachable!(),
+                        };
+                        write!(
+                            f,
+                            "{verb} PUBLICATION {}",
+                            display_comma_separated(publications)
+                        )?;
+                        if !with_options.is_empty() {
+                            write!(f, " WITH ({})", display_comma_separated(with_options))?;
+                        }
+                        Ok(())
+                    }
+                    AlterSubscriptionAction::RefreshPublication { with_options } => {
+                        write!(f, "REFRESH PUBLICATION")?;
+                        if !with_options.is_empty() {
+                            write!(f, " WITH ({})", display_comma_separated(with_options))?;
+                        }
+                        Ok(())
+                    }
+                    AlterSubscriptionAction::Skip(options) => {
+                        write!(f, "SKIP ({})", display_comma_separated(options))
+                    }
+                    AlterSubscriptionAction::SetOptions(options) => {
+                        write!(f, "SET ({})", display_comma_separated(options))
+                    }
+                }
             }
             Statement::DropSubscription {
                 if_exists,
