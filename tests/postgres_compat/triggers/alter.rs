@@ -27,19 +27,13 @@
 fn test_alter_trigger_rename_basic() {
     // https://www.postgresql.org/docs/current/sql-altertrigger.html
     // ALTER TRIGGER name ON table_name RENAME TO new_name
-    pg_expect_parse_error!(
-        "ALTER TRIGGER check_insert ON accounts RENAME TO validate_insert",
-        "Expected"
-    );
+    pg_roundtrip_only!("ALTER TRIGGER check_insert ON accounts RENAME TO validate_insert");
 }
 
 #[test]
 fn test_alter_trigger_rename_schema_qualified() {
     // https://www.postgresql.org/docs/current/sql-altertrigger.html
-    pg_expect_parse_error!(
-        "ALTER TRIGGER my_trigger ON myschema.accounts RENAME TO new_trigger",
-        "Expected"
-    );
+    pg_roundtrip_only!("ALTER TRIGGER my_trigger ON myschema.accounts RENAME TO new_trigger");
 }
 
 #[test]
@@ -60,18 +54,14 @@ fn test_alter_trigger_rename_if_exists() {
 fn test_alter_trigger_depends_on_extension() {
     // https://www.postgresql.org/docs/current/sql-altertrigger.html
     // ALTER TRIGGER name ON table_name DEPENDS ON EXTENSION extension_name
-    pg_expect_parse_error!(
-        "ALTER TRIGGER my_trigger ON accounts DEPENDS ON EXTENSION my_extension",
-        "Expected"
-    );
+    pg_roundtrip_only!("ALTER TRIGGER my_trigger ON accounts DEPENDS ON EXTENSION my_extension");
 }
 
 #[test]
 fn test_alter_trigger_depends_on_extension_schema_qualified() {
     // https://www.postgresql.org/docs/current/sql-altertrigger.html
-    pg_expect_parse_error!(
-        "ALTER TRIGGER my_trigger ON myschema.accounts DEPENDS ON EXTENSION postgis",
-        "Expected"
+    pg_roundtrip_only!(
+        "ALTER TRIGGER my_trigger ON myschema.accounts DEPENDS ON EXTENSION postgis"
     );
 }
 
@@ -82,9 +72,8 @@ fn test_alter_trigger_depends_on_extension_schema_qualified() {
 #[test]
 fn test_alter_trigger_rename_complex_names() {
     // https://www.postgresql.org/docs/current/sql-altertrigger.html
-    pg_expect_parse_error!(
-        "ALTER TRIGGER \"CamelCaseTrigger\" ON public.\"MixedCaseTable\" RENAME TO \"NewTriggerName\"",
-        "Expected"
+    pg_roundtrip_only!(
+        "ALTER TRIGGER \"CamelCaseTrigger\" ON public.\"MixedCaseTable\" RENAME TO \"NewTriggerName\""
     );
 }
 

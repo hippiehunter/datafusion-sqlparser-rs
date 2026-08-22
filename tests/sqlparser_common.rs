@@ -4636,6 +4636,7 @@ fn parse_alter_index() {
         Statement::AlterIndex {
             name,
             operation: AlterIndexOperation::RenameIndex { index_name },
+            ..
         } => {
             assert_eq!("idx", name.to_string());
             assert_eq!("new_idx", index_name.to_string())
@@ -4648,7 +4649,9 @@ fn parse_alter_index() {
 fn parse_alter_view() {
     let sql = "ALTER VIEW myschema.myview RENAME TO newview";
     match verified_stmt(sql) {
-        Statement::AlterView { name, operation } => {
+        Statement::AlterView {
+            name, operation, ..
+        } => {
             assert_eq!("myschema.myview", name.to_string());
             assert_eq!(
                 operation,
@@ -4715,7 +4718,9 @@ fn parse_alter_view_as_select_rejected() {
 fn parse_alter_materialized_view_rewrite() {
     let sql = "ALTER MATERIALIZED VIEW myschema.mv ENABLE REWRITE";
     match verified_stmt(sql) {
-        Statement::AlterMaterializedView { name, operation } => {
+        Statement::AlterMaterializedView {
+            name, operation, ..
+        } => {
             assert_eq!("myschema.mv", name.to_string());
             assert_eq!(AlterMaterializedViewOperation::EnableRewrite, operation);
         }
@@ -4724,7 +4729,9 @@ fn parse_alter_materialized_view_rewrite() {
 
     let sql = "ALTER MATERIALIZED VIEW mv DISABLE REWRITE";
     match verified_stmt(sql) {
-        Statement::AlterMaterializedView { name, operation } => {
+        Statement::AlterMaterializedView {
+            name, operation, ..
+        } => {
             assert_eq!("mv", name.to_string());
             assert_eq!(AlterMaterializedViewOperation::DisableRewrite, operation);
         }
@@ -4736,7 +4743,9 @@ fn parse_alter_materialized_view_rewrite() {
 fn parse_alter_materialized_view_owner_to() {
     let sql = "ALTER MATERIALIZED VIEW myschema.mv OWNER TO other_user";
     match verified_stmt(sql) {
-        Statement::AlterMaterializedView { name, operation } => {
+        Statement::AlterMaterializedView {
+            name, operation, ..
+        } => {
             assert_eq!("myschema.mv", name.to_string());
             assert_eq!(
                 AlterMaterializedViewOperation::OwnerTo(Owner::Ident(Ident::new("other_user"))),
@@ -4748,7 +4757,9 @@ fn parse_alter_materialized_view_owner_to() {
 
     let sql = "ALTER MATERIALIZED VIEW mv OWNER TO CURRENT_USER";
     match verified_stmt(sql) {
-        Statement::AlterMaterializedView { name, operation } => {
+        Statement::AlterMaterializedView {
+            name, operation, ..
+        } => {
             assert_eq!("mv", name.to_string());
             assert_eq!(
                 AlterMaterializedViewOperation::OwnerTo(Owner::CurrentUser),
