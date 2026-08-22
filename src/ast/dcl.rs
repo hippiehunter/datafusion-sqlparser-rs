@@ -29,7 +29,7 @@ use serde::{Deserialize, Serialize};
 use sqlparser_derive::{Visit, VisitMut};
 
 use super::{display_comma_separated, Expr, Ident, Password, Spanned};
-use crate::ast::{display_separated, Grantee, ObjectName, Privileges};
+use crate::ast::{display_separated, AlterDatabaseOption, Grantee, ObjectName, Owner, Privileges};
 use crate::tokenizer::Span;
 
 /// An option in `ROLE` statement.
@@ -194,6 +194,9 @@ pub enum SetConfigValue {
     Default,
     FromCurrent,
     Value(Expr),
+    /// PostgreSQL's `var_list`: two or more comma-separated values, as in
+    /// `SET search_path TO myschema, public`.
+    Values(Vec<Expr>),
 }
 
 /// RESET config option:
@@ -219,6 +222,19 @@ pub enum AlterConfigurationOperation {
     Reset {
         config_name: ResetConfig,
     },
+    /// `ALTER DATABASE name RENAME TO new_name`
+    RenameTo { new_name: Ident },
+    /// `ALTER DATABASE name OWNER TO new_owner`
+    OwnerTo { new_owner: Owner },
+    /// `ALTER DATABASE name SET TABLESPACE new_tablespace`
+    SetTablespace { tablespace_name: Ident },
+    /// `ALTER DATABASE name REFRESH COLLATION VERSION`
+    RefreshCollationVersion,
+    /// `ALTER DATABASE name [ WITH ] option [ ... ]`
+    WithOptions {
+        with: bool,
+        options: Vec<AlterDatabaseOption>,
+    },
 }
 
 impl fmt::Display for AlterConfigurationOperation {
@@ -231,11 +247,32 @@ impl fmt::Display for AlterConfigurationOperation {
                 SetConfigValue::Default => write!(f, "SET {config_name} TO DEFAULT"),
                 SetConfigValue::FromCurrent => write!(f, "SET {config_name} FROM CURRENT"),
                 SetConfigValue::Value(expr) => write!(f, "SET {config_name} TO {expr}"),
+                SetConfigValue::Values(exprs) => {
+                    write!(f, "SET {config_name} TO {}", display_comma_separated(exprs))
+                }
             },
             AlterConfigurationOperation::Reset { config_name } => match config_name {
                 ResetConfig::ALL => write!(f, "RESET ALL"),
                 ResetConfig::ConfigName(name) => write!(f, "RESET {name}"),
             },
+            AlterConfigurationOperation::RenameTo { new_name } => {
+                write!(f, "RENAME TO {new_name}")
+            }
+            AlterConfigurationOperation::OwnerTo { new_owner } => {
+                write!(f, "OWNER TO {new_owner}")
+            }
+            AlterConfigurationOperation::SetTablespace { tablespace_name } => {
+                write!(f, "SET TABLESPACE {tablespace_name}")
+            }
+            AlterConfigurationOperation::RefreshCollationVersion => {
+                write!(f, "REFRESH COLLATION VERSION")
+            }
+            AlterConfigurationOperation::WithOptions { with, options } => {
+                if *with {
+                    write!(f, "WITH ")?;
+                }
+                write!(f, "{}", display_separated(options, " "))
+            }
         }
     }
 }
@@ -301,6 +338,9 @@ impl fmt::Display for AlterRoleOperation {
                     SetConfigValue::Default => write!(f, "SET {config_name} TO DEFAULT"),
                     SetConfigValue::FromCurrent => write!(f, "SET {config_name} FROM CURRENT"),
                     SetConfigValue::Value(expr) => write!(f, "SET {config_name} TO {expr}"),
+                    SetConfigValue::Values(exprs) => {
+                        write!(f, "SET {config_name} TO {}", display_comma_separated(exprs))
+                    }
                 }
             }
             AlterRoleOperation::Reset {

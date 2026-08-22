@@ -17,6 +17,15 @@
 
 //! SQL Abstract Syntax Tree (AST) types
 pub use crate::arena::AstBox;
+pub use self::alter_objects::{
+    AggregateSignature, AllInTablespaceObjectType, AlterCollationAction, AlterDatabaseOption,
+    AlterDomainAction, AlterEventTriggerAction, AlterGroupAction, AlterMaterializedViewAction,
+    AlterObject, AlterObjectAction, AlterObjectTarget, AlterOperatorAction, AlterOperatorArgs,
+    AlterRoutineAction, AlterSequenceOperation, AlterStatisticsAction,
+    AlterTextSearchConfigurationAction, AlterTextSearchDictionaryAction, AlterTriggerAction,
+    AlterTypeAction, DatabaseOptionValue, DefinitionElement, DefinitionValue,
+    EventTriggerEnableMode, RoutineKind, RoutineOption, StatisticsTarget,
+};
 pub(crate) use crate::arena::AstBox as Box;
 #[cfg(not(feature = "std"))]
 use alloc::{
@@ -132,6 +141,7 @@ pub use visitor::*;
 
 pub use self::data_type::GeometricTypeKind;
 
+mod alter_objects;
 mod data_type;
 mod dcl;
 mod ddl;
@@ -6242,6 +6252,10 @@ pub enum AlterPublicationAction {
     DropObjects(PublicationForObject),
     /// `SET ( param [= value] [, ...] )`
     SetParameters(Vec<SqlOption>),
+    /// `OWNER TO new_owner`
+    OwnerTo(Owner),
+    /// `RENAME TO new_name`
+    RenameTo(Ident),
 }
 
 /// An action of a PostgreSQL `ALTER SUBSCRIPTION` statement.
@@ -6276,6 +6290,10 @@ pub enum AlterSubscriptionAction {
     Skip(Vec<SqlOption>),
     /// `SET ( option = value [, ...] )`.
     SetOptions(Vec<SqlOption>),
+    /// `OWNER TO new_owner`.
+    OwnerTo(Owner),
+    /// `RENAME TO new_name`.
+    RenameTo(Ident),
 }
 
 /// The event type for a PostgreSQL `CREATE RULE` statement.
@@ -7105,8 +7123,18 @@ pub enum Statement {
     /// ```
     AlterIndex {
         name: ObjectName,
+        if_exists: bool,
         operation: AlterIndexOperation,
     },
+    /// ```sql
+    /// ALTER { AGGREGATE | COLLATION | CONVERSION | DOMAIN | EVENT TRIGGER | FUNCTION
+    ///       | GROUP | LANGUAGE | OPERATOR | PROCEDURE | ROUTINE | STATISTICS
+    ///       | TEXT SEARCH ... | TRIGGER } ...
+    /// ```
+    ///
+    /// The PostgreSQL `ALTER <object>` statements whose target is neither a
+    /// table nor an object that has its own [Statement] variant.
+    AlterObject(AlterObject),
     /// ```sql
     /// ALTER VIEW
     /// ```
@@ -7114,6 +7142,7 @@ pub enum Statement {
         /// View name
         #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
         name: ObjectName,
+        if_exists: bool,
         operation: AlterViewOperation,
     },
     /// ```sql
@@ -7123,6 +7152,7 @@ pub enum Statement {
         /// Materialized view name
         #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
         name: ObjectName,
+        if_exists: bool,
         operation: AlterMaterializedViewOperation,
     },
     /// ```sql
@@ -7195,6 +7225,9 @@ pub enum Statement {
         if_exists: bool,
         sequence_options: Vec<SequenceOptions>,
         owned_by: Option<ObjectName>,
+        /// The `RENAME TO` / `OWNER TO` / `SET SCHEMA` / `SET { LOGGED | UNLOGGED }`
+        /// forms, which are mutually exclusive with `sequence_options`.
+        operation: Option<AlterSequenceOperation>,
     },
     /// ```sql
     /// DROP [TABLE, VIEW, ...]
@@ -10558,6 +10591,19 @@ pub enum AlterMaterializedViewOperation {
         method: OracleMaterializedViewRefreshMethod,
         mode: OracleMaterializedViewRefreshMode,
     },
+    /// `RENAME TO new_name`
+    RenameTo { new_name: Ident },
+    /// `SET SCHEMA new_schema`
+    SetSchema { new_schema: ObjectName },
+    /// `RENAME [ COLUMN ] column_name TO new_column_name`
+    RenameColumn {
+        old_column_name: Ident,
+        new_column_name: Ident,
+    },
+    /// `[ NO ] DEPENDS ON EXTENSION extension_name`
+    DependsOnExtension { no: bool, extension_name: Ident },
+    /// `action [, ...]`, the table-shaped actions of `ALTER MATERIALIZED VIEW`
+    Actions(Vec<AlterMaterializedViewAction>),
 }
 
 impl fmt::Display for AlterMaterializedViewOperation {
@@ -10574,6 +10620,25 @@ impl fmt::Display for AlterMaterializedViewOperation {
             }
             AlterMaterializedViewOperation::OracleRefresh { method, mode } => {
                 write!(f, "REFRESH {method} ON {mode}")
+            }
+            AlterMaterializedViewOperation::RenameTo { new_name } => {
+                write!(f, "RENAME TO {new_name}")
+            }
+            AlterMaterializedViewOperation::SetSchema { new_schema } => {
+                write!(f, "SET SCHEMA {new_schema}")
+            }
+            AlterMaterializedViewOperation::RenameColumn {
+                old_column_name,
+                new_column_name,
+            } => write!(f, "RENAME COLUMN {old_column_name} TO {new_column_name}"),
+            AlterMaterializedViewOperation::DependsOnExtension { no, extension_name } => {
+                if *no {
+                    write!(f, "NO ")?;
+                }
+                write!(f, "DEPENDS ON EXTENSION {extension_name}")
+            }
+            AlterMaterializedViewOperation::Actions(actions) => {
+                write!(f, "{}", display_comma_separated(actions))
             }
         }
     }
@@ -11243,14 +11308,39 @@ impl fmt::Display for Statement {
                 write!(f, "{create_property_graph}")
             }
             Statement::AlterTable(alter_table) => write!(f, "{alter_table}"),
-            Statement::AlterIndex { name, operation } => {
-                write!(f, "ALTER INDEX {name} {operation}")
+            Statement::AlterIndex {
+                name,
+                if_exists,
+                operation,
+            } => {
+                write!(
+                    f,
+                    "ALTER INDEX {if_exists}{name} {operation}",
+                    if_exists = if *if_exists { "IF EXISTS " } else { "" }
+                )
             }
-            Statement::AlterView { name, operation } => {
-                write!(f, "ALTER VIEW {name} {operation}")
+            Statement::AlterObject(alter_object) => write!(f, "{alter_object}"),
+            Statement::AlterView {
+                name,
+                if_exists,
+                operation,
+            } => {
+                write!(
+                    f,
+                    "ALTER VIEW {if_exists}{name} {operation}",
+                    if_exists = if *if_exists { "IF EXISTS " } else { "" }
+                )
             }
-            Statement::AlterMaterializedView { name, operation } => {
-                write!(f, "ALTER MATERIALIZED VIEW {name} {operation}")
+            Statement::AlterMaterializedView {
+                name,
+                if_exists,
+                operation,
+            } => {
+                write!(
+                    f,
+                    "ALTER MATERIALIZED VIEW {if_exists}{name} {operation}",
+                    if_exists = if *if_exists { "IF EXISTS " } else { "" }
+                )
             }
             Statement::RefreshMaterializedView {
                 name,
@@ -11300,6 +11390,7 @@ impl fmt::Display for Statement {
                 if_exists,
                 sequence_options,
                 owned_by,
+                operation,
                 ..
             } => {
                 write!(
@@ -11312,6 +11403,9 @@ impl fmt::Display for Statement {
                 }
                 if let Some(owner) = owned_by {
                     write!(f, " OWNED BY {owner}")?;
+                }
+                if let Some(operation) = operation {
+                    write!(f, " {operation}")?;
                 }
                 Ok(())
             }
@@ -11424,6 +11518,12 @@ impl fmt::Display for Statement {
                     AlterPublicationAction::SetParameters(options) => {
                         write!(f, "SET ({})", display_comma_separated(options))
                     }
+                    AlterPublicationAction::OwnerTo(new_owner) => {
+                        write!(f, "OWNER TO {new_owner}")
+                    }
+                    AlterPublicationAction::RenameTo(new_name) => {
+                        write!(f, "RENAME TO {new_name}")
+                    }
                 }
             }
             Statement::DropPublication {
@@ -11505,6 +11605,12 @@ impl fmt::Display for Statement {
                     }
                     AlterSubscriptionAction::SetOptions(options) => {
                         write!(f, "SET ({})", display_comma_separated(options))
+                    }
+                    AlterSubscriptionAction::OwnerTo(new_owner) => {
+                        write!(f, "OWNER TO {new_owner}")
+                    }
+                    AlterSubscriptionAction::RenameTo(new_name) => {
+                        write!(f, "RENAME TO {new_name}")
                     }
                 }
             }
@@ -12504,6 +12610,8 @@ pub enum SequenceOptions {
         with: bool,
         value: Option<Expr>,
     },
+    /// PostgreSQL `ALTER SEQUENCE ... AS data_type`
+    As(DataType),
 }
 
 impl fmt::Display for SequenceOptions {
@@ -12516,6 +12624,9 @@ impl fmt::Display for SequenceOptions {
                     by = if *by { " BY" } else { "" },
                     increment = increment
                 )
+            }
+            SequenceOptions::As(data_type) => {
+                write!(f, " AS {data_type}")
             }
             SequenceOptions::MinValue(Some(expr)) => {
                 write!(f, " MINVALUE {expr}")
@@ -16499,6 +16610,12 @@ impl fmt::Display for ProcedureSetConfig {
                 write!(f, "SET {} FROM CURRENT", self.config_name)
             }
             SetConfigValue::Value(expr) => write!(f, "SET {} TO {}", self.config_name, expr),
+            SetConfigValue::Values(exprs) => write!(
+                f,
+                "SET {} TO {}",
+                self.config_name,
+                display_comma_separated(exprs)
+            ),
         }
     }
 }

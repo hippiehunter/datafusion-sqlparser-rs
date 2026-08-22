@@ -51,6 +51,7 @@ use core::cell::{Cell, RefCell};
 use sqlparser::parser::ParserState::ColumnDefinition;
 
 mod alter;
+mod alter_objects;
 
 fn box_into_inner<T>(value: Box<T>) -> T {
     Box::into_inner(value)
@@ -13056,7 +13057,8 @@ impl<'a> Parser<'a> {
             if matches!(token.token, BorrowedToken::RParen | BorrowedToken::EOF) {
                 return self.expected("operator symbol", token);
             }
-            parts.push(ObjectNamePart::Identifier(Ident::new(token.to_string())));
+            let symbol = self.extend_operator_symbol(&token);
+            parts.push(ObjectNamePart::Identifier(Ident::new(symbol)));
 
             self.expect_token(&Token::RParen)?;
             return Ok(ObjectName(parts));
@@ -13064,12 +13066,10 @@ impl<'a> Parser<'a> {
 
         let mut parts = vec![];
         loop {
-            let mut part = self.next_token().to_string();
-            // Some PostgreSQL operator symbols (for example `~=`) can be
-            // tokenized as multiple operator fragments.
-            while self.peek_token().token == BorrowedToken::Eq {
-                part.push_str(&self.next_token().to_string());
-            }
+            let token = self.next_token();
+            // Some PostgreSQL operator symbols (for example `~=` or `@+@`) are
+            // tokenized as several adjacent operator fragments.
+            let part = self.extend_operator_symbol(&token);
             parts.push(ObjectNamePart::Identifier(Ident::new(part)));
             if !self.consume_token(&Token::Period) {
                 break;
@@ -13819,8 +13819,15 @@ impl<'a> Parser<'a> {
             } else {
                 AlterPublicationAction::SetObjects(self.parse_publication_for_object()?)
             }
+        } else if self.parse_keywords(&[Keyword::OWNER, Keyword::TO]) {
+            AlterPublicationAction::OwnerTo(self.parse_owner()?)
+        } else if self.parse_keywords(&[Keyword::RENAME, Keyword::TO]) {
+            AlterPublicationAction::RenameTo(self.parse_identifier()?)
         } else {
-            return self.expected("ADD, SET, or DROP", self.peek_token());
+            return self.expected(
+                "ADD, SET, DROP, OWNER TO, or RENAME TO",
+                self.peek_token(),
+            );
         };
         Ok(Statement::AlterPublication { name, action })
     }
@@ -13909,9 +13916,13 @@ impl<'a> Parser<'a> {
             }
         } else if self.parse_keyword(Keyword::SKIP) {
             AlterSubscriptionAction::Skip(self.parse_parenthesized_sql_options()?)
+        } else if self.parse_keywords(&[Keyword::OWNER, Keyword::TO]) {
+            AlterSubscriptionAction::OwnerTo(self.parse_owner()?)
+        } else if self.parse_keywords(&[Keyword::RENAME, Keyword::TO]) {
+            AlterSubscriptionAction::RenameTo(self.parse_identifier()?)
         } else {
             return self.expected(
-                "ENABLE, DISABLE, CONNECTION, SET, ADD, DROP, REFRESH, or SKIP",
+                "ENABLE, DISABLE, CONNECTION, SET, ADD, DROP, REFRESH, SKIP, OWNER TO, or RENAME TO",
                 self.peek_token(),
             );
         };
@@ -17244,6 +17255,21 @@ impl<'a> Parser<'a> {
             Keyword::SERVER,
             Keyword::FOREIGN,
             Keyword::TENANT,
+            Keyword::AGGREGATE,
+            Keyword::COLLATION,
+            Keyword::CONVERSION,
+            Keyword::DOMAIN,
+            Keyword::EVENT,
+            Keyword::FUNCTION,
+            Keyword::GROUP,
+            Keyword::LANGUAGE,
+            Keyword::OPERATOR,
+            Keyword::PROCEDURAL,
+            Keyword::PROCEDURE,
+            Keyword::ROUTINE,
+            Keyword::STATISTICS,
+            Keyword::TEXT,
+            Keyword::TRIGGER,
         ])?;
         match object_type {
             Keyword::SCHEMA => {
@@ -17254,24 +17280,25 @@ impl<'a> Parser<'a> {
             Keyword::VIEW => self.parse_alter_view(),
             Keyword::TYPE => self.parse_alter_type(),
             Keyword::TABLE => self.parse_alter_table(),
-            Keyword::INDEX => {
-                let index_name = self.parse_object_name(false)?;
-                let operation = if self.parse_keyword(Keyword::RENAME) {
-                    if self.parse_keyword(Keyword::TO) {
-                        let index_name = self.parse_object_name(false)?;
-                        AlterIndexOperation::RenameIndex { index_name }
-                    } else {
-                        return self.expected("TO after RENAME", self.peek_token());
-                    }
-                } else {
-                    return self.expected("RENAME after ALTER INDEX", self.peek_token());
-                };
-
-                Ok(Statement::AlterIndex {
-                    name: index_name,
-                    operation,
-                })
+            Keyword::INDEX => self.parse_alter_index(),
+            Keyword::AGGREGATE => self.parse_alter_aggregate(),
+            Keyword::COLLATION => self.parse_alter_collation(),
+            Keyword::CONVERSION => self.parse_alter_conversion(),
+            Keyword::DOMAIN => self.parse_alter_domain(),
+            Keyword::EVENT => self.parse_alter_event_trigger(),
+            Keyword::FUNCTION => self.parse_alter_routine(RoutineKind::Function),
+            Keyword::GROUP => self.parse_alter_group(),
+            Keyword::LANGUAGE => self.parse_alter_language(false),
+            Keyword::OPERATOR => self.parse_alter_operator(),
+            Keyword::PROCEDURAL => {
+                self.expect_keyword_is(Keyword::LANGUAGE)?;
+                self.parse_alter_language(true)
             }
+            Keyword::PROCEDURE => self.parse_alter_routine(RoutineKind::Procedure),
+            Keyword::ROUTINE => self.parse_alter_routine(RoutineKind::Routine),
+            Keyword::STATISTICS => self.parse_alter_statistics(),
+            Keyword::TEXT => self.parse_alter_text_search(),
+            Keyword::TRIGGER => self.parse_alter_trigger(),
             Keyword::DATABASE => self.parse_alter_database(),
             Keyword::ROLE => self.parse_alter_role(),
             Keyword::POLICY => self.parse_alter_policy(),
@@ -17431,7 +17458,20 @@ impl<'a> Parser<'a> {
 
         let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
         let name = self.parse_object_name(false)?;
+        if let Some(operation) = self.parse_alter_sequence_operation()? {
+            return Ok(Statement::AlterSequence {
+                token,
+                name,
+                if_exists,
+                sequence_options: vec![],
+                owned_by: None,
+                operation: Some(operation),
+            });
+        }
         let mut sequence_options = Vec::new();
+        if self.parse_keyword(Keyword::AS) {
+            sequence_options.push(SequenceOptions::As(self.parse_data_type()?));
+        }
         let mut owned_by: Option<ObjectName> = None;
 
         // Parse sequence options (RESTART, OWNED BY, plus the standard
@@ -17483,6 +17523,7 @@ impl<'a> Parser<'a> {
             if_exists,
             sequence_options,
             owned_by,
+            operation: None,
         })
     }
 
@@ -17510,8 +17551,11 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_alter_view(&self) -> Result<Statement, ParserError> {
+        let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
         let name = self.parse_object_name(false)?;
-        let operation = if self.parse_keywords(&[Keyword::RENAME, Keyword::TO]) {
+        let operation = if let Some(operation) = self.parse_alter_view_column_operation()? {
+            operation
+        } else if self.parse_keywords(&[Keyword::RENAME, Keyword::TO]) {
             AlterViewOperation::Rename {
                 new_name: self.parse_identifier()?,
             }
@@ -17540,7 +17584,11 @@ impl<'a> Parser<'a> {
             );
         };
 
-        Ok(Statement::AlterView { name, operation })
+        Ok(Statement::AlterView {
+            name,
+            if_exists,
+            operation,
+        })
     }
 
     fn parse_alter_default_privileges(&self) -> Result<Statement, ParserError> {
@@ -17642,6 +17690,15 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_alter_materialized_view(&self) -> Result<Statement, ParserError> {
+        if self.parse_keywords(&[Keyword::ALL, Keyword::IN, Keyword::TABLESPACE]) {
+            let alter_token = self.get_alter_token();
+            let target = self.parse_all_in_tablespace(AllInTablespaceObjectType::MaterializedView)?;
+            return Ok(Statement::AlterObject(AlterObject {
+                alter_token,
+                target,
+            }));
+        }
+        let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
         let name = self.parse_object_name(false)?;
         let operation = if self.parse_keyword(Keyword::ENABLE) {
             self.expect_keyword(Keyword::REWRITE)?;
@@ -17678,6 +17735,8 @@ impl<'a> Parser<'a> {
                     self.parse_mv_refresh_schedule()?,
                 ))
             }
+        } else if let Some(operation) = self.parse_alter_materialized_view_extension()? {
+            operation
         } else {
             return self.expected(
                 "ENABLE REWRITE, DISABLE REWRITE, OWNER TO, or REFRESH SCHEDULE after ALTER MATERIALIZED VIEW",
@@ -17685,7 +17744,11 @@ impl<'a> Parser<'a> {
             );
         };
 
-        Ok(Statement::AlterMaterializedView { name, operation })
+        Ok(Statement::AlterMaterializedView {
+            name,
+            if_exists,
+            operation,
+        })
     }
 
     /// Parse `REFRESH MATERIALIZED VIEW [ CONCURRENTLY ] name [ FAST | COMPLETE ]`.
@@ -17795,6 +17858,12 @@ impl<'a> Parser<'a> {
                     from: existing_enum_value,
                     to: new_enum_value,
                 }),
+            }))
+        } else if let Some(operation) = self.parse_alter_type_attribute_operation()? {
+            Ok(Statement::AlterType(AlterType {
+                token,
+                name,
+                operation,
             }))
         } else {
             self.expected_ref(
@@ -27779,7 +27848,7 @@ impl<'a> Parser<'a> {
                     SequenceOptions::Cache(_) | SequenceOptions::NoCache => 4,
                     SequenceOptions::Cycle(_) => 5,
                     SequenceOptions::Order(_) => 6,
-                    SequenceOptions::Restart { .. } => continue,
+                    SequenceOptions::Restart { .. } | SequenceOptions::As(_) => continue,
                 };
                 if seen[index] {
                     return parser_err!(
