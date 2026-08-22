@@ -2483,6 +2483,7 @@ fn parse_select_order_by() {
         assert_eq!(
             OrderByKind::Expressions(vec![
                 OrderByExpr {
+                    using: None,
                     expr: Expr::Identifier(Ident::new("lname")),
                     options: OrderByOptions {
                         asc: Some(true),
@@ -2491,6 +2492,7 @@ fn parse_select_order_by() {
                     with_fill: None,
                 },
                 OrderByExpr {
+                    using: None,
                     expr: Expr::Identifier(Ident::new("fname")),
                     options: OrderByOptions {
                         asc: Some(false),
@@ -2499,6 +2501,7 @@ fn parse_select_order_by() {
                     with_fill: None,
                 },
                 OrderByExpr {
+                    using: None,
                     expr: Expr::Identifier(Ident::new("id")),
                     options: OrderByOptions {
                         asc: None,
@@ -2524,6 +2527,7 @@ fn parse_select_order_by_limit() {
     assert_eq!(
         OrderByKind::Expressions(vec![
             OrderByExpr {
+                using: None,
                 expr: Expr::Identifier(Ident::new("lname")),
                 options: OrderByOptions {
                     asc: Some(true),
@@ -2532,6 +2536,7 @@ fn parse_select_order_by_limit() {
                 with_fill: None,
             },
             OrderByExpr {
+                using: None,
                 expr: Expr::Identifier(Ident::new("fname")),
                 options: OrderByOptions {
                     asc: Some(false),
@@ -2567,6 +2572,7 @@ fn parse_select_order_by_not_support_all() {
         (
             "SELECT id, ALL FROM customer WHERE id < 5 ORDER BY ALL",
             OrderByKind::Expressions(vec![OrderByExpr {
+                using: None,
                 expr: Expr::Identifier(Ident::new("ALL")),
                 options: OrderByOptions {
                     asc: None,
@@ -2578,6 +2584,7 @@ fn parse_select_order_by_not_support_all() {
         (
             "SELECT id, ALL FROM customer ORDER BY ALL ASC NULLS FIRST",
             OrderByKind::Expressions(vec![OrderByExpr {
+                using: None,
                 expr: Expr::Identifier(Ident::new("ALL")),
                 options: OrderByOptions {
                     asc: Some(true),
@@ -2589,6 +2596,7 @@ fn parse_select_order_by_not_support_all() {
         (
             "SELECT id, ALL FROM customer ORDER BY ALL DESC NULLS LAST",
             OrderByKind::Expressions(vec![OrderByExpr {
+                using: None,
                 expr: Expr::Identifier(Ident::new("ALL")),
                 options: OrderByOptions {
                     asc: Some(false),
@@ -2612,6 +2620,7 @@ fn parse_select_order_by_nulls_order() {
     assert_eq!(
         OrderByKind::Expressions(vec![
             OrderByExpr {
+                using: None,
                 expr: Expr::Identifier(Ident::new("lname")),
                 options: OrderByOptions {
                     asc: Some(true),
@@ -2620,6 +2629,7 @@ fn parse_select_order_by_nulls_order() {
                 with_fill: None,
             },
             OrderByExpr {
+                using: None,
                 expr: Expr::Identifier(Ident::new("fname")),
                 options: OrderByOptions {
                     asc: Some(false),
@@ -3175,6 +3185,7 @@ fn parse_listagg() {
             over: None,
             within_group: vec![
                 OrderByExpr {
+                    using: None,
                     expr: Expr::Identifier(Ident {
                         value: "id".to_string(),
                         quote_style: None,
@@ -3187,6 +3198,7 @@ fn parse_listagg() {
                     with_fill: None,
                 },
                 OrderByExpr {
+                    using: None,
                     expr: Expr::Identifier(Ident {
                         value: "username".to_string(),
                         quote_style: None,
@@ -5425,6 +5437,7 @@ fn parse_window_functions() {
                 window_name: None,
                 partition_by: vec![],
                 order_by: vec![OrderByExpr {
+                    using: None,
                     expr: Expr::Identifier(Ident::new("dt")),
                     options: OrderByOptions {
                         asc: Some(false),
@@ -5671,6 +5684,7 @@ fn test_parse_named_window() {
                     window_name: None,
                     partition_by: vec![],
                     order_by: vec![OrderByExpr {
+                        using: None,
                         expr: Expr::Identifier(Ident {
                             value: "C12".to_string(),
                             quote_style: None,
@@ -6556,10 +6570,12 @@ fn parse_select_with_alias_and_column_defs() {
                 alias.columns,
                 vec![
                     TableAliasColumnDef {
+                        collation: None,
                         name: Ident::new("a"),
                         data_type: Some(DataType::Text),
                     },
                     TableAliasColumnDef {
+                        collation: None,
                         name: Ident::new("b"),
                         data_type: Some(DataType::Int(None)),
                     },
@@ -7709,19 +7725,21 @@ fn parse_trim() {
         parse_sql_statements("SELECT TRIM(FOO 'xyz' FROM 'xyzfooxyz')").unwrap_err()
     );
 
-    //keep standard TRIM syntax failing with multiple args
-    let all_expected_snowflake = TestedDialects::new(vec![
-        std::boxed::Box::new(PostgreSqlDialect {}),
+    // PostgreSQL takes the trim characters as further arguments; the dialects
+    // that only accept the standard spelling keep rejecting them.
+    let standard_trim_only = TestedDialects::new(vec![
         std::boxed::Box::new(MsSqlDialect {}),
         std::boxed::Box::new(MySqlDialect {}),
     ]);
 
     assert_eq!(
         ParserError::ParserError("Expected: ), found: ,".to_owned()),
-        all_expected_snowflake
+        standard_trim_only
             .parse_sql_statements("SELECT TRIM('xyz', 'a')")
             .unwrap_err()
     );
+    TestedDialects::new(vec![std::boxed::Box::new(PostgreSqlDialect {})])
+        .verified_stmt("SELECT TRIM('xyz', 'a')");
 }
 
 #[test]
@@ -8912,6 +8930,7 @@ fn parse_create_index() {
         IndexColumn {
             operator_class: None,
             column: OrderByExpr {
+                using: None,
                 expr: Expr::Identifier(Ident::new("name")),
                 with_fill: None,
                 options: OrderByOptions {
@@ -8923,6 +8942,7 @@ fn parse_create_index() {
         IndexColumn {
             operator_class: None,
             column: OrderByExpr {
+                using: None,
                 expr: Expr::Identifier(Ident::new("age")),
                 with_fill: None,
                 options: OrderByOptions {
@@ -8958,6 +8978,7 @@ fn test_create_index_with_using_function() {
         IndexColumn {
             operator_class: None,
             column: OrderByExpr {
+                using: None,
                 expr: Expr::Identifier(Ident::new("name")),
                 with_fill: None,
                 options: OrderByOptions {
@@ -8969,6 +8990,7 @@ fn test_create_index_with_using_function() {
         IndexColumn {
             operator_class: None,
             column: OrderByExpr {
+                using: None,
                 expr: Expr::Identifier(Ident::new("age")),
                 with_fill: None,
                 options: OrderByOptions {
@@ -9016,6 +9038,7 @@ fn test_create_index_with_with_clause() {
     let sql = "CREATE UNIQUE INDEX title_idx ON films(title) WITH (fillfactor = 70, single_param)";
     let indexed_columns: Vec<IndexColumn> = vec![IndexColumn {
         column: OrderByExpr {
+            using: None,
             expr: Expr::Identifier(Ident::new("title")),
             options: OrderByOptions {
                 asc: None,
@@ -9591,6 +9614,7 @@ fn parse_merge() {
                         clause_kind: MergeClauseKind::NotMatched,
                         predicate: None,
                         action: MergeAction::Insert(MergeInsertExpr {
+                            overriding: None,
                             columns: vec![Ident::new("A"), Ident::new("B"), Ident::new("C")],
                             kind: MergeInsertKind::Values(Values {
                                 value_keyword: false,

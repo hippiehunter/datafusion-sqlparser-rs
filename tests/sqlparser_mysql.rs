@@ -714,6 +714,7 @@ fn table_constraint_unique_primary_ctor(
         .into_iter()
         .map(|ident| IndexColumn {
             column: OrderByExpr {
+                using: None,
                 expr: Expr::Identifier(ident),
                 options: OrderByOptions {
                     asc: None,
@@ -2686,6 +2687,7 @@ fn parse_delete_with_order_by() {
         Statement::Delete(Delete { order_by, .. }) => {
             assert_eq!(
                 vec![OrderByExpr {
+                    using: None,
                     expr: Expr::Identifier(Ident {
                         value: "id".to_owned(),
                         quote_style: None,

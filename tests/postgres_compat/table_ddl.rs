@@ -1324,12 +1324,14 @@ fn select_from_rows_from() {
             match &select.from[0].relation {
                 TableFactor::RowsFrom {
                     lateral,
-                    items,
+                    rows_from,
+                    functions,
                     with_ordinality,
                     alias,
                 } => {
                     assert!(!lateral);
-                    assert_eq!(items.len(), 2);
+                    assert!(rows_from);
+                    assert_eq!(functions.len(), 2);
                     assert!(!with_ordinality);
                     assert_eq!(alias.as_ref().map(|a| a.columns.len()), Some(2));
                 }

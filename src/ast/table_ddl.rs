@@ -31,7 +31,7 @@ use serde::{Deserialize, Serialize};
 use sqlparser_derive::{Visit, VisitMut};
 
 use crate::ast::{
-    display_comma_separated, ColumnDef, ColumnOption, ColumnOptionDef, ConstraintCharacteristics,
+    display_comma_separated, ColumnOption, ColumnOptionDef, ConstraintCharacteristics,
     CreateTableLike, Expr, GeneratedAs, Ident, ObjectName, Owner, SequenceOptions, Spanned,
     TableConstraint,
 };
@@ -439,29 +439,6 @@ impl fmt::Display for SetAccessMethod {
             SetAccessMethod::Name(name) => write!(f, "{name}"),
             SetAccessMethod::Default => f.write_str("DEFAULT"),
         }
-    }
-}
-
-/// `ROWS FROM ( <function> [ AS (<column definition>, ...) ], ... )` — a
-/// multi-function table expression in a `FROM` clause.
-///
-/// [PostgreSQL](https://www.postgresql.org/docs/current/queries-table-expressions.html)
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub struct RowsFromItem {
-    pub function: Expr,
-    /// `AS ( <name> <type>, ... )` column definition list.
-    pub column_defs: Vec<ColumnDef>,
-}
-
-impl fmt::Display for RowsFromItem {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.function)?;
-        if !self.column_defs.is_empty() {
-            write!(f, " AS ({})", display_comma_separated(&self.column_defs))?;
-        }
-        Ok(())
     }
 }
 

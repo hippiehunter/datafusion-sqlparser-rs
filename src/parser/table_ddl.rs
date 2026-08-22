@@ -26,7 +26,7 @@ use super::{Parser, ParserError};
 use crate::ast::table_ddl::{
     AlterConstraint, AlterTableAllInTablespace, ColumnCompression, ConstraintAttribute,
     ConstraintInheritability, CreateTableAsExecute, CreateTableWithData, DomainConstraint,
-    IdentityColumnOption, IndexConstraintDetails, NotNullConstraint, RelationOption, RowsFromItem,
+    IdentityColumnOption, IndexConstraintDetails, NotNullConstraint, RelationOption,
     SetAccessMethod, SetStatisticsValue, TableLikeElement, TableLikeOptionKind, TypedTableColumn,
     TypedTableElement, ViewCheckOption,
 };
@@ -832,28 +832,6 @@ impl Parser<'_> {
         })?;
         self.expect_token(&BorrowedToken::RParen)?;
         Ok(Some(args))
-    }
-
-    /// Parses `ROWS FROM ( <function> [ AS (<coldef>, ...) ], ... )`.
-    pub(super) fn parse_rows_from_items(&self) -> Result<Vec<RowsFromItem>, ParserError> {
-        self.expect_token(&BorrowedToken::LParen)?;
-        let items = self.parse_comma_separated(|parser| {
-            let function = parser.parse_expr()?;
-            let column_defs = if parser.parse_keyword(Keyword::AS) {
-                parser.expect_token(&BorrowedToken::LParen)?;
-                let defs = parser.parse_comma_separated(Parser::parse_column_def)?;
-                parser.expect_token(&BorrowedToken::RParen)?;
-                defs
-            } else {
-                Vec::new()
-            };
-            Ok(RowsFromItem {
-                function,
-                column_defs,
-            })
-        })?;
-        self.expect_token(&BorrowedToken::RParen)?;
-        Ok(items)
     }
 
     /// The `ON DELETE SET NULL (<column>, ...)` column list, which PostgreSQL

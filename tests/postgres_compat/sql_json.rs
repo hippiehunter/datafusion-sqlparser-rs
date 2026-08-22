@@ -693,13 +693,20 @@ fn function_alias_may_be_a_bare_column_definition_list() {
     let select = pg().verified_only_select(
         "SELECT x, y FROM json_populate_record(NULL::RECORD, '{\"x\": 776}') AS (x INT, y INT)",
     );
-    let alias = match &select.from[0].relation {
-        TableFactor::Table { alias, .. } => alias.clone().unwrap(),
+    match &select.from[0].relation {
+        TableFactor::RowsFrom {
+            rows_from,
+            functions,
+            alias,
+            ..
+        } => {
+            assert!(!rows_from);
+            assert!(alias.is_none());
+            assert_eq!(functions.len(), 1);
+            assert_eq!(functions[0].column_defs.len(), 2);
+        }
         other => panic!("expected a table function, got {other:?}"),
-    };
-    assert_eq!(alias.name.value, "");
-    assert_eq!(alias.columns.len(), 2);
-    assert!(alias.columns[0].data_type.is_some());
+    }
 }
 
 #[test]

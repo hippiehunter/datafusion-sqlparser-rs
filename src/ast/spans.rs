@@ -48,7 +48,7 @@ use super::{
     SubsetDefinition, SymbolDefinition,
     TableAlias, TableAliasColumnDef, TableConstraint, TableFactor, TableObject,
     TableOptionsClustered, TableWithJoins, Update, UpdateTableFromKind, Use, Value, Values,
-    ViewColumnDef, WhileStatement, WildcardAdditionalOptions, With, WithFill,
+    ViewColumnDef, WhileStatement, WildcardAdditionalOptions, With, WithFill, XmlRootVersion,
 };
 
 /// Given an iterator of spans, return the [Span::union] of all spans.
@@ -1488,6 +1488,9 @@ impl Spanned for GroupByExpr {
             GroupByExpr::Expressions(exprs, _modifiers) => {
                 union_spans(exprs.iter().map(|i| i.span()))
             }
+            GroupByExpr::Quantified { expressions, .. } => {
+                union_spans(expressions.iter().map(|i| i.span()))
+            }
             GroupByExpr::OracleVector(vectors) => {
                 union_spans(vectors.iter().flatten().map(Spanned::span))
             }
@@ -1538,6 +1541,7 @@ impl Spanned for Insert {
             table,
             table_alias,
             columns,
+            column_targets: _,
             overriding: _, // enum, pg specific
             overwrite: _,  // bool
             source,
@@ -1609,6 +1613,13 @@ impl Spanned for ConflictTarget {
     fn span(&self) -> Span {
         match self {
             ConflictTarget::Columns(vec) => union_spans(vec.iter().map(|i| i.span)),
+            ConflictTarget::Inference(inference) => union_spans(
+                inference
+                    .elements
+                    .iter()
+                    .map(|element| element.expr.span())
+                    .chain(inference.predicate.as_ref().map(|i| i.span())),
+            ),
             ConflictTarget::OnConstraint(object_name) => object_name.span(),
         }
     }
@@ -1655,6 +1666,7 @@ impl Spanned for AssignmentTarget {
     fn span(&self) -> Span {
         match self {
             AssignmentTarget::ColumnName(object_name) => object_name.span(),
+            AssignmentTarget::Indirection(target) => target.column.span(),
             AssignmentTarget::Tuple(vec) => union_spans(vec.iter().map(|i| i.span())),
         }
     }
@@ -1805,6 +1817,14 @@ impl Spanned for Expr {
                 .union(&union_spans(order_by.iter().map(Spanned::span))),
             Expr::XmlParse { expr, .. } => expr.span(),
             Expr::XmlSerialize { expr, .. } => expr.span(),
+            Expr::XmlRoot {
+                xml,
+                version,
+                standalone: _,
+            } => match &**version {
+                XmlRootVersion::Version(expr) => xml.span().union(&expr.span()),
+                XmlRootVersion::NoValue => xml.span(),
+            },
             Expr::XmlPi { name, content } => {
                 name.span.union_opt(&content.as_ref().map(|c| c.span()))
             }
@@ -1828,6 +1848,7 @@ impl Spanned for Expr {
             Expr::GroupingSets(vec) => {
                 union_spans(vec.iter().flat_map(|i| i.iter().map(|k| k.span())))
             }
+            Expr::GroupingSetsElements(vec) => union_spans(vec.iter().map(|i| i.span())),
             Expr::Cube(vec) => union_spans(vec.iter().flat_map(|i| i.iter().map(|k| k.span()))),
             Expr::Rollup(vec) => union_spans(vec.iter().flat_map(|i| i.iter().map(|k| k.span()))),
             Expr::Tuple(vec) => union_spans(vec.iter().map(|i| i.span())),
@@ -1881,6 +1902,12 @@ impl Spanned for Expr {
                 syntax: _,
                 expr,
             } => expr.span(),
+            Expr::SubstringSimilar {
+                expr,
+                pattern,
+                escape,
+            } => union_spans([expr.span(), pattern.span(), escape.span()].into_iter()),
+            Expr::CollationFor(expr) => expr.span(),
             Expr::Substring {
                 expr,
                 substring_from,
@@ -2318,17 +2345,6 @@ impl Spanned for TableFactor {
             TableFactor::TableFunction { expr, alias } => expr
                 .span()
                 .union_opt(&alias.as_ref().map(|alias| alias.span())),
-            TableFactor::RowsFrom {
-                lateral: _,
-                items,
-                with_ordinality: _,
-                alias,
-            } => union_spans(
-                items
-                    .iter()
-                    .map(|item| item.function.span())
-                    .chain(alias.as_ref().map(|alias| alias.span())),
-            ),
             TableFactor::UNNEST {
                 alias,
                 with_offset: _,
@@ -2348,6 +2364,18 @@ impl Spanned for TableFactor {
             } => table_with_joins
                 .span()
                 .union_opt(&alias.as_ref().map(|alias| alias.span())),
+            TableFactor::RowsFrom {
+                lateral: _,
+                rows_from: _,
+                functions,
+                with_ordinality: _,
+                alias,
+            } => union_spans(
+                functions
+                    .iter()
+                    .map(|item| item.function.span())
+                    .chain(alias.as_ref().map(|alias| alias.span())),
+            ),
             TableFactor::Function {
                 lateral: _,
                 name,
@@ -2485,6 +2513,7 @@ impl Spanned for OrderByExpr {
         let OrderByExpr {
             expr,
             options: _,
+            using: _,
             with_fill,
         } = self;
 
@@ -2559,7 +2588,11 @@ impl Spanned for TableAlias {
 
 impl Spanned for TableAliasColumnDef {
     fn span(&self) -> Span {
-        let TableAliasColumnDef { name, data_type: _ } = self;
+        let TableAliasColumnDef {
+            name,
+            data_type: _,
+            collation: _,
+        } = self;
 
         name.span
     }

@@ -371,6 +371,26 @@ pub trait Dialect: Debug + Any {
     }
 
     /// Returns true if the dialect supports numbers containing underscores, e.g. `10_000_000`
+    /// Returns true if the dialect supports non-decimal integer literals
+    /// written as `0x`/`0o`/`0b` followed by digits of that radix, e.g.
+    /// PostgreSQL's `0b_10_0101`.
+    fn supports_radix_numeric_literals(&self) -> bool {
+        false
+    }
+
+    /// Returns true if any non-reserved type or function name may introduce a
+    /// literal of that type, as PostgreSQL's `func_name Sconst` production
+    /// does: `xml '<a/>'`, `name 'x'`.
+    fn supports_generic_typed_string_literals(&self) -> bool {
+        false
+    }
+
+    /// Returns true if `TRIM` accepts the trim characters as further
+    /// comma-separated arguments, e.g. PostgreSQL's `trim('xax', 'x')`.
+    fn supports_trim_character_list(&self) -> bool {
+        false
+    }
+
     fn supports_numeric_literal_underscores(&self) -> bool {
         false
     }
@@ -635,6 +655,7 @@ pub trait Dialect: Debug + Any {
                     {
                         Ok(p!(AtTz))
                     }
+                    (BorrowedToken::Word(w), _) if w.keyword == Keyword::LOCAL => Ok(p!(AtTz)),
                     _ => Ok(self.prec_unknown()),
                 }
             }
@@ -1236,6 +1257,9 @@ pub trait Dialect: Debug + Any {
             supports_named_fn_args_with_expr_name: self.supports_named_fn_args_with_expr_name(),
             supports_numeric_prefix: self.supports_numeric_prefix(),
             supports_numeric_literal_underscores: self.supports_numeric_literal_underscores(),
+            supports_radix_numeric_literals: self.supports_radix_numeric_literals(),
+            supports_generic_typed_string_literals: self.supports_generic_typed_string_literals(),
+            supports_trim_character_list: self.supports_trim_character_list(),
             supports_window_function_null_treatment_arg: self
                 .supports_window_function_null_treatment_arg(),
             supports_lambda_functions: self.supports_lambda_functions(),
@@ -1348,6 +1372,12 @@ pub struct DialectFeatures {
     pub supports_named_fn_args_with_expr_name: bool,
     pub supports_numeric_prefix: bool,
     pub supports_numeric_literal_underscores: bool,
+    /// See [Dialect::supports_radix_numeric_literals]
+    pub supports_radix_numeric_literals: bool,
+    /// See [Dialect::supports_generic_typed_string_literals]
+    pub supports_generic_typed_string_literals: bool,
+    /// See [Dialect::supports_trim_character_list]
+    pub supports_trim_character_list: bool,
     pub supports_window_function_null_treatment_arg: bool,
     pub supports_lambda_functions: bool,
     pub supports_parenthesized_set_variables: bool,
@@ -1550,6 +1580,9 @@ impl<D: Dialect> Dialect for DelegatingDialect<D> {
         supports_named_fn_args_with_expr_name,
         supports_numeric_prefix,
         supports_numeric_literal_underscores,
+        supports_radix_numeric_literals,
+        supports_generic_typed_string_literals,
+        supports_trim_character_list,
         supports_window_function_null_treatment_arg,
         supports_lambda_functions,
         supports_parenthesized_set_variables,
