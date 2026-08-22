@@ -287,8 +287,7 @@ END $$ LANGUAGE plpgsql"#
 fn test_declare_alias_for_parameter() {
     // https://www.postgresql.org/docs/current/plpgsql-declarations.html
     // ALIAS for function parameters (legacy syntax)
-    // TODO: ALIAS FOR <named_parameter> not yet supported (only $n form works)
-    pg_expect_parse_error!(
+    pg_roundtrip_only!(
         r#"CREATE FUNCTION test(user_id INTEGER) RETURNS void AS $$
 DECLARE
     uid ALIAS FOR user_id;
@@ -309,5 +308,9 @@ DECLARE
 BEGIN
     RAISE NOTICE 'User ID: %', user_id;
 END $$ LANGUAGE plpgsql"#
+    );
+
+    pg_roundtrip_only!(
+        r#"CREATE FUNCTION test(INTEGER) RETURNS INTEGER LANGUAGE plpgsql AS $$ DECLARE user_id ALIAS FOR $1; BEGIN RETURN user_id; END $$"#
     );
 }

@@ -635,6 +635,10 @@ pub struct Parser<'a> {
     /// Nesting depth of a PL/SQL or SQL/PSM body. Some tokens, including
     /// PostgreSQL's procedural `RETURNING ... INTO`, are legal only here.
     procedural_body_depth: Cell<usize>,
+    /// Function parameters visible while parsing a structured routine body.
+    /// This lets PL/pgSQL `ALIAS FOR` declarations resolve through grammar,
+    /// without rewriting the body text before parsing it.
+    routine_args: Vec<OperateFunctionArg>,
 }
 
 impl<'a> Parser<'a> {
@@ -667,6 +671,7 @@ impl<'a> Parser<'a> {
             error_tracker: ErrorTracker::new(),
             detailed_errors: Cell::new(true),
             procedural_body_depth: Cell::new(0),
+            routine_args: Vec::new(),
         }
     }
 
@@ -10153,95 +10158,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Returns true when the provided token is a plain SQL identifier.
-    fn is_simple_identifier(name: &str) -> bool {
-        let mut chars = name.chars();
-        let Some(first) = chars.next() else {
-            return false;
-        };
-
-        if !(first == '_' || first.is_ascii_alphabetic()) {
-            return false;
-        }
-
-        chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
-    }
-
-    /// Parse a PL/pgSQL alias declaration line in the form:
-    /// `<ident> ALIAS FOR $<n>;`
-    fn parse_sql_psm_alias_declaration(line: &str) -> Option<(&str, usize)> {
-        let declaration = line.trim();
-        let declaration = declaration.strip_suffix(';')?;
-        let mut parts = declaration.split_whitespace();
-
-        let name = parts.next()?;
-        if !Self::is_simple_identifier(name) {
-            return None;
-        }
-
-        let alias_kw = parts.next()?;
-        if !alias_kw.eq_ignore_ascii_case("ALIAS") {
-            return None;
-        }
-
-        let for_kw = parts.next()?;
-        if !for_kw.eq_ignore_ascii_case("FOR") {
-            return None;
-        }
-
-        let placeholder = parts.next()?;
-        if parts.next().is_some() {
-            return None;
-        }
-
-        let index = placeholder.strip_prefix('$')?.parse::<usize>().ok()?;
-        if index == 0 {
-            return None;
-        }
-
-        Some((name, index))
-    }
-
-    /// Rewrites PL/pgSQL alias declarations into equivalent typed declarations.
-    ///
-    /// Example:
-    /// `x ALIAS FOR $1;` -> `x INTEGER := $1;`
-    ///
-    /// This allows the SQL/PSM parser to consume common PL/pgSQL alias syntax
-    /// without introducing a dedicated AST variant.
-    fn rewrite_sql_psm_alias_declarations(body: &str, args: &[OperateFunctionArg]) -> String {
-        let mut rewritten = String::with_capacity(body.len());
-
-        for segment in body.split_inclusive('\n') {
-            let line = segment.strip_suffix('\n').unwrap_or(segment);
-
-            if let Some((name, param_index)) = Self::parse_sql_psm_alias_declaration(line) {
-                if let Some(arg) = args.get(param_index - 1) {
-                    let indent_len = line.len() - line.trim_start().len();
-                    let indent = &line[..indent_len];
-
-                    rewritten.push_str(indent);
-                    rewritten.push_str(name);
-                    rewritten.push(' ');
-                    rewritten.push_str(&arg.data_type.to_string());
-                    rewritten.push_str(" := $");
-                    rewritten.push_str(&param_index.to_string());
-                    rewritten.push(';');
-
-                    if segment.ends_with('\n') {
-                        rewritten.push('\n');
-                    }
-
-                    continue;
-                }
-            }
-
-            rewritten.push_str(segment);
-        }
-
-        rewritten
-    }
-
     /// Rewrite PL/pgSQL integer FOR-range syntax `lower .. upper` into
     /// a parser-friendly `lower TO upper` form.
     fn rewrite_sql_psm_for_integer_ranges(body: &str) -> String {
@@ -10367,6 +10283,42 @@ impl<'a> Parser<'a> {
         let name = self.parse_identifier()?;
         if self.dialect.is::<OracleDialect>() && self.parse_keyword(Keyword::EXCEPTION) {
             return Ok(PlSqlDeclaration::Exception { name });
+        }
+        if self.parse_keyword(Keyword::ALIAS) {
+            self.expect_keyword(Keyword::FOR)?;
+            let target = self.parse_expr()?;
+            let parameter = match &target {
+                Expr::Value(ValueWithSpan {
+                    value: Value::Placeholder(placeholder),
+                    ..
+                }) => placeholder
+                    .strip_prefix('$')
+                    .and_then(|index| index.parse::<usize>().ok())
+                    .and_then(|index| index.checked_sub(1))
+                    .and_then(|index| self.routine_args.get(index)),
+                Expr::Identifier(identifier) => self.routine_args.iter().find(|argument| {
+                    argument
+                        .name
+                        .as_ref()
+                        .is_some_and(|name| name.value.eq_ignore_ascii_case(&identifier.value))
+                }),
+                _ => None,
+            }
+            .ok_or_else(|| {
+                ParserError::ParserError(format!(
+                    "ALIAS FOR target {target} does not name a function parameter"
+                ))
+            })?;
+            return Ok(SqlPsmDeclaration {
+                name,
+                constant: false,
+                data_type: SqlPsmDataType::DataType(parameter.data_type.clone()),
+                collation: None,
+                not_null: false,
+                default_operator: Some(DeclarationAssignmentOperator::Assignment),
+                default: Some(target),
+            }
+            .into());
         }
         Ok(self
             .parse_sql_psm_variable_declaration_after_name(name)?
@@ -11323,11 +11275,20 @@ impl<'a> Parser<'a> {
 
     /// Create a sub-parser to parse SQL/PSM block content
     fn reparse_as_sql_psm_block(&self, body: &str) -> Result<BeginEndStatements, ParserError> {
+        self.reparse_as_sql_psm_block_with_args(body, &[])
+    }
+
+    fn reparse_as_sql_psm_block_with_args(
+        &self,
+        body: &str,
+        routine_args: &[OperateFunctionArg],
+    ) -> Result<BeginEndStatements, ParserError> {
         let dialect = self.dialect;
         let mut tokenizer = Tokenizer::new(dialect, body);
         let tokens = tokenizer.tokenize_with_location()?;
 
-        let parser = Parser::new(dialect).with_tokens_with_locations(tokens);
+        let mut parser = Parser::new(dialect).with_tokens_with_locations(tokens);
+        parser.routine_args = routine_args.to_vec();
         let _procedural = parser.enter_procedural_body();
         parser.parse_sql_psm_block()
     }
@@ -11635,9 +11596,9 @@ impl<'a> Parser<'a> {
                 _ => None,
             };
             if let Some(raw_body) = body_str {
-                let rewritten_body = Self::rewrite_sql_psm_alias_declarations(&raw_body, &args);
-                let rewritten_body = Self::rewrite_sql_psm_for_integer_ranges(&rewritten_body);
-                let parsed_block = self.reparse_as_sql_psm_block(&rewritten_body)?;
+                let rewritten_body = Self::rewrite_sql_psm_for_integer_ranges(&raw_body);
+                let parsed_block =
+                    self.reparse_as_sql_psm_block_with_args(&rewritten_body, &args)?;
                 body.function_body = Some(CreateFunctionBody::AsBeginEnd(parsed_block));
             }
         }
@@ -15990,11 +15951,11 @@ impl<'a> Parser<'a> {
                         GeneratedAs::ExpStored,
                         Some(GeneratedExpressionMode::Stored),
                     ))
-                } else if dialect_of!(self is PostgreSqlDialect) {
-                    // Postgres' AS IDENTITY branches are above, this one needs STORED
-                    self.expected("STORED", self.peek_token())
                 } else if self.parse_keywords(&[Keyword::VIRTUAL]) {
                     Ok((GeneratedAs::Always, Some(GeneratedExpressionMode::Virtual)))
+                } else if dialect_of!(self is PostgreSqlDialect) {
+                    // PostgreSQL requires an explicit storage mode.
+                    self.expected("STORED or VIRTUAL", self.peek_token())
                 } else {
                     Ok((GeneratedAs::Always, None))
                 }?;

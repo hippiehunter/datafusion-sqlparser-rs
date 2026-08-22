@@ -1621,8 +1621,11 @@ impl<'a> Tokenizer<'a> {
                     chars.next(); // consume
                     match chars.peek() {
                         Some('>') => self.consume_and_return(chars, Token::RArrow),
-                        Some('=') => self.consume_and_return(chars, Token::DoubleEq),
-                        _ => Ok(Some(Token::Eq)),
+                        Some('=') => {
+                            chars.next(); // consume the second '='
+                            self.start_binop(chars, "==", Token::DoubleEq)
+                        }
+                        _ => self.start_binop(chars, "=", Token::Eq),
                     }
                 }
                 '!' => {

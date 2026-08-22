@@ -4358,6 +4358,16 @@ fn parse_fetch() {
 
 #[test]
 fn parse_custom_operator() {
+    let select = pg().verified_only_select("SELECT 2 === 2");
+    assert_eq!(
+        expr_from_projection(&select.projection[0]),
+        &Expr::BinaryOp {
+            left: Box::new(Expr::Value(Value::Number("2".into(), false).with_empty_span())),
+            op: BinaryOperator::Custom("===".into()),
+            right: Box::new(Expr::Value(Value::Number("2".into(), false).with_empty_span())),
+        }
+    );
+
     // operator with a database and schema
     let sql = r#"SELECT * FROM events WHERE relname OPERATOR(database.pg_catalog.~) '^(table)$'"#;
     let select = pg().verified_only_select(sql);
@@ -8055,5 +8065,21 @@ fn parse_postgres_extensibility_ddl_as_typed_statements() {
     assert!(matches!(
         pg().verified_stmt("CREATE TABLE t OF pair_t"),
         Statement::CreateTypedTable(_)
+    ));
+}
+
+#[test]
+fn parse_postgres_virtual_generated_column() {
+    let Statement::CreateTable(create) = pg().verified_stmt(
+        "CREATE TABLE t (a INT, b INT GENERATED ALWAYS AS (a * 2) VIRTUAL)",
+    ) else {
+        panic!("expected CREATE TABLE");
+    };
+    assert!(matches!(
+        create.columns[1].options[0].option,
+        ColumnOption::Generated {
+            generation_expr_mode: Some(GeneratedExpressionMode::Virtual),
+            ..
+        }
     ));
 }
