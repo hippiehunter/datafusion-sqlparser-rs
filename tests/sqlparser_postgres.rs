@@ -29,7 +29,9 @@ use test_utils::*;
 use sqlparser::ast::AstBox as Box;
 use sqlparser::ast::*;
 use sqlparser::dialect::PostgreSqlDialect;
-use sqlparser::parser::{Parser, ParserError, ParserOptions};
+use sqlparser::parser::{
+    Parser, ParserError, ParserOptions, CREATE_TABLE_PLACEMENT_CONFLICT_MESSAGE,
+};
 
 #[test]
 fn bracket_identifiers_are_parser_owned_and_opt_in() {
@@ -5953,6 +5955,28 @@ fn parse_create_table_with_options() {
         }
         _ => unreachable!(),
     }
+}
+
+#[test]
+fn parse_create_table_rejects_conflicting_placement_options_in_either_order() {
+    for sql in [
+        "CREATE TABLE t (c INT) WITH (datafile_id = 7) TABLESPACE fast",
+        "CREATE TABLE t (c INT) TABLESPACE fast WITH (datafile_id = 7)",
+    ] {
+        assert_eq!(
+            pg().parse_sql_statements(sql),
+            Err(ParserError::ParserError(
+                CREATE_TABLE_PLACEMENT_CONFLICT_MESSAGE.to_string()
+            )),
+            "wrong placement conflict diagnostic for {sql:?}"
+        );
+    }
+}
+
+#[test]
+fn parse_create_table_accepts_each_placement_option_by_itself() {
+    pg().verified_stmt("CREATE TABLE by_file (c INT) WITH (datafile_id = 7)");
+    pg().verified_stmt("CREATE TABLE by_tablespace (c INT) TABLESPACE fast");
 }
 
 #[test]

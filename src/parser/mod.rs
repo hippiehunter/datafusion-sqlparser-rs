@@ -63,6 +63,11 @@ pub enum ParserError {
     RecursionLimitExceeded,
 }
 
+/// Diagnostic emitted when `CREATE TABLE` specifies both supported table
+/// placement forms.
+pub const CREATE_TABLE_PLACEMENT_CONFLICT_MESSAGE: &str =
+    "datafile_id and TABLESPACE cannot be specified together";
+
 // Use `Parser::expected` instead, if possible
 macro_rules! parser_err {
     ($MSG:expr, $loc:expr) => {
@@ -15198,29 +15203,74 @@ impl<'a> Parser<'a> {
     /// [PostgreSQL](https://www.postgresql.org/docs/current/ddl-partitioning.html)
     /// [MySql](https://dev.mysql.com/doc/refman/8.4/en/create-table.html)
     fn parse_optional_create_table_config(&self) -> Result<CreateTableConfiguration, ParserError> {
-        let mut table_options = CreateTableOptions::None;
-
         let inherits = if self.parse_keyword(Keyword::INHERITS) {
             Some(self.parse_parenthesized_qualified_column_list(IsOptional::Mandatory, false)?)
         } else {
             None
         };
 
-        // PostgreSQL supports `WITH ( options )`, before `AS`
-        let with_options = self.parse_options(Keyword::WITH)?;
-        if !with_options.is_empty() {
-            table_options = CreateTableOptions::With(with_options)
+        let mut with_options = Vec::new();
+        let mut table_properties = Vec::new();
+        let mut plain_options = Vec::new();
+        let mut parsed_with = false;
+        let mut parsed_table_properties = false;
+
+        // CREATE TABLE option clauses are ordinarily written in a
+        // dialect-specific order. Parse each supported clause form once so
+        // conflicts between forms can be diagnosed by the grammar instead of
+        // being left behind as an opaque trailing token.
+        loop {
+            if !parsed_with && self.peek_keyword(Keyword::WITH) {
+                with_options = self.parse_options(Keyword::WITH)?;
+                parsed_with = true;
+                continue;
+            }
+            if !parsed_table_properties && self.peek_keyword(Keyword::TBLPROPERTIES) {
+                table_properties = self.parse_options(Keyword::TBLPROPERTIES)?;
+                parsed_table_properties = true;
+                continue;
+            }
+
+            let parsed_plain_options = self.parse_plain_options()?;
+            if parsed_plain_options.is_empty() {
+                break;
+            }
+            plain_options.extend(parsed_plain_options);
         }
 
-        let table_properties = self.parse_options(Keyword::TBLPROPERTIES)?;
-        if !table_properties.is_empty() {
-            table_options = CreateTableOptions::TableProperties(table_properties);
+        let has_datafile_id = with_options.iter().any(|option| {
+            matches!(
+                option,
+                SqlOption::KeyValue { key, .. }
+                    if key.value.eq_ignore_ascii_case("datafile_id")
+            )
+        });
+        let has_tablespace = plain_options
+            .iter()
+            .any(|option| matches!(option, SqlOption::TableSpace(_)));
+        if has_datafile_id && has_tablespace {
+            return Err(ParserError::ParserError(
+                CREATE_TABLE_PLACEMENT_CONFLICT_MESSAGE.to_string(),
+            ));
         }
-        if table_options == CreateTableOptions::None {
-            let plain_options = self.parse_plain_options()?;
-            if !plain_options.is_empty() {
-                table_options = CreateTableOptions::Plain(plain_options)
-            }
+
+        let option_clause_count = usize::from(!with_options.is_empty())
+            + usize::from(!table_properties.is_empty())
+            + usize::from(!plain_options.is_empty());
+        if option_clause_count > 1 {
+            return Err(ParserError::ParserError(
+                "CREATE TABLE option clause forms cannot be combined".to_string(),
+            ));
+        }
+
+        let table_options = if !with_options.is_empty() {
+            CreateTableOptions::With(with_options)
+        } else if !table_properties.is_empty() {
+            CreateTableOptions::TableProperties(table_properties)
+        } else if !plain_options.is_empty() {
+            CreateTableOptions::Plain(plain_options)
+        } else {
+            CreateTableOptions::None
         };
 
         Ok(CreateTableConfiguration {
