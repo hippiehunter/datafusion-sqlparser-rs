@@ -8020,3 +8020,18 @@ fn parse_interval_literals_still_commit_on_value_tokens() {
     let expr = pg().verified_expr("INTERVAL '1 hour'");
     assert!(matches!(expr, Expr::Interval(_)));
 }
+
+#[test]
+fn parse_vacuum_analyze_table_as_one_typed_statement() {
+    let Statement::Vacuum(vacuum) = pg().one_statement_parses_to(
+        "VACUUM ANALYZE public.events",
+        "VACUUM ANALYZE public.events",
+    ) else {
+        panic!("expected VACUUM");
+    };
+    assert!(vacuum.analyze);
+    assert_eq!(
+        vacuum.table_name.as_ref().map(ToString::to_string),
+        Some("public.events".to_owned())
+    );
+}

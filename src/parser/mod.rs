@@ -29083,6 +29083,7 @@ impl<'a> Parser<'a> {
         let delete_only = self.parse_keywords(&[Keyword::DELETE, Keyword::ONLY]);
         let reindex = self.parse_keyword(Keyword::REINDEX);
         let recluster = self.parse_keyword(Keyword::RECLUSTER);
+        let analyze = self.parse_keyword(Keyword::ANALYZE);
         let (table_name, threshold, boost) =
             match self.maybe_parse(|p| p.parse_object_name(false))? {
                 Some(table_name) => {
@@ -29105,6 +29106,7 @@ impl<'a> Parser<'a> {
             delete_only,
             reindex,
             recluster,
+            analyze,
             table_name,
             threshold,
             boost,

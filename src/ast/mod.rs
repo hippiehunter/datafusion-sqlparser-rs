@@ -17822,7 +17822,7 @@ impl fmt::Display for CreateTableLike {
 /// Re-sorts rows and reclaims space in either a specified table or all tables in the current database
 ///
 /// '''sql
-/// VACUUM [ FULL | SORT ONLY | DELETE ONLY | REINDEX | RECLUSTER ] [ \[ table_name \] [ TO threshold PERCENT ] \[ BOOST \] ]
+/// VACUUM [ FULL | SORT ONLY | DELETE ONLY | REINDEX | RECLUSTER ] [ ANALYZE ] [ \[ table_name \] [ TO threshold PERCENT ] \[ BOOST \] ]
 /// '''
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -17835,6 +17835,7 @@ pub struct VacuumStatement {
     pub delete_only: bool,
     pub reindex: bool,
     pub recluster: bool,
+    pub analyze: bool,
     pub table_name: Option<ObjectName>,
     pub threshold: Option<Value>,
     pub boost: bool,
@@ -17900,18 +17901,20 @@ impl fmt::Display for VacuumStatement {
             delete_only,
             reindex,
             recluster,
+            analyze,
             table_name,
             threshold,
             boost,
         } = self;
         write!(
             f,
-            "VACUUM{}{}{}{}{}",
+            "VACUUM{}{}{}{}{}{}",
             if *full { " FULL" } else { "" },
             if *sort_only { " SORT ONLY" } else { "" },
             if *delete_only { " DELETE ONLY" } else { "" },
             if *reindex { " REINDEX" } else { "" },
             if *recluster { " RECLUSTER" } else { "" },
+            if *analyze { " ANALYZE" } else { "" },
         )?;
         if let Some(table_name) = table_name {
             write!(f, " {table_name}")?;
