@@ -199,6 +199,9 @@ pub mod do_blocks;
 #[path = "sql_psm/mod.rs"]
 pub mod sql_psm;
 
+// PL/pgSQL bodies and the routine forms that carry one
+pub mod plpgsql;
+
 // Triggers and Event Triggers
 pub mod triggers;
 

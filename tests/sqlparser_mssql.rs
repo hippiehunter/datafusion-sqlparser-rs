@@ -113,6 +113,7 @@ fn parse_create_procedure() {
         Statement::CreateProcedure {
             create_token: AttachedToken::empty(),
             or_alter: true,
+            attributes: vec![],
             body: ConditionalStatements::BeginEnd(BeginEndStatements {
                 begin_token: AttachedToken::empty(),
                 label: None,
@@ -214,6 +215,7 @@ fn parse_create_function() {
         ms().verified_stmt(return_expression_function),
         sqlparser::ast::Statement::CreateFunction(CreateFunction {
             token: AttachedToken::empty(),
+            attributes: vec![],
             or_alter: false,
             or_replace: false,
             temporary: false,
@@ -415,6 +417,7 @@ fn parse_create_function_parameter_default_values() {
         ms().verified_stmt(single_default_sql),
         Statement::CreateFunction(CreateFunction {
             token: AttachedToken::empty(),
+            attributes: vec![],
             or_alter: false,
             or_replace: false,
             temporary: false,

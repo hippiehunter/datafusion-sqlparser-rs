@@ -46,7 +46,8 @@ use crate::ast::{
     FunctionBehavior, FunctionCalledOnNull, FunctionDesc, FunctionDeterminismSpecifier,
     FunctionParallel, Ident, MaterializedViewRefreshSchedule, MySQLColumnPosition, ObjectName,
     OnCommit, OperateFunctionArg, OrderByExpr, PartitionBoundSpec, ProcedureSecurity,
-    ProcedureSetConfig, Query, SequenceOptions, Spanned, SqlDataAccess, SqlOption, TableVersion,
+    ProcedureSetConfig, Query, RoutineAttribute, SequenceOptions, Spanned, SqlDataAccess,
+    SqlOption, TableVersion,
     TriggerEvent, TriggerExecBody, TriggerObject, TriggerPeriod, TriggerReferencing, ValueWithSpan,
 };
 use crate::display_utils::{DisplayCommaSeparated, Indent, NewLine, SpaceOrNewline};
@@ -2813,6 +2814,9 @@ pub struct CreateFunction {
     pub sql_data_access: Option<SqlDataAccess>,
     /// SQL:2016 POLYMORPHIC keyword for PTF
     pub polymorphic: bool,
+    /// Routine attributes with no dedicated field on this struct, in the order
+    /// they were written. PostgreSQL currently puts only `TRANSFORM` here.
+    pub attributes: Vec<RoutineAttribute>,
 }
 
 impl fmt::Display for CreateFunction {
@@ -2882,6 +2886,9 @@ impl fmt::Display for CreateFunction {
         for set_option in &self.set_options {
             write!(f, " {set_option}")?;
         }
+        for attribute in &self.attributes {
+            write!(f, " {attribute}")?;
+        }
         if let Some(remote_connection) = &self.remote_connection {
             write!(f, " REMOTE WITH CONNECTION {remote_connection}")?;
         }
@@ -2909,6 +2916,36 @@ impl fmt::Display for CreateFunction {
         }
         if let Some(CreateFunctionBody::AsAfterOptions(function_body)) = &self.function_body {
             write!(f, " AS {function_body}")?;
+        }
+        if let Some(CreateFunctionBody::AsObjectFileLinkSymbol {
+            obj_file,
+            link_symbol,
+        }) = &self.function_body
+        {
+            write!(f, " AS {obj_file}, {link_symbol}")?;
+        }
+        if let Some(CreateFunctionBody::BeginAtomic(block)) = &self.function_body {
+            write!(f, " {block}")?;
+        }
+        if let Some(CreateFunctionBody::Multiple(bodies)) = &self.function_body {
+            for body in bodies {
+                match body {
+                    CreateFunctionBody::AsBeforeOptions(expr)
+                    | CreateFunctionBody::AsAfterOptions(expr) => write!(f, " AS {expr}")?,
+                    CreateFunctionBody::AsObjectFileLinkSymbol {
+                        obj_file,
+                        link_symbol,
+                    } => write!(f, " AS {obj_file}, {link_symbol}")?,
+                    CreateFunctionBody::Return(expr) => write!(f, " RETURN {expr}")?,
+                    CreateFunctionBody::AsReturnExpr(expr) => write!(f, " AS RETURN {expr}")?,
+                    CreateFunctionBody::AsReturnSelect(select) => {
+                        write!(f, " AS RETURN {select}")?
+                    }
+                    CreateFunctionBody::AsBeginEnd(bes) => write!(f, " AS $$ {bes} $$")?,
+                    CreateFunctionBody::BeginAtomic(block) => write!(f, " {block}")?,
+                    CreateFunctionBody::Multiple(_) => {}
+                }
+            }
         }
         if let Some(CreateFunctionBody::AsBeginEnd(bes)) = &self.function_body {
             // PL/pgSQL function bodies must always be dollar-quoted so the

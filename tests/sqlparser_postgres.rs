@@ -4935,6 +4935,7 @@ fn parse_create_function() {
         pg_and_generic().one_statement_parses_to(sql, canonical),
         Statement::CreateFunction(CreateFunction {
             token: AttachedToken::empty(),
+            attributes: vec![],
             or_alter: false,
             or_replace: false,
             temporary: false,

@@ -916,6 +916,14 @@ pub trait Dialect: Debug + Any {
         false
     }
 
+    /// Returns true if the dialect writes procedural bodies in PL/pgSQL, whose
+    /// statements (`<<label>>`, `ASSERT cond, msg`, dynamic `EXECUTE`, nested
+    /// `DECLARE` blocks, `target := query`) are spelled differently from the
+    /// same-named statements of other dialects.
+    fn supports_plpgsql(&self) -> bool {
+        false
+    }
+
     /// Returns true if the dialect supports the `LOAD DATA` statement
     fn supports_load_data(&self) -> bool {
         false
@@ -1271,6 +1279,7 @@ pub trait Dialect: Debug + Any {
             supports_try_convert: self.supports_try_convert(),
             supports_bang_not_operator: self.supports_bang_not_operator(),
             supports_listen_notify: self.supports_listen_notify(),
+            supports_plpgsql: self.supports_plpgsql(),
             supports_load_data: self.supports_load_data(),
             supports_top_before_distinct: self.supports_top_before_distinct(),
             supports_boolean_literals: self.supports_boolean_literals(),
@@ -1377,6 +1386,7 @@ pub struct DialectFeatures {
     pub supports_try_convert: bool,
     pub supports_bang_not_operator: bool,
     pub supports_listen_notify: bool,
+    pub supports_plpgsql: bool,
     pub supports_load_data: bool,
     pub supports_top_before_distinct: bool,
     pub supports_boolean_literals: bool,
@@ -1578,6 +1588,7 @@ impl<D: Dialect> Dialect for DelegatingDialect<D> {
         supports_try_convert,
         supports_bang_not_operator,
         supports_listen_notify,
+        supports_plpgsql,
         supports_load_data,
         supports_top_before_distinct,
         supports_boolean_literals,

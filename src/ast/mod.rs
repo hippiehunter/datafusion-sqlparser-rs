@@ -144,6 +144,10 @@ pub use table_constraints::{
     PeriodForName, PrimaryKeyConstraint, TableConstraint, UniqueConstraint,
 };
 mod operator;
+mod plpgsql;
+pub use self::plpgsql::{
+    AtomicBlock, PlpgsqlAssert, RoutineAttribute, SqlPsmQueryAssignment,
+};
 mod query;
 mod spans;
 pub use spans::Spanned;
@@ -2861,6 +2865,11 @@ pub struct CaseStatement {
     pub match_expr: Option<Expr>,
     pub when_blocks: Vec<ConditionalStatementBlock>,
     pub oracle_when_controls: Vec<Option<Vec<OracleCaseControl>>>,
+    /// PL/pgSQL allows several comma-separated values per `WHEN` of a `CASE`
+    /// statement with a search expression: `WHEN 3, 4, 3 + 5 THEN`. One entry
+    /// per element of `when_blocks`; `None` where that `WHEN` has a single
+    /// value, which is held by the block's `condition` instead.
+    pub when_values: Vec<Option<Vec<Expr>>>,
     pub else_block: Option<ConditionalStatementBlock>,
     /// The last token of the statement (`END` or `CASE`).
     pub end_case_token: AttachedToken,
@@ -2896,6 +2905,7 @@ impl fmt::Display for CaseStatement {
             match_expr,
             when_blocks,
             oracle_when_controls,
+            when_values,
             else_block,
             end_case_token,
         } = self;
@@ -2906,7 +2916,25 @@ impl fmt::Display for CaseStatement {
             write!(f, " {expr}")?;
         }
 
-        if oracle_when_controls.is_empty() && !when_blocks.is_empty() {
+        if !when_values.is_empty() {
+            for (block, values) in when_blocks.iter().zip(when_values) {
+                write!(f, " {}", block.start_token)?;
+                match values {
+                    Some(values) => write!(f, " {}", display_comma_separated(values))?,
+                    None => {
+                        if let Some(condition) = &block.condition {
+                            write!(f, " {condition}")?;
+                        }
+                    }
+                }
+                if block.then_token.is_some() {
+                    write!(f, " THEN")?;
+                }
+                if !block.conditional_statements.statements().is_empty() {
+                    write!(f, " {}", block.conditional_statements)?;
+                }
+            }
+        } else if oracle_when_controls.is_empty() && !when_blocks.is_empty() {
             write!(f, " {}", display_separated(when_blocks, " "))?;
         } else {
             for (block, controls) in when_blocks.iter().zip(oracle_when_controls) {
@@ -3226,11 +3254,16 @@ pub enum ForLoopVariant {
         upper: Box<Expr>,
         step: Option<Box<Expr>>,
     },
-    /// Query iteration: FOR r IN query or FOR r AS [cursor] CURSOR FOR query
+    /// Query iteration: FOR r AS [cursor] CURSOR FOR query
     Query {
         cursor_name: Option<Ident>,
         query: Box<Query>,
     },
+    /// PL/pgSQL query iteration: `FOR r IN query LOOP ... END LOOP`
+    InQuery(Box<Query>),
+    /// Iteration over the rows returned by a data-modifying statement:
+    /// `FOR r IN INSERT/UPDATE/DELETE/MERGE ... RETURNING ...`
+    StatementQuery { statement: Box<Statement> },
     /// Dynamic query: FOR r IN EXECUTE expr [USING ...]
     DynamicQuery {
         query_expr: Box<Expr>,
@@ -3280,6 +3313,9 @@ pub struct ForStatement {
     pub label: Option<Ident>,
     /// The loop variable name
     pub loop_name: Ident,
+    /// Additional loop variables for the PL/pgSQL scalar target list
+    /// `FOR a, b, c IN query LOOP`
+    pub additional_loop_names: Vec<Ident>,
     /// The iteration variant
     pub variant: ForLoopVariant,
     /// The body of the loop (statements to execute for each iteration)
@@ -3294,6 +3330,7 @@ impl fmt::Display for ForStatement {
             token: _,
             label,
             loop_name,
+            additional_loop_names,
             variant,
             body,
             end_label,
@@ -3301,7 +3338,11 @@ impl fmt::Display for ForStatement {
         if let Some(label) = label {
             write!(f, "{label}: ")?;
         }
-        write!(f, "FOR {loop_name} ")?;
+        write!(f, "FOR {loop_name}")?;
+        for name in additional_loop_names {
+            write!(f, ", {name}")?;
+        }
+        write!(f, " ")?;
 
         match variant {
             ForLoopVariant::IntegerRange {
@@ -3326,6 +3367,12 @@ impl fmt::Display for ForStatement {
                     write!(f, "{cursor_name} CURSOR FOR ")?;
                 }
                 write!(f, "{query} DO {body} END FOR")?;
+            }
+            ForLoopVariant::InQuery(query) => {
+                write!(f, "IN {query} LOOP {body} END LOOP")?;
+            }
+            ForLoopVariant::StatementQuery { statement } => {
+                write!(f, "IN {statement} LOOP {body} END LOOP")?;
             }
             ForLoopVariant::DynamicQuery { query_expr, using } => {
                 write!(f, "IN EXECUTE {query_expr}")?;
@@ -3636,6 +3683,12 @@ pub enum DiagnosticsItem {
     PgExceptionContext,
     PgExceptionDetail,
     PgExceptionHint,
+    PgRoutineOid,
+    PgDatatypeName,
+    ColumnName,
+    ConstraintName,
+    TableName,
+    SchemaName,
 }
 
 impl fmt::Display for DiagnosticsItem {
@@ -3650,6 +3703,12 @@ impl fmt::Display for DiagnosticsItem {
             DiagnosticsItem::PgExceptionContext => write!(f, "PG_EXCEPTION_CONTEXT"),
             DiagnosticsItem::PgExceptionDetail => write!(f, "PG_EXCEPTION_DETAIL"),
             DiagnosticsItem::PgExceptionHint => write!(f, "PG_EXCEPTION_HINT"),
+            DiagnosticsItem::PgRoutineOid => write!(f, "PG_ROUTINE_OID"),
+            DiagnosticsItem::PgDatatypeName => write!(f, "PG_DATATYPE_NAME"),
+            DiagnosticsItem::ColumnName => write!(f, "COLUMN_NAME"),
+            DiagnosticsItem::ConstraintName => write!(f, "CONSTRAINT_NAME"),
+            DiagnosticsItem::TableName => write!(f, "TABLE_NAME"),
+            DiagnosticsItem::SchemaName => write!(f, "SCHEMA_NAME"),
         }
     }
 }
@@ -3730,6 +3789,8 @@ pub enum ConditionalStatements {
     Sequence { statements: Vec<Statement> },
     /// BEGIN SELECT 1; SELECT 2; SELECT 3; ... END
     BeginEnd(BeginEndStatements),
+    /// BEGIN ATOMIC SELECT 1; SELECT 2; ... END
+    BeginAtomic(AtomicBlock),
 }
 
 impl ConditionalStatements {
@@ -3737,6 +3798,7 @@ impl ConditionalStatements {
         match self {
             ConditionalStatements::Sequence { statements } => statements,
             ConditionalStatements::BeginEnd(bes) => &bes.statements,
+            ConditionalStatements::BeginAtomic(block) => &block.statements,
         }
     }
 }
@@ -3751,6 +3813,7 @@ impl fmt::Display for ConditionalStatements {
                 Ok(())
             }
             ConditionalStatements::BeginEnd(bes) => write!(f, "{bes}"),
+            ConditionalStatements::BeginAtomic(block) => write!(f, "{block}"),
         }
     }
 }
@@ -3803,6 +3866,16 @@ pub enum SqlPsmDataType {
     Record,
     /// Cursor declaration with optional parameters and query
     Cursor(SqlPsmCursorDeclaration),
+    /// `ALIAS FOR` another datum in scope: `newname ALIAS FOR $1`.
+    ///
+    /// The aliased datum, and therefore the declared type, is resolved by the
+    /// server.
+    Alias(Expr),
+    /// An array of another SQL/PSM type: `record[]`, `tab.col%TYPE[]`.
+    ///
+    /// Array-of-array declarations nest this variant. PostgreSQL ignores the
+    /// declared dimensions and sizes, so they are not recorded.
+    Array(Box<SqlPsmDataType>),
 }
 
 /// The assignment operator used for default values in declarations.
@@ -5268,7 +5341,7 @@ impl fmt::Display for CursorParameter {
 
 impl fmt::Display for SqlPsmCursorDeclaration {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "CURSOR {}", self.scroll)?;
+        write!(f, "{}CURSOR", self.scroll)?;
         if let Some(params) = &self.parameters {
             write!(f, "({})", display_comma_separated(params))?;
         }
@@ -5284,6 +5357,8 @@ impl fmt::Display for SqlPsmDataType {
             SqlPsmDataType::RowTypeOf(name) => write!(f, "{}%ROWTYPE", name),
             SqlPsmDataType::Record => write!(f, "RECORD"),
             SqlPsmDataType::Cursor(decl) => write!(f, "{}", decl),
+            SqlPsmDataType::Array(element) => write!(f, "{}[]", element),
+            SqlPsmDataType::Alias(target) => write!(f, "ALIAS FOR {}", target),
         }
     }
 }
@@ -5720,7 +5795,10 @@ pub enum DoBody {
 impl fmt::Display for DoBody {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DoBody::Block(block) => write!(f, "{}", block),
+            // A structured block is always written back dollar-quoted: `DO`
+            // takes a string, and re-parsing goes through the PL/pgSQL grammar
+            // only for a quoted body.
+            DoBody::Block(block) => write!(f, "$$ {} $$", block),
             DoBody::RawBody(expr) => write!(f, "{}", expr),
         }
     }
@@ -6931,6 +7009,10 @@ pub enum Statement {
     Perform(PerformStatement),
     /// A SQL/PSM assignment statement using `:=`.
     SqlPsmAssignment(SqlPsmAssignment),
+    /// A PL/pgSQL assignment whose right hand side is a query.
+    SqlPsmQueryAssignment(SqlPsmQueryAssignment),
+    /// A PL/pgSQL `ASSERT condition [, message]` statement.
+    PlpgsqlAssert(PlpgsqlAssert),
     /// A `DO` statement (PostgreSQL anonymous code block).
     ///
     /// ```sql
@@ -7869,6 +7951,10 @@ pub enum Statement {
         language: Option<Ident>,
         security: Option<ProcedureSecurity>,
         set_options: Vec<ProcedureSetConfig>,
+        /// Routine attributes with no dedicated field. PostgreSQL parses the
+        /// same attribute list for procedures as for functions and rejects the
+        /// function-only ones when the procedure is created.
+        attributes: Vec<RoutineAttribute>,
         /// Whether AS keyword was used before the body
         has_as: bool,
         body: ConditionalStatements,
@@ -10955,6 +11041,12 @@ impl fmt::Display for Statement {
             Statement::SqlPsmAssignment(stmt) => {
                 write!(f, "{stmt}")
             }
+            Statement::SqlPsmQueryAssignment(stmt) => {
+                write!(f, "{stmt}")
+            }
+            Statement::PlpgsqlAssert(stmt) => {
+                write!(f, "{stmt}")
+            }
             Statement::Do(stmt) => {
                 write!(f, "{stmt}")
             }
@@ -11104,6 +11196,7 @@ impl fmt::Display for Statement {
                 language,
                 security,
                 set_options,
+                attributes,
                 has_as,
                 body,
             } => {
@@ -11128,6 +11221,10 @@ impl fmt::Display for Statement {
 
                 for set_option in set_options {
                     write!(f, " {set_option}")?;
+                }
+
+                for attribute in attributes {
+                    write!(f, " {attribute}")?;
                 }
 
                 if *has_as {
@@ -16629,6 +16726,36 @@ pub enum CreateFunctionBody {
     ///
     /// [MsSql]: https://learn.microsoft.com/en-us/sql/t-sql/statements/create-function-transact-sql?view=sql-server-ver16#select_stmt
     AsReturnSelect(Select),
+
+    /// A C-language function body naming both the object file and the link
+    /// symbol.
+    ///
+    /// Example:
+    /// ```sql
+    /// CREATE FUNCTION f(int) RETURNS int AS 'obj_file', 'link_symbol' LANGUAGE c
+    /// ```
+    ///
+    /// [PostgreSQL]: https://www.postgresql.org/docs/current/sql-createfunction.html
+    AsObjectFileLinkSymbol { obj_file: Expr, link_symbol: Expr },
+
+    /// A SQL-standard function body.
+    ///
+    /// Example:
+    /// ```sql
+    /// CREATE FUNCTION f(x int) RETURNS int LANGUAGE SQL BEGIN ATOMIC SELECT x * 2; END
+    /// ```
+    ///
+    /// [PostgreSQL]: https://www.postgresql.org/docs/current/sql-createfunction.html
+    BeginAtomic(AtomicBlock),
+
+    /// Several bodies written in one statement, in source order.
+    ///
+    /// PostgreSQL's grammar accepts any number of `AS` and `RETURN` items and
+    /// rejects the duplicate when the function is created (SQLSTATE 42P13):
+    /// ```sql
+    /// CREATE FUNCTION f(x int) RETURNS int LANGUAGE SQL AS $$ SELECT x * 2 $$ RETURN x * 3
+    /// ```
+    Multiple(Vec<CreateFunctionBody>),
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
