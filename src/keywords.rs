@@ -902,6 +902,7 @@ define_keywords!(
     PRECISION,
     PREFERRED,
     PREPARE,
+    PREPARED,
     PRESERVE,
     PRESET,
     PREWHERE,

@@ -642,19 +642,25 @@ impl fmt::Display for SetQuantifier {
 pub struct Table {
     pub table_name: Option<String>,
     pub schema_name: Option<String>,
+    /// The full relation reference, carrying the qualification, the quoting,
+    /// and PostgreSQL's `ONLY` / `*` inheritance markers. `table_name` and
+    /// `schema_name` repeat its last two name parts.
+    pub relation: Option<PgRelationExpr>,
 }
 
 impl fmt::Display for Table {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if let Some(ref schema_name) = self.schema_name {
-            write!(
-                f,
-                "TABLE {}.{}",
-                schema_name,
-                self.table_name.as_ref().unwrap(),
-            )?;
+        if let Some(relation) = &self.relation {
+            return write!(f, "TABLE {relation}");
+        }
+        f.write_str("TABLE")?;
+        if let Some(schema_name) = &self.schema_name {
+            write!(f, " {schema_name}.")?;
         } else {
-            write!(f, "TABLE {}", self.table_name.as_ref().unwrap(),)?;
+            f.write_str(" ")?;
+        }
+        if let Some(table_name) = &self.table_name {
+            f.write_str(table_name)?;
         }
         Ok(())
     }

@@ -51,6 +51,7 @@ use core::cell::{Cell, RefCell};
 use sqlparser::parser::ParserState::ColumnDefinition;
 
 mod alter;
+mod pg_utility;
 
 fn box_into_inner<T>(value: Box<T>) -> T {
     Box::into_inner(value)
@@ -1173,10 +1174,15 @@ impl<'a> Parser<'a> {
                         self.prev_token();
                         self.parse_resignal()
                     }
-                    Keyword::SELECT | Keyword::WITH | Keyword::VALUES | Keyword::FROM => {
+                    Keyword::SELECT
+                    | Keyword::WITH
+                    | Keyword::VALUES
+                    | Keyword::FROM
+                    | Keyword::TABLE => {
                         self.prev_token();
                         self.parse_query().map(Statement::Query)
                     }
+                    Keyword::ABORT => self.parse_abort(),
                     Keyword::TRUNCATE => self.parse_truncate(),
                     Keyword::CREATE => self.parse_create(),
                     Keyword::CACHE => self.parse_cache_table(),
@@ -4905,82 +4911,6 @@ impl<'a> Parser<'a> {
         } else {
             None
         }
-    }
-
-    pub fn parse_analyze(&self) -> Result<Statement, ParserError> {
-        let has_table_keyword = self.parse_keyword(Keyword::TABLE);
-        let table_name = if has_table_keyword {
-            self.parse_object_name(false)?
-        } else if matches!(
-            self.peek_token().token,
-            BorrowedToken::SemiColon | BorrowedToken::EOF
-        ) || self
-            .peek_one_of_keywords(&[
-                Keyword::PARTITION,
-                Keyword::FOR,
-                Keyword::CACHE,
-                Keyword::NOSCAN,
-                Keyword::COMPUTE,
-            ])
-            .is_some()
-        {
-            ObjectName(vec![])
-        } else {
-            self.parse_object_name(false)?
-        };
-        let mut for_columns = false;
-        let mut cache_metadata = false;
-        let mut noscan = false;
-        let mut partitions = None;
-        let mut compute_statistics = false;
-        let mut columns = vec![];
-        loop {
-            match self.parse_one_of_keywords(&[
-                Keyword::PARTITION,
-                Keyword::FOR,
-                Keyword::CACHE,
-                Keyword::NOSCAN,
-                Keyword::COMPUTE,
-            ]) {
-                Some(Keyword::PARTITION) => {
-                    self.expect_token(&BorrowedToken::LParen)?;
-                    partitions = Some(self.parse_comma_separated(Parser::parse_expr)?);
-                    self.expect_token(&BorrowedToken::RParen)?;
-                }
-                Some(Keyword::NOSCAN) => noscan = true,
-                Some(Keyword::FOR) => {
-                    self.expect_keyword_is(Keyword::COLUMNS)?;
-
-                    columns = self
-                        .maybe_parse(|parser| {
-                            parser.parse_comma_separated(|p| p.parse_identifier())
-                        })?
-                        .unwrap_or_default();
-                    for_columns = true
-                }
-                Some(Keyword::CACHE) => {
-                    self.expect_keyword_is(Keyword::METADATA)?;
-                    cache_metadata = true
-                }
-                Some(Keyword::COMPUTE) => {
-                    self.expect_keyword_is(Keyword::STATISTICS)?;
-                    compute_statistics = true
-                }
-                _ => break,
-            }
-        }
-
-        Ok(Analyze {
-            has_table_keyword,
-            table_name,
-            for_columns,
-            columns,
-            partitions,
-            cache_metadata,
-            noscan,
-            compute_statistics,
-        }
-        .into())
     }
 
     /// Parse a new expression including wildcard & qualified wildcard.
@@ -14559,18 +14489,18 @@ impl<'a> Parser<'a> {
             FetchDirection::Last
         } else if self.parse_keyword(Keyword::ABSOLUTE) {
             FetchDirection::Absolute {
-                limit: self.parse_number_value()?.value,
+                limit: self.parse_signed_number_value()?.value,
             }
         } else if self.parse_keyword(Keyword::RELATIVE) {
             FetchDirection::Relative {
-                limit: self.parse_number_value()?.value,
+                limit: self.parse_signed_number_value()?.value,
             }
         } else if self.parse_keyword(Keyword::FORWARD) {
             if self.parse_keyword(Keyword::ALL) {
                 FetchDirection::ForwardAll
-            } else if matches!(self.peek_token_ref().token, BorrowedToken::Number(_, _)) {
+            } else if self.peek_signed_number() {
                 FetchDirection::Forward {
-                    limit: Some(self.parse_number_value()?.value),
+                    limit: Some(self.parse_signed_number_value()?.value),
                 }
             } else {
                 // `FORWARD` with no count (e.g. `FETCH FORWARD FROM cur`) means one row.
@@ -14579,18 +14509,18 @@ impl<'a> Parser<'a> {
         } else if self.parse_keyword(Keyword::BACKWARD) {
             if self.parse_keyword(Keyword::ALL) {
                 FetchDirection::BackwardAll
-            } else if matches!(self.peek_token_ref().token, BorrowedToken::Number(_, _)) {
+            } else if self.peek_signed_number() {
                 FetchDirection::Backward {
-                    limit: Some(self.parse_number_value()?.value),
+                    limit: Some(self.parse_signed_number_value()?.value),
                 }
             } else {
                 FetchDirection::Backward { limit: None }
             }
         } else if self.parse_keyword(Keyword::ALL) {
             FetchDirection::All
-        } else if matches!(self.peek_token_ref().token, BorrowedToken::Number(_, _)) {
+        } else if self.peek_signed_number() {
             FetchDirection::Count {
-                limit: self.parse_number_value()?.value,
+                limit: self.parse_signed_number_value()?.value,
             }
         } else {
             // PostgreSQL default direction when omitted.
@@ -14741,18 +14671,18 @@ impl<'a> Parser<'a> {
             FetchDirection::Last
         } else if self.parse_keyword(Keyword::ABSOLUTE) {
             FetchDirection::Absolute {
-                limit: self.parse_number_value()?.value,
+                limit: self.parse_signed_number_value()?.value,
             }
         } else if self.parse_keyword(Keyword::RELATIVE) {
             FetchDirection::Relative {
-                limit: self.parse_number_value()?.value,
+                limit: self.parse_signed_number_value()?.value,
             }
         } else if self.parse_keyword(Keyword::FORWARD) {
             if self.parse_keyword(Keyword::ALL) {
                 FetchDirection::ForwardAll
-            } else if matches!(self.peek_token_ref().token, BorrowedToken::Number(_, _)) {
+            } else if self.peek_signed_number() {
                 FetchDirection::Forward {
-                    limit: Some(self.parse_number_value()?.value),
+                    limit: Some(self.parse_signed_number_value()?.value),
                 }
             } else {
                 // `MOVE FORWARD FROM cur` / `MOVE FORWARD IN cur` — no count, move one row.
@@ -14761,19 +14691,22 @@ impl<'a> Parser<'a> {
         } else if self.parse_keyword(Keyword::BACKWARD) {
             if self.parse_keyword(Keyword::ALL) {
                 FetchDirection::BackwardAll
-            } else if matches!(self.peek_token_ref().token, BorrowedToken::Number(_, _)) {
+            } else if self.peek_signed_number() {
                 FetchDirection::Backward {
-                    limit: Some(self.parse_number_value()?.value),
+                    limit: Some(self.parse_signed_number_value()?.value),
                 }
             } else {
                 FetchDirection::Backward { limit: None }
             }
         } else if self.parse_keyword(Keyword::ALL) {
             FetchDirection::All
-        } else {
+        } else if self.peek_signed_number() {
             FetchDirection::Count {
-                limit: self.parse_number_value()?.value,
+                limit: self.parse_signed_number_value()?.value,
             }
+        } else {
+            // PostgreSQL default direction when omitted.
+            FetchDirection::Next
         };
 
         // Optional FROM/IN keyword before cursor name
@@ -17703,10 +17636,18 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
+        let with_data = if self.parse_keywords(&[Keyword::WITH, Keyword::NO, Keyword::DATA]) {
+            Some(false)
+        } else if self.parse_keywords(&[Keyword::WITH, Keyword::DATA]) {
+            Some(true)
+        } else {
+            None
+        };
         Ok(Statement::RefreshMaterializedView {
             name,
             concurrently,
             method,
+            with_data,
         })
     }
 
@@ -21418,51 +21359,6 @@ impl<'a> Parser<'a> {
             nocycle,
             relationships,
         })
-    }
-
-    /// Parse `CREATE TABLE x AS TABLE y`
-    pub fn parse_as_table(&self) -> Result<Table, ParserError> {
-        let token1 = self.next_token();
-        let token2 = self.next_token();
-        let token3 = self.next_token();
-
-        let table_name;
-        let schema_name;
-        if token2 == BorrowedToken::Period {
-            match token1.token {
-                BorrowedToken::Word(w) => {
-                    schema_name = w.value.to_string();
-                }
-                _ => {
-                    return self.expected("Schema name", token1);
-                }
-            }
-            match token3.token {
-                BorrowedToken::Word(w) => {
-                    table_name = w.value.to_string();
-                }
-                _ => {
-                    return self.expected("Table name", token3);
-                }
-            }
-            Ok(Table {
-                table_name: Some(table_name),
-                schema_name: Some(schema_name),
-            })
-        } else {
-            match token1.token {
-                BorrowedToken::Word(w) => {
-                    table_name = w.value.to_string();
-                }
-                _ => {
-                    return self.expected("Table name", token1);
-                }
-            }
-            Ok(Table {
-                table_name: Some(table_name),
-                schema_name: None,
-            })
-        }
     }
 
     /// Parse a `SET ROLE` statement. Expects SET to be consumed already.
@@ -26566,11 +26462,15 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    /// Parse PostgreSQL `LOCK [ TABLE ] [ ONLY ] name [, ...] [ IN lockmode MODE ] [ NOWAIT ]`
+    /// Parse PostgreSQL `LOCK [ TABLE ] [ ONLY ] name [ * ] [, ...] [ IN lockmode MODE ] [ NOWAIT ]`
     fn parse_pg_lock_table(&self, lock_token: TokenWithSpan) -> Result<Statement, ParserError> {
         let _ = self.parse_keyword(Keyword::TABLE);
-        let only = self.parse_keyword(Keyword::ONLY);
-        let tables = self.parse_comma_separated(|p| p.parse_object_name(false))?;
+        let relations = self.parse_comma_separated(Parser::parse_pg_relation_expr)?;
+        let only = relations.first().is_some_and(|relation| relation.only);
+        let tables = relations
+            .iter()
+            .map(|relation| relation.name.clone())
+            .collect();
         let mode = if self.parse_keyword(Keyword::IN) {
             let mode = if self.parse_keyword(Keyword::ACCESS) {
                 if self.parse_keyword(Keyword::SHARE) {
@@ -26612,6 +26512,7 @@ impl<'a> Parser<'a> {
             tables,
             mode,
             nowait,
+            relations,
         }))
     }
 
@@ -26723,11 +26624,15 @@ impl<'a> Parser<'a> {
                 || self.peek_keyword(Keyword::WORK)
                 || self.peek_keyword(Keyword::ISOLATION)
                 || self.peek_keyword(Keyword::READ)
+                || self.peek_keyword(Keyword::DEFERRABLE)
+                || self.peek_keywords(&[Keyword::NOT, Keyword::DEFERRABLE])
         } else {
             self.peek_keyword(Keyword::TRANSACTION)
                 || self.peek_keyword(Keyword::WORK)
                 || self.peek_keyword(Keyword::ISOLATION)
                 || self.peek_keyword(Keyword::READ)
+                || self.peek_keyword(Keyword::DEFERRABLE)
+                || self.peek_keywords(&[Keyword::NOT, Keyword::DEFERRABLE])
         };
 
         has_transaction_syntax
@@ -26882,6 +26787,10 @@ impl<'a> Parser<'a> {
                 TransactionMode::AccessMode(TransactionAccessMode::ReadOnly)
             } else if self.parse_keywords(&[Keyword::READ, Keyword::WRITE]) {
                 TransactionMode::AccessMode(TransactionAccessMode::ReadWrite)
+            } else if self.parse_keyword(Keyword::DEFERRABLE) {
+                TransactionMode::Deferrable(true)
+            } else if self.parse_keywords(&[Keyword::NOT, Keyword::DEFERRABLE]) {
+                TransactionMode::Deferrable(false)
             } else if required {
                 self.expected("transaction mode", self.peek_token())?
             } else {
@@ -26949,6 +26858,10 @@ impl<'a> Parser<'a> {
                     force,
                 }),
             });
+        }
+        if self.parse_keyword(Keyword::PREPARED) {
+            return self
+                .parse_prepared_transaction(commit_token, PreparedTransactionAction::Commit);
         }
         Ok(Statement::Commit {
             commit_token,
@@ -27178,6 +27091,10 @@ impl<'a> Parser<'a> {
 
     pub fn parse_rollback(&self) -> Result<Statement, ParserError> {
         let rollback_token = self.attached_token_from_current();
+        if self.parse_keyword(Keyword::PREPARED) {
+            return self
+                .parse_prepared_transaction(rollback_token, PreparedTransactionAction::Rollback);
+        }
         let chain = self.parse_commit_rollback_chain()?;
         let savepoint = self.parse_rollback_savepoint()?;
 
@@ -27376,6 +27293,10 @@ impl<'a> Parser<'a> {
 
     pub fn parse_prepare(&self) -> Result<Statement, ParserError> {
         let prepare_token = self.attached_token_from_current();
+        if self.parse_keyword(Keyword::TRANSACTION) {
+            return self
+                .parse_prepared_transaction(prepare_token, PreparedTransactionAction::Prepare);
+        }
         let name = self.parse_identifier()?;
 
         let mut data_types = vec![];
@@ -29221,44 +29142,6 @@ impl<'a> Parser<'a> {
         Ok(Statement::Return(ReturnStatement { token, value }))
     }
 
-    fn parse_vacuum(&self) -> Result<Statement, ParserError> {
-        let token = self.attached_token_from_current();
-        self.expect_keyword(Keyword::VACUUM)?;
-        let full = self.parse_keyword(Keyword::FULL);
-        let sort_only = self.parse_keywords(&[Keyword::SORT, Keyword::ONLY]);
-        let delete_only = self.parse_keywords(&[Keyword::DELETE, Keyword::ONLY]);
-        let reindex = self.parse_keyword(Keyword::REINDEX);
-        let recluster = self.parse_keyword(Keyword::RECLUSTER);
-        let analyze = self.parse_keyword(Keyword::ANALYZE);
-        let (table_name, threshold, boost) =
-            match self.maybe_parse(|p| p.parse_object_name(false))? {
-                Some(table_name) => {
-                    let threshold = if self.parse_keyword(Keyword::TO) {
-                        let value = self.parse_value()?;
-                        self.expect_keyword(Keyword::PERCENT)?;
-                        Some(value.value)
-                    } else {
-                        None
-                    };
-                    let boost = self.parse_keyword(Keyword::BOOST);
-                    (Some(table_name), threshold, boost)
-                }
-                _ => (None, None, false),
-            };
-        Ok(Statement::Vacuum(VacuumStatement {
-            token,
-            full,
-            sort_only,
-            delete_only,
-            reindex,
-            recluster,
-            analyze,
-            table_name,
-            threshold,
-            boost,
-        }))
-    }
-
     fn parse_reindex(&self) -> Result<Statement, ParserError> {
         let token = self.attached_token_from_current();
         let options = if self.peek_token().token == BorrowedToken::LParen {
@@ -29304,7 +29187,7 @@ impl<'a> Parser<'a> {
     /// Returns true if the next keyword indicates a sub query, i.e. SELECT or WITH
     fn peek_sub_query(&self) -> bool {
         if self
-            .parse_one_of_keywords(&[Keyword::SELECT, Keyword::WITH])
+            .parse_one_of_keywords(&[Keyword::SELECT, Keyword::WITH, Keyword::TABLE])
             .is_some()
         {
             self.prev_token();
@@ -29553,6 +29436,24 @@ impl<'a> Parser<'a> {
                 token,
                 reset: Reset::ConfigurationParameter(ObjectName::from(vec![Ident::new(
                     "session_authorization",
+                )])),
+            }));
+        }
+
+        if self.parse_keywords(&[Keyword::TIME, Keyword::ZONE]) {
+            return Ok(Statement::Reset(ResetStatement {
+                token,
+                reset: Reset::ConfigurationParameter(ObjectName::from(vec![Ident::new(
+                    "timezone",
+                )])),
+            }));
+        }
+
+        if self.parse_keywords(&[Keyword::TRANSACTION, Keyword::ISOLATION, Keyword::LEVEL]) {
+            return Ok(Statement::Reset(ResetStatement {
+                token,
+                reset: Reset::ConfigurationParameter(ObjectName::from(vec![Ident::new(
+                    "transaction_isolation",
                 )])),
             }));
         }

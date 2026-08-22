@@ -4208,6 +4208,9 @@ fn parse_create_table_as_table() {
         body: Box::new(SetExpr::Table(Box::new(Table {
             table_name: Some("old_table".to_string()),
             schema_name: None,
+            relation: Some(PgRelationExpr::new(ObjectName::from(vec![Ident::new(
+                "old_table",
+            )]))),
         }))),
         order_by: None,
         limit_clause: None,
@@ -4231,6 +4234,10 @@ fn parse_create_table_as_table() {
         body: Box::new(SetExpr::Table(Box::new(Table {
             table_name: Some("old_table".to_string()),
             schema_name: Some("schema_name".to_string()),
+            relation: Some(PgRelationExpr::new(ObjectName::from(vec![
+                Ident::new("schema_name"),
+                Ident::new("old_table"),
+            ]))),
         }))),
         order_by: None,
         limit_clause: None,
@@ -4767,6 +4774,7 @@ fn parse_refresh_materialized_view() {
             name,
             concurrently,
             method,
+            ..
         } => {
             assert_eq!("myschema.mv", name.to_string());
             assert!(!concurrently);
@@ -4781,6 +4789,7 @@ fn parse_refresh_materialized_view() {
             name,
             concurrently,
             method,
+            ..
         } => {
             assert_eq!("mv", name.to_string());
             assert!(concurrently);
@@ -4795,6 +4804,7 @@ fn parse_refresh_materialized_view() {
             name,
             concurrently,
             method,
+            ..
         } => {
             assert_eq!("mv", name.to_string());
             assert!(!concurrently);

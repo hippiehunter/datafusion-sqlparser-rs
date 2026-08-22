@@ -114,6 +114,11 @@ pub use self::query::{
     XmlWhitespace,
 };
 
+pub use self::pg_utility::{
+    PgRelationExpr, PreparedTransactionAction, PreparedTransactionStatement, VacuumOption,
+    VacuumOptionName, VacuumOptionValue, VacuumRelation,
+};
+
 pub use self::trigger::{
     TriggerEvent, TriggerExecBody, TriggerExecBodyType, TriggerObject, TriggerPeriod,
     TriggerReferencing, TriggerReferencingType,
@@ -148,6 +153,7 @@ mod query;
 mod spans;
 pub use spans::Spanned;
 
+mod pg_utility;
 mod trigger;
 mod value;
 
@@ -6623,16 +6629,32 @@ pub struct Analyze {
     pub noscan: bool,
     pub compute_statistics: bool,
     pub has_table_keyword: bool,
+    /// The parenthesized option list of PostgreSQL's
+    /// `ANALYZE ( option [, ...] )`.
+    pub options: Vec<VacuumOption>,
+    /// PostgreSQL's `table_and_columns` list. `table_name` names the first of
+    /// these so that consumers written against the single-table form keep
+    /// working.
+    pub relations: Vec<VacuumRelation>,
+    /// The effective `VERBOSE` request, whether spelled as a bare keyword or
+    /// inside `options`.
+    pub verbose: bool,
 }
 
 impl fmt::Display for Analyze {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.table_name.0.is_empty() {
-            write!(f, "ANALYZE")?;
-        } else {
+        f.write_str("ANALYZE")?;
+        if !self.options.is_empty() {
+            write!(f, " ({})", display_comma_separated(&self.options))?;
+        } else if self.verbose {
+            f.write_str(" VERBOSE")?;
+        }
+        if !self.relations.is_empty() {
+            write!(f, " {}", display_comma_separated(&self.relations))?;
+        } else if !self.table_name.0.is_empty() {
             write!(
                 f,
-                "ANALYZE{}{table_name}",
+                "{}{table_name}",
                 if self.has_table_keyword {
                     " TABLE "
                 } else {
@@ -7126,11 +7148,8 @@ pub enum Statement {
         operation: AlterMaterializedViewOperation,
     },
     /// ```sql
-    /// REFRESH MATERIALIZED VIEW [ CONCURRENTLY ] name [ FAST | COMPLETE ]
+    /// REFRESH MATERIALIZED VIEW [ CONCURRENTLY ] name [ FAST | COMPLETE ] [ WITH [ NO ] DATA ]
     /// ```
-    ///
-    /// PostgreSQL also accepts an optional `WITH [ NO ] DATA` suffix; that
-    /// form is not parsed yet.
     RefreshMaterializedView {
         /// Materialized view name.
         #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
@@ -7139,6 +7158,8 @@ pub enum Statement {
         concurrently: bool,
         /// Optional refresh method (Oracle/dbl-server extension).
         method: Option<MaterializedViewRefreshMethod>,
+        /// `Some(true)` for `WITH DATA`, `Some(false)` for `WITH NO DATA`.
+        with_data: Option<bool>,
     },
     /// ```sql
     /// ALTER TYPE
@@ -8408,6 +8429,14 @@ pub enum Statement {
     /// VACUUM tbl
     /// ```
     Vacuum(VacuumStatement),
+    /// A PostgreSQL two-phase commit command.
+    ///
+    /// ```sql
+    /// PREPARE TRANSACTION 'gid'
+    /// COMMIT PREPARED 'gid'
+    /// ROLLBACK PREPARED 'gid'
+    /// ```
+    PreparedTransaction(PreparedTransactionStatement),
     /// Rebuilds an index or the indexes owned by a PostgreSQL catalog object.
     ///
     /// ```sql
@@ -10391,18 +10420,22 @@ impl fmt::Display for OracleLockTable {
     }
 }
 
-/// PostgreSQL `LOCK [ TABLE ] [ ONLY ] name [, ...] [ IN lockmode MODE ] [ NOWAIT ]`
+/// PostgreSQL `LOCK [ TABLE ] [ ONLY ] name [ * ] [, ...] [ IN lockmode MODE ] [ NOWAIT ]`
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct PgLockTable {
     #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
     pub lock_token: AttachedToken,
+    /// Whether the first relation carries `ONLY`.
     pub only: bool,
     pub tables: Vec<ObjectName>,
     /// `None` means the mode was omitted; PostgreSQL defaults to ACCESS EXCLUSIVE.
     pub mode: Option<PgLockTableMode>,
     pub nowait: bool,
+    /// The relations with their per-relation `ONLY` and inheritance `*`; the
+    /// names repeat those of `tables`.
+    pub relations: Vec<PgRelationExpr>,
 }
 
 /// The eight PostgreSQL table lock modes.
@@ -10438,10 +10471,14 @@ impl fmt::Display for PgLockTableMode {
 impl fmt::Display for PgLockTable {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "LOCK TABLE ")?;
-        if self.only {
-            write!(f, "ONLY ")?;
+        if self.relations.is_empty() {
+            if self.only {
+                write!(f, "ONLY ")?;
+            }
+            write!(f, "{}", display_comma_separated(&self.tables))?;
+        } else {
+            write!(f, "{}", display_comma_separated(&self.relations))?;
         }
-        write!(f, "{}", display_comma_separated(&self.tables))?;
         if let Some(mode) = &self.mode {
             write!(f, " IN {mode} MODE")?;
         }
@@ -11256,6 +11293,7 @@ impl fmt::Display for Statement {
                 name,
                 concurrently,
                 method,
+                with_data,
             } => {
                 write!(f, "REFRESH MATERIALIZED VIEW ")?;
                 if *concurrently {
@@ -11264,6 +11302,11 @@ impl fmt::Display for Statement {
                 write!(f, "{name}")?;
                 if let Some(method) = method {
                     write!(f, " {method}")?;
+                }
+                match with_data {
+                    Some(true) => write!(f, " WITH DATA")?,
+                    Some(false) => write!(f, " WITH NO DATA")?,
+                    None => {}
                 }
                 Ok(())
             }
@@ -12474,6 +12517,7 @@ impl fmt::Display for Statement {
             Statement::CreateUser(s) => write!(f, "{s}"),
             Statement::AlterSchema(s) => write!(f, "{s}"),
             Statement::Vacuum(s) => write!(f, "{s}"),
+            Statement::PreparedTransaction(s) => write!(f, "{s}"),
             Statement::Reindex(s) => write!(f, "{s}"),
             Statement::AlterUser(s) => write!(f, "{s}"),
             Statement::Reset(s) => write!(f, "{s}"),
@@ -15327,6 +15371,8 @@ impl fmt::Display for ImportForeignSchemaStatement {
 pub enum TransactionMode {
     AccessMode(TransactionAccessMode),
     IsolationLevel(TransactionIsolationLevel),
+    /// `DEFERRABLE` when true, `NOT DEFERRABLE` when false.
+    Deferrable(bool),
 }
 
 impl fmt::Display for TransactionMode {
@@ -15335,6 +15381,8 @@ impl fmt::Display for TransactionMode {
         match self {
             AccessMode(access_mode) => write!(f, "{access_mode}"),
             IsolationLevel(iso_level) => write!(f, "ISOLATION LEVEL {iso_level}"),
+            Deferrable(true) => f.write_str("DEFERRABLE"),
+            Deferrable(false) => f.write_str("NOT DEFERRABLE"),
         }
     }
 }
@@ -17892,8 +17940,14 @@ impl fmt::Display for CreateTableLike {
 /// Re-sorts rows and reclaims space in either a specified table or all tables in the current database
 ///
 /// '''sql
-/// VACUUM [ FULL | SORT ONLY | DELETE ONLY | REINDEX | RECLUSTER ] [ ANALYZE ] [ \[ table_name \] [ TO threshold PERCENT ] \[ BOOST \] ]
+/// VACUUM [ FULL | SORT ONLY | DELETE ONLY | REINDEX | RECLUSTER ] [ FREEZE ] [ VERBOSE ] [ ANALYZE ] [ table_and_columns [, ...] ]
+/// VACUUM ( option [, ...] ) [ table_and_columns [, ...] ]
 /// '''
+///
+/// `table_name` names the first relation of `relations`, so that consumers
+/// written against the single-table form keep working. `full`, `freeze`,
+/// `verbose` and `analyze` record the effective request whether it was spelled
+/// as a bare keyword or inside `options`.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -17909,6 +17963,12 @@ pub struct VacuumStatement {
     pub table_name: Option<ObjectName>,
     pub threshold: Option<Value>,
     pub boost: bool,
+    pub freeze: bool,
+    pub verbose: bool,
+    /// The parenthesized option list, empty for the bare keyword spelling.
+    pub options: Vec<VacuumOption>,
+    /// The relations to vacuum, empty when the whole database is meant.
+    pub relations: Vec<VacuumRelation>,
 }
 
 /// The catalog object whose indexes PostgreSQL should rebuild.
@@ -17975,18 +18035,31 @@ impl fmt::Display for VacuumStatement {
             table_name,
             threshold,
             boost,
+            freeze,
+            verbose,
+            options,
+            relations,
         } = self;
-        write!(
-            f,
-            "VACUUM{}{}{}{}{}{}",
-            if *full { " FULL" } else { "" },
-            if *sort_only { " SORT ONLY" } else { "" },
-            if *delete_only { " DELETE ONLY" } else { "" },
-            if *reindex { " REINDEX" } else { "" },
-            if *recluster { " RECLUSTER" } else { "" },
-            if *analyze { " ANALYZE" } else { "" },
-        )?;
-        if let Some(table_name) = table_name {
+        f.write_str("VACUUM")?;
+        if options.is_empty() {
+            write!(
+                f,
+                "{}{}{}{}{}{}{}{}",
+                if *full { " FULL" } else { "" },
+                if *sort_only { " SORT ONLY" } else { "" },
+                if *delete_only { " DELETE ONLY" } else { "" },
+                if *reindex { " REINDEX" } else { "" },
+                if *recluster { " RECLUSTER" } else { "" },
+                if *freeze { " FREEZE" } else { "" },
+                if *verbose { " VERBOSE" } else { "" },
+                if *analyze { " ANALYZE" } else { "" },
+            )?;
+        } else {
+            write!(f, " ({})", display_comma_separated(options))?;
+        }
+        if !relations.is_empty() {
+            write!(f, " {}", display_comma_separated(relations))?;
+        } else if let Some(table_name) = table_name {
             write!(f, " {table_name}")?;
         }
         if let Some(threshold) = threshold {

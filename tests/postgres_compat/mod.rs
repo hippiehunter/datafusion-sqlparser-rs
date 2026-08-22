@@ -213,3 +213,6 @@ pub mod syntax;
 
 // Metadata and Comments
 pub mod metadata;
+
+// Utility and transaction statements
+pub mod pg_utility;

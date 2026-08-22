@@ -602,6 +602,7 @@ impl Spanned for Statement {
             Statement::CreateUser(stmt) => stmt.token.0,
             Statement::AlterSchema(s) => s.span(),
             Statement::Vacuum(stmt) => stmt.token.0,
+            Statement::PreparedTransaction(stmt) => stmt.token.0,
             Statement::Reindex(stmt) => stmt.token.0.union(&stmt.name.span()),
             Statement::AlterUser(stmt) => stmt.token.0,
             Statement::Reset(stmt) => stmt.token.0,
