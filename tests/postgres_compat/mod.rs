@@ -213,3 +213,6 @@ pub mod syntax;
 
 // Metadata and Comments
 pub mod metadata;
+
+// Table-shaped DDL (CREATE/ALTER TABLE and relatives)
+pub mod table_ddl;

@@ -17,6 +17,7 @@
 
 //! SQL Abstract Syntax Tree (AST) types for table constraints
 
+use crate::ast::table_ddl::{IndexConstraintDetails, NotNullConstraint};
 use crate::ast::Box;
 use crate::ast::{
     display_comma_separated, display_separated, ConstraintCharacteristics,
@@ -110,6 +111,11 @@ pub enum TableConstraint {
     /// SQL:2016 Temporal table period definition
     /// `PERIOD FOR period_name (start_column, end_column)`
     Period(PeriodForDefinition),
+    /// PostgreSQL 18 table-level not-null constraint:
+    /// `[ CONSTRAINT <name> ] NOT NULL <column> [ NO INHERIT ]`
+    ///
+    /// [PostgreSQL](https://www.postgresql.org/docs/current/sql-createtable.html)
+    NotNull(NotNullConstraint),
 }
 
 impl From<UniqueConstraint> for TableConstraint {
@@ -160,6 +166,12 @@ impl From<PeriodForDefinition> for TableConstraint {
     }
 }
 
+impl From<NotNullConstraint> for TableConstraint {
+    fn from(constraint: NotNullConstraint) -> Self {
+        TableConstraint::NotNull(constraint)
+    }
+}
+
 impl fmt::Display for TableConstraint {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -171,6 +183,7 @@ impl fmt::Display for TableConstraint {
             TableConstraint::Index(constraint) => constraint.fmt(f),
             TableConstraint::FulltextOrSpatial(constraint) => constraint.fmt(f),
             TableConstraint::Period(constraint) => constraint.fmt(f),
+            TableConstraint::NotNull(constraint) => constraint.fmt(f),
         }
     }
 }
@@ -184,6 +197,8 @@ pub struct CheckConstraint {
     /// MySQL-specific syntax
     /// <https://dev.mysql.com/doc/refman/8.4/en/create-table.html>
     pub enforced: Option<bool>,
+    /// PostgreSQL `NO INHERIT`: the constraint is not copied to child tables.
+    pub no_inherit: bool,
 }
 
 impl fmt::Display for CheckConstraint {
@@ -195,11 +210,13 @@ impl fmt::Display for CheckConstraint {
             display_constraint_name(&self.name),
             self.expr
         )?;
-        if let Some(b) = self.enforced {
-            write!(f, " {}", if b { "ENFORCED" } else { "NOT ENFORCED" })
-        } else {
-            Ok(())
+        if self.no_inherit {
+            write!(f, " NO INHERIT")?;
         }
+        if let Some(b) = self.enforced {
+            write!(f, " {}", if b { "ENFORCED" } else { "NOT ENFORCED" })?;
+        }
+        Ok(())
     }
 }
 
@@ -221,6 +238,11 @@ pub struct ExcludeConstraint {
     /// Index access method, e.g. `gist` in `EXCLUDE USING gist (...)`.
     pub index_type: Option<Ident>,
     pub elements: Vec<ExcludeConstraintElement>,
+    /// `INCLUDE (...)`, `WITH (...)` and `USING INDEX TABLESPACE ...`.
+    pub index_details: Option<IndexConstraintDetails>,
+    /// `WHERE (<predicate>)`
+    pub predicate: Option<Expr>,
+    pub characteristics: Option<ConstraintCharacteristics>,
 }
 
 impl fmt::Display for ExcludeConstraint {
@@ -237,7 +259,17 @@ impl fmt::Display for ExcludeConstraint {
             }
             write!(f, "{element}")?;
         }
-        write!(f, ")")
+        write!(f, ")")?;
+        if let Some(details) = &self.index_details {
+            details.fmt_tail(f)?;
+        }
+        if let Some(predicate) = &self.predicate {
+            write!(f, " WHERE ({predicate})")?;
+        }
+        if let Some(characteristics) = &self.characteristics {
+            write!(f, " {characteristics}")?;
+        }
+        Ok(())
     }
 }
 
@@ -332,6 +364,9 @@ pub struct ForeignKeyConstraint {
     pub on_update: Option<ReferentialAction>,
     pub match_kind: Option<ConstraintReferenceMatchKind>,
     pub characteristics: Option<ConstraintCharacteristics>,
+    /// PostgreSQL restricts `ON DELETE SET NULL` / `SET DEFAULT` to a subset of
+    /// the referencing columns: `ON DELETE SET NULL (fk_id)`.
+    pub on_delete_columns: Vec<Ident>,
 }
 
 impl fmt::Display for ForeignKeyConstraint {
@@ -353,6 +388,9 @@ impl fmt::Display for ForeignKeyConstraint {
         }
         if let Some(action) = &self.on_delete {
             write!(f, " ON DELETE {action}")?;
+            if !self.on_delete_columns.is_empty() {
+                write!(f, " ({})", display_comma_separated(&self.on_delete_columns))?;
+            }
         }
         if let Some(action) = &self.on_update {
             write!(f, " ON UPDATE {action}")?;
@@ -542,6 +580,9 @@ pub struct PrimaryKeyConstraint {
     /// SQL:2016 Temporal: Optional period name for temporal primary key with WITHOUT OVERLAPS
     /// Example: PRIMARY KEY (emp_id, employment WITHOUT OVERLAPS)
     pub period_without_overlaps: Option<Ident>,
+    /// PostgreSQL `USING INDEX <name>`, `INCLUDE (...)`, `WITH (...)` and
+    /// `USING INDEX TABLESPACE ...`.
+    pub index_details: Option<IndexConstraintDetails>,
 }
 
 impl fmt::Display for PrimaryKeyConstraint {
@@ -549,19 +590,32 @@ impl fmt::Display for PrimaryKeyConstraint {
         use crate::ast::ddl::{display_constraint_name, display_option, display_option_spaced};
         write!(
             f,
-            "{}PRIMARY KEY{}{} (",
+            "{}PRIMARY KEY{}{}",
             display_constraint_name(&self.name),
             display_option_spaced(&self.index_name),
             display_option(" USING ", "", &self.index_type),
         )?;
 
-        write!(f, "{}", display_comma_separated(&self.columns))?;
+        match self
+            .index_details
+            .as_ref()
+            .and_then(|d| d.using_index.as_ref())
+        {
+            Some(index) => write!(f, " USING INDEX {index}")?,
+            None => {
+                write!(f, " ({}", display_comma_separated(&self.columns))?;
 
-        if let Some(period) = &self.period_without_overlaps {
-            write!(f, ", {} WITHOUT OVERLAPS", period)?;
+                if let Some(period) = &self.period_without_overlaps {
+                    write!(f, ", {} WITHOUT OVERLAPS", period)?;
+                }
+
+                write!(f, ")")?;
+
+                if let Some(details) = &self.index_details {
+                    details.fmt_tail(f)?;
+                }
+            }
         }
-
-        write!(f, ")")?;
 
         if !self.index_options.is_empty() {
             write!(f, " {}", display_separated(&self.index_options, " "))?;
@@ -611,6 +665,11 @@ pub struct UniqueConstraint {
     pub characteristics: Option<ConstraintCharacteristics>,
     /// Optional Postgres nulls handling: `[ NULLS [ NOT ] DISTINCT ]`
     pub nulls_distinct: NullsDistinctOption,
+    /// SQL:2016 Temporal: `UNIQUE (id, valid_at WITHOUT OVERLAPS)`
+    pub period_without_overlaps: Option<Ident>,
+    /// PostgreSQL `USING INDEX <name>`, `INCLUDE (...)`, `WITH (...)` and
+    /// `USING INDEX TABLESPACE ...`.
+    pub index_details: Option<IndexConstraintDetails>,
 }
 
 impl fmt::Display for UniqueConstraint {
@@ -618,16 +677,34 @@ impl fmt::Display for UniqueConstraint {
         use crate::ast::ddl::{display_constraint_name, display_option, display_option_spaced};
         write!(
             f,
-            "{}UNIQUE{:>}{}{} ({})",
+            "{}UNIQUE{:>}{}{}",
             display_constraint_name(&self.name),
             self.index_type_display,
             display_option_spaced(&self.index_name),
             display_option(" USING ", "", &self.index_type),
-            display_comma_separated(&self.columns),
         )?;
 
-        // Output NULLS DISTINCT after columns (SQL:2023 standard position)
-        write!(f, "{}", self.nulls_distinct)?;
+        match self
+            .index_details
+            .as_ref()
+            .and_then(|d| d.using_index.as_ref())
+        {
+            Some(index) => write!(f, " USING INDEX {index}")?,
+            None => {
+                write!(f, " ({}", display_comma_separated(&self.columns))?;
+                if let Some(period) = &self.period_without_overlaps {
+                    write!(f, ", {} WITHOUT OVERLAPS", period)?;
+                }
+                write!(f, ")")?;
+
+                // Output NULLS DISTINCT after columns (SQL:2023 standard position)
+                write!(f, "{}", self.nulls_distinct)?;
+
+                if let Some(details) = &self.index_details {
+                    details.fmt_tail(f)?;
+                }
+            }
+        }
 
         if !self.index_options.is_empty() {
             write!(f, " {}", display_separated(&self.index_options, " "))?;

@@ -674,6 +674,7 @@ fn parse_create_table_auto_increment() {
                         ColumnOptionDef {
                             name: None,
                             option: ColumnOption::PrimaryKey(PrimaryKeyConstraint {
+                                index_details: None,
                                 name: None,
                                 index_name: None,
                                 index_type: None,
@@ -725,6 +726,8 @@ fn table_constraint_unique_primary_ctor(
         .collect();
     match unique_index_type_display {
         Some(index_type_display) => UniqueConstraint {
+            period_without_overlaps: None,
+            index_details: None,
             name,
             index_name,
             index_type_display,
@@ -736,6 +739,7 @@ fn table_constraint_unique_primary_ctor(
         }
         .into(),
         None => PrimaryKeyConstraint {
+            index_details: None,
             name,
             index_name,
             index_type,
@@ -785,6 +789,7 @@ fn parse_create_table_primary_and_unique_key() {
                                 ColumnOptionDef {
                                     name: None,
                                     option: ColumnOption::PrimaryKey(PrimaryKeyConstraint {
+                                        index_details: None,
                                         name: None,
                                         index_name: None,
                                         index_type: None,
@@ -1429,6 +1434,7 @@ fn parse_quote_identifiers() {
                     options: vec![ColumnOptionDef {
                         name: None,
                         option: ColumnOption::PrimaryKey(PrimaryKeyConstraint {
+                            index_details: None,
                             name: None,
                             index_name: None,
                             index_type: None,
@@ -2717,7 +2723,7 @@ fn parse_alter_table_add_column() {
             if_exists,
             only,
             operations,
-            end_token: _,
+            ..
         }) => {
             assert_eq!(name.to_string(), "tab");
             assert!(!if_exists);
@@ -4014,6 +4020,7 @@ fn parse_create_trigger() {
             trigger_object: Some(TriggerObjectKind::ForEach(TriggerObject::Row)),
             condition: None,
             exec_body: Some(TriggerExecBody {
+                args: None,
                 exec_type: TriggerExecBodyType::Function,
                 func_desc: FunctionDesc {
                     name: ObjectName::from(vec![Ident::new("emp_stamp")]),

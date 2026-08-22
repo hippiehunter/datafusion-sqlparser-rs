@@ -151,6 +151,10 @@ impl fmt::Display for TriggerExecBodyType {
 pub struct TriggerExecBody {
     pub exec_type: TriggerExecBodyType,
     pub func_desc: FunctionDesc,
+    /// PostgreSQL trigger function arguments, which are literal constants
+    /// rather than typed parameters: `EXECUTE FUNCTION f('first', 'second')`.
+    /// When this is `Some`, [`FunctionDesc::args`] is `None`.
+    pub args: Option<Vec<Expr>>,
 }
 
 impl fmt::Display for TriggerExecBody {
@@ -160,6 +164,10 @@ impl fmt::Display for TriggerExecBody {
             "{exec_type} {func_desc}",
             exec_type = self.exec_type,
             func_desc = self.func_desc
-        )
+        )?;
+        if let Some(args) = &self.args {
+            write!(f, "({})", display_comma_separated(args))?;
+        }
+        Ok(())
     }
 }

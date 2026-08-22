@@ -3496,6 +3496,7 @@ fn parse_create_table() {
                             ColumnOptionDef {
                                 name: Some("pkey".into()),
                                 option: ColumnOption::PrimaryKey(PrimaryKeyConstraint {
+                                    index_details: None,
                                     name: None,
                                     index_name: None,
                                     index_type: None,
@@ -3512,6 +3513,8 @@ fn parse_create_table() {
                             ColumnOptionDef {
                                 name: None,
                                 option: ColumnOption::Unique(UniqueConstraint {
+                                    period_without_overlaps: None,
+                                    index_details: None,
                                     name: None,
                                     index_name: None,
                                     index_type_display: KeyOrIndexDisplay::None,
@@ -3525,6 +3528,7 @@ fn parse_create_table() {
                             ColumnOptionDef {
                                 name: None,
                                 option: ColumnOption::Check(CheckConstraint {
+                                    no_inherit: false,
                                     name: None,
                                     expr: Box::new(verified_expr("constrained > 0")),
                                     enforced: None,
@@ -3538,6 +3542,7 @@ fn parse_create_table() {
                         options: vec![ColumnOptionDef {
                             name: None,
                             option: ColumnOption::ForeignKey(ForeignKeyConstraint {
+                                on_delete_columns: vec![],
                                 name: None,
                                 index_name: None,
                                 columns: vec![],
@@ -3556,6 +3561,7 @@ fn parse_create_table() {
                         options: vec![ColumnOptionDef {
                             name: None,
                             option: ColumnOption::ForeignKey(ForeignKeyConstraint {
+                                on_delete_columns: vec![],
                                 name: None,
                                 index_name: None,
                                 columns: vec![],
@@ -3574,6 +3580,7 @@ fn parse_create_table() {
                 constraints,
                 vec![
                     ForeignKeyConstraint {
+                        on_delete_columns: vec![],
                         name: Some("fkey".into()),
                         index_name: None,
                         columns: vec!["lat".into()],
@@ -3586,6 +3593,7 @@ fn parse_create_table() {
                     }
                     .into(),
                     ForeignKeyConstraint {
+                        on_delete_columns: vec![],
                         name: Some("fkey2".into()),
                         index_name: None,
                         columns: vec!["lat".into()],
@@ -3598,6 +3606,7 @@ fn parse_create_table() {
                     }
                     .into(),
                     ForeignKeyConstraint {
+                        on_delete_columns: vec![],
                         name: None,
                         index_name: None,
                         columns: vec!["lat".into()],
@@ -3610,6 +3619,7 @@ fn parse_create_table() {
                     }
                     .into(),
                     ForeignKeyConstraint {
+                        on_delete_columns: vec![],
                         name: None,
                         index_name: None,
                         columns: vec!["lng".into()],
@@ -3709,6 +3719,7 @@ fn parse_create_table_with_constraint_characteristics() {
                 constraints,
                 vec![
                     ForeignKeyConstraint {
+                        on_delete_columns: vec![],
                         name: Some("fkey".into()),
                         index_name: None,
                         columns: vec!["lat".into()],
@@ -3725,6 +3736,7 @@ fn parse_create_table_with_constraint_characteristics() {
                     }
                     .into(),
                     ForeignKeyConstraint {
+                        on_delete_columns: vec![],
                         name: Some("fkey2".into()),
                         index_name: None,
                         columns: vec!["lat".into()],
@@ -3741,6 +3753,7 @@ fn parse_create_table_with_constraint_characteristics() {
                     }
                     .into(),
                     ForeignKeyConstraint {
+                        on_delete_columns: vec![],
                         name: None,
                         index_name: None,
                         columns: vec!["lat".into()],
@@ -3757,6 +3770,7 @@ fn parse_create_table_with_constraint_characteristics() {
                     }
                     .into(),
                     ForeignKeyConstraint {
+                        on_delete_columns: vec![],
                         name: None,
                         index_name: None,
                         columns: vec!["lng".into()],
@@ -3850,6 +3864,8 @@ fn parse_create_table_column_constraint_characteristics() {
                         options: vec![ColumnOptionDef {
                             name: None,
                             option: ColumnOption::Unique(UniqueConstraint {
+                                period_without_overlaps: None,
+                                index_details: None,
                                 name: None,
                                 index_name: None,
                                 index_type_display: KeyOrIndexDisplay::None,
@@ -8956,6 +8972,7 @@ fn test_create_index_with_using_function() {
             predicate: None,
             index_options,
             alter_options,
+            ..
         }) => {
             assert_eq!("idx_name", name.to_string());
             assert_eq!("test", table_name.to_string());
@@ -9011,6 +9028,7 @@ fn test_create_index_with_with_clause() {
             predicate: None,
             index_options,
             alter_options,
+            ..
         }) => {
             pretty_assertions::assert_eq!("title_idx", name.to_string());
             pretty_assertions::assert_eq!("films", table_name.to_string());
@@ -15955,7 +15973,11 @@ fn parse_tablespace_maintenance() {
     let dialects = all_dialects_where(|dialect| dialect.supports_tablespace_commands());
 
     for (sql, expected_action, expected_name) in [
-        ("QUIESCE TABLESPACE fast", TableMaintenanceAction::Quiesce, "fast"),
+        (
+            "QUIESCE TABLESPACE fast",
+            TableMaintenanceAction::Quiesce,
+            "fast",
+        ),
         (
             "UNQUIESCE TABLESPACE \"Cold Storage\"",
             TableMaintenanceAction::Unquiesce,
@@ -16063,10 +16085,7 @@ fn parse_alter_tablespace() {
     // A bare byte count carries no unit.
     match dialects.verified_stmt("ALTER TABLESPACE fast ADD DATAFILE '/d.dat' SIZE 67108864") {
         Statement::AlterTablespace {
-            operation:
-                AlterTablespaceOperation::AddDatafile {
-                    size, max_size, ..
-                },
+            operation: AlterTablespaceOperation::AddDatafile { size, max_size, .. },
             ..
         } => {
             assert_eq!("67108864", size.to_string());

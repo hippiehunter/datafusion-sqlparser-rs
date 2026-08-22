@@ -51,6 +51,7 @@ use core::cell::{Cell, RefCell};
 use sqlparser::parser::ParserState::ColumnDefinition;
 
 mod alter;
+mod table_ddl;
 
 fn box_into_inner<T>(value: Box<T>) -> T {
     Box::into_inner(value)
@@ -2694,6 +2695,8 @@ impl<'a> Parser<'a> {
                 return Ok(Statement::CreateIndex(CreateIndex {
                     name: Some(name.clone()),
                     table_name: table.clone(),
+                    only: false,
+                    tablespace: None,
                     using: None,
                     columns: columns.clone(),
                     unique: *unique,
@@ -9588,9 +9591,13 @@ impl<'a> Parser<'a> {
         let temporary = self
             .parse_one_of_keywords(&[Keyword::TEMP, Keyword::TEMPORARY])
             .is_some();
+        let unlogged = self.parse_keyword(Keyword::UNLOGGED);
         let create_view_params = self.parse_create_view_params()?;
+        if unlogged && self.parse_keyword(Keyword::SEQUENCE) {
+            return self.parse_create_sequence(create_token, temporary, unlogged);
+        }
         if self.parse_keyword(Keyword::TABLE) {
-            self.parse_create_table(or_replace, temporary, global)
+            self.parse_create_table(or_replace, temporary, global, unlogged)
         } else if self.peek_keyword(Keyword::MATERIALIZED)
             || self.peek_keyword(Keyword::VIEW)
             || (self.dialect.is::<OracleDialect>()
@@ -9656,7 +9663,7 @@ impl<'a> Parser<'a> {
         } else if self.parse_keyword(Keyword::ROLE) {
             self.parse_create_role()
         } else if self.parse_keyword(Keyword::SEQUENCE) {
-            self.parse_create_sequence(create_token, temporary)
+            self.parse_create_sequence(create_token, temporary, unlogged)
         } else if self.parse_keyword(Keyword::TYPE) {
             self.parse_create_type(create_token)
         } else if self.parse_keyword(Keyword::OPERATOR) {
@@ -9938,6 +9945,8 @@ impl<'a> Parser<'a> {
             None
         };
 
+        let schema_elements = self.parse_schema_elements()?;
+
         Ok(Statement::CreateSchema {
             create_token,
             schema_name,
@@ -9946,6 +9955,7 @@ impl<'a> Parser<'a> {
             options,
             default_collate_spec,
             clone,
+            schema_elements,
         })
     }
 
@@ -12026,15 +12036,27 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_trigger_exec_body(&self) -> Result<TriggerExecBody, ParserError> {
-        Ok(TriggerExecBody {
-            exec_type: match self
-                .expect_one_of_keywords(&[Keyword::FUNCTION, Keyword::PROCEDURE])?
-            {
+        let exec_type =
+            match self.expect_one_of_keywords(&[Keyword::FUNCTION, Keyword::PROCEDURE])? {
                 Keyword::FUNCTION => TriggerExecBodyType::Function,
                 Keyword::PROCEDURE => TriggerExecBodyType::Procedure,
-                _ => unreachable!(),
+                _ => return self.expected("FUNCTION or PROCEDURE", self.peek_token()),
+            };
+        // A trigger's arguments are literal constants, not typed parameters, so
+        // they cannot go through `parse_function_desc`.
+        let name = self.parse_object_name(false)?;
+        let (func_args, args) = match self.parse_trigger_func_args()? {
+            None => (None, None),
+            Some(args) if args.is_empty() => (Some(vec![]), None),
+            Some(args) => (None, Some(args)),
+        };
+        Ok(TriggerExecBody {
+            exec_type,
+            func_desc: FunctionDesc {
+                name,
+                args: func_args,
             },
-            func_desc: self.parse_function_desc()?,
+            args,
         })
     }
 
@@ -12100,7 +12122,7 @@ impl<'a> Parser<'a> {
         &self,
         or_alter: bool,
         or_replace: bool,
-        _temporary: bool,
+        temporary: bool,
         create_view_params: Option<CreateViewParams>,
     ) -> Result<Statement, ParserError> {
         let _secure = self.parse_keyword(Keyword::SECURE);
@@ -12372,7 +12394,18 @@ impl<'a> Parser<'a> {
 
         let oracle = oracle.filter(|options| !options.is_empty());
 
+        let check_option = if oracle
+            .as_ref()
+            .is_some_and(|options| options.constraint.is_some())
+        {
+            None
+        } else {
+            self.parse_view_check_option()
+        };
+
         Ok(CreateView {
+            temporary,
+            check_option,
             or_alter,
             name,
             columns,
@@ -12699,7 +12732,11 @@ impl<'a> Parser<'a> {
     /// Parses a [Statement::CreateDomain] statement.
     fn parse_create_domain(&self, token: AttachedToken) -> Result<Statement, ParserError> {
         let name = self.parse_object_name(false)?;
-        self.expect_keyword_is(Keyword::AS)?;
+        // PostgreSQL's AS is optional; Oracle's multi-column domain requires it.
+        let had_as = self.parse_keyword(Keyword::AS);
+        if !had_as && !dialect_of!(self is PostgreSqlDialect) {
+            self.expect_keyword_is(Keyword::AS)?;
+        }
         if self.consume_token(&BorrowedToken::LParen) {
             if !self.dialect.is::<OracleDialect>() {
                 return self.expected("a data type name", self.peek_token());
@@ -12731,17 +12768,23 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
+        let domain_constraints = self.parse_domain_constraints()?;
+
         let mut constraints = Vec::new();
         let mut not_null = false;
-        loop {
-            if self.parse_keywords(&[Keyword::NOT, Keyword::NULL]) {
-                not_null = true;
-            } else if self.parse_keyword(Keyword::NULL) {
-                not_null = false;
-            } else if let Some(constraint) = self.parse_optional_table_constraint()? {
-                constraints.push(constraint);
-            } else {
-                break;
+        for constraint in &domain_constraints {
+            match &constraint.option {
+                ColumnOption::NotNull | ColumnOption::NotNullNoInherit => not_null = true,
+                ColumnOption::Null => not_null = false,
+                ColumnOption::Check(check) => {
+                    constraints.push(TableConstraint::Check(CheckConstraint {
+                        name: constraint.name.clone(),
+                        expr: check.expr.clone(),
+                        enforced: check.enforced,
+                        no_inherit: check.no_inherit || constraint.no_inherit,
+                    }))
+                }
+                _ => {}
             }
         }
 
@@ -12753,6 +12796,7 @@ impl<'a> Parser<'a> {
             default,
             not_null,
             constraints,
+            domain_constraints,
         }))
     }
 
@@ -14832,6 +14876,7 @@ impl<'a> Parser<'a> {
             None
         };
 
+        let only = self.parse_keyword(Keyword::ONLY);
         let table_name = self.parse_object_name(false)?;
 
         // MySQL allows having two `USING` clauses.
@@ -14868,6 +14913,14 @@ impl<'a> Parser<'a> {
             Vec::new()
         };
 
+        let tablespace = if self.features.supports_tablespace_commands
+            && self.parse_keyword(Keyword::TABLESPACE)
+        {
+            Some(self.parse_identifier()?)
+        } else {
+            None
+        };
+
         let predicate = if self.parse_keyword(Keyword::WHERE) {
             Some(self.parse_expr()?)
         } else {
@@ -14893,6 +14946,8 @@ impl<'a> Parser<'a> {
         Ok(Statement::CreateIndex(CreateIndex {
             name: index_name,
             table_name,
+            only,
+            tablespace,
             using,
             columns,
             unique,
@@ -14968,16 +15023,46 @@ impl<'a> Parser<'a> {
         or_replace: bool,
         temporary: bool,
         global: Option<bool>,
+        unlogged: bool,
     ) -> Result<Statement, ParserError> {
         let allow_unquoted_hyphen = false;
         let if_not_exists = self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
         let table_name = self.parse_object_name(allow_unquoted_hyphen)?;
 
         if self.parse_keyword(Keyword::OF) {
+            let of_type = self.parse_object_name(allow_unquoted_hyphen)?;
+            let elements = if self.peek_token().token == BorrowedToken::LParen {
+                self.parse_typed_table_elements()?
+            } else {
+                vec![]
+            };
+            let partition_by = if self.parse_keywords(&[Keyword::PARTITION, Keyword::BY]) {
+                Some(self.parse_partition_by_clause()?)
+            } else {
+                None
+            };
+            let with_options = self.parse_options(Keyword::WITH)?;
+            let on_commit = if self.parse_keywords(&[Keyword::ON, Keyword::COMMIT]) {
+                Some(self.parse_create_table_on_commit()?)
+            } else {
+                None
+            };
+            let tablespace = if self.parse_keyword(Keyword::TABLESPACE) {
+                Some(self.parse_identifier()?)
+            } else {
+                None
+            };
             return Ok(Statement::CreateTypedTable(CreateTypedTable {
                 if_not_exists,
                 name: table_name,
-                of_type: self.parse_object_name(allow_unquoted_hyphen)?,
+                of_type,
+                elements,
+                partition_by,
+                with_options,
+                on_commit,
+                tablespace,
+                temporary,
+                unlogged,
             }));
         }
 
@@ -15006,11 +15091,20 @@ impl<'a> Parser<'a> {
 
         // parse optional column list (schema)
         // For PARTITION OF, this parses constraint overrides if present
-        let (columns, constraints) =
+        let (columns, constraints, like_elements, column_aliases) =
             if partition_of.is_some() && self.peek_token().token != Token::LParen {
-                (vec![], vec![])
+                (vec![], vec![], vec![], vec![])
+            } else if dialect_of!(self is PostgreSqlDialect) {
+                match self.maybe_parse(|parser| parser.parse_create_table_column_aliases())? {
+                    Some(aliases) => (vec![], vec![], vec![], aliases),
+                    None => {
+                        let (columns, constraints, likes) = self.parse_pg_table_elements()?;
+                        (columns, constraints, likes, vec![])
+                    }
+                }
             } else {
-                self.parse_columns()?
+                let (columns, constraints) = self.parse_columns()?;
+                (columns, constraints, vec![], vec![])
             };
         let comment_after_column_def = None;
 
@@ -15079,9 +15173,15 @@ impl<'a> Parser<'a> {
             None
         };
 
-        // Parse optional `AS ( query )`
+        // Parse optional `AS ( query )` or `AS EXECUTE <prepared statement>`
+        let mut execute = None;
         let query = if self.parse_keyword(Keyword::AS) {
-            Some(self.parse_query()?)
+            if self.parse_keyword(Keyword::EXECUTE) {
+                execute = Some(self.parse_create_table_as_execute()?);
+                None
+            } else {
+                Some(self.parse_query()?)
+            }
         } else if self.features.supports_create_table_select && self.parse_keyword(Keyword::SELECT)
         {
             // rewind the SELECT keyword
@@ -15091,7 +15191,18 @@ impl<'a> Parser<'a> {
             None
         };
 
+        let with_data = if query.is_some() || execute.is_some() {
+            self.parse_create_table_with_data()
+        } else {
+            None
+        };
+
         Ok(CreateTableBuilder::new(table_name)
+            .unlogged(unlogged)
+            .column_aliases(column_aliases)
+            .like_elements(like_elements)
+            .execute(execute)
+            .with_data(with_data)
             .temporary(temporary)
             .columns(columns)
             .constraints(constraints)
@@ -15106,6 +15217,7 @@ impl<'a> Parser<'a> {
             .on_commit(on_commit)
             .inherits(create_table_config.inherits)
             .table_options(create_table_config.table_options)
+            .without_oids(create_table_config.without_oids)
             .system_versioning(system_versioning)
             .partition_by(partition_by)
             .partition_of(partition_of)
@@ -15159,21 +15271,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_create_table_like_options(&self) -> Vec<CreateTableLikeOption> {
-        let mut options = Vec::new();
-        loop {
-            if self.parse_keywords(&[Keyword::INCLUDING, Keyword::DEFAULTS]) {
-                options.push(CreateTableLikeOption::IncludingDefaults);
-            } else if self.parse_keywords(&[Keyword::EXCLUDING, Keyword::DEFAULTS]) {
-                options.push(CreateTableLikeOption::ExcludingDefaults);
-            } else if self.parse_keywords(&[Keyword::INCLUDING, Keyword::CONSTRAINTS]) {
-                options.push(CreateTableLikeOption::IncludingConstraints);
-            } else if self.parse_keywords(&[Keyword::EXCLUDING, Keyword::CONSTRAINTS]) {
-                options.push(CreateTableLikeOption::ExcludingConstraints);
-            } else {
-                break;
-            }
-        }
-        options
+        self.parse_pg_table_like_options()
     }
 
     fn maybe_parse_create_table_like(
@@ -15181,11 +15279,14 @@ impl<'a> Parser<'a> {
         allow_unquoted_hyphen: bool,
     ) -> Result<Option<CreateTableLikeKind>, ParserError> {
         let like = if self.features.supports_create_table_like_parenthesized
-            && self.consume_token(&BorrowedToken::LParen)
+            && self.peek_token().token == BorrowedToken::LParen
+            && self.peek_nth_keyword(1, Keyword::LIKE)
         {
-            if self.parse_keyword(Keyword::LIKE) {
-                let name = self.parse_object_name(allow_unquoted_hyphen)?;
-                let options = self.parse_create_table_like_options();
+            self.maybe_parse(|parser| {
+                parser.expect_token(&BorrowedToken::LParen)?;
+                parser.expect_keyword(Keyword::LIKE)?;
+                let name = parser.parse_object_name(allow_unquoted_hyphen)?;
+                let options = parser.parse_create_table_like_options();
                 let defaults = options.iter().find_map(|o| match o {
                     CreateTableLikeOption::IncludingDefaults => {
                         Some(CreateTableLikeDefaults::Including)
@@ -15195,17 +15296,13 @@ impl<'a> Parser<'a> {
                     }
                     _ => None,
                 });
-                self.expect_token(&BorrowedToken::RParen)?;
-                Some(CreateTableLikeKind::Parenthesized(CreateTableLike {
+                parser.expect_token(&BorrowedToken::RParen)?;
+                Ok(CreateTableLikeKind::Parenthesized(CreateTableLike {
                     name,
                     defaults,
                     options,
                 }))
-            } else {
-                // Rollback the '(' it's probably the columns list
-                self.prev_token();
-                None
-            }
+            })?
         } else if self.parse_keyword(Keyword::LIKE) || self.parse_keyword(Keyword::ILIKE) {
             let name = self.parse_object_name(allow_unquoted_hyphen)?;
             Some(CreateTableLikeKind::Plain(CreateTableLike {
@@ -15250,6 +15347,7 @@ impl<'a> Parser<'a> {
         let mut plain_options = Vec::new();
         let mut parsed_with = false;
         let mut parsed_table_properties = false;
+        let mut without_oids = false;
 
         // CREATE TABLE option clauses are ordinarily written in a
         // dialect-specific order. Parse each supported clause form once so
@@ -15264,6 +15362,10 @@ impl<'a> Parser<'a> {
             if !parsed_table_properties && self.peek_keyword(Keyword::TBLPROPERTIES) {
                 table_properties = self.parse_options(Keyword::TBLPROPERTIES)?;
                 parsed_table_properties = true;
+                continue;
+            }
+            if !without_oids && self.parse_keywords(&[Keyword::WITHOUT, Keyword::OIDS]) {
+                without_oids = true;
                 continue;
             }
 
@@ -15312,6 +15414,7 @@ impl<'a> Parser<'a> {
         Ok(CreateTableConfiguration {
             inherits,
             table_options,
+            without_oids,
         })
     }
 
@@ -15767,7 +15870,11 @@ impl<'a> Parser<'a> {
                 self.parse_object_name(false)?,
             )))
         } else if self.parse_keywords(&[Keyword::NOT, Keyword::NULL]) {
-            Ok(Some(ColumnOption::NotNull))
+            if self.parse_keywords(&[Keyword::NO, Keyword::INHERIT]) {
+                Ok(Some(ColumnOption::NotNullNoInherit))
+            } else {
+                Ok(Some(ColumnOption::NotNull))
+            }
         } else if self.parse_keywords(&[Keyword::COMMENT]) {
             Ok(Some(ColumnOption::Comment(self.parse_comment_value()?)))
         } else if self.parse_keyword(Keyword::NULL) {
@@ -15777,6 +15884,7 @@ impl<'a> Parser<'a> {
                 self.parse_column_option_expr()?,
             )))
         } else if self.parse_keywords(&[Keyword::PRIMARY, Keyword::KEY]) {
+            let index_details = self.parse_index_constraint_details()?.into_option();
             let characteristics = self.parse_constraint_characteristics()?;
             Ok(Some(
                 PrimaryKeyConstraint {
@@ -15787,11 +15895,13 @@ impl<'a> Parser<'a> {
                     index_options: vec![],
                     characteristics,
                     period_without_overlaps: None,
+                    index_details,
                 }
                 .into(),
             ))
         } else if self.parse_keyword(Keyword::UNIQUE) {
             let nulls_distinct = self.parse_optional_nulls_distinct()?;
+            let index_details = self.parse_index_constraint_details()?.into_option();
             let characteristics = self.parse_constraint_characteristics()?;
             Ok(Some(
                 UniqueConstraint {
@@ -15803,6 +15913,8 @@ impl<'a> Parser<'a> {
                     index_options: vec![],
                     characteristics,
                     nulls_distinct,
+                    period_without_overlaps: None,
+                    index_details,
                 }
                 .into(),
             ))
@@ -15817,6 +15929,7 @@ impl<'a> Parser<'a> {
                 .collect();
             let mut match_kind = None;
             let mut on_delete = None;
+            let mut on_delete_columns = Vec::new();
             let mut on_update = None;
             loop {
                 if match_kind.is_none() && self.parse_keyword(Keyword::MATCH) {
@@ -15824,7 +15937,9 @@ impl<'a> Parser<'a> {
                 } else if on_delete.is_none()
                     && self.parse_keywords(&[Keyword::ON, Keyword::DELETE])
                 {
-                    on_delete = Some(self.parse_referential_action()?);
+                    let action = self.parse_referential_action()?;
+                    on_delete_columns = self.parse_referential_action_columns(&action)?;
+                    on_delete = Some(action);
                 } else if on_update.is_none()
                     && self.parse_keywords(&[Keyword::ON, Keyword::UPDATE])
                 {
@@ -15837,6 +15952,7 @@ impl<'a> Parser<'a> {
 
             Ok(Some(
                 ForeignKeyConstraint {
+                    on_delete_columns,
                     name: None,       // Column-level constraints don't have names
                     index_name: None, // Not applicable for column-level constraints
                     columns: vec![],  // Not applicable for column-level constraints
@@ -15854,11 +15970,13 @@ impl<'a> Parser<'a> {
             // since `CHECK` requires parentheses, we can parse the inner expression in ParserState::Normal
             let expr: Expr = self.with_state(ParserState::Normal, |p| p.parse_expr())?;
             self.expect_token(&BorrowedToken::RParen)?;
+            let no_inherit = self.parse_keywords(&[Keyword::NO, Keyword::INHERIT]);
             Ok(Some(
                 CheckConstraint {
                     name: None, // Column-level check constraints don't have names
                     expr: Box::new(expr),
                     enforced: None, // Could be extended later to support MySQL ENFORCED/NOT ENFORCED
+                    no_inherit,
                 }
                 .into(),
             ))
@@ -15924,7 +16042,7 @@ impl<'a> Parser<'a> {
         } else if self.parse_keyword(Keyword::INVISIBLE) {
             Ok(Some(ColumnOption::Invisible))
         } else {
-            Ok(None)
+            self.parse_pg_column_option()
         }
     }
 
@@ -16033,18 +16151,15 @@ impl<'a> Parser<'a> {
                 let expr: Expr = self.with_state(ParserState::Normal, |p| p.parse_expr())?;
                 self.expect_token(&BorrowedToken::RParen)?;
                 let (gen_as, expr_mode) = if self.parse_keywords(&[Keyword::STORED]) {
-                    Ok((
+                    (
                         GeneratedAs::ExpStored,
                         Some(GeneratedExpressionMode::Stored),
-                    ))
+                    )
                 } else if self.parse_keywords(&[Keyword::VIRTUAL]) {
-                    Ok((GeneratedAs::Always, Some(GeneratedExpressionMode::Virtual)))
-                } else if dialect_of!(self is PostgreSqlDialect) {
-                    // PostgreSQL requires an explicit storage mode.
-                    self.expected("STORED or VIRTUAL", self.peek_token())
+                    (GeneratedAs::Always, Some(GeneratedExpressionMode::Virtual))
                 } else {
-                    Ok((GeneratedAs::Always, None))
-                }?;
+                    (GeneratedAs::Always, None)
+                };
 
                 Ok(Some(ColumnOption::Generated {
                     generated_as: gen_as,
@@ -16164,6 +16279,12 @@ impl<'a> Parser<'a> {
 
         let next_token = self.next_token();
         match next_token.token {
+            BorrowedToken::Word(w)
+                if w.keyword == Keyword::NOT && dialect_of!(self is PostgreSqlDialect) =>
+            {
+                self.expect_keyword_is(Keyword::NULL)?;
+                Ok(Some(self.parse_not_null_table_constraint(name)?))
+            }
             BorrowedToken::Word(w) if w.keyword == Keyword::UNIQUE => {
                 let index_type_display = self.parse_index_type_display();
                 if !dialect_of!(self is MySqlDialect) && !index_type_display.is_none() {
@@ -16174,11 +16295,34 @@ impl<'a> Parser<'a> {
                 // Parse NULLS DISTINCT before columns (PostgreSQL legacy position)
                 let nulls_distinct_before = self.parse_optional_nulls_distinct()?;
 
+                if let Some(using_index) = self.parse_constraint_existing_index()? {
+                    let characteristics = self.parse_constraint_characteristics()?;
+                    return Ok(Some(
+                        UniqueConstraint {
+                            name,
+                            index_name: None,
+                            index_type_display,
+                            index_type: None,
+                            columns: vec![],
+                            index_options: vec![],
+                            characteristics,
+                            nulls_distinct: nulls_distinct_before,
+                            period_without_overlaps: None,
+                            index_details: Some(IndexConstraintDetails {
+                                using_index: Some(using_index),
+                                ..IndexConstraintDetails::default()
+                            }),
+                        }
+                        .into(),
+                    ));
+                }
+
                 // optional index name
                 let index_name = self.parse_optional_ident()?;
                 let index_type = self.parse_optional_using_then_index_type()?;
 
-                let columns = self.parse_parenthesized_index_column_list()?;
+                let (columns, period_without_overlaps) =
+                    self.parse_primary_key_columns_with_overlaps()?;
 
                 // Parse NULLS DISTINCT after columns (SQL:2023 standard position)
                 let nulls_distinct_after = self.parse_optional_nulls_distinct()?;
@@ -16190,6 +16334,7 @@ impl<'a> Parser<'a> {
                     nulls_distinct_before
                 };
 
+                let index_details = self.parse_index_constraint_details()?.into_option();
                 let index_options = self.parse_index_options()?;
                 let characteristics = self.parse_constraint_characteristics()?;
                 Ok(Some(
@@ -16202,6 +16347,8 @@ impl<'a> Parser<'a> {
                         index_options,
                         characteristics,
                         nulls_distinct,
+                        period_without_overlaps,
+                        index_details,
                     }
                     .into(),
                 ))
@@ -16210,6 +16357,26 @@ impl<'a> Parser<'a> {
                 // after `PRIMARY` always stay `KEY`
                 self.expect_keyword_is(Keyword::KEY)?;
 
+                if let Some(using_index) = self.parse_constraint_existing_index()? {
+                    let characteristics = self.parse_constraint_characteristics()?;
+                    return Ok(Some(
+                        PrimaryKeyConstraint {
+                            name,
+                            index_name: None,
+                            index_type: None,
+                            columns: vec![],
+                            index_options: vec![],
+                            characteristics,
+                            period_without_overlaps: None,
+                            index_details: Some(IndexConstraintDetails {
+                                using_index: Some(using_index),
+                                ..IndexConstraintDetails::default()
+                            }),
+                        }
+                        .into(),
+                    ));
+                }
+
                 // optional index name
                 let index_name = self.parse_optional_ident()?;
                 let index_type = self.parse_optional_using_then_index_type()?;
@@ -16217,6 +16384,7 @@ impl<'a> Parser<'a> {
                 // Parse columns and optionally a period WITH OUT OVERLAPS
                 let (columns, period_without_overlaps) =
                     self.parse_primary_key_columns_with_overlaps()?;
+                let index_details = self.parse_index_constraint_details()?.into_option();
                 let index_options = self.parse_index_options()?;
                 let characteristics = self.parse_constraint_characteristics()?;
                 Ok(Some(
@@ -16228,6 +16396,7 @@ impl<'a> Parser<'a> {
                         index_options,
                         characteristics,
                         period_without_overlaps,
+                        index_details,
                     }
                     .into(),
                 ))
@@ -16241,6 +16410,7 @@ impl<'a> Parser<'a> {
                 let referred_columns = self.parse_foreign_key_columns_or_periods_optional()?;
                 let mut match_kind = None;
                 let mut on_delete = None;
+                let mut on_delete_columns = Vec::new();
                 let mut on_update = None;
                 loop {
                     if match_kind.is_none() && self.parse_keyword(Keyword::MATCH) {
@@ -16248,7 +16418,9 @@ impl<'a> Parser<'a> {
                     } else if on_delete.is_none()
                         && self.parse_keywords(&[Keyword::ON, Keyword::DELETE])
                     {
-                        on_delete = Some(self.parse_referential_action()?);
+                        let action = self.parse_referential_action()?;
+                        on_delete_columns = self.parse_referential_action_columns(&action)?;
+                        on_delete = Some(action);
                     } else if on_update.is_none()
                         && self.parse_keywords(&[Keyword::ON, Keyword::UPDATE])
                     {
@@ -16262,6 +16434,7 @@ impl<'a> Parser<'a> {
 
                 Ok(Some(
                     ForeignKeyConstraint {
+                        on_delete_columns,
                         name,
                         index_name,
                         columns,
@@ -16300,6 +16473,8 @@ impl<'a> Parser<'a> {
                 let expr = Box::new(self.parse_expr()?);
                 self.expect_token(&BorrowedToken::RParen)?;
 
+                let mut no_inherit = self.parse_keywords(&[Keyword::NO, Keyword::INHERIT]);
+
                 let enforced = if self.parse_keyword(Keyword::ENFORCED) {
                     Some(true)
                 } else if self.parse_keywords(&[Keyword::NOT, Keyword::ENFORCED]) {
@@ -16308,11 +16483,16 @@ impl<'a> Parser<'a> {
                     None
                 };
 
+                if !no_inherit {
+                    no_inherit = self.parse_keywords(&[Keyword::NO, Keyword::INHERIT]);
+                }
+
                 Ok(Some(
                     CheckConstraint {
                         name,
                         expr,
                         enforced,
+                        no_inherit,
                     }
                     .into(),
                 ))
@@ -16333,11 +16513,24 @@ impl<'a> Parser<'a> {
                     Ok(ExcludeConstraintElement { column, operator })
                 })?;
                 self.expect_token(&BorrowedToken::RParen)?;
+                let index_details = self.parse_index_constraint_details()?.into_option();
+                let predicate = if self.parse_keyword(Keyword::WHERE) {
+                    self.expect_token(&BorrowedToken::LParen)?;
+                    let predicate = self.parse_expr()?;
+                    self.expect_token(&BorrowedToken::RParen)?;
+                    Some(predicate)
+                } else {
+                    None
+                };
+                let characteristics = self.parse_constraint_characteristics()?;
                 Ok(Some(
                     ExcludeConstraint {
                         name,
                         index_type,
                         elements,
+                        index_details,
+                        predicate,
+                        characteristics,
                     }
                     .into(),
                 ))
@@ -16549,6 +16742,7 @@ impl<'a> Parser<'a> {
             BorrowedToken::Word(w) if w.keyword == Keyword::CLUSTERED && is_mssql => {
                 self.parse_option_clustered()
             }
+            _ if dialect_of!(self is PostgreSqlDialect) => self.parse_relation_option(),
             _ => {
                 let name = self.parse_identifier()?;
                 self.expect_token(&BorrowedToken::Eq)?;
@@ -16632,6 +16826,11 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_alter_table_operation(&self) -> Result<AlterTableOperation, ParserError> {
+        if dialect_of!(self is PostgreSqlDialect) {
+            if let Some(operation) = self.parse_pg_alter_table_action()? {
+                return Ok(operation);
+            }
+        }
         let operation = if self.parse_keyword(Keyword::ADD) {
             if self.dialect.is::<OracleDialect>() && self.consume_token(&BorrowedToken::LParen) {
                 let columns = self.parse_comma_separated(Parser::parse_column_def)?;
@@ -16714,8 +16913,12 @@ impl<'a> Parser<'a> {
                 let name = self.parse_identifier()?;
                 AlterTableOperation::DisableRule { name }
             } else if self.parse_keyword(Keyword::TRIGGER) {
-                let name = self.parse_identifier()?;
-                AlterTableOperation::DisableTrigger { name }
+                match self.parse_trigger_group() {
+                    Some(group) => AlterTableOperation::DisableTriggerGroup { group },
+                    None => AlterTableOperation::DisableTrigger {
+                        name: self.parse_identifier()?,
+                    },
+                }
             } else {
                 return self.expected(
                     "ROW LEVEL SECURITY, RULE, or TRIGGER after DISABLE",
@@ -16741,8 +16944,12 @@ impl<'a> Parser<'a> {
                 let name = self.parse_identifier()?;
                 AlterTableOperation::EnableRule { name }
             } else if self.parse_keyword(Keyword::TRIGGER) {
-                let name = self.parse_identifier()?;
-                AlterTableOperation::EnableTrigger { name }
+                match self.parse_trigger_group() {
+                    Some(group) => AlterTableOperation::EnableTriggerGroup { group },
+                    None => AlterTableOperation::EnableTrigger {
+                        name: self.parse_identifier()?,
+                    },
+                }
             } else if self.parse_keywords(&[Keyword::DEGRADED, Keyword::READS]) {
                 AlterTableOperation::EnableDegradedReads
             } else {
@@ -16976,32 +17183,9 @@ impl<'a> Parser<'a> {
                     sequence_options,
                 }
             } else if self.parse_keywords(&[Keyword::SET, Keyword::STORAGE]) {
-                let storage_keyword = self.parse_one_of_keywords(&[
-                    Keyword::PLAIN,
-                    Keyword::EXTERNAL,
-                    Keyword::EXTENDED,
-                    Keyword::MAIN,
-                ]);
-                match storage_keyword {
-                    Some(Keyword::PLAIN) => {
-                        AlterColumnOperation::SetStorage(UserDefinedTypeStorage::Plain)
-                    }
-                    Some(Keyword::EXTERNAL) => {
-                        AlterColumnOperation::SetStorage(UserDefinedTypeStorage::External)
-                    }
-                    Some(Keyword::EXTENDED) => {
-                        AlterColumnOperation::SetStorage(UserDefinedTypeStorage::Extended)
-                    }
-                    Some(Keyword::MAIN) => {
-                        AlterColumnOperation::SetStorage(UserDefinedTypeStorage::Main)
-                    }
-                    _ => {
-                        return self.expected(
-                            "storage type (PLAIN, EXTERNAL, EXTENDED, or MAIN)",
-                            self.peek_token(),
-                        )
-                    }
-                }
+                AlterColumnOperation::SetStorage(self.parse_column_storage()?)
+            } else if let Some(op) = self.parse_pg_alter_column_action()? {
+                op
             } else {
                 let message = if is_postgresql {
                     "SET/DROP NOT NULL, SET DEFAULT, SET DATA TYPE, or ADD GENERATED after ALTER COLUMN"
@@ -17168,6 +17352,11 @@ impl<'a> Parser<'a> {
 
     fn parse_set_data_type(&self, had_set: bool) -> Result<AlterColumnOperation, ParserError> {
         let data_type = self.parse_data_type()?;
+        let collation = if self.parse_keyword(Keyword::COLLATE) {
+            Some(self.parse_object_name(false)?)
+        } else {
+            None
+        };
         let using = if self.features.supports_alter_column_type_using
             && self.parse_keyword(Keyword::USING)
         {
@@ -17175,11 +17364,19 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
-        Ok(AlterColumnOperation::SetDataType {
-            data_type,
-            using,
-            had_set,
-        })
+        match collation {
+            Some(collation) => Ok(AlterColumnOperation::SetDataTypeCollate {
+                data_type,
+                collation,
+                using,
+                had_set,
+            }),
+            None => Ok(AlterColumnOperation::SetDataType {
+                data_type,
+                using,
+                had_set,
+            }),
+        }
     }
 
     pub fn parse_alter(&self) -> Result<Statement, ParserError> {
@@ -17488,9 +17685,13 @@ impl<'a> Parser<'a> {
 
     /// Parse a [Statement::AlterTable]
     pub fn parse_alter_table(&self) -> Result<Statement, ParserError> {
+        if self.parse_keywords(&[Keyword::ALL, Keyword::IN, Keyword::TABLESPACE]) {
+            return self.parse_alter_table_all_in_tablespace();
+        }
         let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
         let only = self.parse_keyword(Keyword::ONLY); // [ ONLY ]
         let table_name = self.parse_object_name(false)?;
+        let descendants = !only && self.consume_token(&BorrowedToken::Mul);
         let operations = self.parse_comma_separated(Parser::parse_alter_table_operation)?;
 
         let end_token = if self.peek_token_ref().token == BorrowedToken::SemiColon {
@@ -17503,6 +17704,7 @@ impl<'a> Parser<'a> {
             name: table_name,
             if_exists,
             only,
+            descendants,
             operations,
             end_token: AttachedToken::from(end_token),
         }
@@ -22345,6 +22547,21 @@ impl<'a> Parser<'a> {
 
     /// A table name or a parenthesized subquery, followed by optional `[AS] alias`
     pub fn parse_table_factor(&self) -> Result<TableFactor, ParserError> {
+        if self.peek_keywords(&[Keyword::ROWS, Keyword::FROM])
+            || self.peek_keywords(&[Keyword::LATERAL, Keyword::ROWS, Keyword::FROM])
+        {
+            let lateral = self.parse_keyword(Keyword::LATERAL);
+            self.expect_keywords(&[Keyword::ROWS, Keyword::FROM])?;
+            let items = self.parse_rows_from_items()?;
+            let with_ordinality = self.parse_keywords(&[Keyword::WITH, Keyword::ORDINALITY]);
+            let alias = self.maybe_parse_table_alias()?;
+            return Ok(TableFactor::RowsFrom {
+                lateral,
+                items,
+                with_ordinality,
+                alias,
+            });
+        }
         if self.parse_keyword(Keyword::LATERAL) {
             // LATERAL must always be followed by a subquery or table function.
             if self.consume_token(&BorrowedToken::LParen) {
@@ -27757,6 +27974,7 @@ impl<'a> Parser<'a> {
         &self,
         create_token: AttachedToken,
         temporary: bool,
+        unlogged: bool,
     ) -> Result<Statement, ParserError> {
         //[ IF NOT EXISTS ]
         let if_not_exists = self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
@@ -27803,6 +28021,7 @@ impl<'a> Parser<'a> {
         Ok(Statement::CreateSequence {
             create_token,
             temporary,
+            unlogged,
             if_not_exists,
             name,
             data_type,
@@ -28012,7 +28231,7 @@ impl<'a> Parser<'a> {
                     self.parse_object_name(false)?,
                 ));
             } else if self.parse_keyword(Keyword::OPTIONS) {
-                let opts = self.parse_sql_med_option_actions()?;
+                let opts = self.parse_sql_med_option_action_list()?;
                 operations.push(AlterForeignDataWrapperOperation::Options(opts));
             } else if self.parse_keywords(&[Keyword::OWNER, Keyword::TO]) {
                 operations.push(AlterForeignDataWrapperOperation::OwnerTo(
@@ -28065,7 +28284,7 @@ impl<'a> Parser<'a> {
             if self.parse_keyword(Keyword::VERSION) {
                 operations.push(AlterServerOperation::SetVersion(self.parse_identifier()?));
             } else if self.parse_keyword(Keyword::OPTIONS) {
-                let opts = self.parse_sql_med_option_actions()?;
+                let opts = self.parse_sql_med_option_action_list()?;
                 operations.push(AlterServerOperation::Options(opts));
             } else if self.parse_keywords(&[Keyword::OWNER, Keyword::TO]) {
                 operations.push(AlterServerOperation::OwnerTo(self.parse_identifier()?));
@@ -28118,12 +28337,22 @@ impl<'a> Parser<'a> {
                 (None, None, columns, constraints)
             };
 
+        let inherits = if self.parse_keyword(Keyword::INHERITS) {
+            self.expect_token(&BorrowedToken::LParen)?;
+            let parents = self.parse_comma_separated(|p| p.parse_object_name(false))?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            parents
+        } else {
+            vec![]
+        };
+
         self.expect_keyword(Keyword::SERVER)?;
         let server = self.parse_object_name(false)?;
 
         let options = self.parse_sql_med_options()?;
 
         Ok(Statement::CreateForeignTable(CreateForeignTableStatement {
+            inherits,
             token,
             name,
             if_not_exists,
@@ -28282,79 +28511,120 @@ impl<'a> Parser<'a> {
     pub fn parse_alter_foreign_table(&self) -> Result<Statement, ParserError> {
         let token = self.get_alter_token();
         let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
+        let only = self.parse_keyword(Keyword::ONLY);
         let name = self.parse_object_name(false)?;
-        let mut operations = Vec::new();
-
-        loop {
-            if self.parse_keyword(Keyword::ADD) {
-                let column_keyword = self.parse_keyword(Keyword::COLUMN);
-                let if_not_exists =
-                    self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
-                let column_def = self.parse_column_def()?;
-                operations.push(AlterForeignTableOperation::AddColumn {
-                    column_keyword,
-                    if_not_exists,
-                    column_def,
-                });
-            } else if self.parse_keyword(Keyword::DROP) {
-                let column_keyword = self.parse_keyword(Keyword::COLUMN);
-                let if_exists_col = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
-                let column_name = self.parse_identifier()?;
-                let drop_behavior = self.parse_optional_drop_behavior();
-                operations.push(AlterForeignTableOperation::DropColumn {
-                    column_keyword,
-                    if_exists: if_exists_col,
-                    column_name,
-                    drop_behavior,
-                });
-            } else if self.parse_keywords(&[Keyword::ALTER, Keyword::COLUMN]) {
-                let column_name = self.parse_identifier()?;
-                let action = self.parse_alter_column_action()?;
-                operations.push(AlterForeignTableOperation::AlterColumn {
-                    column_name,
-                    action,
-                });
-            } else if self.parse_keyword(Keyword::OPTIONS) {
-                let opts = self.parse_sql_med_option_actions()?;
-                operations.push(AlterForeignTableOperation::Options(opts));
-            } else if self.parse_keywords(&[Keyword::OWNER, Keyword::TO]) {
-                operations.push(AlterForeignTableOperation::OwnerTo(
-                    self.parse_identifier()?,
-                ));
-            } else if self.parse_keywords(&[Keyword::RENAME, Keyword::COLUMN]) {
-                let old_name = self.parse_identifier()?;
-                self.expect_keyword(Keyword::TO)?;
-                let new_name = self.parse_identifier()?;
-                operations.push(AlterForeignTableOperation::RenameColumn { old_name, new_name });
-            } else if self.parse_keywords(&[Keyword::RENAME, Keyword::TO]) {
-                operations.push(AlterForeignTableOperation::RenameTo(
-                    self.parse_identifier()?,
-                ));
-            } else if self.parse_keywords(&[Keyword::SET, Keyword::SCHEMA]) {
-                operations.push(AlterForeignTableOperation::SetSchema(
-                    self.parse_identifier()?,
-                ));
-            } else {
-                break;
-            }
-
-            // Check for comma between multiple operations
-            if !self.consume_token(&BorrowedToken::Comma) {
-                break;
-            }
-        }
+        let descendants = !only && self.consume_token(&BorrowedToken::Mul);
+        let operations = self.parse_comma_separated(Parser::parse_alter_foreign_table_operation)?;
 
         Ok(Statement::AlterForeignTable(AlterForeignTableStatement {
             token,
             name,
             if_exists,
+            only,
+            descendants,
             operations,
         }))
     }
 
+    /// Parses one action of `ALTER FOREIGN TABLE`. PostgreSQL shares almost the
+    /// whole `ALTER TABLE` action list here, so anything without a dedicated
+    /// foreign-table spelling is parsed by the shared action parser.
+    fn parse_alter_foreign_table_operation(
+        &self,
+    ) -> Result<AlterForeignTableOperation, ParserError> {
+        if self.peek_keyword(Keyword::OPTIONS)
+            && self.peek_nth_token(1).token == BorrowedToken::LParen
+        {
+            self.expect_keyword(Keyword::OPTIONS)?;
+            return Ok(AlterForeignTableOperation::Options(
+                self.parse_sql_med_option_action_list()?,
+            ));
+        }
+        if self.parse_keywords(&[Keyword::OWNER, Keyword::TO]) {
+            return Ok(AlterForeignTableOperation::OwnerTo(
+                self.parse_identifier()?,
+            ));
+        }
+        if self.peek_keyword(Keyword::ALTER)
+            && (self.peek_nth_keyword(1, Keyword::COLUMN)
+                || !self.peek_nth_keyword(1, Keyword::CONSTRAINT))
+        {
+            if let Some(operation) = self.maybe_parse(|parser| {
+                parser.expect_keyword(Keyword::ALTER)?;
+                let _ = parser.parse_keyword(Keyword::COLUMN);
+                let column_name = parser.parse_identifier()?;
+                let action = parser.parse_alter_column_action()?;
+                Ok(AlterForeignTableOperation::AlterColumn {
+                    column_name,
+                    action,
+                })
+            })? {
+                return Ok(operation);
+            }
+        }
+
+        let operation = match self.parse_pg_alter_table_action()? {
+            Some(operation) => operation,
+            None => self.parse_alter_table_operation()?,
+        };
+        Ok(match operation {
+            AlterTableOperation::AddColumn {
+                column_keyword,
+                if_not_exists,
+                column_def,
+                column_position: None,
+            } => AlterForeignTableOperation::AddColumn {
+                column_keyword,
+                if_not_exists,
+                column_def,
+            },
+            AlterTableOperation::DropColumn {
+                has_column_keyword,
+                mut column_names,
+                if_exists,
+                drop_behavior,
+            } if column_names.len() == 1 => AlterForeignTableOperation::DropColumn {
+                column_keyword: has_column_keyword,
+                if_exists,
+                column_name: column_names.remove(0),
+                drop_behavior,
+            },
+            AlterTableOperation::RenameColumn {
+                old_column_name,
+                new_column_name,
+            } => AlterForeignTableOperation::RenameColumn {
+                old_name: old_column_name,
+                new_name: new_column_name,
+            },
+            AlterTableOperation::RenameTable {
+                table_name: RenameTableNameKind::To(name),
+            } if name.0.len() == 1 => match name.0.first().and_then(|part| part.as_ident()) {
+                Some(ident) => AlterForeignTableOperation::RenameTo(ident.clone()),
+                None => {
+                    AlterForeignTableOperation::TableOperation(AlterTableOperation::RenameTable {
+                        table_name: RenameTableNameKind::To(name),
+                    })
+                }
+            },
+            AlterTableOperation::SetSchema { new_schema } if new_schema.0.len() == 1 => {
+                match new_schema.0.first().and_then(|part| part.as_ident()) {
+                    Some(ident) => AlterForeignTableOperation::SetSchema(ident.clone()),
+                    None => {
+                        AlterForeignTableOperation::TableOperation(AlterTableOperation::SetSchema {
+                            new_schema,
+                        })
+                    }
+                }
+            }
+            other => AlterForeignTableOperation::TableOperation(other),
+        })
+    }
+
     /// Parse ALTER COLUMN action for foreign tables.
     fn parse_alter_column_action(&self) -> Result<AlterColumnAction, ParserError> {
-        if self.parse_keywords(&[Keyword::SET, Keyword::DATA, Keyword::TYPE]) {
+        if self.parse_keywords(&[Keyword::SET, Keyword::DATA, Keyword::TYPE])
+            || self.parse_keyword(Keyword::TYPE)
+        {
             Ok(AlterColumnAction::SetDataType(self.parse_data_type()?))
         } else if self.parse_keywords(&[Keyword::SET, Keyword::NOT, Keyword::NULL]) {
             Ok(AlterColumnAction::SetNotNull)
@@ -28365,7 +28635,7 @@ impl<'a> Parser<'a> {
         } else if self.parse_keywords(&[Keyword::DROP, Keyword::DEFAULT]) {
             Ok(AlterColumnAction::DropDefault)
         } else if self.parse_keyword(Keyword::OPTIONS) {
-            let opts = self.parse_sql_med_option_actions()?;
+            let opts = self.parse_sql_med_option_action_list()?;
             Ok(AlterColumnAction::Options(opts))
         } else {
             self.expected(
@@ -28434,7 +28704,7 @@ impl<'a> Parser<'a> {
         self.expect_keyword(Keyword::SERVER)?;
         let server = self.parse_object_name(false)?;
         self.expect_keyword(Keyword::OPTIONS)?;
-        let options = self.parse_sql_med_option_actions()?;
+        let options = self.parse_sql_med_option_action_list()?;
 
         Ok(Statement::AlterUserMapping(AlterUserMappingStatement {
             token,
@@ -28516,28 +28786,6 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse OPTIONS clause with actions for ALTER statements: OPTIONS (SET key 'value', ADD key 'value', DROP key)
-    fn parse_sql_med_option_actions(&self) -> Result<Vec<SqlMedOptionAction>, ParserError> {
-        self.expect_token(&BorrowedToken::LParen)?;
-        let options = self.parse_comma_separated(|p| {
-            if p.parse_keyword(Keyword::SET) {
-                let key = p.parse_identifier()?;
-                let value = p.parse_identifier()?;
-                Ok(SqlMedOptionAction::Set { key, value })
-            } else if p.parse_keyword(Keyword::ADD) {
-                let key = p.parse_identifier()?;
-                let value = p.parse_identifier()?;
-                Ok(SqlMedOptionAction::Add { key, value })
-            } else if p.parse_keyword(Keyword::DROP) {
-                let key = p.parse_identifier()?;
-                Ok(SqlMedOptionAction::Drop { key })
-            } else {
-                p.expected("SET, ADD, or DROP", p.peek_token())
-            }
-        })?;
-        self.expect_token(&BorrowedToken::RParen)?;
-        Ok(options)
-    }
-
     /// Helper to get the ALTER token (goes back to retrieve it)
     fn get_alter_token(&self) -> AttachedToken {
         let current_pos = self.index();
