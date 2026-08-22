@@ -51,6 +51,7 @@ use core::cell::{Cell, RefCell};
 use sqlparser::parser::ParserState::ColumnDefinition;
 
 mod alter;
+mod sql_json;
 
 fn box_into_inner<T>(value: Box<T>) -> T {
     Box::into_inner(value)
@@ -6281,7 +6282,11 @@ impl<'a> Parser<'a> {
     fn parse_function_call(&self, name: ObjectName) -> Result<Function, ParserError> {
         self.expect_token(&BorrowedToken::LParen)?;
 
-        let args = self.parse_function_argument_list()?;
+        let args = if self.peek_json_array_query(&name) {
+            self.parse_json_array_query_argument_list()?
+        } else {
+            self.parse_function_argument_list()?
+        };
         let parameters = FunctionArguments::None;
 
         let within_group = if self.parse_keywords(&[Keyword::WITHIN, Keyword::GROUP]) {
@@ -19201,6 +19206,15 @@ impl<'a> Parser<'a> {
         fn validator(explicit: bool, kw: &Keyword, parser: &Parser) -> bool {
             parser.dialect.is_table_factor_alias(explicit, kw, parser)
         }
+        if self.parse_keyword_with_tokens(Keyword::AS, &[BorrowedToken::LParen]) {
+            self.prev_token();
+            let columns = self.parse_table_alias_column_defs()?;
+            return Ok(Some(TableAlias {
+                name: Ident::new(""),
+                columns,
+                implicit: false,
+            }));
+        }
         match self.parse_optional_alias_inner(None, validator)? {
             Some((name, explicit_as)) => {
                 let columns = self.parse_table_alias_column_defs()?;
@@ -22493,6 +22507,10 @@ impl<'a> Parser<'a> {
                 with_offset_alias,
                 with_ordinality,
             })
+        } else if dialect_of!(self is PostgreSqlDialect)
+            && self.parse_keyword_with_tokens(Keyword::JSON_TABLE, &[BorrowedToken::LParen])
+        {
+            self.parse_sql_json_table()
         } else if self.parse_keyword_with_tokens(Keyword::JSON_TABLE, &[BorrowedToken::LParen]) {
             let json_expr = self.parse_expr()?;
             self.expect_token(&BorrowedToken::Comma)?;
@@ -24368,6 +24386,10 @@ impl<'a> Parser<'a> {
             Ok(JoinConstraint::On(Box::new(constraint)))
         } else if self.parse_keyword(Keyword::USING) {
             let columns = self.parse_parenthesized_qualified_column_list(Mandatory, false)?;
+            if self.parse_keyword(Keyword::AS) {
+                let alias = self.parse_identifier()?;
+                return Ok(JoinConstraint::UsingWithAlias { columns, alias });
+            }
             Ok(JoinConstraint::Using(columns))
         } else {
             Ok(JoinConstraint::None)
@@ -25609,7 +25631,7 @@ impl<'a> Parser<'a> {
             self.maybe_parse(|p| {
                 let name = p.parse_expr()?;
                 let operator = p.parse_function_named_arg_operator()?;
-                let arg = p.parse_wildcard_expr()?.into();
+                let arg = p.parse_json_function_arg_expr()?;
                 Ok(FunctionArg::ExprNamed {
                     name,
                     arg,
@@ -25620,7 +25642,7 @@ impl<'a> Parser<'a> {
             self.maybe_parse(|p| {
                 let name = p.parse_identifier()?;
                 let operator = p.parse_function_named_arg_operator()?;
-                let arg = p.parse_wildcard_expr()?.into();
+                let arg = p.parse_json_function_arg_expr()?;
                 Ok(FunctionArg::Named {
                     name,
                     arg,
@@ -25633,7 +25655,7 @@ impl<'a> Parser<'a> {
         if let Some(arg) = arg {
             return Ok(arg);
         }
-        Ok(FunctionArg::Unnamed(self.parse_wildcard_expr()?.into()))
+        Ok(FunctionArg::Unnamed(self.parse_json_function_arg_expr()?))
     }
 
     fn has_function_named_arg_operator(&self) -> bool {
@@ -25926,6 +25948,8 @@ impl<'a> Parser<'a> {
             clauses.push(on_clause);
         }
 
+        self.parse_sql_json_call_clauses(&mut clauses)?;
+
         self.expect_token(&BorrowedToken::RParen)?;
         Ok(FunctionArgumentList {
             duplicate_treatment,
@@ -25949,7 +25973,8 @@ impl<'a> Parser<'a> {
     ) -> Result<Option<JsonReturningClause>, ParserError> {
         if self.parse_keyword(Keyword::RETURNING) {
             let data_type = self.parse_data_type()?;
-            Ok(Some(JsonReturningClause { data_type }))
+            let format = self.maybe_parse_json_format_clause()?;
+            Ok(Some(JsonReturningClause { data_type, format }))
         } else {
             Ok(None)
         }

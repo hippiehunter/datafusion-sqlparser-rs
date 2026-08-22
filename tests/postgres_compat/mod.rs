@@ -213,3 +213,6 @@ pub mod syntax;
 
 // Metadata and Comments
 pub mod metadata;
+
+// SQL/JSON functions
+pub mod sql_json;

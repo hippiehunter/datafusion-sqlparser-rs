@@ -3964,7 +3964,7 @@ fn parse_json_object() {
                     &args[..],
                     &[FunctionArg::ExprNamed { operator: FunctionArgOperator::Value, .. }]
                 )
-                && clauses == vec![FunctionArgumentClause::JsonReturningClause(JsonReturningClause { data_type: DataType::JSONB })]
+                && clauses == vec![FunctionArgumentClause::JsonReturningClause(JsonReturningClause { data_type: DataType::JSONB, format: None })]
         ),
         "Failed to parse JSON_OBJECT with expected structure, got: {expr:?}"
     );
@@ -3980,7 +3980,7 @@ fn parse_json_object() {
                 ..
             }) if parts == vec![ObjectNamePart::Identifier(Ident::new("json_object"))]
                 && args.is_empty()
-                && clauses == vec![FunctionArgumentClause::JsonReturningClause(JsonReturningClause { data_type: DataType::JSONB })]
+                && clauses == vec![FunctionArgumentClause::JsonReturningClause(JsonReturningClause { data_type: DataType::JSONB, format: None })]
         ),
         "Failed to parse JSON_OBJECT with expected structure, got: {expr:?}"
     );

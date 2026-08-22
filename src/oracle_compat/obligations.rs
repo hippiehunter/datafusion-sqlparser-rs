@@ -191,9 +191,8 @@ pub const GRAMMAR_OBLIGATIONS: &[GrammarObligation] = &[
     },
     GrammarObligation {
         production: "json_exists_clauses",
-        scope: GrammarScope::OracleSpecific {
-            isolation_case: "select.json_exists.passing_unknown",
-        },
+        // PostgreSQL 18 accepts the same PASSING and ON ERROR clauses.
+        scope: GrammarScope::Shared,
         positive_cases: &["select.json_exists", "select.json_exists.passing_unknown"],
         negative_cases: &[
             "query.json_exists.passing_missing_alias",
