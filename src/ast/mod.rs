@@ -18,7 +18,7 @@
 //! SQL Abstract Syntax Tree (AST) types
 pub use crate::arena::AstBox;
 pub use self::alter_objects::{
-    AggregateSignature, AllInTablespaceObjectType, AlterCollationAction, AlterDatabaseOption,
+    AllInTablespaceObjectType, AlterCollationAction, AlterDatabaseOption,
     AlterDomainAction, AlterEventTriggerAction, AlterGroupAction, AlterMaterializedViewAction,
     AlterObject, AlterObjectAction, AlterObjectTarget, AlterOperatorAction, AlterOperatorArgs,
     AlterRoutineAction, AlterSequenceOperation, AlterStatisticsAction,
@@ -127,6 +127,13 @@ pub use self::pg_utility::{
     PgRelationExpr, PreparedTransactionAction, PreparedTransactionStatement, VacuumOption,
     VacuumOptionName, VacuumOptionValue, VacuumRelation,
 };
+pub use self::object_ddl::{
+    AggregateArgs, AggregateSignature, CastSignature, CollationDefinition, CommentObjectDetail,
+    CreateCollation, CreateConversion, CreateEventTrigger, CreateLanguage, DropAggregate, DropCast,
+    DropOperator, DropOperatorClass, DropOwned, DropRoutine, DropTransform, EventTriggerCondition,
+    OperatorOperandTypes, OperatorSignature, PasswordEncryption, ReassignOwned, RoleGrantOption,
+    RoleGrantOptionValue,
+};
 
 pub use self::trigger::{
     TriggerEvent, TriggerExecBody, TriggerExecBodyType, TriggerObject, TriggerPeriod,
@@ -158,6 +165,7 @@ pub use table_constraints::{
     ForeignKeyConstraint, FullTextOrSpatialConstraint, IndexConstraint, PeriodForDefinition,
     PeriodForName, PrimaryKeyConstraint, TableConstraint, UniqueConstraint,
 };
+mod object_ddl;
 mod operator;
 mod plpgsql;
 pub use self::plpgsql::{
@@ -2844,6 +2852,42 @@ pub enum CommentObject {
     Database,
     User,
     Role,
+    AccessMethod,
+    Aggregate,
+    Cast,
+    Collation,
+    Constraint,
+    Conversion,
+    Domain,
+    EventTrigger,
+    ForeignDataWrapper,
+    ForeignTable,
+    Function,
+    Index,
+    Language,
+    LargeObject,
+    MaterializedView,
+    Operator,
+    OperatorClass,
+    OperatorFamily,
+    Policy,
+    Procedure,
+    Publication,
+    Routine,
+    Rule,
+    Sequence,
+    Server,
+    Statistics,
+    Subscription,
+    Tablespace,
+    TextSearchConfiguration,
+    TextSearchDictionary,
+    TextSearchParser,
+    TextSearchTemplate,
+    Transform,
+    Trigger,
+    Type,
+    View,
 }
 
 impl fmt::Display for CommentObject {
@@ -2856,6 +2900,42 @@ impl fmt::Display for CommentObject {
             CommentObject::Database => f.write_str("DATABASE"),
             CommentObject::User => f.write_str("USER"),
             CommentObject::Role => f.write_str("ROLE"),
+            CommentObject::AccessMethod => f.write_str("ACCESS METHOD"),
+            CommentObject::Aggregate => f.write_str("AGGREGATE"),
+            CommentObject::Cast => f.write_str("CAST"),
+            CommentObject::Collation => f.write_str("COLLATION"),
+            CommentObject::Constraint => f.write_str("CONSTRAINT"),
+            CommentObject::Conversion => f.write_str("CONVERSION"),
+            CommentObject::Domain => f.write_str("DOMAIN"),
+            CommentObject::EventTrigger => f.write_str("EVENT TRIGGER"),
+            CommentObject::ForeignDataWrapper => f.write_str("FOREIGN DATA WRAPPER"),
+            CommentObject::ForeignTable => f.write_str("FOREIGN TABLE"),
+            CommentObject::Function => f.write_str("FUNCTION"),
+            CommentObject::Index => f.write_str("INDEX"),
+            CommentObject::Language => f.write_str("LANGUAGE"),
+            CommentObject::LargeObject => f.write_str("LARGE OBJECT"),
+            CommentObject::MaterializedView => f.write_str("MATERIALIZED VIEW"),
+            CommentObject::Operator => f.write_str("OPERATOR"),
+            CommentObject::OperatorClass => f.write_str("OPERATOR CLASS"),
+            CommentObject::OperatorFamily => f.write_str("OPERATOR FAMILY"),
+            CommentObject::Policy => f.write_str("POLICY"),
+            CommentObject::Procedure => f.write_str("PROCEDURE"),
+            CommentObject::Publication => f.write_str("PUBLICATION"),
+            CommentObject::Routine => f.write_str("ROUTINE"),
+            CommentObject::Rule => f.write_str("RULE"),
+            CommentObject::Sequence => f.write_str("SEQUENCE"),
+            CommentObject::Server => f.write_str("SERVER"),
+            CommentObject::Statistics => f.write_str("STATISTICS"),
+            CommentObject::Subscription => f.write_str("SUBSCRIPTION"),
+            CommentObject::Tablespace => f.write_str("TABLESPACE"),
+            CommentObject::TextSearchConfiguration => f.write_str("TEXT SEARCH CONFIGURATION"),
+            CommentObject::TextSearchDictionary => f.write_str("TEXT SEARCH DICTIONARY"),
+            CommentObject::TextSearchParser => f.write_str("TEXT SEARCH PARSER"),
+            CommentObject::TextSearchTemplate => f.write_str("TEXT SEARCH TEMPLATE"),
+            CommentObject::Transform => f.write_str("TRANSFORM"),
+            CommentObject::Trigger => f.write_str("TRIGGER"),
+            CommentObject::Type => f.write_str("TYPE"),
+            CommentObject::View => f.write_str("VIEW"),
         }
     }
 }
@@ -7198,6 +7278,22 @@ pub enum Statement {
     CreateOperator(CreateOperator),
     /// PostgreSQL `CREATE AGGREGATE`.
     CreateAggregate(CreateAggregate),
+    /// ```sql
+    /// CREATE COLLATION
+    /// ```
+    CreateCollation(CreateCollation),
+    /// ```sql
+    /// CREATE [DEFAULT] CONVERSION
+    /// ```
+    CreateConversion(CreateConversion),
+    /// ```sql
+    /// CREATE [OR REPLACE] [TRUSTED] [PROCEDURAL] LANGUAGE
+    /// ```
+    CreateLanguage(CreateLanguage),
+    /// ```sql
+    /// CREATE EVENT TRIGGER
+    /// ```
+    CreateEventTrigger(CreateEventTrigger),
     /// PostgreSQL `CREATE CAST`.
     CreateCast(CreateCast),
     /// PostgreSQL `CREATE STATISTICS`.
@@ -7369,11 +7465,47 @@ pub enum Statement {
         table: Option<ObjectName>,
         /// Oracle object-specific DROP modifiers.
         oracle: Option<OracleDropOptions>,
+        /// PostgreSQL `DROP INDEX CONCURRENTLY`
+        concurrently: bool,
+        /// PostgreSQL `DROP DATABASE name [WITH] (FORCE)`
+        force: bool,
     },
     /// ```sql
     /// DROP FUNCTION
     /// ```
     DropFunction(DropFunction),
+    /// ```sql
+    /// DROP AGGREGATE
+    /// ```
+    DropAggregate(DropAggregate),
+    /// ```sql
+    /// DROP OPERATOR
+    /// ```
+    DropOperator(DropOperator),
+    /// ```sql
+    /// DROP OPERATOR CLASS | DROP OPERATOR FAMILY
+    /// ```
+    DropOperatorClass(DropOperatorClass),
+    /// ```sql
+    /// DROP CAST
+    /// ```
+    DropCast(DropCast),
+    /// ```sql
+    /// DROP ROUTINE
+    /// ```
+    DropRoutine(DropRoutine),
+    /// ```sql
+    /// DROP TRANSFORM
+    /// ```
+    DropTransform(DropTransform),
+    /// ```sql
+    /// DROP OWNED BY
+    /// ```
+    DropOwned(DropOwned),
+    /// ```sql
+    /// REASSIGN OWNED BY
+    /// ```
+    ReassignOwned(ReassignOwned),
     /// ```sql
     /// DROP DOMAIN
     /// ```
@@ -7454,6 +7586,9 @@ pub enum Statement {
     DropPublication {
         if_exists: bool,
         name: Ident,
+        /// The publications named after the first one, when several are
+        /// dropped by the same statement
+        additional_names: Vec<Ident>,
         drop_behavior: Option<DropBehavior>,
     },
     /// ```sql
@@ -7797,10 +7932,16 @@ pub enum Statement {
         /// The `COMMENT` token
         comment_token: AttachedToken,
         object_type: CommentObject,
+        /// The name of the commented object. Empty for the `CAST`, `TRANSFORM`
+        /// and `LARGE OBJECT` forms, which name no object; `object_detail`
+        /// identifies the target in those cases.
         object_name: ObjectName,
         comment: Option<String>,
         /// An optional `IF EXISTS` clause. (Non-standard.)
         if_exists: bool,
+        /// The remainder of the target specification: an argument list, an
+        /// owning relation, an index method, and so on.
+        object_detail: Option<CommentObjectDetail>,
     },
     /// ```sql
     /// COMMIT [ TRANSACTION | WORK ] [ AND [ NO ] CHAIN ]
@@ -8083,6 +8224,8 @@ pub enum Statement {
         with_admin_option: bool,
         /// The grantor of the role
         granted_by: Option<Ident>,
+        /// The full `WITH` option list, e.g. `WITH ADMIN TRUE, INHERIT FALSE`
+        role_options: Vec<RoleGrantOption>,
     },
     /// ```sql
     /// REVOKE role_name [, role_name ...] FROM user [, user ...] [CASCADE | RESTRICT]
@@ -8101,6 +8244,8 @@ pub enum Statement {
         cascade: Option<CascadeOption>,
         /// If true, this is `REVOKE ADMIN OPTION FOR ...`
         admin_option_for: bool,
+        /// The revoked role option in `REVOKE <option> OPTION FOR ...`
+        option_for: Option<Ident>,
     },
     /// ```sql
     /// DEALLOCATE [ PREPARE ] { name | ALL }
@@ -11440,6 +11585,10 @@ impl fmt::Display for Statement {
             }
             Statement::CreateOperator(create_operator) => create_operator.fmt(f),
             Statement::CreateAggregate(create_aggregate) => create_aggregate.fmt(f),
+            Statement::CreateCollation(create_collation) => create_collation.fmt(f),
+            Statement::CreateConversion(create_conversion) => create_conversion.fmt(f),
+            Statement::CreateLanguage(create_language) => create_language.fmt(f),
+            Statement::CreateEventTrigger(create_event_trigger) => create_event_trigger.fmt(f),
             Statement::CreateCast(create_cast) => create_cast.fmt(f),
             Statement::CreateStatistics(create_statistics) => create_statistics.fmt(f),
             Statement::CreateTypedTable(create_typed_table) => create_typed_table.fmt(f),
@@ -11570,17 +11719,23 @@ impl fmt::Display for Statement {
                 temporary,
                 table,
                 oracle,
+                concurrently,
+                force,
             } => {
                 write!(
                     f,
-                    "DROP {}{}{} {}{}{}",
+                    "DROP {}{}{}{} {}{}{}",
                     if *temporary { "TEMPORARY " } else { "" },
                     object_type,
+                    if *concurrently { " CONCURRENTLY" } else { "" },
                     if *if_exists { " IF EXISTS" } else { "" },
                     display_comma_separated(names),
                     if *cascade { " CASCADE" } else { "" },
                     if *restrict { " RESTRICT" } else { "" },
                 )?;
+                if *force {
+                    write!(f, " WITH (FORCE)")?;
+                }
                 if let Some(table_name) = table.as_ref() {
                     write!(f, " ON {table_name}")?;
                 };
@@ -11593,6 +11748,14 @@ impl fmt::Display for Statement {
                 Ok(())
             }
             Statement::DropFunction(drop_function) => write!(f, "{drop_function}"),
+            Statement::DropAggregate(drop_aggregate) => drop_aggregate.fmt(f),
+            Statement::DropOperator(drop_operator) => drop_operator.fmt(f),
+            Statement::DropOperatorClass(drop_operator_class) => drop_operator_class.fmt(f),
+            Statement::DropCast(drop_cast) => drop_cast.fmt(f),
+            Statement::DropRoutine(drop_routine) => drop_routine.fmt(f),
+            Statement::DropTransform(drop_transform) => drop_transform.fmt(f),
+            Statement::DropOwned(drop_owned) => drop_owned.fmt(f),
+            Statement::ReassignOwned(reassign_owned) => reassign_owned.fmt(f),
             Statement::DropDomain(DropDomain {
                 if_exists,
                 name,
@@ -11679,6 +11842,7 @@ impl fmt::Display for Statement {
             Statement::DropPublication {
                 if_exists,
                 name,
+                additional_names,
                 drop_behavior,
             } => {
                 write!(f, "DROP PUBLICATION")?;
@@ -11686,6 +11850,9 @@ impl fmt::Display for Statement {
                     write!(f, " IF EXISTS")?;
                 }
                 write!(f, " {name}")?;
+                for additional in additional_names {
+                    write!(f, ", {additional}")?;
+                }
                 if let Some(drop_behavior) = drop_behavior {
                     write!(f, " {drop_behavior}")?;
                 }
@@ -12320,6 +12487,7 @@ impl fmt::Display for Statement {
                 grantees,
                 with_admin_option,
                 granted_by,
+                role_options,
             } => {
                 write!(
                     f,
@@ -12327,7 +12495,9 @@ impl fmt::Display for Statement {
                     display_comma_separated(roles),
                     display_comma_separated(grantees)
                 )?;
-                if *with_admin_option {
+                if !role_options.is_empty() {
+                    write!(f, " WITH {}", display_comma_separated(role_options))?;
+                } else if *with_admin_option {
                     write!(f, " WITH ADMIN OPTION")?;
                 }
                 if let Some(grantor) = granted_by {
@@ -12342,9 +12512,12 @@ impl fmt::Display for Statement {
                 granted_by,
                 cascade,
                 admin_option_for,
+                option_for,
             } => {
                 write!(f, "REVOKE ")?;
-                if *admin_option_for {
+                if let Some(option) = option_for {
+                    write!(f, "{option} OPTION FOR ")?;
+                } else if *admin_option_for {
                     write!(f, "ADMIN OPTION FOR ")?;
                 }
                 write!(
@@ -12427,12 +12600,20 @@ impl fmt::Display for Statement {
                 object_name,
                 comment,
                 if_exists,
+                object_detail,
             } => {
                 write!(f, "COMMENT ")?;
                 if *if_exists {
                     write!(f, "IF EXISTS ")?
                 };
-                write!(f, "ON {object_type} {object_name} IS ")?;
+                write!(f, "ON {object_type}")?;
+                if !object_name.0.is_empty() {
+                    write!(f, " {object_name}")?;
+                }
+                if let Some(detail) = object_detail {
+                    write!(f, "{detail}")?;
+                }
+                write!(f, " IS ")?;
                 if let Some(c) = comment {
                     write!(f, "'{c}'")
                 } else {
@@ -13473,6 +13654,8 @@ pub enum GrantObjects {
     /// For example:
     /// `GRANT USAGE ON COLLATION utf8_general_ci TO alice`
     Collations(Vec<ObjectName>),
+    /// Grant privileges on `LARGE OBJECT <oid> [, ...]`
+    LargeObjects(Vec<ValueWithSpan>),
 }
 
 impl fmt::Display for GrantObjects {
@@ -13660,6 +13843,9 @@ impl fmt::Display for GrantObjects {
             }
             GrantObjects::Collations(collations) => {
                 write!(f, "COLLATION {}", display_comma_separated(collations))
+            }
+            GrantObjects::LargeObjects(oids) => {
+                write!(f, "LARGE OBJECT {}", display_comma_separated(oids))
             }
         }
     }
@@ -14644,6 +14830,12 @@ pub enum ObjectType {
     User,
     Stream,
     Tablespace,
+    AccessMethod,
+    Collation,
+    Conversion,
+    EventTrigger,
+    Language,
+    Statistics,
 }
 
 impl fmt::Display for ObjectType {
@@ -14661,6 +14853,12 @@ impl fmt::Display for ObjectType {
             ObjectType::User => "USER",
             ObjectType::Stream => "STREAM",
             ObjectType::Tablespace => "TABLESPACE",
+            ObjectType::AccessMethod => "ACCESS METHOD",
+            ObjectType::Collation => "COLLATION",
+            ObjectType::Conversion => "CONVERSION",
+            ObjectType::EventTrigger => "EVENT TRIGGER",
+            ObjectType::Language => "LANGUAGE",
+            ObjectType::Statistics => "STATISTICS",
         })
     }
 }

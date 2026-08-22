@@ -7050,7 +7050,10 @@ fn parse_create_operator() {
         pg().verified_stmt(sql),
         Statement::CreateOperator(CreateOperator {
             name: ObjectName::from(vec![Ident::new("myschema"), Ident::new("@@")]),
-            function: ObjectName::from(vec![Ident::new("myschema"), Ident::new("my_proc")]),
+            function: Some(ObjectName::from(vec![
+                Ident::new("myschema"),
+                Ident::new("my_proc"),
+            ])),
             is_procedure: true,
             left_arg: Some(DataType::Timestamp(None, TimezoneInfo::WithTimeZone)),
             right_arg: Some(DataType::Varchar(Some(CharacterLength::IntegerLength {
@@ -7086,7 +7089,7 @@ fn parse_create_operator() {
             pg().verified_stmt(&format!("CREATE OPERATOR {op_symbol} (FUNCTION = f)")),
             Statement::CreateOperator(CreateOperator {
                 name: ObjectName::from(vec![Ident::new(*op_symbol)]),
-                function: ObjectName::from(vec![Ident::new("f")]),
+                function: Some(ObjectName::from(vec![Ident::new("f")])),
                 is_procedure: false,
                 left_arg: None,
                 right_arg: None,
@@ -7155,10 +7158,12 @@ fn parse_create_operator() {
             .is_err());
     }
 
-    // Test missing FUNCTION/PROCEDURE error
-    assert!(pg()
-        .parse_sql_statements("CREATE OPERATOR + (LEFTARG = INT4)")
-        .is_err());
+    // PostgreSQL parses a definition without a function and rejects it when the
+    // statement runs, so the parser must accept it.
+    match pg().verified_stmt("CREATE OPERATOR + (LEFTARG = INT4)") {
+        Statement::CreateOperator(operator) => assert!(operator.function.is_none()),
+        other => panic!("Expected CreateOperator, got {other:?}"),
+    }
 
     // Test empty parameter list error
     assert!(pg().parse_sql_statements("CREATE OPERATOR + ()").is_err());
@@ -7679,6 +7684,7 @@ fn parse_drop_publication() {
             if_exists,
             name,
             drop_behavior,
+            ..
         } => {
             assert!(!if_exists);
             assert_eq!(name, Ident::new("my_pub"));
@@ -7694,6 +7700,7 @@ fn parse_drop_publication() {
             if_exists,
             name,
             drop_behavior,
+            ..
         } => {
             assert!(if_exists);
             assert_eq!(name, Ident::new("my_pub"));

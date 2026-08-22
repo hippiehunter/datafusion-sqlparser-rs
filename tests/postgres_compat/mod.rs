@@ -224,3 +224,5 @@ pub mod metadata;
 pub mod pg_utility;
 // SQL/JSON functions
 pub mod sql_json;
+// Object DDL (COMMENT ON, miscellaneous CREATE/DROP, ownership, role grants)
+pub mod object_ddl;

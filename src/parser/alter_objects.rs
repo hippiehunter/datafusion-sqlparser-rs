@@ -23,30 +23,27 @@ use alloc::{
 use super::{Parser, ParserError};
 use crate::ast::helpers::attached_token::AttachedToken;
 use crate::ast::{
-    AggregateSignature, AllInTablespaceObjectType, AlterCollationAction,
+    AllInTablespaceObjectType, AlterCollationAction,
     AlterConfigurationOperation, AlterDatabaseOption, AlterDomainAction, AlterEventTriggerAction,
     AlterGroupAction, AlterIndexOperation, AlterMaterializedViewAction,
     AlterMaterializedViewOperation, AlterObject, AlterObjectAction, AlterObjectTarget,
     AlterOperatorAction, AlterOperatorArgs, AlterRoutineAction, AlterSequenceOperation,
     AlterStatisticsAction, AlterTextSearchConfigurationAction, AlterTextSearchDictionaryAction,
-    AlterTriggerAction, AlterTypeAction, AlterTypeOperation, AlterViewOperation, ArgMode, DataType,
+    AlterTriggerAction, AlterTypeAction, AlterTypeOperation, AlterViewOperation, DataType,
     DatabaseOptionValue, DefinitionElement, DefinitionValue, EventTriggerEnableMode, Expr,
     FunctionBehavior, FunctionCalledOnNull, FunctionParallel, Ident, ObjectName,
-    OperateFunctionArg, ProcedureSecurity, ProcedureSetConfig, ResetConfig, RoutineKind,
+    ProcedureSecurity, ProcedureSetConfig, ResetConfig, RoutineKind,
     RoutineOption, SetConfigValue, SqlOption, Statement, StatisticsTarget,
 };
 use crate::keywords::Keyword;
-use crate::tokenizer::{BorrowedToken, TokenWithSpan};
-
-/// The characters PostgreSQL allows in an operator name.
-const OPERATOR_CHARS: &str = "+-*/<>=~!@#%^&|`?";
+use crate::tokenizer::BorrowedToken;
 
 impl Parser<'_> {
     /// Parse `ALTER AGGREGATE name ( aggregate_signature ) action`.
     pub(super) fn parse_alter_aggregate(&self) -> Result<Statement, ParserError> {
         let alter_token = self.get_alter_token();
         let name = self.parse_object_name(false)?;
-        let signature = self.parse_aggregate_signature()?;
+        let signature = self.parse_aggregate_args()?;
         let action = self.parse_alter_object_action(true, true)?;
         self.build_alter_object(
             alter_token,
@@ -639,91 +636,6 @@ impl Parser<'_> {
         self.expected(expected, self.peek_token())
     }
 
-    fn parse_aggregate_signature(&self) -> Result<AggregateSignature, ParserError> {
-        self.expect_token(&BorrowedToken::LParen)?;
-        if self.consume_token(&BorrowedToken::Mul) {
-            self.expect_token(&BorrowedToken::RParen)?;
-            return Ok(AggregateSignature::All);
-        }
-        if self.parse_keywords(&[Keyword::ORDER, Keyword::BY]) {
-            let aggregated_args = self.parse_comma_separated(Parser::parse_aggregate_arg)?;
-            self.expect_token(&BorrowedToken::RParen)?;
-            return Ok(AggregateSignature::OrderBy {
-                direct_args: vec![],
-                aggregated_args,
-            });
-        }
-        if self.consume_token(&BorrowedToken::RParen) {
-            return Ok(AggregateSignature::Args(vec![]));
-        }
-        let args = self.parse_comma_separated(Parser::parse_aggregate_arg)?;
-        if self.parse_keywords(&[Keyword::ORDER, Keyword::BY]) {
-            let aggregated_args = self.parse_comma_separated(Parser::parse_aggregate_arg)?;
-            self.expect_token(&BorrowedToken::RParen)?;
-            return Ok(AggregateSignature::OrderBy {
-                direct_args: args,
-                aggregated_args,
-            });
-        }
-        self.expect_token(&BorrowedToken::RParen)?;
-        Ok(AggregateSignature::Args(args))
-    }
-
-    /// Parse PostgreSQL's `aggr_arg`: `[ argmode ] [ argname ] argtype`.
-    ///
-    /// Unlike a routine argument, an aggregate argument can be followed by
-    /// `ORDER BY`, so the argument name must not be guessed by trying to read a
-    /// second type.
-    fn parse_aggregate_arg(&self) -> Result<OperateFunctionArg, ParserError> {
-        let mode = if self.parse_keyword(Keyword::IN) {
-            Some(ArgMode::In)
-        } else if self.parse_keyword(Keyword::OUT) {
-            Some(ArgMode::Out)
-        } else if self.parse_keyword(Keyword::INOUT) {
-            Some(ArgMode::InOut)
-        } else if self.parse_keyword(Keyword::VARIADIC) {
-            Some(ArgMode::Variadic)
-        } else {
-            None
-        };
-
-        let data_type = self.parse_data_type()?;
-        let first_type_idx = self.get_current_index();
-        if self.at_end_of_aggregate_arg() {
-            return Ok(OperateFunctionArg {
-                mode,
-                name: None,
-                data_type,
-                xml_passing: None,
-                default_expr: None,
-            });
-        }
-
-        let token = self.token_at(first_type_idx);
-        if !matches!(token.token, BorrowedToken::Word(_)) {
-            return self.expected("a name or type", token.clone());
-        }
-        let name = Some(Ident::new(token.to_string()));
-        let data_type = self.parse_data_type()?;
-        if !self.at_end_of_aggregate_arg() {
-            return self.expected("',' or ')' after an aggregate argument", self.peek_token());
-        }
-        Ok(OperateFunctionArg {
-            mode,
-            name,
-            data_type,
-            xml_passing: None,
-            default_expr: None,
-        })
-    }
-
-    fn at_end_of_aggregate_arg(&self) -> bool {
-        matches!(
-            self.peek_token_ref().token,
-            BorrowedToken::Comma | BorrowedToken::RParen
-        ) || self.peek_keywords(&[Keyword::ORDER, Keyword::BY])
-    }
-
     fn parse_alter_domain_action(&self) -> Result<AlterDomainAction, ParserError> {
         if self.parse_keyword(Keyword::SET) {
             if self.parse_keyword(Keyword::DEFAULT) {
@@ -1208,27 +1120,6 @@ impl Parser<'_> {
             name,
             value: Some(value),
         })
-    }
-
-    /// Return the full operator symbol starting at `first`, absorbing the
-    /// operator fragments that follow it without intervening whitespace.
-    pub(super) fn extend_operator_symbol(&self, first: &TokenWithSpan<'_>) -> String {
-        let mut symbol = first.to_string();
-        let mut end = first.span.end;
-        loop {
-            let next = self.peek_token_ref();
-            if next.span.start != end {
-                break;
-            }
-            let fragment = next.token.to_string();
-            if fragment.is_empty() || !fragment.chars().all(|c| OPERATOR_CHARS.contains(c)) {
-                break;
-            }
-            end = next.span.end;
-            symbol.push_str(&fragment);
-            self.advance_token();
-        }
-        symbol
     }
 
     /// Move the token cursor back to `index`.

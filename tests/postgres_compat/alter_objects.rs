@@ -21,7 +21,7 @@
 //! Reference: <https://www.postgresql.org/docs/current/sql-commands.html>
 
 use sqlparser::ast::{
-    AggregateSignature, AllInTablespaceObjectType, AlterCollationAction,
+    AggregateArgs, AllInTablespaceObjectType, AlterCollationAction,
     AlterConfigurationOperation, AlterDatabaseOption, AlterDomainAction, AlterEventTriggerAction,
     AlterGroupAction, AlterIndexOperation, AlterMaterializedViewAction,
     AlterMaterializedViewOperation, AlterObjectAction, AlterObjectTarget, AlterOperatorAction,
@@ -72,7 +72,7 @@ fn parse_alter_aggregate_rename() {
         } => {
             assert_eq!(name.to_string(), "myagg");
             match signature {
-                AggregateSignature::Args(args) => {
+                AggregateArgs::Args(args) => {
                     assert_eq!(args.len(), 1);
                     assert_eq!(args[0].data_type, DataType::Int(None));
                     assert!(args[0].name.is_none());
@@ -96,7 +96,7 @@ fn parse_alter_aggregate_star_signature() {
         AlterObjectTarget::Aggregate {
             signature, action, ..
         } => {
-            assert_eq!(signature, AggregateSignature::All);
+            assert_eq!(signature, AggregateArgs::Star);
             assert_eq!(
                 action,
                 AlterObjectAction::OwnerTo {
@@ -112,12 +112,12 @@ fn parse_alter_aggregate_star_signature() {
 fn parse_alter_aggregate_ordered_set_signature() {
     match alter_object_target("ALTER AGGREGATE pct(FLOAT8 ORDER BY FLOAT8) SET SCHEMA s") {
         AlterObjectTarget::Aggregate { signature, .. } => match signature {
-            AggregateSignature::OrderBy {
-                direct_args,
-                aggregated_args,
+            AggregateArgs::OrderedSet {
+                direct,
+                ordered,
             } => {
-                assert_eq!(direct_args.len(), 1);
-                assert_eq!(aggregated_args.len(), 1);
+                assert_eq!(direct.len(), 1);
+                assert_eq!(ordered.len(), 1);
             }
             other => panic!("Expected OrderBy, got {other:?}"),
         },
@@ -134,7 +134,7 @@ fn parse_alter_aggregate_hypothetical_set_signature() {
 fn parse_alter_aggregate_named_and_variadic_args() {
     match alter_object_target("ALTER AGGREGATE myagg(VARIADIC arr ANYARRAY) RENAME TO youragg") {
         AlterObjectTarget::Aggregate { signature, .. } => match signature {
-            AggregateSignature::Args(args) => {
+            AggregateArgs::Args(args) => {
                 assert_eq!(args.len(), 1);
                 assert_eq!(
                     args[0].name.as_ref().map(ToString::to_string),

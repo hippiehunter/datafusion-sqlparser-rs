@@ -36,8 +36,8 @@ use sqlparser_derive::{Visit, VisitMut};
 
 use crate::ast::helpers::attached_token::AttachedToken;
 use crate::ast::{
-    display_comma_separated, DataType, DropBehavior, Expr, FunctionBehavior, FunctionCalledOnNull,
-    FunctionDesc, FunctionParallel, Ident, ObjectName, OperateFunctionArg, Owner,
+    display_comma_separated, AggregateArgs, DataType, DropBehavior, Expr, FunctionBehavior,
+    FunctionCalledOnNull, FunctionDesc, FunctionParallel, Ident, ObjectName, Owner,
     ProcedureSecurity, ProcedureSetConfig, ResetConfig, SqlOption, TableConstraint,
 };
 
@@ -68,7 +68,7 @@ pub enum AlterObjectTarget {
     /// `ALTER AGGREGATE name ( aggregate_signature ) ...`
     Aggregate {
         name: ObjectName,
-        signature: AggregateSignature,
+        signature: AggregateArgs,
         action: AlterObjectAction,
     },
     /// `ALTER { INDEX | MATERIALIZED VIEW } ALL IN TABLESPACE name
@@ -275,41 +275,6 @@ impl fmt::Display for AllInTablespaceObjectType {
     }
 }
 
-/// The argument signature of an aggregate, as spelled in
-/// `ALTER AGGREGATE` / `DROP AGGREGATE`.
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum AggregateSignature {
-    /// `(*)`
-    All,
-    /// `( [ argmode ] [ argname ] argtype [, ...] )`
-    Args(Vec<OperateFunctionArg>),
-    /// `( [ direct_args ] ORDER BY aggregated_args )`, an ordered-set aggregate
-    OrderBy {
-        direct_args: Vec<OperateFunctionArg>,
-        aggregated_args: Vec<OperateFunctionArg>,
-    },
-}
-
-impl fmt::Display for AggregateSignature {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::All => write!(f, "(*)"),
-            Self::Args(args) => write!(f, "({})", display_comma_separated(args)),
-            Self::OrderBy {
-                direct_args,
-                aggregated_args,
-            } => {
-                write!(f, "(")?;
-                if !direct_args.is_empty() {
-                    write!(f, "{} ", display_comma_separated(direct_args))?;
-                }
-                write!(f, "ORDER BY {})", display_comma_separated(aggregated_args))
-            }
-        }
-    }
-}
 
 /// An action of `ALTER COLLATION`.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
