@@ -158,8 +158,7 @@ impl Parser<'_> {
     fn vacuum_option_flag(options: &[VacuumOption], name: &VacuumOptionName) -> bool {
         options
             .iter()
-            .filter(|option| &option.name == name)
-            .next_back()
+            .rfind(|option| &option.name == name)
             .is_some_and(VacuumOption::is_enabled)
     }
 
