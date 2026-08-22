@@ -41,7 +41,7 @@ use crate::ast::{
         CheckConstraint, ForeignKeyConstraint, PrimaryKeyConstraint, TableConstraint,
         UniqueConstraint,
     },
-    ArgMode, AttachedToken, CommentDef, ConditionalStatements, CreateFunctionBody,
+    AggregateArgs, ArgMode, AttachedToken, CommentDef, ConditionalStatements, CreateFunctionBody,
     CreateFunctionUsing, CreateTableLikeKind, CreateTableOptions, CreateViewParams, DataType, Expr,
     FunctionBehavior, FunctionCalledOnNull, FunctionDesc, FunctionDeterminismSpecifier,
     FunctionParallel, Ident, MaterializedViewRefreshSchedule, MySQLColumnPosition, ObjectName,
@@ -3764,8 +3764,9 @@ impl Spanned for DropFunction {
 pub struct CreateOperator {
     /// Operator name (can be schema-qualified)
     pub name: ObjectName,
-    /// FUNCTION or PROCEDURE parameter (function name)
-    pub function: ObjectName,
+    /// FUNCTION or PROCEDURE parameter (function name). PostgreSQL accepts a
+    /// definition without one and rejects it at execution time.
+    pub function: Option<ObjectName>,
     /// Whether PROCEDURE keyword was used (vs FUNCTION)
     pub is_procedure: bool,
     /// LEFTARG parameter (left operand type)
@@ -3794,7 +3795,13 @@ pub struct CreateAggregate {
     pub or_replace: bool,
     pub if_not_exists: bool,
     pub name: ObjectName,
+    /// The plain argument list. Empty for the old syntax, which writes no
+    /// argument list at all, and for the `(*)` and ordered-set forms, whose
+    /// full shape is carried by `signature`.
     pub args: Vec<OperateFunctionArg>,
+    /// The argument list as written, or `None` for the old syntax where the
+    /// aggregate's arguments are given by the `BASETYPE` option instead.
+    pub signature: Option<AggregateArgs>,
     pub options: Vec<SqlOption>,
 }
 
@@ -3833,7 +3840,9 @@ pub struct CreateCast {
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct CreateStatistics {
     pub if_not_exists: bool,
-    pub name: ObjectName,
+    /// The statistics object's name, which PostgreSQL lets you omit so that it
+    /// is derived from the table and column names.
+    pub name: Option<ObjectName>,
     pub kinds: Vec<Ident>,
     pub expressions: Vec<Expr>,
     #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
@@ -3892,7 +3901,10 @@ impl fmt::Display for CreateOperator {
         } else {
             "FUNCTION"
         };
-        let mut params = vec![format!("{} = {}", function_keyword, self.function)];
+        let mut params = vec![];
+        if let Some(function) = &self.function {
+            params.push(format!("{} = {}", function_keyword, function));
+        }
 
         if let Some(left_arg) = &self.left_arg {
             params.push(format!("LEFTARG = {}", left_arg));
@@ -3928,7 +3940,7 @@ impl fmt::Display for CreateAggregate {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "CREATE {}AGGREGATE {}{} ({}) ({})",
+            "CREATE {}AGGREGATE {}{}",
             if self.or_replace { "OR REPLACE " } else { "" },
             if self.if_not_exists {
                 "IF NOT EXISTS "
@@ -3936,9 +3948,11 @@ impl fmt::Display for CreateAggregate {
                 ""
             },
             self.name,
-            display_comma_separated(&self.args),
-            display_comma_separated(&self.options)
-        )
+        )?;
+        if let Some(signature) = &self.signature {
+            write!(f, " {signature}")?;
+        }
+        write!(f, " ({})", display_comma_separated(&self.options))
     }
 }
 
@@ -3971,14 +3985,16 @@ impl fmt::Display for CreateStatistics {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "CREATE STATISTICS {}{}",
+            "CREATE STATISTICS{}",
             if self.if_not_exists {
-                "IF NOT EXISTS "
+                " IF NOT EXISTS"
             } else {
                 ""
             },
-            self.name
         )?;
+        if let Some(name) = &self.name {
+            write!(f, " {name}")?;
+        }
         if !self.kinds.is_empty() {
             write!(f, " ({})", display_comma_separated(&self.kinds))?;
         }

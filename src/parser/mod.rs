@@ -51,6 +51,7 @@ use core::cell::{Cell, RefCell};
 use sqlparser::parser::ParserState::ColumnDefinition;
 
 mod alter;
+mod object_ddl;
 
 fn box_into_inner<T>(value: Box<T>) -> T {
     Box::into_inner(value)
@@ -1246,6 +1247,7 @@ impl<'a> Parser<'a> {
                         self.parse_deny()
                     }
                     Keyword::REVOKE => self.parse_revoke(),
+                    Keyword::REASSIGN => self.parse_reassign_owned(),
                     Keyword::START => self.parse_start_transaction(),
                     Keyword::BEGIN
                         if self.dialect.is::<OracleDialect>()
@@ -4703,32 +4705,7 @@ impl<'a> Parser<'a> {
         let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
 
         self.expect_keyword_is(Keyword::ON)?;
-        let token = self.next_token();
-
-        let (object_type, object_name) = match token.token {
-            BorrowedToken::Word(w) if w.keyword == Keyword::COLUMN => {
-                (CommentObject::Column, self.parse_object_name(false)?)
-            }
-            BorrowedToken::Word(w) if w.keyword == Keyword::TABLE => {
-                (CommentObject::Table, self.parse_object_name(false)?)
-            }
-            BorrowedToken::Word(w) if w.keyword == Keyword::EXTENSION => {
-                (CommentObject::Extension, self.parse_object_name(false)?)
-            }
-            BorrowedToken::Word(w) if w.keyword == Keyword::SCHEMA => {
-                (CommentObject::Schema, self.parse_object_name(false)?)
-            }
-            BorrowedToken::Word(w) if w.keyword == Keyword::DATABASE => {
-                (CommentObject::Database, self.parse_object_name(false)?)
-            }
-            BorrowedToken::Word(w) if w.keyword == Keyword::USER => {
-                (CommentObject::User, self.parse_object_name(false)?)
-            }
-            BorrowedToken::Word(w) if w.keyword == Keyword::ROLE => {
-                (CommentObject::Role, self.parse_object_name(false)?)
-            }
-            _ => self.expected("comment object_type", token)?,
-        };
+        let (object_type, object_name, object_detail) = self.parse_comment_target()?;
 
         self.expect_keyword_is(Keyword::IS)?;
         let comment = if self.parse_keyword(Keyword::NULL) {
@@ -4742,6 +4719,7 @@ impl<'a> Parser<'a> {
             object_name,
             comment,
             if_exists,
+            object_detail,
         })
     }
 
@@ -9634,6 +9612,11 @@ impl<'a> Parser<'a> {
             self.parse_create_rule(or_replace)
         } else if self.parse_keyword(Keyword::AGGREGATE) {
             self.parse_create_aggregate(or_replace)
+        } else if self.peek_keyword(Keyword::TRUSTED)
+            || self.peek_keyword(Keyword::PROCEDURAL)
+            || self.peek_keyword(Keyword::LANGUAGE)
+        {
+            self.parse_create_language(or_replace)
         } else if or_replace {
             self.expected(
                 "[EXTERNAL] TABLE or [MATERIALIZED] VIEW or FUNCTION or PROCEDURE or RULE after CREATE OR REPLACE",
@@ -9672,6 +9655,17 @@ impl<'a> Parser<'a> {
             self.parse_create_cast()
         } else if self.parse_keyword(Keyword::STATISTICS) {
             self.parse_create_statistics()
+        } else if self.parse_keyword(Keyword::COLLATION) {
+            self.parse_create_collation()
+        } else if self.parse_keyword(Keyword::CONVERSION) {
+            self.parse_create_conversion(false)
+        } else if self.parse_keywords(&[Keyword::DEFAULT, Keyword::CONVERSION]) {
+            self.parse_create_conversion(true)
+        } else if self.parse_keywords(&[Keyword::EVENT, Keyword::TRIGGER]) {
+            self.parse_create_event_trigger()
+        } else if self.parse_keyword(Keyword::GROUP) {
+            // PostgreSQL keeps CREATE GROUP as a spelling of CREATE ROLE.
+            self.parse_create_role()
         } else if self.parse_keyword(Keyword::SERVER) {
             self.parse_pg_create_server(create_token)
         } else if self.parse_keyword(Keyword::FOREIGN) {
@@ -11793,9 +11787,10 @@ impl<'a> Parser<'a> {
         // first token is a name and not a type in itself.
         let data_type_idx = self.get_current_index();
 
-        // DEFAULT will be parsed as `DataType::Custom`, which is undesirable in this context
+        // DEFAULT will be parsed as `DataType::Custom`, which is undesirable in this context,
+        // and ORDER ends the direct arguments of an ordered-set aggregate.
         fn parse_data_type_no_default(parser: &Parser) -> Result<DataType, ParserError> {
-            if parser.peek_keyword(Keyword::DEFAULT) {
+            if parser.peek_keyword(Keyword::DEFAULT) || parser.peek_keyword(Keyword::ORDER) {
                 // This dummy error is ignored in `maybe_parse`
                 parser_err!(
                     "The DEFAULT keyword is not a type",
@@ -12480,6 +12475,9 @@ impl<'a> Parser<'a> {
                 Keyword::ROLE,
                 Keyword::ADMIN,
                 Keyword::USER,
+                Keyword::SYSID,
+                Keyword::ENCRYPTED,
+                Keyword::UNENCRYPTED,
             ]
         } else {
             vec![]
@@ -12492,6 +12490,8 @@ impl<'a> Parser<'a> {
         let mut inherit = None;
         let mut bypassrls = None;
         let mut password = None;
+        let mut password_encryption = None;
+        let mut sysid = None;
         let mut create_db = None;
         let mut create_role = None;
         let mut superuser = None;
@@ -12574,15 +12574,31 @@ impl<'a> Parser<'a> {
                         Ok(())
                     }
                 }
-                Keyword::PASSWORD => {
+                Keyword::PASSWORD | Keyword::ENCRYPTED | Keyword::UNENCRYPTED => {
+                    if keyword != Keyword::PASSWORD {
+                        self.expect_keyword_is(Keyword::PASSWORD)?;
+                    }
                     if password.is_some() {
                         parser_err!("Found multiple PASSWORD", loc)
                     } else {
+                        password_encryption = match keyword {
+                            Keyword::ENCRYPTED => Some(PasswordEncryption::Encrypted),
+                            Keyword::UNENCRYPTED => Some(PasswordEncryption::Unencrypted),
+                            _ => None,
+                        };
                         password = if self.parse_keyword(Keyword::NULL) {
                             Some(Password::NullPassword)
                         } else {
                             Some(Password::Password(Expr::Value(self.parse_value()?)))
                         };
+                        Ok(())
+                    }
+                }
+                Keyword::SYSID => {
+                    if sysid.is_some() {
+                        parser_err!("Found multiple SYSID", loc)
+                    } else {
+                        sysid = Some(self.parse_number_value()?);
                         Ok(())
                     }
                 }
@@ -12658,6 +12674,8 @@ impl<'a> Parser<'a> {
             inherit,
             bypassrls,
             password,
+            password_encryption,
+            sysid,
             create_db,
             create_role,
             replication,
@@ -13052,47 +13070,42 @@ impl<'a> Parser<'a> {
                 self.expect_token(&Token::Period)?;
             }
 
-            let token = self.next_token();
-            if matches!(token.token, BorrowedToken::RParen | BorrowedToken::EOF) {
-                return self.expected("operator symbol", token);
-            }
-            parts.push(ObjectNamePart::Identifier(Ident::new(token.to_string())));
+            parts.push(ObjectNamePart::Identifier(Ident::new(
+                self.parse_operator_symbol()?,
+            )));
 
             self.expect_token(&Token::RParen)?;
             return Ok(ObjectName(parts));
         }
 
-        let mut parts = vec![];
-        loop {
-            let mut part = self.next_token().to_string();
-            // Some PostgreSQL operator symbols (for example `~=`) can be
-            // tokenized as multiple operator fragments.
-            while self.peek_token().token == BorrowedToken::Eq {
-                part.push_str(&self.next_token().to_string());
-            }
-            parts.push(ObjectNamePart::Identifier(Ident::new(part)));
-            if !self.consume_token(&Token::Period) {
-                break;
-            }
-        }
-        Ok(ObjectName(parts))
+        Ok(ObjectName(self.parse_operator_name_parts()?))
     }
 
     /// Parse a PostgreSQL [Statement::CreateAggregate].
     fn parse_create_aggregate(&self, or_replace: bool) -> Result<Statement, ParserError> {
         let if_not_exists = self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
         let name = self.parse_object_name(false)?;
-        self.expect_token(&Token::LParen)?;
-        let args = self.parse_comma_separated0(Parser::parse_function_arg, Token::RParen)?;
-        self.expect_token(&Token::RParen)?;
-        self.expect_token(&Token::LParen)?;
-        let options = self.parse_comma_separated0(Parser::parse_sql_option, Token::RParen)?;
-        self.expect_token(&Token::RParen)?;
+        // The old syntax writes no argument list at all, so the only
+        // parenthesized group is the definition; an argument list is one that
+        // the definition follows.
+        let signature = self.maybe_parse(|parser| {
+            let args = parser.parse_aggregate_args()?;
+            match parser.peek_token_ref().token {
+                BorrowedToken::LParen => Ok(args),
+                _ => parser.expected("an aggregate definition", parser.peek_token()),
+            }
+        })?;
+        let args = match &signature {
+            Some(AggregateArgs::Args(args)) => args.clone(),
+            _ => vec![],
+        };
+        let options = self.parse_definition_list()?;
         Ok(Statement::CreateAggregate(CreateAggregate {
             or_replace,
             if_not_exists,
             name,
             args,
+            signature,
             options,
         }))
     }
@@ -13140,7 +13153,14 @@ impl<'a> Parser<'a> {
     /// Parse a PostgreSQL [Statement::CreateStatistics].
     fn parse_create_statistics(&self) -> Result<Statement, ParserError> {
         let if_not_exists = self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
-        let name = self.parse_object_name(false)?;
+        let name = if !if_not_exists
+            && (self.peek_keyword(Keyword::ON)
+                || self.peek_token_ref().token == BorrowedToken::LParen)
+        {
+            None
+        } else {
+            Some(self.parse_object_name(false)?)
+        };
         let kinds = if self.consume_token(&Token::LParen) {
             let kinds = self.parse_comma_separated(Parser::parse_identifier)?;
             self.expect_token(&Token::RParen)?;
@@ -13256,11 +13276,6 @@ impl<'a> Parser<'a> {
 
         // Expect closing parenthesis
         self.expect_token(&Token::RParen)?;
-
-        // FUNCTION is required
-        let function = function.ok_or_else(|| {
-            ParserError::ParserError("CREATE OPERATOR requires FUNCTION parameter".to_string())
-        })?;
 
         Ok(Statement::CreateOperator(CreateOperator {
             name,
@@ -13488,6 +13503,7 @@ impl<'a> Parser<'a> {
         let temporary = dialect_of!(self is MySqlDialect | PostgreSqlDialect)
             && self.parse_keyword(Keyword::TEMPORARY);
 
+        let mut concurrently = false;
         let object_type = if self.parse_keyword(Keyword::TABLE) {
             ObjectType::Table
         } else if self.parse_keyword(Keyword::VIEW) {
@@ -13500,6 +13516,7 @@ impl<'a> Parser<'a> {
             }
             ObjectType::MaterializedView
         } else if self.parse_keyword(Keyword::INDEX) {
+            concurrently = self.parse_keyword(Keyword::CONCURRENTLY);
             ObjectType::Index
         } else if self.parse_keyword(Keyword::ROLE) {
             ObjectType::Role
@@ -13566,6 +13583,35 @@ impl<'a> Parser<'a> {
             return self.parse_drop_rule();
         } else if self.parse_keywords(&[Keyword::TEXT, Keyword::SEARCH]) {
             return self.parse_drop_text_search();
+        } else if self.parse_keyword(Keyword::AGGREGATE) {
+            return self.parse_drop_aggregate();
+        } else if self.parse_keyword(Keyword::OPERATOR) {
+            return self.parse_drop_operator();
+        } else if self.parse_keyword(Keyword::CAST) {
+            return self.parse_drop_cast();
+        } else if self.parse_keyword(Keyword::ROUTINE) {
+            return self.parse_drop_routine();
+        } else if self.parse_keyword(Keyword::TRANSFORM) {
+            return self.parse_drop_transform();
+        } else if self.parse_keywords(&[Keyword::OWNED, Keyword::BY]) {
+            return self.parse_drop_owned();
+        } else if self.parse_keyword(Keyword::COLLATION) {
+            ObjectType::Collation
+        } else if self.parse_keyword(Keyword::CONVERSION) {
+            ObjectType::Conversion
+        } else if self.parse_keyword(Keyword::STATISTICS) {
+            ObjectType::Statistics
+        } else if self.parse_keywords(&[Keyword::ACCESS, Keyword::METHOD]) {
+            ObjectType::AccessMethod
+        } else if self.parse_keywords(&[Keyword::EVENT, Keyword::TRIGGER]) {
+            ObjectType::EventTrigger
+        } else if self.parse_keywords(&[Keyword::PROCEDURAL, Keyword::LANGUAGE])
+            || self.parse_keyword(Keyword::LANGUAGE)
+        {
+            ObjectType::Language
+        } else if self.parse_keyword(Keyword::GROUP) {
+            // PostgreSQL keeps DROP GROUP as a spelling of DROP ROLE.
+            ObjectType::Role
         } else {
             return self.expected(
                 "DATABASE, EXTENSION, FUNCTION, INDEX, POLICY, PROCEDURE, PUBLICATION, ROLE, RULE, SCHEMA, SEQUENCE, SUBSCRIPTION, TABLE, TEXT SEARCH, TRIGGER, TYPE, VIEW, MATERIALIZED VIEW or USER after DROP",
@@ -13576,6 +13622,7 @@ impl<'a> Parser<'a> {
         // specifying multiple objects to delete in a single statement
         let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
         let names = self.parse_comma_separated(|p| p.parse_object_name(false))?;
+        let force = object_type == ObjectType::Database && self.parse_drop_database_force()?;
 
         let loc = self.peek_token().span.start;
         let oracle = if self.dialect.is::<OracleDialect>() {
@@ -13631,7 +13678,24 @@ impl<'a> Parser<'a> {
             temporary,
             table,
             oracle,
+            concurrently,
+            force,
         })
+    }
+
+    /// Parse the `[WITH] (FORCE)` tail of `DROP DATABASE`.
+    fn parse_drop_database_force(&self) -> Result<bool, ParserError> {
+        let with_parenthesis = self.peek_keyword(Keyword::WITH)
+            && self.peek_nth_token_ref(1).token == BorrowedToken::LParen;
+        if with_parenthesis {
+            self.expect_keyword_is(Keyword::WITH)?;
+        } else if self.peek_token_ref().token != BorrowedToken::LParen {
+            return Ok(false);
+        }
+        self.expect_token(&Token::LParen)?;
+        self.parse_comma_separated(|parser| parser.expect_keyword_is(Keyword::FORCE))?;
+        self.expect_token(&Token::RParen)?;
+        Ok(true)
     }
 
     fn parse_optional_drop_behavior(&self) -> Option<DropBehavior> {
@@ -13826,17 +13890,20 @@ impl<'a> Parser<'a> {
     }
 
     /// ```sql
-    /// DROP PUBLICATION [ IF EXISTS ] name [ CASCADE | RESTRICT ]
+    /// DROP PUBLICATION [ IF EXISTS ] name [, ...] [ CASCADE | RESTRICT ]
     /// ```
     ///
     /// [PostgreSQL Documentation](https://www.postgresql.org/docs/current/sql-droppublication.html)
     fn parse_drop_publication(&self) -> Result<Statement, ParserError> {
         let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
-        let name = self.parse_identifier()?;
+        let mut names = self.parse_comma_separated(Parser::parse_identifier)?;
+        let additional_names = names.split_off(1);
+        let name = names.swap_remove(0);
         let drop_behavior = self.parse_optional_drop_behavior();
         Ok(Statement::DropPublication {
             if_exists,
             name,
+            additional_names,
             drop_behavior,
         })
     }
@@ -24426,8 +24493,15 @@ impl<'a> Parser<'a> {
 
         let grantees = self.parse_grantees()?;
 
-        let with_admin_option =
-            self.parse_keywords(&[Keyword::WITH, Keyword::ADMIN, Keyword::OPTION]);
+        let role_options = if self.parse_keyword(Keyword::WITH) {
+            self.parse_comma_separated(Parser::parse_role_grant_option)?
+        } else {
+            vec![]
+        };
+        let with_admin_option = role_options.iter().any(|option| {
+            option.name.value.eq_ignore_ascii_case("ADMIN")
+                && option.value == RoleGrantOptionValue::Option
+        });
 
         let granted_by = if self.parse_keywords(&[Keyword::GRANTED, Keyword::BY]) {
             Some(self.parse_identifier()?)
@@ -24441,6 +24515,7 @@ impl<'a> Parser<'a> {
             grantees,
             with_admin_option,
             granted_by,
+            role_options,
         })
     }
 
@@ -24640,6 +24715,10 @@ impl<'a> Parser<'a> {
                 Some(GrantObjects::AllSequencesInSchema {
                     schemas: self.parse_comma_separated(|p| p.parse_object_name(false))?,
                 })
+            } else if self.parse_keywords(&[Keyword::LARGE, Keyword::OBJECT]) {
+                Some(GrantObjects::LargeObjects(
+                    self.parse_comma_separated(Parser::parse_number_value)?,
+                ))
             } else if self.parse_keywords(&[Keyword::FOREIGN, Keyword::DATA, Keyword::WRAPPER]) {
                 Some(GrantObjects::ForeignDataWrappers(
                     self.parse_comma_separated(|p| p.parse_object_name(false))?,
@@ -24933,13 +25012,9 @@ impl<'a> Parser<'a> {
     /// Parse a REVOKE statement
     pub fn parse_revoke(&self) -> Result<Statement, ParserError> {
         let revoke_token = self.attached_token_from_current();
-        // Check for ADMIN OPTION FOR (role revocation)
-        let admin_option_for =
-            self.parse_keywords(&[Keyword::ADMIN, Keyword::OPTION, Keyword::FOR]);
-
-        if admin_option_for {
-            // This is definitely a role revocation
-            return self.parse_revoke_role(revoke_token, true);
+        // A `<option> OPTION FOR` prefix is definitely a role revocation
+        if let Some(option_for) = self.parse_revoke_option_for()? {
+            return self.parse_revoke_role(revoke_token, Some(option_for));
         }
 
         // Check for GRANT OPTION FOR (SQL:2016 privilege revocation)
@@ -24950,7 +25025,7 @@ impl<'a> Parser<'a> {
         // Role revocations are distinguished by having identifiers followed by FROM without ON
         if !grant_option_for {
             if let Ok(Some(role_revoke)) =
-                self.maybe_parse(|p| p.parse_revoke_role(revoke_token.clone(), false))
+                self.maybe_parse(|p| p.parse_revoke_role(revoke_token.clone(), None))
             {
                 return Ok(role_revoke);
             }
@@ -24984,8 +25059,11 @@ impl<'a> Parser<'a> {
     fn parse_revoke_role(
         &self,
         revoke_token: AttachedToken,
-        admin_option_for: bool,
+        option_for: Option<Ident>,
     ) -> Result<Statement, ParserError> {
+        let admin_option_for = option_for
+            .as_ref()
+            .is_some_and(|option| option.value.eq_ignore_ascii_case("ADMIN"));
         // Parse role names - must be identifiers
         let roles = self.parse_comma_separated(|p| p.parse_identifier())?;
 
@@ -25009,6 +25087,7 @@ impl<'a> Parser<'a> {
             granted_by,
             cascade,
             admin_option_for,
+            option_for,
         })
     }
 

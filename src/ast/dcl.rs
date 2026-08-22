@@ -29,7 +29,9 @@ use serde::{Deserialize, Serialize};
 use sqlparser_derive::{Visit, VisitMut};
 
 use super::{display_comma_separated, Expr, Ident, Password, Spanned};
-use crate::ast::{display_separated, Grantee, ObjectName, Privileges};
+use crate::ast::{
+    display_separated, Grantee, ObjectName, PasswordEncryption, Privileges, ValueWithSpan,
+};
 use crate::tokenizer::Span;
 
 /// An option in `ROLE` statement.
@@ -362,6 +364,10 @@ pub struct CreateRole {
     pub inherit: Option<bool>,
     pub bypassrls: Option<bool>,
     pub password: Option<Password>,
+    /// Whether the password was introduced by `ENCRYPTED` or `UNENCRYPTED`
+    pub password_encryption: Option<PasswordEncryption>,
+    /// The obsolete `SYSID` clause, which PostgreSQL accepts and ignores
+    pub sysid: Option<ValueWithSpan>,
     pub superuser: Option<bool>,
     pub create_db: Option<bool>,
     pub create_role: Option<bool>,
@@ -422,6 +428,14 @@ impl fmt::Display for CreateRole {
         )?;
         if let Some(limit) = &self.connection_limit {
             write!(f, " CONNECTION LIMIT {limit}")?;
+        }
+        if let Some(sysid) = &self.sysid {
+            write!(f, " SYSID {sysid}")?;
+        }
+        if self.password.is_some() {
+            if let Some(encryption) = &self.password_encryption {
+                write!(f, " {encryption}")?;
+            }
         }
         match &self.password {
             Some(Password::Password(pass)) => write!(f, " PASSWORD {pass}")?,

@@ -213,3 +213,6 @@ pub mod syntax;
 
 // Metadata and Comments
 pub mod metadata;
+
+// Object DDL (COMMENT ON, miscellaneous CREATE/DROP, ownership, role grants)
+pub mod object_ddl;
