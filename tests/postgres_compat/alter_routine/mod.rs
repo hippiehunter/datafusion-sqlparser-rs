@@ -26,13 +26,9 @@
 //! - `function` - ALTER FUNCTION statements
 //! - `procedure` - ALTER PROCEDURE statements
 //!
-//! ## Living Gap Analysis
-//!
-//! ALTER FUNCTION/PROCEDURE statements are NOT currently supported in the AST.
-//! All tests in this module are expected to FAIL until implementation is complete.
-//!
-//! When ALTER statements are implemented, these tests should be updated from
-//! `pg_expect_parse_error!` to `pg_test!` with full AST validation.
+//! Both statements parse into [`sqlparser::ast::Statement::AlterObject`] with an
+//! [`sqlparser::ast::AlterObjectTarget::Routine`] target; see the `alter_objects`
+//! module for the AST-shape assertions.
 
 mod function;
 mod procedure;

@@ -183,6 +183,9 @@
 #[macro_use]
 pub mod common;
 
+// ALTER <object> statements
+pub mod alter_objects;
+
 // Routines (Functions and Procedures)
 #[path = "alter_routine/mod.rs"]
 pub mod alter_routine;

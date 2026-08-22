@@ -351,7 +351,10 @@ impl Spanned for Statement {
             Statement::CreateAssertion(create_assertion) => create_assertion.token.0,
             Statement::CreatePropertyGraph(create_property_graph) => create_property_graph.token.0,
             Statement::AlterTable(alter_table) => alter_table.span(),
-            Statement::AlterIndex { name, operation } => name.span().union(&operation.span()),
+            Statement::AlterIndex {
+                name, operation, ..
+            } => name.span().union(&operation.span()),
+            Statement::AlterObject(alter_object) => alter_object.alter_token.0,
             Statement::AlterView { name, .. } => name.span(),
             Statement::AlterMaterializedView { name, .. } => name.span(),
             Statement::RefreshMaterializedView { name, .. } => name.span(),
@@ -1439,6 +1442,12 @@ impl Spanned for AlterIndexOperation {
     fn span(&self) -> Span {
         match self {
             AlterIndexOperation::RenameIndex { index_name } => index_name.span(),
+            AlterIndexOperation::AttachPartition { partition_index } => partition_index.span(),
+            AlterIndexOperation::SetTablespace { .. }
+            | AlterIndexOperation::DependsOnExtension { .. }
+            | AlterIndexOperation::SetOptions { .. }
+            | AlterIndexOperation::ResetOptions { .. }
+            | AlterIndexOperation::AlterColumnSetStatistics { .. } => Span::empty(),
         }
     }
 }

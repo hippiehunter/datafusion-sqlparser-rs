@@ -1664,8 +1664,15 @@ impl<'a> Tokenizer<'a> {
                                 _ => self.start_binop(chars, "<=", Token::LtEq),
                             }
                         }
-                        Some('|') if self.features.supports_geometric_types => {
-                            self.consume_for_binop(chars, "<<|", Token::ShiftLeftVerticalBar)
+                        Some('|') => {
+                            // `<|` is not a built-in operator; PostgreSQL reads it
+                            // as a user-definable operator name.
+                            chars.next(); // consume '|'
+                            self.start_binop_opt(
+                                chars,
+                                "<|",
+                                Some(BorrowedToken::CustomBinaryOperator("<|".to_string())),
+                            )
                         }
                         Some('>') => self.consume_for_binop(chars, "<>", Token::Neq),
                         Some('<') if self.features.supports_geometric_types => {

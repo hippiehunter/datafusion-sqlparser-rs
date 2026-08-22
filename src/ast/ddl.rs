@@ -41,7 +41,8 @@ use crate::ast::{
         CheckConstraint, ForeignKeyConstraint, PrimaryKeyConstraint, TableConstraint,
         UniqueConstraint,
     },
-    ArgMode, AttachedToken, CommentDef, ConditionalStatements, CreateFunctionBody,
+    AlterTypeAction, ArgMode, AttachedToken, CommentDef, ConditionalStatements,
+    CreateFunctionBody,
     CreateFunctionUsing, CreateTableLikeKind, CreateTableOptions, CreateViewParams, DataType, Expr,
     FunctionBehavior, FunctionCalledOnNull, FunctionDesc, FunctionDeterminismSpecifier,
     FunctionParallel, Ident, MaterializedViewRefreshSchedule, MySQLColumnPosition, ObjectName,
@@ -470,7 +471,35 @@ impl fmt::Display for Owner {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub enum AlterIndexOperation {
-    RenameIndex { index_name: ObjectName },
+    RenameIndex {
+        index_name: ObjectName,
+    },
+    /// `SET TABLESPACE tablespace_name`
+    SetTablespace {
+        tablespace_name: Ident,
+    },
+    /// `ATTACH PARTITION index_name`
+    AttachPartition {
+        partition_index: ObjectName,
+    },
+    /// `[ NO ] DEPENDS ON EXTENSION extension_name`
+    DependsOnExtension {
+        no: bool,
+        extension_name: Ident,
+    },
+    /// `SET ( storage_parameter [= value] [, ...] )`
+    SetOptions {
+        options: Vec<SqlOption>,
+    },
+    /// `RESET ( storage_parameter [, ...] )`
+    ResetOptions {
+        options: Vec<Ident>,
+    },
+    /// `ALTER [ COLUMN ] column_number SET STATISTICS integer`
+    AlterColumnSetStatistics {
+        column_number: Expr,
+        statistics: Expr,
+    },
 }
 
 impl fmt::Display for AlterTableOperation {
@@ -788,6 +817,28 @@ impl fmt::Display for AlterIndexOperation {
             AlterIndexOperation::RenameIndex { index_name } => {
                 write!(f, "RENAME TO {index_name}")
             }
+            AlterIndexOperation::SetTablespace { tablespace_name } => {
+                write!(f, "SET TABLESPACE {tablespace_name}")
+            }
+            AlterIndexOperation::AttachPartition { partition_index } => {
+                write!(f, "ATTACH PARTITION {partition_index}")
+            }
+            AlterIndexOperation::DependsOnExtension { no, extension_name } => {
+                if *no {
+                    write!(f, "NO ")?;
+                }
+                write!(f, "DEPENDS ON EXTENSION {extension_name}")
+            }
+            AlterIndexOperation::SetOptions { options } => {
+                write!(f, "SET ({})", display_comma_separated(options))
+            }
+            AlterIndexOperation::ResetOptions { options } => {
+                write!(f, "RESET ({})", display_comma_separated(options))
+            }
+            AlterIndexOperation::AlterColumnSetStatistics {
+                column_number,
+                statistics,
+            } => write!(f, "ALTER COLUMN {column_number} SET STATISTICS {statistics}"),
         }
     }
 }
@@ -811,6 +862,20 @@ pub enum AlterTypeOperation {
     Rename(AlterTypeRename),
     AddValue(AlterTypeAddValue),
     RenameValue(AlterTypeRenameValue),
+    /// `OWNER TO { new_owner | CURRENT_ROLE | CURRENT_USER | SESSION_USER }`
+    OwnerTo { new_owner: Owner },
+    /// `SET SCHEMA new_schema`
+    SetSchema { new_schema: ObjectName },
+    /// `RENAME ATTRIBUTE attribute_name TO new_attribute_name [ CASCADE | RESTRICT ]`
+    RenameAttribute {
+        old_name: Ident,
+        new_name: Ident,
+        drop_behavior: Option<DropBehavior>,
+    },
+    /// `SET ( property = value [, ...] )`
+    SetProperties { properties: Vec<SqlOption> },
+    /// `action [, ...]`, the composite-type attribute actions
+    Actions(Vec<AlterTypeAction>),
 }
 
 /// An operation supported by PostgreSQL `ALTER VIEW`.
@@ -818,11 +883,35 @@ pub enum AlterTypeOperation {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub enum AlterViewOperation {
-    Rename { new_name: Ident },
-    SetSchema { new_schema: ObjectName },
-    OwnerTo { new_owner: Owner },
-    SetOptions { options: Vec<SqlOption> },
-    ResetOptions { options: Vec<Ident> },
+    Rename {
+        new_name: Ident,
+    },
+    SetSchema {
+        new_schema: ObjectName,
+    },
+    OwnerTo {
+        new_owner: Owner,
+    },
+    SetOptions {
+        options: Vec<SqlOption>,
+    },
+    ResetOptions {
+        options: Vec<Ident>,
+    },
+    /// `ALTER [ COLUMN ] column_name SET DEFAULT expression`
+    AlterColumnSetDefault {
+        column_name: Ident,
+        default: Expr,
+    },
+    /// `ALTER [ COLUMN ] column_name DROP DEFAULT`
+    AlterColumnDropDefault {
+        column_name: Ident,
+    },
+    /// `RENAME [ COLUMN ] column_name TO new_column_name`
+    RenameColumn {
+        old_column_name: Ident,
+        new_column_name: Ident,
+    },
 }
 
 impl fmt::Display for AlterViewOperation {
@@ -837,6 +926,17 @@ impl fmt::Display for AlterViewOperation {
             Self::ResetOptions { options } => {
                 write!(f, "RESET ({})", display_comma_separated(options))
             }
+            Self::AlterColumnSetDefault {
+                column_name,
+                default,
+            } => write!(f, "ALTER COLUMN {column_name} SET DEFAULT {default}"),
+            Self::AlterColumnDropDefault { column_name } => {
+                write!(f, "ALTER COLUMN {column_name} DROP DEFAULT")
+            }
+            Self::RenameColumn {
+                old_column_name,
+                new_column_name,
+            } => write!(f, "RENAME COLUMN {old_column_name} TO {new_column_name}"),
         }
     }
 }
@@ -907,6 +1007,23 @@ impl fmt::Display for AlterTypeOperation {
             Self::RenameValue(AlterTypeRenameValue { from, to }) => {
                 write!(f, "RENAME VALUE {from} TO {to}")
             }
+            Self::OwnerTo { new_owner } => write!(f, "OWNER TO {new_owner}"),
+            Self::SetSchema { new_schema } => write!(f, "SET SCHEMA {new_schema}"),
+            Self::RenameAttribute {
+                old_name,
+                new_name,
+                drop_behavior,
+            } => {
+                write!(f, "RENAME ATTRIBUTE {old_name} TO {new_name}")?;
+                if let Some(behavior) = drop_behavior {
+                    write!(f, " {behavior}")?;
+                }
+                Ok(())
+            }
+            Self::SetProperties { properties } => {
+                write!(f, "SET ({})", display_comma_separated(properties))
+            }
+            Self::Actions(actions) => write!(f, "{}", display_comma_separated(actions)),
         }
     }
 }

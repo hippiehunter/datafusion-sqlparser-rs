@@ -20,7 +20,7 @@ use crate::{
     ast::{
         helpers::key_value_options::{KeyValueOptions, KeyValueOptionsDelimiter},
         AlterConfigurationOperation, AlterPolicyOperation, AlterRoleOperation, AlterUser, Expr,
-        ObjectName, Password, ResetConfig, RoleOption, SetConfigValue, Statement,
+        ObjectName, Password, ResetConfig, RoleOption, Statement,
     },
     dialect::{MsSqlDialect, PostgreSqlDialect},
     keywords::Keyword,
@@ -76,7 +76,10 @@ impl Parser<'_> {
         };
 
         let database_name = self.parse_object_name(false)?;
-        let operation = self.parse_pg_alter_configuration_operation()?;
+        let operation = match self.parse_alter_database_operation()? {
+            Some(operation) => operation,
+            None => self.parse_pg_alter_configuration_operation()?,
+        };
 
         Ok(Statement::AlterDatabase {
             token,
@@ -319,32 +322,11 @@ impl Parser<'_> {
     ) -> Result<AlterRoleOperation, ParserError> {
         if self.parse_keyword(Keyword::SET) {
             let config_name = self.parse_object_name(false)?;
-            // FROM CURRENT
-            if self.parse_keywords(&[Keyword::FROM, Keyword::CURRENT]) {
-                Ok(AlterRoleOperation::Set {
-                    config_name,
-                    config_value: SetConfigValue::FromCurrent,
-                    in_database,
-                })
-            // { TO | = } { value | DEFAULT }
-            } else if self.consume_token(&BorrowedToken::Eq) || self.parse_keyword(Keyword::TO) {
-                if self.parse_keyword(Keyword::DEFAULT) {
-                    Ok(AlterRoleOperation::Set {
-                        config_name,
-                        config_value: SetConfigValue::Default,
-                        in_database,
-                    })
-                } else {
-                    let expr = self.parse_expr()?;
-                    Ok(AlterRoleOperation::Set {
-                        config_name,
-                        config_value: SetConfigValue::Value(expr),
-                        in_database,
-                    })
-                }
-            } else {
-                self.expected("'TO' or '=' or 'FROM CURRENT'", self.peek_token())
-            }
+            Ok(AlterRoleOperation::Set {
+                config_name,
+                config_value: self.parse_set_config_value()?,
+                in_database,
+            })
         } else if self.parse_keyword(Keyword::RESET) {
             if self.parse_keyword(Keyword::ALL) {
                 Ok(AlterRoleOperation::Reset {
@@ -368,29 +350,10 @@ impl Parser<'_> {
     ) -> Result<AlterConfigurationOperation, ParserError> {
         if self.parse_keyword(Keyword::SET) {
             let config_name = self.parse_object_name(false)?;
-            // FROM CURRENT
-            if self.parse_keywords(&[Keyword::FROM, Keyword::CURRENT]) {
-                Ok(AlterConfigurationOperation::Set {
-                    config_name,
-                    config_value: SetConfigValue::FromCurrent,
-                })
-            // { TO | = } { value | DEFAULT }
-            } else if self.consume_token(&BorrowedToken::Eq) || self.parse_keyword(Keyword::TO) {
-                if self.parse_keyword(Keyword::DEFAULT) {
-                    Ok(AlterConfigurationOperation::Set {
-                        config_name,
-                        config_value: SetConfigValue::Default,
-                    })
-                } else {
-                    let expr = self.parse_expr()?;
-                    Ok(AlterConfigurationOperation::Set {
-                        config_name,
-                        config_value: SetConfigValue::Value(expr),
-                    })
-                }
-            } else {
-                self.expected("'TO' or '=' or 'FROM CURRENT'", self.peek_token())
-            }
+            Ok(AlterConfigurationOperation::Set {
+                config_name,
+                config_value: self.parse_set_config_value()?,
+            })
         } else if self.parse_keyword(Keyword::RESET) {
             if self.parse_keyword(Keyword::ALL) {
                 Ok(AlterConfigurationOperation::Reset {
@@ -431,7 +394,7 @@ impl Parser<'_> {
             Some(Keyword::NOBYPASSRLS) => RoleOption::BypassRLS(false),
             Some(Keyword::CONNECTION) => {
                 self.expect_keyword_is(Keyword::LIMIT)?;
-                RoleOption::ConnectionLimit(Expr::Value(self.parse_number_value()?))
+                RoleOption::ConnectionLimit(self.parse_number()?)
             }
             Some(Keyword::CREATEDB) => RoleOption::CreateDB(true),
             Some(Keyword::NOCREATEDB) => RoleOption::CreateDB(false),
