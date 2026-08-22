@@ -6143,7 +6143,52 @@ impl fmt::Display for PublicationTable {
     }
 }
 
-/// The object a `CREATE PUBLICATION` is FOR.
+/// One entry of a publication object list.
+///
+/// PostgreSQL's `pub_obj_list` mixes `TABLE` and `TABLES IN SCHEMA` objects in
+/// a single comma-separated list, and an entry written without a keyword
+/// continues the kind of the entry before it:
+/// ```sql
+/// CREATE PUBLICATION pub FOR TABLE a, b (id, x), TABLE c, TABLES IN SCHEMA s1, s2;
+/// ```
+///
+/// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-createpublication.html)
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum PublicationObject {
+    /// `TABLE name [(col, ...)] [WHERE (expr)]`
+    Table(PublicationTable),
+    /// `TABLES IN SCHEMA name`
+    TablesInSchema(Ident),
+    /// `TABLES IN SCHEMA CURRENT_SCHEMA`
+    TablesInCurrentSchema,
+}
+
+impl PublicationObject {
+    /// The keyword that introduces this object's kind in the list.
+    fn keyword(&self) -> &'static str {
+        match self {
+            PublicationObject::Table(_) => "TABLE",
+            PublicationObject::TablesInSchema(_) | PublicationObject::TablesInCurrentSchema => {
+                "TABLES IN SCHEMA"
+            }
+        }
+    }
+}
+
+impl fmt::Display for PublicationObject {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            PublicationObject::Table(table) => write!(f, "{table}"),
+            PublicationObject::TablesInSchema(schema) => write!(f, "{schema}"),
+            PublicationObject::TablesInCurrentSchema => write!(f, "CURRENT_SCHEMA"),
+        }
+    }
+}
+
+/// The object set a `CREATE PUBLICATION` is FOR, or an `ALTER PUBLICATION`
+/// adds, sets, or drops.
 ///
 /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-createpublication.html)
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
@@ -6152,21 +6197,31 @@ impl fmt::Display for PublicationTable {
 pub enum PublicationForObject {
     /// `FOR ALL TABLES`
     AllTables,
-    /// `FOR TABLE t1, t2, ...` (each optionally with a column list)
-    Tables(Vec<PublicationTable>),
-    /// `FOR TABLES IN SCHEMA s1, s2, ...`
-    TablesInSchema(Vec<Ident>),
+    /// `FOR TABLE ..., TABLES IN SCHEMA ...`: a non-empty list of publication
+    /// objects in source order.
+    Objects(Vec<PublicationObject>),
 }
 
 impl fmt::Display for PublicationForObject {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             PublicationForObject::AllTables => write!(f, "ALL TABLES"),
-            PublicationForObject::Tables(tables) => {
-                write!(f, "TABLE {}", display_comma_separated(tables))
-            }
-            PublicationForObject::TablesInSchema(schemas) => {
-                write!(f, "TABLES IN SCHEMA {}", display_comma_separated(schemas))
+            PublicationForObject::Objects(objects) => {
+                // Each object carries its keyword only where the kind changes,
+                // which is PostgreSQL's canonical spelling of the list.
+                let mut previous_keyword = None;
+                for (index, object) in objects.iter().enumerate() {
+                    if index > 0 {
+                        write!(f, ", ")?;
+                    }
+                    let keyword = object.keyword();
+                    if previous_keyword != Some(keyword) {
+                        write!(f, "{keyword} ")?;
+                        previous_keyword = Some(keyword);
+                    }
+                    write!(f, "{object}")?;
+                }
+                Ok(())
             }
         }
     }

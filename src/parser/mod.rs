@@ -13720,19 +13720,55 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse the publication object set following `FOR` (CREATE PUBLICATION) or
-    /// `ADD`/`SET`/`DROP` (ALTER PUBLICATION):
-    /// `ALL TABLES` | `TABLES IN SCHEMA s, ...` | `TABLE t [, ...]`.
+    /// `ADD`/`SET`/`DROP` (ALTER PUBLICATION): `ALL TABLES`, or PostgreSQL's
+    /// `pub_obj_list` — a comma-separated mix of `TABLE t [...]` and
+    /// `TABLES IN SCHEMA s` objects in which an entry without a keyword
+    /// continues the kind of the entry before it (`TABLE a, b` and
+    /// `TABLES IN SCHEMA s1, s2`), while a repeated keyword is equally valid
+    /// (`TABLE a, TABLE b`, as `pg_dump` spells it).
     fn parse_publication_for_object(&self) -> Result<PublicationForObject, ParserError> {
         if self.parse_keywords(&[Keyword::ALL, Keyword::TABLES]) {
-            Ok(PublicationForObject::AllTables)
-        } else if self.parse_keywords(&[Keyword::TABLES, Keyword::IN, Keyword::SCHEMA]) {
-            let schemas = self.parse_comma_separated(|p| p.parse_identifier())?;
-            Ok(PublicationForObject::TablesInSchema(schemas))
-        } else if self.parse_keyword(Keyword::TABLE) {
-            let tables = self.parse_comma_separated(|p| p.parse_publication_table())?;
-            Ok(PublicationForObject::Tables(tables))
+            return Ok(PublicationForObject::AllTables);
+        }
+
+        #[derive(Clone, Copy)]
+        enum ObjectKind {
+            Table,
+            Schema,
+        }
+
+        let mut objects = Vec::new();
+        let mut kind = None;
+        loop {
+            if self.parse_keywords(&[Keyword::TABLES, Keyword::IN, Keyword::SCHEMA]) {
+                kind = Some(ObjectKind::Schema);
+            } else if self.parse_keyword(Keyword::TABLE) {
+                kind = Some(ObjectKind::Table);
+            }
+            match kind {
+                Some(ObjectKind::Table) => {
+                    objects.push(PublicationObject::Table(self.parse_publication_table()?));
+                }
+                Some(ObjectKind::Schema) => objects.push(self.parse_publication_schema()?),
+                None => {
+                    return self
+                        .expected("ALL TABLES, TABLE, or TABLES IN SCHEMA", self.peek_token());
+                }
+            }
+            if !self.consume_token(&BorrowedToken::Comma) {
+                break;
+            }
+        }
+        Ok(PublicationForObject::Objects(objects))
+    }
+
+    /// Parse the schema of a `TABLES IN SCHEMA` object: a name or
+    /// `CURRENT_SCHEMA`.
+    fn parse_publication_schema(&self) -> Result<PublicationObject, ParserError> {
+        if self.parse_keyword(Keyword::CURRENT_SCHEMA) {
+            Ok(PublicationObject::TablesInCurrentSchema)
         } else {
-            self.expected("ALL TABLES, TABLE, or TABLES IN SCHEMA", self.peek_token())
+            Ok(PublicationObject::TablesInSchema(self.parse_identifier()?))
         }
     }
 
@@ -24646,9 +24682,9 @@ impl<'a> Parser<'a> {
                     self.parse_comma_separated(|p| p.parse_object_name_inner(false, true))?,
                 ))
             } else if self.parse_keywords(&[Keyword::PROPERTY, Keyword::GRAPH]) {
-                Some(GrantObjects::PropertyGraphs(
-                    self.parse_comma_separated(|p| p.parse_object_name_inner(false, true))?,
-                ))
+                Some(GrantObjects::PropertyGraphs(self.parse_comma_separated(
+                    |p| p.parse_object_name_inner(false, true),
+                )?))
             } else {
                 let object_type = self.parse_one_of_keywords(&[
                     Keyword::SEQUENCE,

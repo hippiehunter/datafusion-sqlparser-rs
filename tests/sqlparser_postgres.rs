@@ -4364,9 +4364,13 @@ fn parse_custom_operator() {
     assert_eq!(
         expr_from_projection(&select.projection[0]),
         &Expr::BinaryOp {
-            left: Box::new(Expr::Value(Value::Number("2".into(), false).with_empty_span())),
+            left: Box::new(Expr::Value(
+                Value::Number("2".into(), false).with_empty_span()
+            )),
             op: BinaryOperator::Custom("===".into()),
-            right: Box::new(Expr::Value(Value::Number("2".into(), false).with_empty_span())),
+            right: Box::new(Expr::Value(
+                Value::Number("2".into(), false).with_empty_span()
+            )),
         }
     );
 
@@ -7457,6 +7461,19 @@ fn parse_where_current_of() {
     }
 }
 
+fn publication_tables(for_object: &Option<PublicationForObject>) -> Vec<&PublicationTable> {
+    match for_object {
+        Some(PublicationForObject::Objects(objects)) => objects
+            .iter()
+            .filter_map(|object| match object {
+                PublicationObject::Table(table) => Some(table),
+                _ => None,
+            })
+            .collect(),
+        other => panic!("expected a publication object list, got {other:?}"),
+    }
+}
+
 #[test]
 fn parse_create_publication() {
     // FOR ALL TABLES
@@ -7479,10 +7496,8 @@ fn parse_create_publication() {
     let sql = "CREATE PUBLICATION my_pub FOR TABLE t1, t2";
     let stmt = pg_and_generic().verified_stmt(sql);
     match stmt {
-        Statement::CreatePublication {
-            for_object: Some(PublicationForObject::Tables(tables)),
-            ..
-        } => {
+        Statement::CreatePublication { for_object, .. } => {
+            let tables = publication_tables(&for_object);
             assert_eq!(tables.len(), 2);
             assert_eq!(tables[0].name.to_string(), "t1");
             assert!(tables[0].columns.is_none());
@@ -7497,12 +7512,16 @@ fn parse_create_publication() {
     let stmt = pg_and_generic().verified_stmt(sql);
     match stmt {
         Statement::CreatePublication {
-            for_object: Some(PublicationForObject::TablesInSchema(schemas)),
+            for_object: Some(PublicationForObject::Objects(objects)),
             ..
         } => {
-            assert_eq!(schemas.len(), 2);
-            assert_eq!(schemas[0], Ident::new("s1"));
-            assert_eq!(schemas[1], Ident::new("s2"));
+            assert_eq!(
+                objects,
+                vec![
+                    PublicationObject::TablesInSchema(Ident::new("s1")),
+                    PublicationObject::TablesInSchema(Ident::new("s2")),
+                ]
+            );
         }
         _ => panic!("Expected CreatePublication with TablesInSchema"),
     }
@@ -7511,10 +7530,8 @@ fn parse_create_publication() {
     let sql = "CREATE PUBLICATION my_pub FOR TABLE t1 (col1, col2), t2";
     let stmt = pg_and_generic().verified_stmt(sql);
     match stmt {
-        Statement::CreatePublication {
-            for_object: Some(PublicationForObject::Tables(tables)),
-            ..
-        } => {
+        Statement::CreatePublication { for_object, .. } => {
+            let tables = publication_tables(&for_object);
             assert_eq!(tables.len(), 2);
             assert_eq!(tables[0].name.to_string(), "t1");
             assert_eq!(
@@ -7534,10 +7551,8 @@ fn parse_create_publication() {
         "CREATE PUBLICATION my_pub FOR TABLE t1 WHERE (a > 5), t2 (col1, col2) WHERE (col2 = 'x')";
     let stmt = pg_and_generic().verified_stmt(sql);
     match stmt {
-        Statement::CreatePublication {
-            for_object: Some(PublicationForObject::Tables(tables)),
-            ..
-        } => {
+        Statement::CreatePublication { for_object, .. } => {
+            let tables = publication_tables(&for_object);
             assert_eq!(tables.len(), 2);
             assert_eq!(tables[0].name.to_string(), "t1");
             assert!(tables[0].columns.is_none());
@@ -7569,6 +7584,89 @@ fn parse_create_publication() {
     // WITH options
     let sql = "CREATE PUBLICATION my_pub FOR ALL TABLES WITH (publish = 'insert, update')";
     pg_and_generic().verified_stmt(sql);
+}
+
+#[test]
+fn parse_create_publication_object_list() {
+    // A repeated keyword (pg_dump's spelling) is the same list as the
+    // keyword-once spelling, and prints canonically.
+    let stmt = pg_and_generic().one_statement_parses_to(
+        "CREATE PUBLICATION my_pub FOR TABLE t1, TABLE t2 (id, x), TABLE ONLY t3",
+        "CREATE PUBLICATION my_pub FOR TABLE t1, t2 (id, x), t3",
+    );
+    match stmt {
+        Statement::CreatePublication { for_object, .. } => {
+            let tables = publication_tables(&for_object);
+            assert_eq!(
+                tables
+                    .iter()
+                    .map(|table| table.name.to_string())
+                    .collect::<Vec<_>>(),
+                vec!["t1", "t2", "t3"]
+            );
+            assert_eq!(
+                tables[1].columns,
+                Some(vec![Ident::new("id"), Ident::new("x")])
+            );
+        }
+        _ => panic!("Expected CreatePublication"),
+    }
+
+    // Tables and schemas mix in one list, each run introduced by its keyword.
+    let sql =
+        "CREATE PUBLICATION my_pub FOR TABLE t1, t2, TABLES IN SCHEMA s1, CURRENT_SCHEMA, TABLE t3";
+    let stmt = pg_and_generic().verified_stmt(sql);
+    match stmt {
+        Statement::CreatePublication {
+            for_object: Some(PublicationForObject::Objects(objects)),
+            ..
+        } => {
+            assert_eq!(objects.len(), 5);
+            assert!(
+                matches!(&objects[0], PublicationObject::Table(table) if table.name.to_string() == "t1")
+            );
+            assert!(
+                matches!(&objects[1], PublicationObject::Table(table) if table.name.to_string() == "t2")
+            );
+            assert_eq!(
+                objects[2],
+                PublicationObject::TablesInSchema(Ident::new("s1"))
+            );
+            assert_eq!(objects[3], PublicationObject::TablesInCurrentSchema);
+            assert!(
+                matches!(&objects[4], PublicationObject::Table(table) if table.name.to_string() == "t3")
+            );
+        }
+        _ => panic!("Expected CreatePublication with a mixed object list"),
+    }
+
+    // The first entry must say what kind it is.
+    let error = pg_and_generic()
+        .parse_sql_statements("CREATE PUBLICATION my_pub FOR t1, t2")
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "sql parser error: Expected: ALL TABLES, TABLE, or TABLES IN SCHEMA, found: t1"
+    );
+
+    // ALTER PUBLICATION takes the same list.
+    let stmt = pg_and_generic().one_statement_parses_to(
+        "ALTER PUBLICATION my_pub ADD TABLE t1, TABLE t2, TABLES IN SCHEMA s1",
+        "ALTER PUBLICATION my_pub ADD TABLE t1, t2, TABLES IN SCHEMA s1",
+    );
+    match stmt {
+        Statement::AlterPublication {
+            action: AlterPublicationAction::AddObjects(PublicationForObject::Objects(objects)),
+            ..
+        } => {
+            assert_eq!(objects.len(), 3);
+            assert_eq!(
+                objects[2],
+                PublicationObject::TablesInSchema(Ident::new("s1"))
+            );
+        }
+        _ => panic!("Expected AlterPublication ADD with an object list"),
+    }
 }
 
 #[test]
@@ -8094,9 +8192,9 @@ fn parse_postgres_extensibility_ddl_as_typed_statements() {
 
 #[test]
 fn parse_postgres_virtual_generated_column() {
-    let Statement::CreateTable(create) = pg().verified_stmt(
-        "CREATE TABLE t (a INT, b INT GENERATED ALWAYS AS (a * 2) VIRTUAL)",
-    ) else {
+    let Statement::CreateTable(create) =
+        pg().verified_stmt("CREATE TABLE t (a INT, b INT GENERATED ALWAYS AS (a * 2) VIRTUAL)")
+    else {
         panic!("expected CREATE TABLE");
     };
     assert!(matches!(
