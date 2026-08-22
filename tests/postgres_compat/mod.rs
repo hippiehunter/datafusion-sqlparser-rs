@@ -211,5 +211,8 @@ pub mod operators;
 // PostgreSQL-Specific Syntax
 pub mod syntax;
 
+// Query and DML grammar
+pub mod pg_query;
+
 // Metadata and Comments
 pub mod metadata;

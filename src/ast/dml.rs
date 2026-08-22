@@ -29,9 +29,9 @@ use sqlparser_derive::{Visit, VisitMut};
 use crate::display_utils::{indented_list, Indent, SpaceOrNewline};
 
 use super::{
-    display_comma_separated, helpers::attached_token::AttachedToken, Assignment, Expr, FromTable,
-    Ident, InsertAliases, MysqlInsertPriority, ObjectName, OnInsert, OrderByExpr, Query,
-    SelectItem, TableObject, TableWithJoins, UpdateTableFromKind,
+    display_comma_separated, helpers::attached_token::AttachedToken, Assignment, ColumnTarget,
+    Expr, FromTable, Ident, InsertAliases, MysqlInsertPriority, ObjectName, OnInsert, OrderByExpr,
+    Query, ReturningRowAlias, SelectItem, TableObject, TableWithJoins, UpdateTableFromKind,
 };
 
 /// FOR PORTION OF clause used in UPDATE and DELETE statements for temporal tables.
@@ -88,11 +88,18 @@ pub struct ReturningClause {
     pub expressions: Vec<SelectItem>,
     pub bulk_collect: bool,
     pub into: Option<Vec<Expr>>,
+    /// PostgreSQL 18's `RETURNING WITH ( OLD AS o, NEW AS n )` aliases, which
+    /// name the before- and after-image of the affected row.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub row_aliases: Option<Vec<ReturningRowAlias>>,
 }
 
 impl Display for ReturningClause {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("RETURNING")?;
+        if let Some(aliases) = &self.row_aliases {
+            write!(f, " WITH ({})", display_comma_separated(aliases))?;
+        }
         indented_list(f, &self.expressions)?;
         if self.bulk_collect {
             write!(f, " BULK COLLECT")?;
@@ -123,6 +130,12 @@ pub struct Insert {
     pub table_alias: Option<Ident>,
     /// COLUMNS
     pub columns: Vec<Ident>,
+    /// PostgreSQL column targets that select into a field or subscript of the
+    /// column, e.g. `INSERT INTO t (f2[1], f3.if1)`. Set only when at least one
+    /// target carries an indirection; [`Insert::columns`] then holds the base
+    /// column names.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub column_targets: Option<Vec<ColumnTarget>>,
     /// OVERRIDING { SYSTEM | USER } VALUE (PostgreSQL)
     pub overriding: Option<OverridingKind>,
     /// OVERWRITE - INSERT OVERWRITE INTO syntax
@@ -181,9 +194,16 @@ impl Display for Insert {
             int = if self.into { " INTO" } else { "" },
             tbl = if self.has_table_keyword { " TABLE" } else { "" },
         )?;
-        if !self.columns.is_empty() {
-            write!(f, "({})", display_comma_separated(&self.columns))?;
-            SpaceOrNewline.fmt(f)?;
+        match &self.column_targets {
+            Some(targets) => {
+                write!(f, "({})", display_comma_separated(targets))?;
+                SpaceOrNewline.fmt(f)?;
+            }
+            None if !self.columns.is_empty() => {
+                write!(f, "({})", display_comma_separated(&self.columns))?;
+                SpaceOrNewline.fmt(f)?;
+            }
+            None => {}
         }
         if let Some(ref overriding) = self.overriding {
             write!(f, "{overriding}")?;

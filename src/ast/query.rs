@@ -772,7 +772,7 @@ impl fmt::Display for Select {
                     self.group_by.fmt(f)?;
                 }
             }
-            GroupByExpr::OracleVector(_) => {
+            GroupByExpr::Quantified { .. } | GroupByExpr::OracleVector(_) => {
                 SpaceOrNewline.fmt(f)?;
                 self.group_by.fmt(f)?;
             }
@@ -1539,6 +1539,23 @@ pub enum TableFactor {
         expr: Expr,
         alias: Option<TableAlias>,
     },
+    /// PostgreSQL table functions that carry a column definition list, and the
+    /// `ROWS FROM ( ... )` form that calls several functions side by side.
+    ///
+    /// ```sql
+    /// SELECT * FROM dynamic_record(5) AS (a int, b numeric, c text)
+    /// SELECT * FROM ROWS FROM (f(), g() AS (a int)) WITH ORDINALITY AS z(a, b, o)
+    /// ```
+    RowsFrom {
+        lateral: bool,
+        /// Whether the reference was spelled `ROWS FROM ( ... )`. When it was
+        /// not, `functions` holds exactly one function and its `column_defs`
+        /// are the alias clause's column definition list.
+        rows_from: bool,
+        functions: Vec<TableFunctionItem>,
+        with_ordinality: bool,
+        alias: Option<TableAlias>,
+    },
     /// `e.g. LATERAL FLATTEN(<args>)[ AS <alias> ]`
     Function {
         lateral: bool,
@@ -1826,12 +1843,19 @@ impl fmt::Display for TableSampleMethod {
 pub struct TableSampleSeed {
     pub modifier: TableSampleSeedModifier,
     pub value: Value,
+    /// The seed argument when it is not a plain literal, e.g. PostgreSQL's
+    /// `REPEATABLE (2 + 0.4)`. When set it supersedes
+    /// [`TableSampleSeed::value`], which is then [`Value::Null`].
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub expr: Option<Expr>,
 }
 
 impl fmt::Display for TableSampleSeed {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} ({})", self.modifier, self.value)?;
-        Ok(())
+        match &self.expr {
+            Some(expr) => write!(f, "{} ({expr})", self.modifier),
+            None => write!(f, "{} ({})", self.modifier, self.value),
+        }
     }
 }
 
@@ -2877,6 +2901,36 @@ impl fmt::Display for TableFactor {
                 }
                 Ok(())
             }
+            TableFactor::RowsFrom {
+                lateral,
+                rows_from,
+                functions,
+                with_ordinality,
+                alias,
+            } => {
+                if *lateral {
+                    write!(f, "LATERAL ")?;
+                }
+                if *rows_from {
+                    write!(f, "ROWS FROM ({})", display_comma_separated(functions))?;
+                } else if let Some(item) = functions.first() {
+                    write!(f, "{}", item.function)?;
+                }
+                if *with_ordinality {
+                    write!(f, " WITH ORDINALITY")?;
+                }
+                if !*rows_from {
+                    if let Some(item) = functions.first() {
+                        if !item.column_defs.is_empty() {
+                            write!(f, " AS ({})", display_comma_separated(&item.column_defs))?;
+                        }
+                    }
+                }
+                if let Some(alias) = alias {
+                    write!(f, " AS {alias}")?;
+                }
+                Ok(())
+            }
             TableFactor::Function {
                 lateral,
                 name,
@@ -3208,6 +3262,10 @@ pub struct TableAliasColumnDef {
     pub name: Ident,
     /// Some table-valued functions require specifying the data type in the alias.
     pub data_type: Option<DataType>,
+    /// `COLLATE collation`, which PostgreSQL allows on a table function's
+    /// column definition list.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub collation: Option<ObjectName>,
 }
 
 impl TableAliasColumnDef {
@@ -3216,6 +3274,7 @@ impl TableAliasColumnDef {
         TableAliasColumnDef {
             name: Ident::new(name),
             data_type: None,
+            collation: None,
         }
     }
 }
@@ -3225,6 +3284,9 @@ impl fmt::Display for TableAliasColumnDef {
         write!(f, "{}", self.name)?;
         if let Some(ref data_type) = self.data_type {
             write!(f, " {data_type}")?;
+        }
+        if let Some(ref collation) = self.collation {
+            write!(f, " COLLATE {collation}")?;
         }
         Ok(())
     }
@@ -3351,6 +3413,9 @@ impl fmt::Display for Join {
                         JoinConstraint::On(expr) => write!(f, " ON {expr}"),
                         JoinConstraint::Using(attrs) => {
                             write!(f, " USING({})", display_comma_separated(attrs))
+                        }
+                        JoinConstraint::UsingAlias(attrs, alias) => {
+                            write!(f, " USING({}) AS {alias}", display_comma_separated(attrs))
                         }
                         _ => Ok(()),
                     }
@@ -3553,6 +3618,9 @@ impl fmt::Display for OraclePartitionedJoinKind {
 pub enum JoinConstraint {
     On(Box<Expr>),
     Using(Vec<ObjectName>),
+    /// The SQL:2016 `JOIN ... USING (cols) AS alias` form, whose alias names a
+    /// relation holding just the merged join columns.
+    UsingAlias(Vec<ObjectName>, Ident),
     Natural,
     None,
 }
@@ -3615,6 +3683,10 @@ impl fmt::Display for OrderBy {
 pub struct OrderByExpr {
     pub expr: Expr,
     pub options: OrderByOptions,
+    /// PostgreSQL's `USING <operator>` sort specification, which names the
+    /// ordering operator instead of spelling `ASC`/`DESC`.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub using: Option<BinaryOperator>,
     /// Optional: `WITH FILL`
     pub with_fill: Option<WithFill>,
 }
@@ -3624,6 +3696,7 @@ impl From<Ident> for OrderByExpr {
         OrderByExpr {
             expr: Expr::Identifier(ident),
             options: OrderByOptions::default(),
+            using: None,
             with_fill: None,
         }
     }
@@ -3631,7 +3704,11 @@ impl From<Ident> for OrderByExpr {
 
 impl fmt::Display for OrderByExpr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}{}", self.expr, self.options)?;
+        write!(f, "{}", self.expr)?;
+        if let Some(ref using) = self.using {
+            write!(f, " USING {using}")?;
+        }
+        write!(f, "{}", self.options)?;
         if let Some(ref with_fill) = self.with_fill {
             write!(f, " {with_fill}")?
         }
@@ -4105,6 +4182,14 @@ pub enum GroupByExpr {
     /// Expressions
     Expressions(Vec<Expr>, Vec<GroupByWithModifier>),
 
+    /// A grouping element list introduced by PostgreSQL's `ALL`/`DISTINCT` set
+    /// quantifier, e.g. `GROUP BY DISTINCT ROLLUP(a, b), ROLLUP(a)`.
+    Quantified {
+        quantifier: GroupBySetQuantifier,
+        expressions: Vec<Expr>,
+        modifiers: Vec<GroupByWithModifier>,
+    },
+
     /// Oracle `GROUP BY VECTOR` vectors.
     OracleVector(Vec<Vec<Expr>>),
 }
@@ -4123,6 +4208,19 @@ impl fmt::Display for GroupByExpr {
                 f.write_str("GROUP BY")?;
                 SpaceOrNewline.fmt(f)?;
                 Indent(display_comma_separated(col_names)).fmt(f)?;
+                if !modifiers.is_empty() {
+                    write!(f, " {}", display_separated(modifiers, " "))?;
+                }
+                Ok(())
+            }
+            GroupByExpr::Quantified {
+                quantifier,
+                expressions,
+                modifiers,
+            } => {
+                write!(f, "GROUP BY {quantifier}")?;
+                SpaceOrNewline.fmt(f)?;
+                Indent(display_comma_separated(expressions)).fmt(f)?;
                 if !modifiers.is_empty() {
                     write!(f, " {}", display_separated(modifiers, " "))?;
                 }

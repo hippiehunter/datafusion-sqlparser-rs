@@ -29,7 +29,7 @@
 use log::debug;
 
 use crate::dialect::{Dialect, Precedence};
-use crate::keywords::Keyword;
+use crate::keywords::{self, Keyword};
 use crate::parser::{Parser, ParserError};
 use crate::tokenizer::BorrowedToken;
 
@@ -170,6 +170,14 @@ impl Dialect for PostgreSqlDialect {
         true
     }
 
+    /// PostgreSQL's reserved keywords are never bare column aliases, which is
+    /// what keeps `INSERT INTO t (a) SELECT 1 ON CONFLICT DO NOTHING` and
+    /// `SELECT 1 FOR UPDATE` from reading their next keyword as an alias.
+    fn is_column_alias(&self, kw: &Keyword, _parser: &Parser) -> bool {
+        !keywords::RESERVED_FOR_COLUMN_ALIAS.contains(kw)
+            && !keywords::POSTGRES_RESERVED_KEYWORDS.contains(kw)
+    }
+
     fn prec_value(&self, prec: Precedence) -> u8 {
         match prec {
             Precedence::Period => PERIOD_PREC,
@@ -298,6 +306,18 @@ impl Dialect for PostgreSqlDialect {
     }
 
     fn supports_string_escape_constant(&self) -> bool {
+        true
+    }
+
+    fn supports_radix_numeric_literals(&self) -> bool {
+        true
+    }
+
+    fn supports_generic_typed_string_literals(&self) -> bool {
+        true
+    }
+
+    fn supports_trim_character_list(&self) -> bool {
         true
     }
 

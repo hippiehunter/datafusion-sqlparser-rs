@@ -1245,11 +1245,19 @@ impl<'a> Tokenizer<'a> {
                 x @ 'u' | x @ 'U' if self.features.supports_unicode_string_literal => {
                     chars.next(); // consume, to check the next char
                     if chars.peek() == Some(&'&') {
-                        // Check for U&'...' pattern without cloning the iterator
-                        if chars.peek_nth(1) == Some('\'') {
-                            chars.next(); // consume the '&'
-                            let s = unescape_unicode_single_quoted_string(chars)?;
-                            return Ok(Some(Token::UnicodeStringLiteral(s)));
+                        // Check for U&'...' / U&"..." without cloning the iterator
+                        match chars.peek_nth(1) {
+                            Some('\'') => {
+                                chars.next(); // consume the '&'
+                                let s = tokenize_unicode_escaped(chars, '\'')?;
+                                return Ok(Some(Token::UnicodeStringLiteral(s)));
+                            }
+                            Some('"') => {
+                                chars.next(); // consume the '&'
+                                let s = tokenize_unicode_escaped(chars, '"')?;
+                                return Ok(Some(Token::make_word(&s, Some('"'))));
+                            }
+                            _ => {}
                         }
                     }
                     // regular identifier starting with an "U" or "u"
@@ -1393,8 +1401,21 @@ impl<'a> Tokenizer<'a> {
                         ch.is_ascii_digit() || is_number_separator(ch, next_ch)
                     });
 
+                    // PostgreSQL non-decimal integer literals: `0x`/`0o`/`0b`
+                    // followed by digits of the matching radix, optionally
+                    // separated by single underscores.
+                    if s == "0" && self.features.supports_radix_numeric_literals {
+                        if let Some(literal) = tokenize_radix_integer(chars) {
+                            s += literal.as_str();
+                            return Ok(Some(Token::Number(s, false)));
+                        }
+                    }
+
                     // match binary literal that starts with 0x
-                    if s == "0" && chars.peek() == Some(&'x') {
+                    if s == "0"
+                        && chars.peek() == Some(&'x')
+                        && !self.features.supports_radix_numeric_literals
+                    {
                         chars.next();
                         let s2 = peeking_next_take_while(chars, |ch, next_ch| {
                             ch.is_ascii_hexdigit() || is_number_separator(ch, next_ch)
@@ -1453,7 +1474,9 @@ impl<'a> Tokenizer<'a> {
                             if has_sign {
                                 exponent_part.push(chars.next().unwrap()); // '+' or '-'
                             }
-                            exponent_part += &peeking_take_while(chars, |ch| ch.is_ascii_digit());
+                            exponent_part += &peeking_next_take_while(chars, |ch, next_ch| {
+                                ch.is_ascii_digit() || is_number_separator(ch, next_ch)
+                            });
                             s += exponent_part.as_str();
                         }
                         // Track that we saw 'e'/'E' even if it wasn't a valid exponent,
@@ -1631,7 +1654,7 @@ impl<'a> Tokenizer<'a> {
                 '!' => {
                     chars.next(); // consume
                     match chars.peek() {
-                        Some('=') => self.consume_and_return(chars, Token::Neq),
+                        Some('=') => self.consume_for_binop(chars, "!=", Token::Neq),
                         Some('!') => self.consume_and_return(chars, Token::DoubleExclamationMark),
                         Some('~') => {
                             chars.next();
@@ -1940,22 +1963,32 @@ impl<'a> Tokenizer<'a> {
         prefix: &str,
         default: Option<BorrowedToken<'a>>,
     ) -> Result<Option<BorrowedToken<'a>>, TokenizerError> {
-        let mut custom = None;
-        while let Some(&ch) = chars.peek() {
+        let mut trailing = String::new();
+        let mut offset = 0;
+        while let Some(ch) = chars.peek_nth(offset) {
             if !self.dialect.is_custom_operator_part(ch) {
                 break;
             }
-
-            custom.get_or_insert_with(|| prefix.to_string()).push(ch);
-            chars.next();
+            trailing.push(ch);
+            offset += 1;
         }
-        match (custom, default) {
-            (Some(custom), _) => Ok(Token::CustomBinaryOperator(custom).into()),
-            (None, Some(tok)) => Ok(Some(tok)),
-            (None, None) => self.tokenizer_error(
+
+        let take = operator_run_length(prefix, &trailing);
+        match (take, default) {
+            (0, Some(tok)) => Ok(Some(tok)),
+            (0, None) => self.tokenizer_error(
                 chars.location(),
                 format!("Expected a valid binary operator after '{prefix}'"),
             ),
+            (take, _) => {
+                let mut custom = String::with_capacity(prefix.len() + take);
+                custom.push_str(prefix);
+                custom.push_str(&trailing[..take]);
+                for _ in 0..take {
+                    chars.next();
+                }
+                Ok(Token::CustomBinaryOperator(custom).into())
+            }
         }
     }
 
@@ -2861,81 +2894,95 @@ impl<'a: 'b, 'b> Unescape<'a, 'b> {
     }
 }
 
-fn unescape_unicode_single_quoted_string(chars: &mut State<'_>) -> Result<String, TokenizerError> {
-    borrow_or_unescape_unicode_single_quoted_string(chars, true).map(|cow| cow.into_owned())
+/// A PostgreSQL operator name may not end in `+` or `-` unless it also contains
+/// one of these characters, which is how `a=-1` stays an equality against a
+/// negative literal instead of becoming an `=-` operator.
+fn operator_char_forces_trailing_sign(ch: char) -> bool {
+    matches!(ch, '~' | '!' | '@' | '#' | '^' | '&' | '|' | '`' | '?')
 }
 
-/// Scans a unicode-escaped single-quoted string and returns either a borrowed slice or an unescaped owned string.
+/// Given the operator characters already consumed (`prefix`) and the run of
+/// operator characters that follow, return how many of the following ones
+/// belong to the same operator name.
 ///
-/// Strategy: Scan once to find the end and detect escape sequences.
-/// - If no escapes exist (or unescape=false), return [Cow::Borrowed]
-/// - If escapes exist and unescape=true, reprocess with unicode escaping logic
-fn borrow_or_unescape_unicode_single_quoted_string<'a>(
-    chars: &mut State<'a>,
-    unescape: bool,
-) -> Result<Cow<'a, str>, TokenizerError> {
-    let content_start = chars.byte_pos;
-    let error_loc = chars.location();
+/// PostgreSQL truncates the run at an embedded comment introducer and then
+/// drops trailing `+`/`-` characters until the name is legal.
+fn operator_run_length(prefix: &str, trailing: &str) -> usize {
+    let full: String = prefix.chars().chain(trailing.chars()).collect();
+    let mut end = full.len();
+    for start in 1..full.len().saturating_sub(1) {
+        if full[start..].starts_with("--") || full[start..].starts_with("/*") {
+            end = start;
+            break;
+        }
+    }
+    while end > prefix.len() {
+        let candidate = &full[..end];
+        if !candidate.ends_with(['+', '-'])
+            || candidate.chars().any(operator_char_forces_trailing_sign)
+        {
+            break;
+        }
+        end -= 1;
+    }
+    end.saturating_sub(prefix.len())
+}
 
-    // Validate we're at an opening quote before consuming
-    if chars.peek() != Some(&'\'') {
+/// Tokenize the radix marker and digits of a PostgreSQL non-decimal integer
+/// literal, positioned just after the leading `0`. Returns `None` (consuming
+/// nothing) when what follows is not such a literal.
+fn tokenize_radix_integer(chars: &mut State<'_>) -> Option<String> {
+    let radix = chars.peek().copied()?;
+    let is_digit: fn(char) -> bool = match radix {
+        'x' | 'X' => |c: char| c.is_ascii_hexdigit(),
+        'o' | 'O' => |c: char| c.is_digit(8),
+        'b' | 'B' => |c: char| c.is_digit(2),
+        _ => return None,
+    };
+    let starts_digits = match chars.peek_nth(1) {
+        Some('_') => chars.peek_nth(2).is_some_and(is_digit),
+        Some(c) => is_digit(c),
+        None => false,
+    };
+    if !starts_digits {
+        return None;
+    }
+    let mut literal = String::new();
+    literal.push(radix);
+    chars.next();
+    literal += &peeking_next_take_while(chars, |ch, next_ch| {
+        is_digit(ch) || (ch == '_' && next_ch.is_some_and(is_digit))
+    });
+    Some(literal)
+}
+
+/// Scan a `U&'...'` string literal or `U&"..."` delimited identifier, together
+/// with an optional trailing `UESCAPE 'c'` clause, and return the value with
+/// its unicode escapes resolved.
+fn tokenize_unicode_escaped<'a>(
+    chars: &mut State<'a>,
+    quote: char,
+) -> Result<String, TokenizerError> {
+    let error_loc = chars.location();
+    let source: &'a str = chars.source;
+    if chars.peek() != Some(&quote) {
         return Err(TokenizerError {
-            message: "Expected opening quote for unicode string literal".to_string(),
+            message: "Expected opening quote for unicode escaped literal".to_string(),
             location: error_loc,
         });
     }
     chars.next(); // consume the opening quote
-
-    // Scan to find end and check for escape sequences
-    let mut has_escapes = false;
-
-    loop {
+    let content_start = chars.byte_pos;
+    let content_end = loop {
         match chars.next() {
-            Some('\'') => {
-                // Check for doubled single quote (escape)
-                if chars.peek() == Some(&'\'') {
-                    has_escapes = true;
-                    chars.next(); // consume the second '
+            Some(c) if c == quote => {
+                if chars.peek() == Some(&quote) {
+                    chars.next();
                 } else {
-                    // End of string found (including closing ')
-                    let content_end = chars.byte_pos;
-                    let full_content = &chars.source[content_start..content_end];
-
-                    // If no unescaping needed, return borrowed (without quotes)
-                    if !unescape || !has_escapes {
-                        // Strip opening and closing quotes
-                        // Safety: full_content includes opening and closing quotes (at least 2 chars)
-                        if full_content.len() < 2 {
-                            return Err(TokenizerError {
-                                message: "Invalid unicode string literal".to_string(),
-                                location: error_loc,
-                            });
-                        }
-                        return Ok(Cow::Borrowed(&full_content[1..full_content.len() - 1]));
-                    }
-
-                    // Need to unescape - reprocess with unicode logic
-                    // Create a temporary State from the content
-                    let mut temp_state = State {
-                        peekable: full_content.chars().peekable(),
-                        source: full_content,
-                        line: 0,
-                        col: 0,
-                        byte_pos: 0,
-                    };
-
-                    return process_unicode_string_with_escapes(&mut temp_state, error_loc)
-                        .map(Cow::Owned);
+                    break chars.byte_pos - quote.len_utf8();
                 }
             }
-            Some('\\') => {
-                has_escapes = true;
-                // Skip next character (it's escaped or part of unicode sequence)
-                chars.next();
-            }
-            Some(_) => {
-                // Regular character, continue scanning
-            }
+            Some(_) => {}
             None => {
                 return Err(TokenizerError {
                     message: "Unterminated unicode encoded string literal".to_string(),
@@ -2943,48 +2990,86 @@ fn borrow_or_unescape_unicode_single_quoted_string<'a>(
                 });
             }
         }
-    }
+    };
+    let raw = &source[content_start..content_end];
+    let escape = consume_uescape_clause(chars).unwrap_or('\\');
+    unescape_unicode_content(raw, quote, escape, error_loc)
 }
 
-/// Process a unicode-escaped string using the original unescape logic
-fn process_unicode_string_with_escapes(
-    chars: &mut State<'_>,
-    error_loc: Location,
-) -> Result<String, TokenizerError> {
-    let mut unescaped = String::new();
-    chars.next(); // consume the opening quote
-
-    while let Some(c) = chars.next() {
-        match c {
-            '\'' => {
-                if chars.peek() == Some(&'\'') {
-                    chars.next();
-                    unescaped.push('\'');
-                } else {
-                    return Ok(unescaped);
-                }
-            }
-            '\\' => match chars.peek() {
-                Some('\\') => {
-                    chars.next();
-                    unescaped.push('\\');
-                }
-                Some('+') => {
-                    chars.next();
-                    unescaped.push(take_char_from_hex_digits(chars, 6)?);
-                }
-                _ => unescaped.push(take_char_from_hex_digits(chars, 4)?),
-            },
-            _ => {
-                unescaped.push(c);
-            }
+/// Consume a `UESCAPE 'c'` clause if one immediately follows, returning the
+/// escape character it names. Nothing is consumed when the clause is absent.
+fn consume_uescape_clause(chars: &mut State<'_>) -> Option<char> {
+    let mut offset = 0;
+    while chars.peek_nth(offset).is_some_and(char::is_whitespace) {
+        offset += 1;
+    }
+    for expected in "UESCAPE".chars() {
+        match chars.peek_nth(offset) {
+            Some(c) if c.eq_ignore_ascii_case(&expected) => offset += 1,
+            _ => return None,
         }
     }
+    match chars.peek_nth(offset) {
+        Some(c) if c.is_whitespace() || c == '\'' => {}
+        _ => return None,
+    }
+    while chars.peek_nth(offset).is_some_and(char::is_whitespace) {
+        offset += 1;
+    }
+    if chars.peek_nth(offset) != Some('\'') {
+        return None;
+    }
+    offset += 1;
+    let escape = chars.peek_nth(offset)?;
+    offset += 1;
+    if chars.peek_nth(offset) != Some('\'') {
+        return None;
+    }
+    offset += 1;
+    for _ in 0..offset {
+        chars.next();
+    }
+    Some(escape)
+}
 
-    Err(TokenizerError {
-        message: "Unterminated unicode encoded string literal".to_string(),
-        location: error_loc,
-    })
+/// Resolve the doubled quotes and unicode escapes inside the body of a
+/// `U&'...'` literal or `U&"..."` identifier.
+fn unescape_unicode_content(
+    raw: &str,
+    quote: char,
+    escape: char,
+    error_loc: Location,
+) -> Result<String, TokenizerError> {
+    let mut state = State {
+        peekable: raw.chars().peekable(),
+        source: raw,
+        line: error_loc.line,
+        col: error_loc.column,
+        byte_pos: 0,
+    };
+    let mut unescaped = String::with_capacity(raw.len());
+    while let Some(c) = state.next() {
+        if c == quote {
+            // A doubled quote inside the body stands for one literal quote.
+            state.next();
+            unescaped.push(quote);
+        } else if c == escape {
+            match state.peek() {
+                Some(&next) if next == escape => {
+                    state.next();
+                    unescaped.push(escape);
+                }
+                Some('+') => {
+                    state.next();
+                    unescaped.push(take_char_from_hex_digits(&mut state, 6)?);
+                }
+                _ => unescaped.push(take_char_from_hex_digits(&mut state, 4)?),
+            }
+        } else {
+            unescaped.push(c);
+        }
+    }
+    Ok(unescaped)
 }
 
 fn take_char_from_hex_digits(

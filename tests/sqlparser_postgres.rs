@@ -3001,22 +3001,9 @@ fn parse_update_subscript_assignment() {
 }
 
 #[test]
-fn parse_update_subscript_assignment_rejects_non_index_targets() {
-    let err = pg()
-        .parse_sql_statements("UPDATE foo SET bar[1:2] = 5")
-        .unwrap_err();
-    assert_eq!(
-        "sql parser error: UPDATE assignment subscript targets only support index form [expr]",
-        err.to_string()
-    );
-
-    let err = pg()
-        .parse_sql_statements("UPDATE foo SET bar[1][2] = 5")
-        .unwrap_err();
-    assert_eq!(
-        "sql parser error: UPDATE assignment subscript targets currently support exactly one index dimension",
-        err.to_string()
-    );
+fn parse_update_slice_and_multi_dimension_assignment_targets() {
+    pg().verified_stmt("UPDATE foo SET bar[1:2] = 5");
+    pg().verified_stmt("UPDATE foo SET bar[1][2] = 5");
 }
 
 #[test]
@@ -3131,6 +3118,7 @@ fn parse_create_indices_with_operator_classes() {
 
             let expected_function_column = IndexColumn {
                 column: OrderByExpr {
+                    using: None,
                     expr: Expr::Function(Function {
                         name: ObjectName(vec![ObjectNamePart::Identifier(Ident {
                             value: "concat_users_name".to_owned(),
@@ -3224,6 +3212,7 @@ fn parse_create_indices_with_operator_classes() {
                     assert_eq!(
                         IndexColumn {
                             column: OrderByExpr {
+                                using: None,
                                 expr: Expr::Identifier(Ident {
                                     value: "column_name".to_owned(),
                                     quote_style: None,
@@ -5611,6 +5600,7 @@ fn test_simple_postgres_insert_with_alias() {
     assert_eq!(
         statement,
         Statement::Insert(Insert {
+            column_targets: None,
             insert_token: AttachedToken::empty(),
             ignore: false,
             into: true,
@@ -5749,6 +5739,7 @@ fn test_simple_insert_with_quoted_alias() {
     assert_eq!(
         statement,
         Statement::Insert(Insert {
+            column_targets: None,
             insert_token: AttachedToken::empty(),
             ignore: false,
             into: true,

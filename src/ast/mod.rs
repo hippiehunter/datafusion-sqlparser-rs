@@ -83,6 +83,11 @@ pub use self::dml::{
     OracleRejectLimit, OverridingKind, ReturningClause, Update,
 };
 pub use self::operator::{BinaryOperator, UnaryOperator};
+pub use self::pg_query::{
+    ColumnTarget, ConflictIndexElement, ConflictInference, GroupBySetQuantifier, ReturningRowAlias,
+    ReturningRowVersion, TableFunctionColumnDef, TableFunctionItem, XmlRootStandalone,
+    XmlRootVersion,
+};
 pub use self::query::{
     AfterMatchSkip, ConnectBy, Cte, CteAsMaterialized, CycleClause, Distinct, EdgeDirection,
     EdgePattern, EmptyMatchesMode, ExceptSelectItem, ExprWithAlias, ExprWithAliasAndOrderBy, Fetch,
@@ -144,6 +149,7 @@ pub use table_constraints::{
     PeriodForName, PrimaryKeyConstraint, TableConstraint, UniqueConstraint,
 };
 mod operator;
+mod pg_query;
 mod query;
 mod spans;
 pub use spans::Spanned;
@@ -1251,6 +1257,22 @@ pub enum Expr {
         /// This flag is used for formatting.
         shorthand: bool,
     },
+    /// The SQL-standard regular expression substring function.
+    ///
+    /// ```sql
+    /// SUBSTRING(<expr> SIMILAR <pattern> ESCAPE <escape>)
+    /// ```
+    SubstringSimilar {
+        expr: Box<Expr>,
+        pattern: Box<Expr>,
+        escape: Box<Expr>,
+    },
+    /// The collation of an expression, as a function-like construct.
+    ///
+    /// ```sql
+    /// COLLATION FOR (<expr>)
+    /// ```
+    CollationFor(Box<Expr>),
     /// ```sql
     /// TRIM([BOTH | LEADING | TRAILING] [<expr> FROM] <expr>)
     /// TRIM(<expr>)
@@ -1329,6 +1351,14 @@ pub enum Expr {
         /// Optional indentation (true for INDENT, false for NO INDENT, None for neither)
         indent: Option<bool>,
     },
+    /// `XMLROOT(<xml>, VERSION {<expr> | NO VALUE} [, STANDALONE {YES | NO | NO VALUE}])`
+    ///
+    /// See SQL:2016 standard, X-Series (XML root constructor).
+    XmlRoot {
+        xml: Box<Expr>,
+        version: Box<XmlRootVersion>,
+        standalone: Option<XmlRootStandalone>,
+    },
     /// `XMLPI(NAME <target> [, <content>])`
     ///
     /// See SQL:2016 standard, X-Series (XML processing instruction).
@@ -1379,6 +1409,11 @@ pub enum Expr {
     Subquery(Box<Query>),
     /// The `GROUPING SETS` expr.
     GroupingSets(Vec<Vec<Expr>>),
+    /// `GROUPING SETS ( <grouping element>, ... )` whose elements are not all
+    /// parenthesized column lists: bare expressions, `ROLLUP`/`CUBE`, or nested
+    /// `GROUPING SETS`. The all-parenthesized spelling keeps using
+    /// [`Expr::GroupingSets`].
+    GroupingSetsElements(Vec<Expr>),
     /// The `CUBE` expr.
     Cube(Vec<Vec<Expr>>),
     /// The `ROLLUP` expr.
@@ -2255,6 +2290,17 @@ impl fmt::Display for Expr {
                 }
                 write!(f, ")")
             }
+            Expr::XmlRoot {
+                xml,
+                version,
+                standalone,
+            } => {
+                write!(f, "XMLROOT({xml}, {version}")?;
+                if let Some(standalone) = standalone {
+                    write!(f, ", {standalone}")?;
+                }
+                write!(f, ")")
+            }
             Expr::XmlPi { name, content } => {
                 write!(f, "XMLPI(NAME {name}")?;
                 if let Some(c) = content {
@@ -2337,6 +2383,9 @@ impl fmt::Display for Expr {
                 }
                 write!(f, ")")
             }
+            Expr::GroupingSetsElements(elements) => {
+                write!(f, "GROUPING SETS ({})", display_comma_separated(elements))
+            }
             Expr::Cube(sets) => {
                 write!(f, "CUBE (")?;
                 let mut sep = "";
@@ -2412,6 +2461,14 @@ impl fmt::Display for Expr {
             }
             Expr::IsDistinctFrom(a, b) => write!(f, "{a} IS DISTINCT FROM {b}"),
             Expr::IsNotDistinctFrom(a, b) => write!(f, "{a} IS NOT DISTINCT FROM {b}"),
+            Expr::SubstringSimilar {
+                expr,
+                pattern,
+                escape,
+            } => {
+                write!(f, "SUBSTRING({expr} SIMILAR {pattern} ESCAPE {escape})")
+            }
+            Expr::CollationFor(expr) => write!(f, "COLLATION FOR ({expr})"),
             Expr::Trim {
                 expr,
                 trim_where,
@@ -8110,6 +8167,8 @@ pub enum Statement {
         table: TableFactor,
         /// Specifies the table or subquery to join with the target table
         source: TableFactor,
+        /// Joins applied to `source`, for PostgreSQL's joined `USING` source.
+        source_joins: Vec<Join>,
         /// Specifies the expression on which to join the target table and source
         on: Box<Expr>,
         /// Specifies the actions to perform when values match or do not match.
@@ -12201,6 +12260,7 @@ impl fmt::Display for Statement {
                 into,
                 table,
                 source,
+                source_joins,
                 on,
                 clauses,
                 output,
@@ -12208,9 +12268,13 @@ impl fmt::Display for Statement {
             } => {
                 write!(
                     f,
-                    "MERGE{int} {table} USING {source} ",
+                    "MERGE{int} {table} USING {source}",
                     int = if *into { " INTO" } else { "" }
                 )?;
+                for join in source_joins {
+                    write!(f, " {join}")?;
+                }
+                f.write_str(" ")?;
                 write!(f, "ON {on} ")?;
                 write!(f, "{}", display_separated(clauses, " "))?;
                 if let Some(output) = output {
@@ -12719,6 +12783,11 @@ pub struct OnConflict {
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub enum ConflictTarget {
     Columns(Vec<Ident>),
+    /// PostgreSQL's full inference clause: index elements that may be
+    /// expressions or carry a collation, operator class or sort order, plus an
+    /// optional index predicate. Plain column lists without a predicate keep
+    /// using [`ConflictTarget::Columns`].
+    Inference(ConflictInference),
     OnConstraint(ObjectName),
 }
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
@@ -12764,6 +12833,7 @@ impl fmt::Display for ConflictTarget {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             ConflictTarget::Columns(cols) => write!(f, "({})", display_comma_separated(cols)),
+            ConflictTarget::Inference(inference) => write!(f, "{inference}"),
             ConflictTarget::OnConstraint(name) => write!(f, " ON CONSTRAINT {name}"),
         }
     }
@@ -13468,6 +13538,9 @@ impl fmt::Display for Assignment {
 pub enum AssignmentTarget {
     /// A single column
     ColumnName(ObjectName),
+    /// A column written through a field selection or subscript, e.g.
+    /// `a[1:2]`, `a[:]` or `js['a']['b']`.
+    Indirection(ColumnTarget),
     /// A tuple of columns
     Tuple(Vec<ObjectName>),
 }
@@ -13476,6 +13549,7 @@ impl fmt::Display for AssignmentTarget {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             AssignmentTarget::ColumnName(column) => write!(f, "{column}"),
+            AssignmentTarget::Indirection(target) => write!(f, "{target}"),
             AssignmentTarget::Tuple(columns) => write!(f, "({})", display_comma_separated(columns)),
         }
     }
@@ -15957,6 +16031,10 @@ impl Display for MergeClauseKind {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub enum MergeInsertKind {
+    /// ```sql
+    /// INSERT DEFAULT VALUES
+    /// ```
+    DefaultValues,
     /// The insert expression is defined from an explicit `VALUES` clause
     ///
     /// Example:
@@ -15978,6 +16056,9 @@ impl Display for MergeInsertKind {
         match self {
             MergeInsertKind::Values(values) => {
                 write!(f, "{values}")
+            }
+            MergeInsertKind::DefaultValues => {
+                write!(f, "DEFAULT VALUES")
             }
             MergeInsertKind::Row => {
                 write!(f, "ROW")
@@ -16006,6 +16087,9 @@ pub struct MergeInsertExpr {
     /// INSERT (product, quantity) ROW
     /// ```
     pub columns: Vec<Ident>,
+    /// `OVERRIDING { SYSTEM | USER } VALUE`
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub overriding: Option<OverridingKind>,
     /// The insert type used by the statement.
     pub kind: MergeInsertKind,
     /// Oracle action-local condition.
@@ -16016,6 +16100,9 @@ impl Display for MergeInsertExpr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if !self.columns.is_empty() {
             write!(f, "({}) ", display_comma_separated(self.columns.as_slice()))?;
+        }
+        if let Some(overriding) = &self.overriding {
+            write!(f, "{overriding} ")?;
         }
         write!(f, "{}", self.kind)?;
         if let Some(condition) = &self.where_clause {
@@ -16138,6 +16225,9 @@ pub enum OutputClause {
     },
     Returning {
         select_items: Vec<SelectItem>,
+        /// PostgreSQL 18's `RETURNING WITH ( OLD AS o, NEW AS n )` aliases.
+        #[cfg_attr(feature = "serde", serde(default))]
+        row_aliases: Option<Vec<ReturningRowAlias>>,
     },
 }
 
@@ -16156,8 +16246,14 @@ impl fmt::Display for OutputClause {
                 }
                 Ok(())
             }
-            OutputClause::Returning { select_items } => {
+            OutputClause::Returning {
+                select_items,
+                row_aliases,
+            } => {
                 f.write_str("RETURNING ")?;
+                if let Some(aliases) = row_aliases {
+                    write!(f, "WITH ({}) ", display_comma_separated(aliases))?;
+                }
                 display_comma_separated(select_items).fmt(f)
             }
         }
