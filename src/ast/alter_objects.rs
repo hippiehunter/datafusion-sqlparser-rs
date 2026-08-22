@@ -38,6 +38,7 @@ use crate::ast::helpers::attached_token::AttachedToken;
 use crate::ast::{
     display_comma_separated, AggregateArgs, DataType, DropBehavior, Expr, FunctionBehavior,
     FunctionCalledOnNull, FunctionDesc, FunctionParallel, Ident, ObjectName, Owner,
+    SetStatisticsValue,
     ProcedureSecurity, ProcedureSetConfig, ResetConfig, SqlOption, TableConstraint,
 };
 
@@ -642,7 +643,7 @@ pub enum AlterStatisticsAction {
     Object(AlterObjectAction),
     /// `SET STATISTICS { new_target | DEFAULT }`
     SetStatistics {
-        target: StatisticsTarget,
+        target: SetStatisticsValue,
     },
 }
 
@@ -655,25 +656,6 @@ impl fmt::Display for AlterStatisticsAction {
     }
 }
 
-/// The target of `SET STATISTICS`.
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum StatisticsTarget {
-    /// `DEFAULT`
-    Default,
-    /// A signed integer target.
-    Value(Expr),
-}
-
-impl fmt::Display for StatisticsTarget {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::Default => write!(f, "DEFAULT"),
-            Self::Value(value) => write!(f, "{value}"),
-        }
-    }
-}
 
 /// An action of `ALTER TEXT SEARCH CONFIGURATION`.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]

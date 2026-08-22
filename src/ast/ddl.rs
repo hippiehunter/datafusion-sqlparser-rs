@@ -34,6 +34,11 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "visitor")]
 use sqlparser_derive::{Visit, VisitMut};
 
+use crate::ast::table_ddl::{
+    AlterConstraint, ColumnCompression, ConstraintAttribute, CreateTableAsExecute,
+    CreateTableWithData, DomainConstraint, IdentityColumnOption, SetAccessMethod,
+    SetStatisticsValue, TableLikeElement, TypedTableElement, ViewCheckOption,
+};
 use crate::ast::value::escape_single_quote_string;
 use crate::ast::{
     display_comma_separated, display_separated,
@@ -48,8 +53,8 @@ use crate::ast::{
     FunctionParallel, Ident, MaterializedViewRefreshSchedule, MySQLColumnPosition, ObjectName,
     OnCommit, OperateFunctionArg, OrderByExpr, PartitionBoundSpec, ProcedureSecurity,
     ProcedureSetConfig, Query, RoutineAttribute, SequenceOptions, Spanned, SqlDataAccess,
-    SqlOption, TableVersion,
-    TriggerEvent, TriggerExecBody, TriggerObject, TriggerPeriod, TriggerReferencing, ValueWithSpan,
+    SqlMedOptionAction, SqlOption, TableVersion, TriggerEvent, TriggerExecBody, TriggerObject,
+    TriggerPeriod, TriggerReferencing, ValueWithSpan,
 };
 use crate::display_utils::{DisplayCommaSeparated, Indent, NewLine, SpaceOrNewline};
 use crate::tokenizer::{Span, Token};
@@ -353,6 +358,62 @@ pub enum AlterTableOperation {
         partitions: Vec<ObjectName>,
         into: ObjectName,
     },
+    /// `SET SCHEMA <new_schema>`
+    ///
+    /// [PostgreSQL](https://www.postgresql.org/docs/current/sql-altertable.html)
+    SetSchema { new_schema: ObjectName },
+    /// `SET LOGGED`
+    SetLogged,
+    /// `SET UNLOGGED`
+    SetUnlogged,
+    /// `SET WITHOUT CLUSTER`
+    SetWithoutCluster,
+    /// `SET WITHOUT OIDS`
+    SetWithoutOids,
+    /// `CLUSTER ON <index_name>`
+    ClusterOn { index_name: Ident },
+    /// `RESET (<storage parameter>, ...)`
+    ResetOptionsParens { options: Vec<SqlOption> },
+    /// `SET ACCESS METHOD { <name> | DEFAULT }`
+    SetAccessMethod { method: SetAccessMethod },
+    /// `SET TABLESPACE <name>`
+    SetTablespace { name: Ident },
+    /// `INHERIT <parent_table>`
+    Inherit { parent: ObjectName },
+    /// `NO INHERIT <parent_table>`
+    NoInherit { parent: ObjectName },
+    /// `OF <type_name>`
+    OfType { type_name: ObjectName },
+    /// `NOT OF`
+    NotOf,
+    /// `ALTER CONSTRAINT <name> <constraint attributes>`
+    AlterConstraint(AlterConstraint),
+    /// `OPTIONS ( [ ADD | SET | DROP ] <name> ['<value>'], ... )`, the
+    /// foreign-table generic option list.
+    Options { options: Vec<SqlMedOptionAction> },
+    /// `ENABLE TRIGGER { ALL | USER }`
+    EnableTriggerGroup { group: TriggerGroup },
+    /// `DISABLE TRIGGER { ALL | USER }`
+    DisableTriggerGroup { group: TriggerGroup },
+}
+
+/// The `ALL` / `USER` collective target of
+/// `ALTER TABLE ... { ENABLE | DISABLE } TRIGGER`.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum TriggerGroup {
+    All,
+    User,
+}
+
+impl fmt::Display for TriggerGroup {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            TriggerGroup::All => "ALL",
+            TriggerGroup::User => "USER",
+        })
+    }
 }
 
 /// An `ALTER Policy` (`Statement::AlterPolicy`) operation
@@ -807,6 +868,39 @@ impl fmt::Display for AlterTableOperation {
                     display_comma_separated(partitions)
                 )
             }
+            AlterTableOperation::SetSchema { new_schema } => {
+                write!(f, "SET SCHEMA {new_schema}")
+            }
+            AlterTableOperation::SetLogged => write!(f, "SET LOGGED"),
+            AlterTableOperation::SetUnlogged => write!(f, "SET UNLOGGED"),
+            AlterTableOperation::SetWithoutCluster => write!(f, "SET WITHOUT CLUSTER"),
+            AlterTableOperation::SetWithoutOids => write!(f, "SET WITHOUT OIDS"),
+            AlterTableOperation::ClusterOn { index_name } => {
+                write!(f, "CLUSTER ON {index_name}")
+            }
+            AlterTableOperation::ResetOptionsParens { options } => {
+                write!(f, "RESET ({})", display_comma_separated(options))
+            }
+            AlterTableOperation::SetAccessMethod { method } => {
+                write!(f, "SET ACCESS METHOD {method}")
+            }
+            AlterTableOperation::SetTablespace { name } => {
+                write!(f, "SET TABLESPACE {name}")
+            }
+            AlterTableOperation::Inherit { parent } => write!(f, "INHERIT {parent}"),
+            AlterTableOperation::NoInherit { parent } => write!(f, "NO INHERIT {parent}"),
+            AlterTableOperation::OfType { type_name } => write!(f, "OF {type_name}"),
+            AlterTableOperation::NotOf => write!(f, "NOT OF"),
+            AlterTableOperation::AlterConstraint(alter) => alter.fmt(f),
+            AlterTableOperation::Options { options } => {
+                write!(f, "OPTIONS ({})", display_comma_separated(options))
+            }
+            AlterTableOperation::EnableTriggerGroup { group } => {
+                write!(f, "ENABLE TRIGGER {group}")
+            }
+            AlterTableOperation::DisableTriggerGroup { group } => {
+                write!(f, "DISABLE TRIGGER {group}")
+            }
         }
     }
 }
@@ -1062,6 +1156,38 @@ pub enum AlterColumnOperation {
     ///
     /// Note: this is a PostgreSQL-specific operation.
     SetStorage(UserDefinedTypeStorage),
+
+    /// `SET STATISTICS { <integer> | DEFAULT }`
+    SetStatistics { value: SetStatisticsValue },
+    /// `SET COMPRESSION { <method> | DEFAULT }`
+    SetCompression { compression: ColumnCompression },
+    /// `SET (<attribute option> = <value>, ...)`
+    SetOptionsParens { options: Vec<SqlOption> },
+    /// `RESET (<attribute option>, ...)`
+    ResetOptionsParens { options: Vec<SqlOption> },
+    /// `OPTIONS ( [ ADD | SET | DROP ] <name> ['<value>'], ... )` — the
+    /// foreign-table generic option list for a single column.
+    Options { options: Vec<SqlMedOptionAction> },
+    /// `DROP EXPRESSION [ IF EXISTS ]`
+    DropExpression { if_exists: bool },
+    /// `SET EXPRESSION AS (<expr>)`
+    SetExpression { expr: Expr },
+    /// `DROP IDENTITY [ IF EXISTS ]`
+    DropIdentity { if_exists: bool },
+    /// One or more `alter_identity_column_option`s:
+    /// `RESTART`, `SET <sequence option>`, `SET GENERATED { ALWAYS | BY DEFAULT }`.
+    IdentityOptions { options: Vec<IdentityColumnOption> },
+    /// `[SET DATA] TYPE <data_type> COLLATE <collation> [USING <expr>]`
+    ///
+    /// Distinct from [`AlterColumnOperation::SetDataType`], which has no place
+    /// to record the collation.
+    SetDataTypeCollate {
+        data_type: DataType,
+        collation: ObjectName,
+        using: Option<Expr>,
+        /// Set to true if the statement includes the `SET DATA TYPE` keywords
+        had_set: bool,
+    },
 }
 
 impl fmt::Display for AlterColumnOperation {
@@ -1114,6 +1240,56 @@ impl fmt::Display for AlterColumnOperation {
             }
             AlterColumnOperation::SetStorage(storage_type) => {
                 write!(f, "SET STORAGE {storage_type}")
+            }
+            AlterColumnOperation::SetStatistics { value } => {
+                write!(f, "SET STATISTICS {value}")
+            }
+            AlterColumnOperation::SetCompression { compression } => {
+                write!(f, "SET COMPRESSION {compression}")
+            }
+            AlterColumnOperation::SetOptionsParens { options } => {
+                write!(f, "SET ({})", display_comma_separated(options))
+            }
+            AlterColumnOperation::ResetOptionsParens { options } => {
+                write!(f, "RESET ({})", display_comma_separated(options))
+            }
+            AlterColumnOperation::Options { options } => {
+                write!(f, "OPTIONS ({})", display_comma_separated(options))
+            }
+            AlterColumnOperation::DropExpression { if_exists } => {
+                write!(f, "DROP EXPRESSION")?;
+                if *if_exists {
+                    write!(f, " IF EXISTS")?;
+                }
+                Ok(())
+            }
+            AlterColumnOperation::SetExpression { expr } => {
+                write!(f, "SET EXPRESSION AS ({expr})")
+            }
+            AlterColumnOperation::DropIdentity { if_exists } => {
+                write!(f, "DROP IDENTITY")?;
+                if *if_exists {
+                    write!(f, " IF EXISTS")?;
+                }
+                Ok(())
+            }
+            AlterColumnOperation::IdentityOptions { options } => {
+                write!(f, "{}", display_separated(options, " "))
+            }
+            AlterColumnOperation::SetDataTypeCollate {
+                data_type,
+                collation,
+                using,
+                had_set,
+            } => {
+                if *had_set {
+                    write!(f, "SET DATA ")?;
+                }
+                write!(f, "TYPE {data_type} COLLATE {collation}")?;
+                if let Some(expr) = using {
+                    write!(f, " USING {expr}")?;
+                }
+                Ok(())
             }
         }
     }
@@ -1598,6 +1774,22 @@ pub enum ColumnOption {
     /// ```
     /// [MySQL]: https://dev.mysql.com/doc/refman/8.4/en/invisible-columns.html
     Invisible,
+    /// PostgreSQL `NOT NULL NO INHERIT`. Plain `NOT NULL` stays
+    /// [`ColumnOption::NotNull`].
+    NotNullNoInherit,
+    /// PostgreSQL `CHECK (<expr>) NO INHERIT` on a column definition, and the
+    /// `NO INHERIT` of a domain's `NOT NULL`/`CHECK`.
+    NoInherit,
+    /// PostgreSQL column-definition storage clause: `<col> <type> STORAGE PLAIN`.
+    Storage(UserDefinedTypeStorage),
+    /// PostgreSQL column-definition compression clause:
+    /// `<col> <type> COMPRESSION <method>`.
+    Compression(ColumnCompression),
+    /// A constraint attribute written as its own qualifier, which PostgreSQL
+    /// attaches to the preceding constraint: `b int CHECK (b > 0) NOT ENFORCED`.
+    ConstraintAttribute(ConstraintAttribute),
+    /// PostgreSQL foreign-table column options: `OPTIONS (column_name 'a1')`.
+    GenericOptions(Vec<SqlMedOptionAction>),
 }
 
 impl From<UniqueConstraint> for ColumnOption {
@@ -1660,6 +1852,13 @@ impl fmt::Display for ColumnOption {
                 }
                 if let Some(action) = &constraint.on_delete {
                     write!(f, " ON DELETE {action}")?;
+                    if !constraint.on_delete_columns.is_empty() {
+                        write!(
+                            f,
+                            " ({})",
+                            display_comma_separated(&constraint.on_delete_columns)
+                        )?;
+                    }
                 }
                 if let Some(action) = &constraint.on_update {
                     write!(f, " ON UPDATE {action}")?;
@@ -1738,6 +1937,14 @@ impl fmt::Display for ColumnOption {
             }
             Invisible => {
                 write!(f, "INVISIBLE")
+            }
+            NotNullNoInherit => write!(f, "NOT NULL NO INHERIT"),
+            NoInherit => write!(f, "NO INHERIT"),
+            Storage(storage) => write!(f, "STORAGE {storage}"),
+            Compression(compression) => write!(f, "COMPRESSION {compression}"),
+            ConstraintAttribute(attribute) => write!(f, "{attribute}"),
+            GenericOptions(options) => {
+                write!(f, "OPTIONS ({})", display_comma_separated(options))
             }
         }
     }
@@ -2121,6 +2328,8 @@ pub enum UserDefinedTypeStorage {
     Extended,
     /// Compression allowed, out-of-line discouraged: `STORAGE = main`
     Main,
+    /// Reset to the type's default strategy: `SET STORAGE DEFAULT`
+    Default,
 }
 
 impl fmt::Display for UserDefinedTypeStorage {
@@ -2130,6 +2339,7 @@ impl fmt::Display for UserDefinedTypeStorage {
             UserDefinedTypeStorage::External => write!(f, "external"),
             UserDefinedTypeStorage::Extended => write!(f, "extended"),
             UserDefinedTypeStorage::Main => write!(f, "main"),
+            UserDefinedTypeStorage::Default => write!(f, "DEFAULT"),
         }
     }
 }
@@ -2341,6 +2551,11 @@ pub struct CreateIndex {
     pub name: Option<ObjectName>,
     #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
     pub table_name: ObjectName,
+    /// PostgreSQL `ON ONLY <table>`: do not recurse into partitions or
+    /// inheritance children.
+    pub only: bool,
+    /// PostgreSQL `TABLESPACE <name>`
+    pub tablespace: Option<Ident>,
     /// Index type used in the statement. Can also be found inside [`CreateIndex::index_options`]
     /// depending on the position of the option within the statement.
     pub using: Option<IndexType>,
@@ -2383,7 +2598,12 @@ impl fmt::Display for CreateIndex {
         if let Some(value) = &self.name {
             write!(f, "{value} ")?;
         }
-        write!(f, "ON {}", self.table_name)?;
+        write!(
+            f,
+            "ON {}{}",
+            if self.only { "ONLY " } else { "" },
+            self.table_name
+        )?;
         if let Some(value) = &self.using {
             write!(f, " USING {value} ")?;
         }
@@ -2400,6 +2620,9 @@ impl fmt::Display for CreateIndex {
         }
         if !self.with.is_empty() {
             write!(f, " WITH ({})", display_comma_separated(&self.with))?;
+        }
+        if let Some(tablespace) = &self.tablespace {
+            write!(f, " TABLESPACE {tablespace}")?;
         }
         if let Some(predicate) = &self.predicate {
             write!(f, " WHERE {predicate}")?;
@@ -2609,6 +2832,21 @@ pub struct CreateTable {
     pub clustering_by: Option<Vec<OrderByExpr>>,
     /// Declarative horizontal distribution requested for the table.
     pub distribution: Option<TableDistribution>,
+    /// PostgreSQL `CREATE UNLOGGED TABLE`.
+    pub unlogged: bool,
+    /// Column aliases of `CREATE TABLE <name> (<alias>, ...) AS <query>`, which
+    /// name the query's output columns and carry no types.
+    pub column_aliases: Vec<Ident>,
+    /// `LIKE <source> [ INCLUDING | EXCLUDING ... ]` clauses written among the
+    /// column definitions, with the position each appeared at.
+    pub like_elements: Vec<TableLikeElement>,
+    /// `AS EXECUTE <prepared statement> [ (<parameters>) ]`
+    pub execute: Option<CreateTableAsExecute>,
+    /// PostgreSQL's legacy `WITHOUT OIDS`, the alternative spelling of the
+    /// `WITH (<storage parameter>, ...)` clause.
+    pub without_oids: bool,
+    /// `WITH [ NO ] DATA` after `AS <query>` or `AS EXECUTE ...`.
+    pub with_data: Option<CreateTableWithData>,
 }
 
 /// Horizontal distribution clause attached to `CREATE TABLE`.
@@ -2639,8 +2877,9 @@ impl fmt::Display for CreateTable {
         //   `CREATE TABLE t (a INT) AS SELECT a from t2`
         write!(
             f,
-            "CREATE {or_replace}{external}{global}{temporary}{volatile}{dynamic}TABLE {if_not_exists}{name}",
+            "CREATE {or_replace}{external}{global}{temporary}{unlogged}{volatile}{dynamic}TABLE {if_not_exists}{name}",
             or_replace = if self.or_replace { "OR REPLACE " } else { "" },
+            unlogged = if self.unlogged { "UNLOGGED " } else { "" },
             external = if self.external { "EXTERNAL " } else { "" },
             global = self.global
                 .map(|global| {
@@ -2661,7 +2900,37 @@ impl fmt::Display for CreateTable {
         if let Some(parent) = &self.partition_of {
             write!(f, " PARTITION OF {parent}")?;
         }
-        if !self.columns.is_empty() || !self.constraints.is_empty() {
+        if !self.column_aliases.is_empty() {
+            write!(f, " ({})", display_comma_separated(&self.column_aliases))?;
+        } else if !self.like_elements.is_empty() {
+            f.write_str(" (")?;
+            let mut first = true;
+            let mut separate = |f: &mut fmt::Formatter| -> fmt::Result {
+                if !first {
+                    f.write_str(", ")?;
+                }
+                first = false;
+                Ok(())
+            };
+            let mut likes = self.like_elements.iter().peekable();
+            for (index, column) in self.columns.iter().enumerate() {
+                while let Some(like) = likes.next_if(|like| like.after_columns as usize <= index) {
+                    separate(f)?;
+                    write!(f, "{like}")?;
+                }
+                separate(f)?;
+                write!(f, "{column}")?;
+            }
+            for like in likes {
+                separate(f)?;
+                write!(f, "{like}")?;
+            }
+            for constraint in &self.constraints {
+                separate(f)?;
+                write!(f, "{constraint}")?;
+            }
+            f.write_str(")")?;
+        } else if !self.columns.is_empty() || !self.constraints.is_empty() {
             f.write_str(" (")?;
             NewLine.fmt(f)?;
             Indent(DisplayCommaSeparated(&self.columns)).fmt(f)?;
@@ -2672,7 +2941,11 @@ impl fmt::Display for CreateTable {
             Indent(DisplayCommaSeparated(&self.constraints)).fmt(f)?;
             NewLine.fmt(f)?;
             f.write_str(")")?;
-        } else if self.query.is_none() && self.like.is_none() && self.clone.is_none() {
+        } else if self.query.is_none()
+            && self.execute.is_none()
+            && self.like.is_none()
+            && self.clone.is_none()
+        {
             // PostgreSQL allows `CREATE TABLE t ();`, but requires empty parens
             f.write_str(" ()")?;
         } else if let Some(CreateTableLikeKind::Parenthesized(like_in_columns_list)) = &self.like {
@@ -2733,6 +3006,9 @@ impl fmt::Display for CreateTable {
         if let Some(inherits) = &self.inherits {
             write!(f, " INHERITS ({})", display_comma_separated(inherits))?;
         }
+        if self.without_oids {
+            write!(f, " WITHOUT OIDS")?;
+        }
         if let options @ CreateTableOptions::Options(_) = &self.table_options {
             write!(f, " {options}")?;
         }
@@ -2750,6 +3026,12 @@ impl fmt::Display for CreateTable {
         }
         if let Some(query) = &self.query {
             write!(f, " AS {query}")?;
+        }
+        if let Some(execute) = &self.execute {
+            write!(f, " AS {execute}")?;
+        }
+        if let Some(with_data) = &self.with_data {
+            write!(f, " {with_data}")?;
         }
         Ok(())
     }
@@ -2805,8 +3087,13 @@ pub struct CreateDomain {
     pub default: Option<Expr>,
     /// Whether the domain is declared `NOT NULL`.
     pub not_null: bool,
-    /// The constraints of the domain.
+    /// The `CHECK` constraints of the domain.
     pub constraints: Vec<TableConstraint>,
+    /// Every constraint clause of the domain, in the order written, using the
+    /// column-qualifier grammar PostgreSQL accepts here. Forms that are legal
+    /// syntax but illegal for a domain (`GENERATED ... AS IDENTITY`) appear
+    /// only in this list, for the server to reject.
+    pub domain_constraints: Vec<DomainConstraint>,
 }
 
 impl fmt::Display for CreateDomain {
@@ -2817,8 +3104,9 @@ impl fmt::Display for CreateDomain {
             data_type,
             collation,
             default,
-            not_null,
-            constraints,
+            not_null: _,
+            constraints: _,
+            domain_constraints,
         } = self;
         write!(f, "CREATE DOMAIN {name} AS {data_type}")?;
         if let Some(collation) = collation {
@@ -2827,11 +3115,8 @@ impl fmt::Display for CreateDomain {
         if let Some(default) = default {
             write!(f, " DEFAULT {default}")?;
         }
-        if *not_null {
-            write!(f, " NOT NULL")?;
-        }
-        if !constraints.is_empty() {
-            write!(f, " {}", display_separated(constraints, " "))?;
+        for constraint in domain_constraints {
+            write!(f, " {constraint}")?;
         }
         Ok(())
     }
@@ -3559,6 +3844,10 @@ pub struct CreateView {
     pub refresh_schedule: Option<MaterializedViewRefreshSchedule>,
     /// Oracle view-specific declaration and constraint clauses.
     pub oracle: Option<OracleCreateViewOptions>,
+    /// `CREATE TEMPORARY VIEW`
+    pub temporary: bool,
+    /// `WITH [ CASCADED | LOCAL ] CHECK OPTION` after the defining query.
+    pub check_option: Option<ViewCheckOption>,
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
@@ -3658,7 +3947,8 @@ impl fmt::Display for CreateView {
         }
         write!(
             f,
-            "{materialized}VIEW {if_not_exists}{name}",
+            "{temporary}{materialized}VIEW {if_not_exists}{name}",
+            temporary = if self.temporary { "TEMPORARY " } else { "" },
             materialized = if self.materialized {
                 "MATERIALIZED "
             } else {
@@ -3740,6 +4030,9 @@ impl fmt::Display for CreateView {
         }
         if let Some(sched) = &self.refresh_schedule {
             write!(f, " REFRESH SCHEDULE {sched}")?;
+        }
+        if let Some(check_option) = &self.check_option {
+            write!(f, " {check_option}")?;
         }
         if let Some(constraint) = self
             .oracle
@@ -3856,6 +4149,9 @@ pub struct AlterTable {
     pub name: ObjectName,
     pub if_exists: bool,
     pub only: bool,
+    /// PostgreSQL's `<name> *` suffix, which explicitly asks for the (default)
+    /// recursion into inheritance children.
+    pub descendants: bool,
     pub operations: Vec<AlterTableOperation>,
     /// Token that represents the end of the statement (semicolon or EOF)
     pub end_token: AttachedToken,
@@ -3871,8 +4167,11 @@ impl fmt::Display for AlterTable {
         if self.only {
             write!(f, "ONLY ")?;
         }
-        write!(f, "{} ", &self.name)?;
-        write!(f, "{}", display_comma_separated(&self.operations))?;
+        write!(f, "{}", self.name)?;
+        if self.descendants {
+            write!(f, " *")?;
+        }
+        write!(f, " {}", display_comma_separated(&self.operations))?;
         Ok(())
     }
 }
@@ -4012,6 +4311,20 @@ pub struct CreateTypedTable {
     #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
     pub name: ObjectName,
     pub of_type: ObjectName,
+    /// `( <column> WITH OPTIONS <constraints>, <table constraint>, ... )`
+    pub elements: Vec<TypedTableElement>,
+    /// `PARTITION BY ...`
+    pub partition_by: Option<PartitionByClause>,
+    /// `WITH (<storage parameter>, ...)`
+    pub with_options: Vec<SqlOption>,
+    /// `ON COMMIT ...`
+    pub on_commit: Option<OnCommit>,
+    /// `TABLESPACE <name>`
+    pub tablespace: Option<Ident>,
+    /// `CREATE TEMPORARY TABLE ... OF <type>`
+    pub temporary: bool,
+    /// `CREATE UNLOGGED TABLE ... OF <type>`
+    pub unlogged: bool,
 }
 
 /// CREATE OPERATOR FAMILY statement
@@ -4165,7 +4478,9 @@ impl fmt::Display for CreateTypedTable {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "CREATE TABLE {}{} OF {}",
+            "CREATE {}{}TABLE {}{} OF {}",
+            if self.temporary { "TEMPORARY " } else { "" },
+            if self.unlogged { "UNLOGGED " } else { "" },
             if self.if_not_exists {
                 "IF NOT EXISTS "
             } else {
@@ -4173,7 +4488,26 @@ impl fmt::Display for CreateTypedTable {
             },
             self.name,
             self.of_type
-        )
+        )?;
+        if !self.elements.is_empty() {
+            write!(f, " ({})", display_comma_separated(&self.elements))?;
+        }
+        if let Some(partition_by) = &self.partition_by {
+            write!(f, " {partition_by}")?;
+        }
+        if !self.with_options.is_empty() {
+            write!(f, " WITH ({})", display_comma_separated(&self.with_options))?;
+        }
+        match self.on_commit {
+            Some(OnCommit::DeleteRows) => write!(f, " ON COMMIT DELETE ROWS")?,
+            Some(OnCommit::PreserveRows) => write!(f, " ON COMMIT PRESERVE ROWS")?,
+            Some(OnCommit::Drop) => write!(f, " ON COMMIT DROP")?,
+            None => {}
+        }
+        if let Some(tablespace) = &self.tablespace {
+            write!(f, " TABLESPACE {tablespace}")?;
+        }
+        Ok(())
     }
 }
 

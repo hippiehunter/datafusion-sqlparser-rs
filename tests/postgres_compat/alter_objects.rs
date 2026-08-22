@@ -31,7 +31,7 @@ use sqlparser::ast::{
     DatabaseOptionValue, DefinitionValue, DropBehavior, EventTriggerEnableMode, Expr,
     FunctionBehavior, FunctionCalledOnNull, FunctionParallel, Ident, ObjectName, Owner,
     ProcedureSecurity, ResetConfig, RoutineKind, RoutineOption, SetConfigValue, SqlOption,
-    Statement, StatisticsTarget, TableConstraint,
+    SetStatisticsValue, Statement, TableConstraint,
 };
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::test_utils::TestedDialects;
@@ -252,8 +252,8 @@ fn parse_alter_statistics_set_statistics() {
             assert_eq!(name.to_string(), "st");
             match action {
                 AlterStatisticsAction::SetStatistics {
-                    target: StatisticsTarget::Value(value),
-                } => assert_eq!(value.to_string(), "100"),
+                    target: SetStatisticsValue::Value(value),
+                } => assert_eq!(value, 100),
                 other => panic!("Expected SetStatistics, got {other:?}"),
             }
         }
@@ -267,7 +267,7 @@ fn parse_alter_statistics_set_statistics_default() {
         AlterObjectTarget::Statistics { action, .. } => assert_eq!(
             action,
             AlterStatisticsAction::SetStatistics {
-                target: StatisticsTarget::Default
+                target: SetStatisticsValue::Default
             }
         ),
         other => panic!("Expected Statistics, got {other:?}"),
@@ -283,8 +283,8 @@ fn parse_alter_statistics_if_exists_negative_target() {
             assert!(if_exists);
             match action {
                 AlterStatisticsAction::SetStatistics {
-                    target: StatisticsTarget::Value(value),
-                } => assert_eq!(value.to_string(), "-1"),
+                    target: SetStatisticsValue::Value(value),
+                } => assert_eq!(value, -1),
                 other => panic!("Expected SetStatistics, got {other:?}"),
             }
         }

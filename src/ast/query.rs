@@ -1545,6 +1545,18 @@ pub enum TableFactor {
         expr: Expr,
         alias: Option<TableAlias>,
     },
+    /// PostgreSQL `ROWS FROM ( <function> [ AS (<coldef>, ...) ], ... )`, which
+    /// runs several set-returning functions in lockstep.
+    ///
+    /// ```sql
+    /// SELECT * FROM ROWS FROM (generate_series(1, 2), generate_series(5, 6)) AS z(a, b)
+    /// ```
+    RowsFrom {
+        lateral: bool,
+        items: Vec<crate::ast::RowsFromItem>,
+        with_ordinality: bool,
+        alias: Option<TableAlias>,
+    },
     /// `e.g. LATERAL FLATTEN(<args>)[ AS <alias> ]`
     Function {
         lateral: bool,
@@ -2910,6 +2922,24 @@ impl fmt::Display for TableFactor {
             }
             TableFactor::TableFunction { expr, alias } => {
                 write!(f, "TABLE({expr})")?;
+                if let Some(alias) = alias {
+                    write!(f, " AS {alias}")?;
+                }
+                Ok(())
+            }
+            TableFactor::RowsFrom {
+                lateral,
+                items,
+                with_ordinality,
+                alias,
+            } => {
+                if *lateral {
+                    write!(f, "LATERAL ")?;
+                }
+                write!(f, "ROWS FROM ({})", display_comma_separated(items))?;
+                if *with_ordinality {
+                    write!(f, " WITH ORDINALITY")?;
+                }
                 if let Some(alias) = alias {
                     write!(f, " AS {alias}")?;
                 }

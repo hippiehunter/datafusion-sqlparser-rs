@@ -33,7 +33,7 @@ use crate::ast::{
     DatabaseOptionValue, DefinitionElement, DefinitionValue, EventTriggerEnableMode, Expr,
     FunctionBehavior, FunctionCalledOnNull, FunctionParallel, Ident, ObjectName,
     ProcedureSecurity, ProcedureSetConfig, ResetConfig, RoutineKind,
-    RoutineOption, SetConfigValue, SqlOption, Statement, StatisticsTarget,
+    RoutineOption, SetConfigValue, SetStatisticsValue, SqlOption, Statement,
 };
 use crate::keywords::Keyword;
 use crate::tokenizer::BorrowedToken;
@@ -193,7 +193,7 @@ impl Parser<'_> {
         let name = self.parse_object_name(false)?;
         let action = if self.parse_keywords(&[Keyword::SET, Keyword::STATISTICS]) {
             AlterStatisticsAction::SetStatistics {
-                target: self.parse_statistics_target()?,
+                target: self.parse_set_statistics_value()?,
             }
         } else {
             AlterStatisticsAction::Object(self.parse_alter_object_action(true, true)?)
@@ -900,11 +900,11 @@ impl Parser<'_> {
         }
     }
 
-    fn parse_statistics_target(&self) -> Result<StatisticsTarget, ParserError> {
+    fn parse_set_statistics_value(&self) -> Result<SetStatisticsValue, ParserError> {
         if self.parse_keyword(Keyword::DEFAULT) {
-            Ok(StatisticsTarget::Default)
+            Ok(SetStatisticsValue::Default)
         } else {
-            Ok(StatisticsTarget::Value(self.parse_number()?))
+            Ok(SetStatisticsValue::Value(self.parse_statistics_target()?))
         }
     }
 

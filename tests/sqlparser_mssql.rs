@@ -1899,6 +1899,12 @@ fn parse_create_table_with_valid_options() {
         assert_eq!(
             ms_and_generic().verified_stmt(sql),
             Statement::CreateTable(CreateTable {
+                unlogged: false,
+                without_oids: false,
+                column_aliases: vec![],
+                like_elements: vec![],
+                execute: None,
+                with_data: None,
                 or_replace: false,
                 temporary: false,
                 external: false,
@@ -2059,6 +2065,12 @@ fn parse_create_table_with_identity_column() {
         assert_eq!(
             ms_and_generic().verified_stmt(sql),
             Statement::CreateTable(CreateTable {
+                unlogged: false,
+                without_oids: false,
+                column_aliases: vec![],
+                like_elements: vec![],
+                execute: None,
+                with_data: None,
                 or_replace: false,
                 temporary: false,
                 external: false,

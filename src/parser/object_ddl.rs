@@ -370,6 +370,7 @@ impl Parser<'_> {
             exec_body: TriggerExecBody {
                 exec_type,
                 func_desc,
+                args: None,
             },
         }))
     }

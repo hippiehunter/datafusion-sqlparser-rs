@@ -27,10 +27,11 @@ use serde::{Deserialize, Serialize};
 use sqlparser_derive::{Visit, VisitMut};
 
 use crate::ast::ddl::PartitionByClause;
+use crate::ast::table_ddl::{CreateTableAsExecute, CreateTableWithData, TableLikeElement};
 use crate::ast::{
     ColumnDef, CommentDef, CreateTable, CreateTableLikeKind, CreateTableOptions,
-    CreateTableSystemVersioning, ObjectName, OnCommit, OrderByExpr, PartitionBoundSpec, Query,
-    Statement, TableConstraint, TableDistribution, TableVersion,
+    CreateTableSystemVersioning, Ident, ObjectName, OnCommit, OrderByExpr, PartitionBoundSpec,
+    Query, Statement, TableConstraint, TableDistribution, TableVersion,
 };
 
 use crate::parser::ParserError;
@@ -92,6 +93,12 @@ pub struct CreateTableBuilder {
     pub partition_bound: Option<PartitionBoundSpec>,
     pub clustering_by: Option<Vec<OrderByExpr>>,
     pub distribution: Option<TableDistribution>,
+    pub unlogged: bool,
+    pub column_aliases: Vec<Ident>,
+    pub like_elements: Vec<TableLikeElement>,
+    pub execute: Option<CreateTableAsExecute>,
+    pub with_data: Option<CreateTableWithData>,
+    pub without_oids: bool,
 }
 
 impl CreateTableBuilder {
@@ -123,6 +130,12 @@ impl CreateTableBuilder {
             partition_bound: None,
             clustering_by: None,
             distribution: None,
+            unlogged: false,
+            column_aliases: vec![],
+            like_elements: vec![],
+            execute: None,
+            with_data: None,
+            without_oids: false,
         }
     }
     pub fn or_replace(mut self, or_replace: bool) -> Self {
@@ -253,6 +266,36 @@ impl CreateTableBuilder {
         self
     }
 
+    pub fn unlogged(mut self, unlogged: bool) -> Self {
+        self.unlogged = unlogged;
+        self
+    }
+
+    pub fn column_aliases(mut self, column_aliases: Vec<Ident>) -> Self {
+        self.column_aliases = column_aliases;
+        self
+    }
+
+    pub fn like_elements(mut self, like_elements: Vec<TableLikeElement>) -> Self {
+        self.like_elements = like_elements;
+        self
+    }
+
+    pub fn execute(mut self, execute: Option<CreateTableAsExecute>) -> Self {
+        self.execute = execute;
+        self
+    }
+
+    pub fn with_data(mut self, with_data: Option<CreateTableWithData>) -> Self {
+        self.with_data = with_data;
+        self
+    }
+
+    pub fn without_oids(mut self, without_oids: bool) -> Self {
+        self.without_oids = without_oids;
+        self
+    }
+
     pub fn build(self) -> Statement {
         CreateTable {
             or_replace: self.or_replace,
@@ -281,6 +324,12 @@ impl CreateTableBuilder {
             partition_bound: self.partition_bound,
             clustering_by: self.clustering_by,
             distribution: self.distribution,
+            unlogged: self.unlogged,
+            column_aliases: self.column_aliases,
+            like_elements: self.like_elements,
+            execute: self.execute,
+            with_data: self.with_data,
+            without_oids: self.without_oids,
         }
         .into()
     }
@@ -320,6 +369,12 @@ impl TryFrom<Statement> for CreateTableBuilder {
                 partition_bound,
                 clustering_by,
                 distribution,
+                unlogged,
+                column_aliases,
+                like_elements,
+                execute,
+                with_data,
+                without_oids,
             }) => Ok(Self {
                 or_replace,
                 temporary,
@@ -347,6 +402,12 @@ impl TryFrom<Statement> for CreateTableBuilder {
                 partition_bound,
                 clustering_by,
                 distribution,
+                unlogged,
+                column_aliases,
+                like_elements,
+                execute,
+                with_data,
+                without_oids,
             }),
             _ => Err(ParserError::ParserError(format!(
                 "Expected create table statement, but received: {stmt}"
@@ -360,6 +421,7 @@ impl TryFrom<Statement> for CreateTableBuilder {
 pub(crate) struct CreateTableConfiguration {
     pub inherits: Option<Vec<ObjectName>>,
     pub table_options: CreateTableOptions,
+    pub without_oids: bool,
 }
 
 #[cfg(test)]

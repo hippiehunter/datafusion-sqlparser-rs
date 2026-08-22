@@ -355,6 +355,9 @@ impl Spanned for Statement {
             Statement::CreateAssertion(create_assertion) => create_assertion.token.0,
             Statement::CreatePropertyGraph(create_property_graph) => create_property_graph.token.0,
             Statement::AlterTable(alter_table) => alter_table.span(),
+            Statement::AlterTableAllInTablespace(alter) => {
+                alter.tablespace.span.union(&alter.new_tablespace.span)
+            }
             Statement::AlterIndex {
                 name, operation, ..
             } => name.span().union(&operation.span()),
@@ -688,6 +691,12 @@ impl Spanned for CreateTable {
             partition_bound: _,
             clustering_by,
             distribution: _,
+            unlogged: _,       // bool
+            column_aliases: _, // idents, folded into the query's span
+            like_elements: _,  // todo, PostgreSQL specific
+            execute: _,
+            with_data: _,
+            without_oids: _, // bool
         } = self;
 
         union_spans(
@@ -733,6 +742,7 @@ impl Spanned for TableConstraint {
             TableConstraint::Index(constraint) => constraint.span(),
             TableConstraint::FulltextOrSpatial(constraint) => constraint.span(),
             TableConstraint::Period(constraint) => constraint.span(),
+            TableConstraint::NotNull(constraint) => constraint.span(),
         }
     }
 }
@@ -742,6 +752,8 @@ impl Spanned for CreateIndex {
         let CreateIndex {
             name,
             table_name,
+            only: _, // bool
+            tablespace: _,
             using: _,
             columns,
             unique: _,        // bool
@@ -1005,6 +1017,12 @@ impl Spanned for ColumnOption {
             ColumnOption::Identity(..) => Span::empty(),
             ColumnOption::Srid(..) => Span::empty(),
             ColumnOption::Invisible => Span::empty(),
+            ColumnOption::NotNullNoInherit => Span::empty(),
+            ColumnOption::NoInherit => Span::empty(),
+            ColumnOption::Storage(_) => Span::empty(),
+            ColumnOption::Compression(_) => Span::empty(),
+            ColumnOption::ConstraintAttribute(_) => Span::empty(),
+            ColumnOption::GenericOptions(_) => Span::empty(),
         }
     }
 }
@@ -1064,6 +1082,25 @@ impl Spanned for AlterColumnOperation {
             } => using.as_ref().map_or(Span::empty(), |u| u.span()),
             AlterColumnOperation::AddGenerated { .. } => Span::empty(),
             AlterColumnOperation::SetStorage(_) => Span::empty(),
+            AlterColumnOperation::SetStatistics { .. } => Span::empty(),
+            AlterColumnOperation::SetCompression { .. } => Span::empty(),
+            AlterColumnOperation::SetOptionsParens { options }
+            | AlterColumnOperation::ResetOptionsParens { options } => {
+                union_spans(options.iter().map(|i| i.span()))
+            }
+            AlterColumnOperation::Options { .. } => Span::empty(),
+            AlterColumnOperation::DropExpression { .. } => Span::empty(),
+            AlterColumnOperation::SetExpression { expr } => expr.span(),
+            AlterColumnOperation::DropIdentity { .. } => Span::empty(),
+            AlterColumnOperation::IdentityOptions { .. } => Span::empty(),
+            AlterColumnOperation::SetDataTypeCollate {
+                data_type: _,
+                collation,
+                using,
+                had_set: _,
+            } => collation
+                .span()
+                .union_opt(&using.as_ref().map(|u| u.span())),
         }
     }
 }
@@ -1191,6 +1228,10 @@ impl Spanned for SqlOption {
         match self {
             SqlOption::Clustered(table_options_clustered) => table_options_clustered.span(),
             SqlOption::Ident(ident) => ident.span,
+            SqlOption::Reloption(option) => option
+                .name
+                .span()
+                .union_opt(&option.value.as_ref().map(|v| v.span())),
             SqlOption::KeyValue { key, value } => key.span.union(&value.span()),
             SqlOption::Partition {
                 column_name,
@@ -1383,6 +1424,26 @@ impl Spanned for AlterTableOperation {
                     .map(|p| p.span())
                     .chain(core::iter::once(into.span())),
             ),
+            AlterTableOperation::SetSchema { new_schema } => new_schema.span(),
+            AlterTableOperation::SetLogged
+            | AlterTableOperation::SetUnlogged
+            | AlterTableOperation::SetWithoutCluster
+            | AlterTableOperation::SetWithoutOids
+            | AlterTableOperation::NotOf => Span::empty(),
+            AlterTableOperation::ClusterOn { index_name } => index_name.span,
+            AlterTableOperation::ResetOptionsParens { options } => {
+                union_spans(options.iter().map(|i| i.span()))
+            }
+            AlterTableOperation::SetAccessMethod { .. } => Span::empty(),
+            AlterTableOperation::SetTablespace { name } => name.span,
+            AlterTableOperation::Inherit { parent } | AlterTableOperation::NoInherit { parent } => {
+                parent.span()
+            }
+            AlterTableOperation::OfType { type_name } => type_name.span(),
+            AlterTableOperation::AlterConstraint(alter) => alter.name.span,
+            AlterTableOperation::Options { .. } => Span::empty(),
+            AlterTableOperation::EnableTriggerGroup { .. }
+            | AlterTableOperation::DisableTriggerGroup { .. } => Span::empty(),
         }
     }
 }
@@ -2257,6 +2318,17 @@ impl Spanned for TableFactor {
             TableFactor::TableFunction { expr, alias } => expr
                 .span()
                 .union_opt(&alias.as_ref().map(|alias| alias.span())),
+            TableFactor::RowsFrom {
+                lateral: _,
+                items,
+                with_ordinality: _,
+                alias,
+            } => union_spans(
+                items
+                    .iter()
+                    .map(|item| item.function.span())
+                    .chain(alias.as_ref().map(|alias| alias.span())),
+            ),
             TableFactor::UNNEST {
                 alias,
                 with_offset: _,

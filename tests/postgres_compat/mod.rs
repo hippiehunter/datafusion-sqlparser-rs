@@ -226,3 +226,5 @@ pub mod pg_utility;
 pub mod sql_json;
 // Object DDL (COMMENT ON, miscellaneous CREATE/DROP, ownership, role grants)
 pub mod object_ddl;
+// Table-shaped DDL (CREATE/ALTER TABLE and relatives)
+pub mod table_ddl;

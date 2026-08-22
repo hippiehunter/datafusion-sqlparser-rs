@@ -902,14 +902,8 @@ fn parse_alter_table_disable() {
 
 #[test]
 fn parse_alter_table_disable_trigger() {
-    pg_and_generic().one_statement_parses_to(
-        "ALTER TABLE tab DISABLE TRIGGER ALL",
-        "ALTER TABLE tab DISABLE TRIGGER all",
-    );
-    pg_and_generic().one_statement_parses_to(
-        "ALTER TABLE tab DISABLE TRIGGER USER",
-        "ALTER TABLE tab DISABLE TRIGGER user",
-    );
+    pg_and_generic().verified_stmt("ALTER TABLE tab DISABLE TRIGGER ALL");
+    pg_and_generic().verified_stmt("ALTER TABLE tab DISABLE TRIGGER USER");
     pg_and_generic().verified_stmt("ALTER TABLE tab DISABLE TRIGGER trigger_name");
 }
 
@@ -923,14 +917,8 @@ fn parse_alter_table_enable() {
     pg_and_generic().verified_stmt("ALTER TABLE tab FORCE ROW LEVEL SECURITY");
     pg_and_generic().verified_stmt("ALTER TABLE tab NO FORCE ROW LEVEL SECURITY");
     pg_and_generic().verified_stmt("ALTER TABLE tab ENABLE RULE rule_name");
-    pg_and_generic().one_statement_parses_to(
-        "ALTER TABLE tab ENABLE TRIGGER ALL",
-        "ALTER TABLE tab ENABLE TRIGGER all",
-    );
-    pg_and_generic().one_statement_parses_to(
-        "ALTER TABLE tab ENABLE TRIGGER USER",
-        "ALTER TABLE tab ENABLE TRIGGER user",
-    );
+    pg_and_generic().verified_stmt("ALTER TABLE tab ENABLE TRIGGER ALL");
+    pg_and_generic().verified_stmt("ALTER TABLE tab ENABLE TRIGGER USER");
     pg_and_generic().verified_stmt("ALTER TABLE tab ENABLE TRIGGER trigger_name");
 }
 
@@ -3037,6 +3025,7 @@ fn parse_create_index() {
             predicate: None,
             index_options,
             alter_options,
+            ..
         }) => {
             assert_eq_vec(&["my_index"], &name);
             assert_eq_vec(&["my_table"], &table_name);
@@ -3072,6 +3061,7 @@ fn parse_create_anonymous_index() {
             predicate: None,
             index_options,
             alter_options,
+            ..
         }) => {
             assert_eq!(None, name);
             assert_eq_vec(&["my_table"], &table_name);
@@ -3189,6 +3179,7 @@ fn parse_create_indices_with_operator_classes() {
                     predicate: None,
                     index_options,
                     alter_options,
+                    ..
                 }) => {
                     assert_eq_vec(&["the_index_name"], &name);
                     assert_eq_vec(&["users"], &table_name);
@@ -3217,6 +3208,7 @@ fn parse_create_indices_with_operator_classes() {
                     predicate: None,
                     index_options,
                     alter_options,
+                    ..
                 }) => {
                     assert_eq_vec(&["the_index_name"], &name);
                     assert_eq_vec(&["users"], &table_name);
@@ -3269,6 +3261,7 @@ fn parse_create_bloom() {
             predicate: None,
             index_options,
             alter_options,
+            ..
         }) => {
             assert_eq_vec(&["bloomidx"], &name);
             assert_eq_vec(&["tbloom"], &table_name);
@@ -3325,6 +3318,7 @@ fn parse_create_brin() {
             predicate: None,
             index_options,
             alter_options,
+            ..
         }) => {
             assert_eq_vec(&["brin_sensor_data_recorded_at"], &name);
             assert_eq_vec(&["sensor_data"], &table_name);
@@ -3392,6 +3386,7 @@ fn parse_create_index_concurrently() {
             predicate: None,
             index_options,
             alter_options,
+            ..
         }) => {
             assert_eq_vec(&["my_index"], &name);
             assert_eq_vec(&["my_table"], &table_name);
@@ -3427,6 +3422,7 @@ fn parse_create_index_with_predicate() {
             predicate: Some(_),
             index_options,
             alter_options,
+            ..
         }) => {
             assert_eq_vec(&["my_index"], &name);
             assert_eq_vec(&["my_table"], &table_name);
@@ -3462,6 +3458,7 @@ fn parse_create_index_with_include() {
             predicate: None,
             index_options,
             alter_options,
+            ..
         }) => {
             assert_eq_vec(&["my_index"], &name);
             assert_eq_vec(&["my_table"], &table_name);
@@ -3497,6 +3494,7 @@ fn parse_create_index_with_nulls_distinct() {
             predicate: None,
             index_options,
             alter_options,
+            ..
         }) => {
             assert_eq_vec(&["my_index"], &name);
             assert_eq_vec(&["my_table"], &table_name);
@@ -3530,6 +3528,7 @@ fn parse_create_index_with_nulls_distinct() {
             predicate: None,
             index_options,
             alter_options,
+            ..
         }) => {
             assert_eq_vec(&["my_index"], &name);
             assert_eq_vec(&["my_table"], &table_name);
@@ -6035,6 +6034,20 @@ fn parse_create_domain() {
     let sql1 = "CREATE DOMAIN my_domain AS INTEGER CHECK (VALUE > 0)";
     let canonical1 = "CREATE DOMAIN my_domain AS INTEGER CHECK (value > 0)";
     let expected = Statement::CreateDomain(CreateDomain {
+        domain_constraints: vec![DomainConstraint {
+            name: None,
+            option: ColumnOption::Check(CheckConstraint {
+                no_inherit: false,
+                name: None,
+                expr: Box::new(Expr::BinaryOp {
+                    left: Box::new(Expr::Identifier(Ident::new("value"))),
+                    op: BinaryOperator::Gt,
+                    right: Box::new(Expr::Value(test_utils::number("0").into())),
+                }),
+                enforced: None,
+            }),
+            no_inherit: false,
+        }],
         token: AttachedToken::empty(),
         not_null: false,
         name: ObjectName::from(vec![Ident::new("my_domain")]),
@@ -6042,6 +6055,7 @@ fn parse_create_domain() {
         collation: None,
         default: None,
         constraints: vec![CheckConstraint {
+            no_inherit: false,
             name: None,
             expr: Box::new(Expr::BinaryOp {
                 left: Box::new(Expr::Identifier(Ident::new("value"))),
@@ -6058,6 +6072,20 @@ fn parse_create_domain() {
     let sql2 = "CREATE DOMAIN my_domain AS INTEGER COLLATE \"en_US\" CHECK (VALUE > 0)";
     let canonical2 = "CREATE DOMAIN my_domain AS INTEGER COLLATE \"en_US\" CHECK (value > 0)";
     let expected = Statement::CreateDomain(CreateDomain {
+        domain_constraints: vec![DomainConstraint {
+            name: None,
+            option: ColumnOption::Check(CheckConstraint {
+                no_inherit: false,
+                name: None,
+                expr: Box::new(Expr::BinaryOp {
+                    left: Box::new(Expr::Identifier(Ident::new("value"))),
+                    op: BinaryOperator::Gt,
+                    right: Box::new(Expr::Value(test_utils::number("0").into())),
+                }),
+                enforced: None,
+            }),
+            no_inherit: false,
+        }],
         token: AttachedToken::empty(),
         not_null: false,
         name: ObjectName::from(vec![Ident::new("my_domain")]),
@@ -6065,6 +6093,7 @@ fn parse_create_domain() {
         collation: Some(Ident::with_quote('"', "en_US")),
         default: None,
         constraints: vec![CheckConstraint {
+            no_inherit: false,
             name: None,
             expr: Box::new(Expr::BinaryOp {
                 left: Box::new(Expr::Identifier(Ident::new("value"))),
@@ -6081,6 +6110,20 @@ fn parse_create_domain() {
     let sql3 = "CREATE DOMAIN my_domain AS INTEGER DEFAULT 1 CHECK (VALUE > 0)";
     let canonical3 = "CREATE DOMAIN my_domain AS INTEGER DEFAULT 1 CHECK (value > 0)";
     let expected = Statement::CreateDomain(CreateDomain {
+        domain_constraints: vec![DomainConstraint {
+            name: None,
+            option: ColumnOption::Check(CheckConstraint {
+                no_inherit: false,
+                name: None,
+                expr: Box::new(Expr::BinaryOp {
+                    left: Box::new(Expr::Identifier(Ident::new("value"))),
+                    op: BinaryOperator::Gt,
+                    right: Box::new(Expr::Value(test_utils::number("0").into())),
+                }),
+                enforced: None,
+            }),
+            no_inherit: false,
+        }],
         token: AttachedToken::empty(),
         not_null: false,
         name: ObjectName::from(vec![Ident::new("my_domain")]),
@@ -6088,6 +6131,7 @@ fn parse_create_domain() {
         collation: None,
         default: Some(Expr::Value(test_utils::number("1").into())),
         constraints: vec![CheckConstraint {
+            no_inherit: false,
             name: None,
             expr: Box::new(Expr::BinaryOp {
                 left: Box::new(Expr::Identifier(Ident::new("value"))),
@@ -6105,6 +6149,20 @@ fn parse_create_domain() {
     let canonical4 =
         "CREATE DOMAIN my_domain AS INTEGER COLLATE \"en_US\" DEFAULT 1 CHECK (value > 0)";
     let expected = Statement::CreateDomain(CreateDomain {
+        domain_constraints: vec![DomainConstraint {
+            name: None,
+            option: ColumnOption::Check(CheckConstraint {
+                no_inherit: false,
+                name: None,
+                expr: Box::new(Expr::BinaryOp {
+                    left: Box::new(Expr::Identifier(Ident::new("value"))),
+                    op: BinaryOperator::Gt,
+                    right: Box::new(Expr::Value(test_utils::number("0").into())),
+                }),
+                enforced: None,
+            }),
+            no_inherit: false,
+        }],
         token: AttachedToken::empty(),
         not_null: false,
         name: ObjectName::from(vec![Ident::new("my_domain")]),
@@ -6112,6 +6170,7 @@ fn parse_create_domain() {
         collation: Some(Ident::with_quote('"', "en_US")),
         default: Some(Expr::Value(test_utils::number("1").into())),
         constraints: vec![CheckConstraint {
+            no_inherit: false,
             name: None,
             expr: Box::new(Expr::BinaryOp {
                 left: Box::new(Expr::Identifier(Ident::new("value"))),
@@ -6129,6 +6188,20 @@ fn parse_create_domain() {
     let canonical5 =
         "CREATE DOMAIN my_domain AS INTEGER CONSTRAINT my_constraint CHECK (value > 0)";
     let expected = Statement::CreateDomain(CreateDomain {
+        domain_constraints: vec![DomainConstraint {
+            name: Some(Ident::new("my_constraint")),
+            option: ColumnOption::Check(CheckConstraint {
+                no_inherit: false,
+                name: None,
+                expr: Box::new(Expr::BinaryOp {
+                    left: Box::new(Expr::Identifier(Ident::new("value"))),
+                    op: BinaryOperator::Gt,
+                    right: Box::new(Expr::Value(test_utils::number("0").into())),
+                }),
+                enforced: None,
+            }),
+            no_inherit: false,
+        }],
         token: AttachedToken::empty(),
         not_null: false,
         name: ObjectName::from(vec![Ident::new("my_domain")]),
@@ -6136,6 +6209,7 @@ fn parse_create_domain() {
         collation: None,
         default: None,
         constraints: vec![CheckConstraint {
+            no_inherit: false,
             name: Some(Ident::new("my_constraint")),
             expr: Box::new(Expr::BinaryOp {
                 left: Box::new(Expr::Identifier(Ident::new("value"))),
@@ -6169,6 +6243,7 @@ fn parse_create_simple_before_insert_trigger() {
         trigger_object: Some(TriggerObjectKind::ForEach(TriggerObject::Row)),
         condition: None,
         exec_body: Some(TriggerExecBody {
+            args: None,
             exec_type: TriggerExecBodyType::Function,
             func_desc: FunctionDesc {
                 name: ObjectName::from(vec![Ident::new("check_account_insert")]),
@@ -6210,6 +6285,7 @@ fn parse_create_after_update_trigger_with_condition() {
             right: Box::new(Expr::value(number("10000"))),
         }))),
         exec_body: Some(TriggerExecBody {
+            args: None,
             exec_type: TriggerExecBodyType::Function,
             func_desc: FunctionDesc {
                 name: ObjectName::from(vec![Ident::new("check_account_update")]),
@@ -6243,6 +6319,7 @@ fn parse_create_instead_of_delete_trigger() {
         trigger_object: Some(TriggerObjectKind::ForEach(TriggerObject::Row)),
         condition: None,
         exec_body: Some(TriggerExecBody {
+            args: None,
             exec_type: TriggerExecBodyType::Function,
             func_desc: FunctionDesc {
                 name: ObjectName::from(vec![Ident::new("check_account_deletes")]),
@@ -6280,6 +6357,7 @@ fn parse_create_trigger_with_multiple_events_and_deferrable() {
         trigger_object: Some(TriggerObjectKind::ForEach(TriggerObject::Row)),
         condition: None,
         exec_body: Some(TriggerExecBody {
+            args: None,
             exec_type: TriggerExecBodyType::Function,
             func_desc: FunctionDesc {
                 name: ObjectName::from(vec![Ident::new("check_account_changes")]),
@@ -6328,6 +6406,7 @@ fn parse_create_trigger_with_referencing() {
         trigger_object: Some(TriggerObjectKind::ForEach(TriggerObject::Row)),
         condition: None,
         exec_body: Some(TriggerExecBody {
+            args: None,
             exec_type: TriggerExecBodyType::Function,
             func_desc: FunctionDesc {
                 name: ObjectName::from(vec![Ident::new("check_account_referencing")]),
@@ -6842,6 +6921,7 @@ fn parse_alter_table_constraint_not_valid() {
                 operations,
                 vec![AlterTableOperation::AddConstraint {
                     constraint: ForeignKeyConstraint {
+                        on_delete_columns: vec![],
                         name: Some("bar".into()),
                         index_name: None,
                         columns: vec!["baz".into()],

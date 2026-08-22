@@ -24,7 +24,7 @@ pub use self::alter_objects::{
     AlterRoutineAction, AlterSequenceOperation, AlterStatisticsAction,
     AlterTextSearchConfigurationAction, AlterTextSearchDictionaryAction, AlterTriggerAction,
     AlterTypeAction, DatabaseOptionValue, DefinitionElement, DefinitionValue,
-    EventTriggerEnableMode, RoutineKind, RoutineOption, StatisticsTarget,
+    EventTriggerEnableMode, RoutineKind, RoutineOption,
 };
 pub(crate) use crate::arena::AstBox as Box;
 #[cfg(not(feature = "std"))]
@@ -82,9 +82,10 @@ pub use self::ddl::{
     OracleObjectView, OraclePartitionDefinition, OracleViewConstraint, Owner, Partition,
     PartitionByClause, PartitionKeyDef, PartitionKeyExpr, PartitionStrategy, ProcedureParam,
     ReferentialAction, RenameTableNameKind, ReplicaIdentity, SplitPartitionTarget,
-    TableDistribution, TriggerObjectKind, Truncate, UserDefinedTypeCompositeAttributeDef,
-    UserDefinedTypeInternalLength, UserDefinedTypeRangeOption, UserDefinedTypeRepresentation,
-    UserDefinedTypeSqlDefinitionOption, UserDefinedTypeStorage, ViewColumnDef,
+    TableDistribution, TriggerGroup, TriggerObjectKind, Truncate,
+    UserDefinedTypeCompositeAttributeDef, UserDefinedTypeInternalLength,
+    UserDefinedTypeRangeOption, UserDefinedTypeRepresentation, UserDefinedTypeSqlDefinitionOption,
+    UserDefinedTypeStorage, ViewColumnDef,
 };
 pub use self::dml::{
     Delete, ForPortionOf, Insert, OracleErrorLoggingClause, OracleMultiTableInsert,
@@ -166,6 +167,14 @@ pub use table_constraints::{
     PeriodForName, PrimaryKeyConstraint, TableConstraint, UniqueConstraint,
 };
 mod object_ddl;
+pub mod table_ddl;
+pub use table_ddl::{
+    AlterConstraint, AlterTableAllInTablespace, ColumnCompression, ConstraintAttribute,
+    ConstraintInheritability, CreateTableAsExecute, CreateTableWithData, DomainConstraint,
+    IdentityColumnOption, IndexConstraintDetails, NotNullConstraint, RelationOption, RowsFromItem,
+    SetAccessMethod, SetStatisticsValue, TableLikeElement, TableLikeOptionKind, TypedTableColumn,
+    TypedTableElement, ViewCheckOption,
+};
 mod operator;
 mod plpgsql;
 pub use self::plpgsql::{
@@ -7324,6 +7333,8 @@ pub enum Statement {
     /// ALTER TABLE
     /// ```
     AlterTable(AlterTable),
+    /// `ALTER TABLE ALL IN TABLESPACE <name> ... SET TABLESPACE <name>`
+    AlterTableAllInTablespace(AlterTableAllInTablespace),
     /// ```sql
     /// ALTER SCHEMA
     /// ```
@@ -8103,6 +8114,12 @@ pub enum Statement {
         /// ```
         ///
         clone: Option<ObjectName>,
+        /// Objects created inside the new schema by the same statement.
+        ///
+        /// ```sql
+        /// CREATE SCHEMA myschema CREATE TABLE tab (id int) CREATE VIEW vw AS SELECT id FROM tab
+        /// ```
+        schema_elements: Vec<Statement>,
     },
     /// ```sql
     /// CREATE DATABASE
@@ -8461,6 +8478,8 @@ pub enum Statement {
         /// The `CREATE` token
         create_token: AttachedToken,
         temporary: bool,
+        /// PostgreSQL `CREATE UNLOGGED SEQUENCE`.
+        unlogged: bool,
         if_not_exists: bool,
         name: ObjectName,
         data_type: Option<DataType>,
@@ -11601,6 +11620,7 @@ impl fmt::Display for Statement {
                 write!(f, "{create_property_graph}")
             }
             Statement::AlterTable(alter_table) => write!(f, "{alter_table}"),
+            Statement::AlterTableAllInTablespace(alter) => write!(f, "{alter}"),
             Statement::AlterIndex {
                 name,
                 if_exists,
@@ -12378,6 +12398,7 @@ impl fmt::Display for Statement {
                 options,
                 default_collate_spec,
                 clone,
+                schema_elements,
             } => {
                 write!(
                     f,
@@ -12400,6 +12421,10 @@ impl fmt::Display for Statement {
 
                 if let Some(clone) = clone {
                     write!(f, " CLONE {clone}")?;
+                }
+
+                for element in schema_elements {
+                    write!(f, " {element}")?;
                 }
                 Ok(())
             }
@@ -12714,6 +12739,7 @@ impl fmt::Display for Statement {
             Statement::CreateSequence {
                 create_token: _,
                 temporary,
+                unlogged,
                 if_not_exists,
                 name,
                 data_type,
@@ -12729,9 +12755,10 @@ impl fmt::Display for Statement {
                 };
                 write!(
                     f,
-                    "CREATE {temporary}SEQUENCE {if_not_exists}{name}{as_type}",
+                    "CREATE {temporary}{unlogged}SEQUENCE {if_not_exists}{name}{as_type}",
                     if_not_exists = if *if_not_exists { "IF NOT EXISTS " } else { "" },
                     temporary = if *temporary { "TEMPORARY " } else { "" },
+                    unlogged = if *unlogged { "UNLOGGED " } else { "" },
                     name = name,
                     as_type = as_type
                 )?;
@@ -15000,11 +15027,18 @@ pub enum SqlOption {
     ///   ENGINE = ReplicatedMergeTree('/table_name','{replica}', ver)
     ///   ENGINE = SummingMergeTree(\[columns\])
     NamedParenthesizedList(NamedParenthesizedList),
+    /// A PostgreSQL relation or attribute storage parameter, whose name may be
+    /// qualified and whose value may be omitted, e.g.
+    ///
+    ///   WITH (oids)
+    ///   SET (toast.autovacuum_enabled = off)
+    Reloption(table_ddl::RelationOption),
 }
 
 impl fmt::Display for SqlOption {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            SqlOption::Reloption(option) => write!(f, "{option}"),
             SqlOption::Clustered(c) => write!(f, "{c}"),
             SqlOption::Ident(ident) => {
                 write!(f, "{ident}")
@@ -15161,6 +15195,8 @@ pub enum SqlMedOptionAction {
     Add { key: Ident, value: Ident },
     /// DROP key
     Drop { key: Ident },
+    /// `key value` with no action keyword, which PostgreSQL treats as `ADD`.
+    Implicit { key: Ident, value: Ident },
 }
 
 impl fmt::Display for SqlMedOptionAction {
@@ -15169,6 +15205,7 @@ impl fmt::Display for SqlMedOptionAction {
             SqlMedOptionAction::Set { key, value } => write!(f, "SET {key} {value}"),
             SqlMedOptionAction::Add { key, value } => write!(f, "ADD {key} {value}"),
             SqlMedOptionAction::Drop { key } => write!(f, "DROP {key}"),
+            SqlMedOptionAction::Implicit { key, value } => write!(f, "{key} {value}"),
         }
     }
 }
@@ -15381,6 +15418,8 @@ pub struct CreateForeignTableStatement {
     pub constraints: Vec<TableConstraint>,
     pub server: ObjectName,
     pub options: Option<Vec<CreateServerOption>>,
+    /// `INHERITS (<parent>, ...)`
+    pub inherits: Vec<ObjectName>,
     /// For partition definitions: PARTITION OF parent_table
     pub partition_of: Option<ObjectName>,
     /// Partition bound specification
@@ -15400,7 +15439,7 @@ impl fmt::Display for CreateForeignTableStatement {
             if let Some(bound) = &self.partition_bound {
                 write!(f, " {bound}")?;
             }
-        } else if !self.columns.is_empty() || !self.constraints.is_empty() {
+        } else {
             write!(f, " (")?;
             let mut first = true;
             for col in &self.columns {
@@ -15418,6 +15457,10 @@ impl fmt::Display for CreateForeignTableStatement {
                 write!(f, "{constraint}")?;
             }
             write!(f, ")")?;
+        }
+
+        if !self.inherits.is_empty() {
+            write!(f, " INHERITS ({})", display_comma_separated(&self.inherits))?;
         }
 
         write!(f, " SERVER {}", self.server)?;
@@ -15477,6 +15520,10 @@ impl fmt::Display for PartitionBoundSpec {
 pub struct AlterForeignTableStatement {
     #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
     pub token: AttachedToken,
+    /// `ONLY <name>`: do not recurse into inheritance children.
+    pub only: bool,
+    /// `<name> *`: explicitly recurse into inheritance children.
+    pub descendants: bool,
     #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
     pub name: ObjectName,
     pub if_exists: bool,
@@ -15489,7 +15536,13 @@ impl fmt::Display for AlterForeignTableStatement {
         if self.if_exists {
             write!(f, "IF EXISTS ")?;
         }
+        if self.only {
+            write!(f, "ONLY ")?;
+        }
         write!(f, "{}", self.name)?;
+        if self.descendants {
+            write!(f, " *")?;
+        }
         for (i, op) in self.operations.iter().enumerate() {
             if i > 0 {
                 write!(f, ",")?;
@@ -15528,6 +15581,9 @@ pub enum AlterForeignTableOperation {
         new_name: Ident,
     },
     SetSchema(Ident),
+    /// Any other `ALTER TABLE` action; PostgreSQL shares the action list
+    /// between `ALTER TABLE` and `ALTER FOREIGN TABLE`.
+    TableOperation(AlterTableOperation),
 }
 
 /// Actions for ALTER COLUMN in foreign tables
@@ -15609,6 +15665,7 @@ impl fmt::Display for AlterForeignTableOperation {
                 write!(f, "RENAME COLUMN {old_name} TO {new_name}")
             }
             AlterForeignTableOperation::SetSchema(schema) => write!(f, "SET SCHEMA {schema}"),
+            AlterForeignTableOperation::TableOperation(operation) => operation.fmt(f),
         }
     }
 }
@@ -18378,6 +18435,10 @@ pub enum CreateTableLikeOption {
     ExcludingDefaults,
     IncludingConstraints,
     ExcludingConstraints,
+    /// `INCLUDING <option>` for every other PostgreSQL `TableLikeOption`.
+    Including(TableLikeOptionKind),
+    /// `EXCLUDING <option>` for every other PostgreSQL `TableLikeOption`.
+    Excluding(TableLikeOptionKind),
 }
 
 impl fmt::Display for CreateTableLikeOption {
@@ -18387,6 +18448,8 @@ impl fmt::Display for CreateTableLikeOption {
             CreateTableLikeOption::ExcludingDefaults => write!(f, "EXCLUDING DEFAULTS"),
             CreateTableLikeOption::IncludingConstraints => write!(f, "INCLUDING CONSTRAINTS"),
             CreateTableLikeOption::ExcludingConstraints => write!(f, "EXCLUDING CONSTRAINTS"),
+            CreateTableLikeOption::Including(kind) => write!(f, "INCLUDING {kind}"),
+            CreateTableLikeOption::Excluding(kind) => write!(f, "EXCLUDING {kind}"),
         }
     }
 }
@@ -18403,8 +18466,18 @@ pub struct CreateTableLike {
 impl fmt::Display for CreateTableLike {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "LIKE {}", self.name)?;
+        // `defaults` mirrors whichever DEFAULTS entry `options` holds; render
+        // it only when the option list does not already carry that entry.
+        let defaults_in_options = self.options.iter().any(|option| {
+            matches!(
+                option,
+                CreateTableLikeOption::IncludingDefaults | CreateTableLikeOption::ExcludingDefaults
+            )
+        });
         if let Some(defaults) = &self.defaults {
-            write!(f, " {defaults}")?;
+            if !defaults_in_options {
+                write!(f, " {defaults}")?;
+            }
         }
         for opt in &self.options {
             write!(f, " {opt}")?;
