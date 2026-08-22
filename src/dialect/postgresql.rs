@@ -213,6 +213,10 @@ impl Dialect for PostgreSqlDialect {
     /// see <https://www.postgresql.org/docs/current/sql-listen.html>
     /// see <https://www.postgresql.org/docs/current/sql-unlisten.html>
     /// see <https://www.postgresql.org/docs/current/sql-notify.html>
+    fn supports_plpgsql(&self) -> bool {
+        true
+    }
+
     fn supports_listen_notify(&self) -> bool {
         true
     }

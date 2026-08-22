@@ -1206,6 +1206,7 @@ define_keywords!(
     TRAIL,
     TRAILING,
     TRANSACTION,
+    TRANSFORM,
     TRANSIENT,
     TRANSLATE,
     TRANSLATE_REGEX,

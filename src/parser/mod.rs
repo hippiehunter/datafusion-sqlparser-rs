@@ -53,6 +53,7 @@ use sqlparser::parser::ParserState::ColumnDefinition;
 mod alter;
 mod pg_utility;
 mod sql_json;
+mod plpgsql;
 
 fn box_into_inner<T>(value: Box<T>) -> T {
     Box::into_inner(value)
@@ -642,10 +643,6 @@ pub struct Parser<'a> {
     /// Nesting depth of a PL/SQL or SQL/PSM body. Some tokens, including
     /// PostgreSQL's procedural `RETURNING ... INTO`, are legal only here.
     procedural_body_depth: Cell<usize>,
-    /// Function parameters visible while parsing a structured routine body.
-    /// This lets PL/pgSQL `ALIAS FOR` declarations resolve through grammar,
-    /// without rewriting the body text before parsing it.
-    routine_args: Vec<OperateFunctionArg>,
 }
 
 impl<'a> Parser<'a> {
@@ -678,7 +675,6 @@ impl<'a> Parser<'a> {
             error_tracker: ErrorTracker::new(),
             detailed_errors: Cell::new(true),
             procedural_body_depth: Cell::new(0),
-            routine_args: Vec::new(),
         }
     }
 
@@ -1193,6 +1189,11 @@ impl<'a> Parser<'a> {
                         self.prev_token();
                         self.parse_sql_psm_block().map(Statement::PlSqlBlock)
                     }
+                    Keyword::DECLARE
+                        if self.features.supports_plpgsql && self.in_procedural_body() =>
+                    {
+                        self.parse_plpgsql_declare_statement()
+                    }
                     Keyword::DECLARE => self.parse_declare(),
                     Keyword::FETCH if self.dialect.is::<OracleDialect>() => {
                         self.parse_plsql_fetch()
@@ -1278,6 +1279,11 @@ impl<'a> Parser<'a> {
                     Keyword::CANCEL => self.parse_cancel(),
                     Keyword::RAISERROR => Ok(self.parse_raiserror()?),
                     Keyword::ROLLBACK => self.parse_rollback(),
+                    Keyword::ASSERT
+                        if self.features.supports_plpgsql && self.in_procedural_body() =>
+                    {
+                        self.parse_plpgsql_assert()
+                    }
                     Keyword::ASSERT => self.parse_assert(),
                     // `PREPARE`, `EXECUTE` and `DEALLOCATE` are Postgres-specific
                     // syntaxes. They are used for Postgres prepared statement.
@@ -1287,6 +1293,12 @@ impl<'a> Parser<'a> {
                             && self.peek_keyword(Keyword::IMMEDIATE) =>
                     {
                         self.parse_plsql_execute_immediate()
+                    }
+                    Keyword::EXECUTE
+                        if self.features.supports_plpgsql && self.in_procedural_body() =>
+                    {
+                        self.prev_token();
+                        self.parse_plpgsql_execute()
                     }
                     Keyword::EXECUTE | Keyword::EXEC => self.parse_execute(),
                     Keyword::FORALL if self.dialect.is::<OracleDialect>() => {
@@ -1381,6 +1393,15 @@ impl<'a> Parser<'a> {
                             }
                         }
 
+                        if self.features.supports_plpgsql && self.in_procedural_body() {
+                            let resume = self.index.get();
+                            self.prev_token();
+                            if let Some(assignment) = self.parse_plpgsql_assignment()? {
+                                return Ok(assignment);
+                            }
+                            self.index.set(resume);
+                        }
+
                         // Try SQL/PSM assignment: identifier := value or identifier.field := value
                         // Keywords like NEW, OLD can start assignments in trigger functions
                         // The expression parser handles := as BinaryOperator::Assignment,
@@ -1464,6 +1485,12 @@ impl<'a> Parser<'a> {
                         self.expected("an SQL statement", next_token)
                     }
                 }
+            }
+            BorrowedToken::ShiftLeft
+                if self.features.supports_plpgsql && self.in_procedural_body() =>
+            {
+                self.prev_token();
+                self.parse_plpgsql_labeled_statement()
             }
             BorrowedToken::ShiftLeft if self.dialect.is::<OracleDialect>() => {
                 self.prev_token();
@@ -3498,6 +3525,7 @@ impl<'a> Parser<'a> {
             Some(self.parse_expr()?)
         };
 
+        let mut when_values = vec![];
         let (when_blocks, oracle_when_controls) = if self.dialect.is::<OracleDialect>() {
             let mut when_blocks = vec![];
             let mut oracle_when_controls = vec![];
@@ -3535,6 +3563,15 @@ impl<'a> Parser<'a> {
                 return self.expected("WHEN", self.peek_token());
             }
             (when_blocks, oracle_when_controls)
+        } else if match_expr.is_some() {
+            // A CASE with a search expression compares it against one or more
+            // comma-separated values per WHEN.
+            let (blocks, values) = self.parse_plpgsql_case_when_blocks()?;
+            if blocks.is_empty() {
+                return self.expected("WHEN", self.peek_token());
+            }
+            when_values = values;
+            (blocks, vec![])
         } else {
             self.expect_keyword_is(Keyword::WHEN)?;
             (
@@ -3565,6 +3602,7 @@ impl<'a> Parser<'a> {
             match_expr,
             when_blocks,
             oracle_when_controls,
+            when_values,
             else_block,
             end_case_token: AttachedToken::from(end_case_token),
         }))
@@ -3720,8 +3758,11 @@ impl<'a> Parser<'a> {
 
         // Check for DO keyword (SQL:2016 standard)
         let has_do_keyword = self.parse_keyword(Keyword::DO);
-        let has_loop_keyword =
-            self.dialect.is::<OracleDialect>() && self.parse_keyword(Keyword::LOOP);
+        // PL/pgSQL and PL/SQL spell the body `LOOP ... END LOOP`; without it the
+        // loop keyword would start a nested unconditional loop instead.
+        let has_loop_keyword = (self.dialect.is::<OracleDialect>()
+            || (self.features.supports_plpgsql && self.in_procedural_body()))
+            && self.parse_keyword(Keyword::LOOP);
 
         if has_do_keyword || has_loop_keyword {
             // SQL:2016 syntax: WHILE condition DO statements; END WHILE
@@ -3879,6 +3920,8 @@ impl<'a> Parser<'a> {
 
         // Parse loop_name (the variable that will hold the row/value)
         let loop_name = self.parse_identifier()?;
+        // PL/pgSQL allows a list of scalar targets: FOR a, b, c IN query LOOP
+        let additional_loop_names = self.parse_plpgsql_for_targets()?;
 
         // Determine which variant based on AS or IN keyword
         let variant = if self.dialect.is::<OracleDialect>()
@@ -3901,7 +3944,7 @@ impl<'a> Parser<'a> {
 
             ForLoopVariant::Query {
                 cursor_name,
-                query: self.parse_query()?,
+                query: self.parse_for_loop_query()?,
             }
         } else if self.parse_keyword(Keyword::IN) {
             // Could be integer range, dynamic query, or just a regular IN expression
@@ -3914,52 +3957,24 @@ impl<'a> Parser<'a> {
                     None
                 };
                 ForLoopVariant::DynamicQuery { query_expr, using }
-            } else if self.peek_keyword(Keyword::SELECT)
+            } else if !additional_loop_names.is_empty()
+                || self.peek_keyword(Keyword::SELECT)
                 || self.peek_keyword(Keyword::WITH)
+                || self.peek_keyword(Keyword::TABLE)
+                || self.peek_keyword(Keyword::VALUES)
+                || self
+                    .peek_one_of_keywords(&[
+                        Keyword::INSERT,
+                        Keyword::UPDATE,
+                        Keyword::DELETE,
+                        Keyword::MERGE,
+                    ])
+                    .is_some()
                 || self.peek_token_ref().token == BorrowedToken::LParen
             {
-                // PL/pgSQL query loop: FOR rec IN SELECT ... LOOP ... END LOOP
-                // We try parse_query() and verify LOOP follows. If the query
-                // parser consumed LOOP as a table alias, we fall back to
-                // collecting tokens up to the LOOP keyword and re-parsing.
-                let query = self.maybe_parse(|p| {
-                    let q = p.parse_query()?;
-                    // Verify LOOP (or DO) follows — if not, the query ate too much.
-                    if p.peek_keyword(Keyword::LOOP) || p.peek_keyword(Keyword::DO) {
-                        Ok(q)
-                    } else {
-                        Err(ParserError::ParserError(
-                            "query consumed LOOP keyword".to_string(),
-                        ))
-                    }
-                })?;
-                let query = match query {
-                    Some(q) => q,
-                    None => {
-                        // Fallback: collect raw SQL tokens until LOOP keyword
-                        let mut tokens = Vec::new();
-                        while !self.peek_keyword(Keyword::LOOP) && !self.peek_keyword(Keyword::DO) {
-                            if self.peek_token_ref().token == BorrowedToken::EOF {
-                                return Err(ParserError::ParserError(
-                                    "Expected LOOP after FOR ... IN query".to_string(),
-                                ));
-                            }
-                            tokens.push(self.next_token().token.to_static());
-                        }
-                        // Re-parse the collected tokens as a query
-                        let sql: String = tokens
-                            .iter()
-                            .map(|t| t.to_string())
-                            .collect::<Vec<_>>()
-                            .join(" ");
-                        let inner_parser = Parser::new(self.dialect).try_with_sql(&sql)?;
-                        inner_parser.parse_query()?
-                    }
-                };
-                ForLoopVariant::Query {
-                    cursor_name: None,
-                    query,
-                }
+                // PL/pgSQL query loop over any row-returning command:
+                // FOR rec IN SELECT ... LOOP ... END LOOP
+                self.parse_plpgsql_for_in_query()?
             } else {
                 // Try to parse integer range:
                 // [REVERSE] lower..upper [BY step]
@@ -4010,7 +4025,9 @@ impl<'a> Parser<'a> {
                     (body, "LOOP")
                 }
             }
-            ForLoopVariant::IntegerRange { .. }
+            ForLoopVariant::InQuery(_)
+            | ForLoopVariant::StatementQuery { .. }
+            | ForLoopVariant::IntegerRange { .. }
             | ForLoopVariant::DynamicQuery { .. }
             | ForLoopVariant::CursorVariable { .. }
             | ForLoopVariant::Iterator { .. } => {
@@ -4040,6 +4057,7 @@ impl<'a> Parser<'a> {
             token,
             label,
             loop_name,
+            additional_loop_names,
             variant,
             body,
             end_label,
@@ -4236,8 +4254,13 @@ impl<'a> Parser<'a> {
         let token = self.attached_token_from_current();
         self.expect_keyword_is(Keyword::GET)?;
 
-        // Check for optional STACKED keyword
-        let stacked = self.parse_keyword(Keyword::STACKED);
+        // PostgreSQL spells the default area `CURRENT`, which carries no
+        // information beyond the absence of `STACKED`.
+        let stacked = if self.parse_keyword(Keyword::CURRENT) {
+            false
+        } else {
+            self.parse_keyword(Keyword::STACKED)
+        };
 
         self.expect_keyword(Keyword::DIAGNOSTICS)?;
 
@@ -4277,7 +4300,9 @@ impl<'a> Parser<'a> {
     fn parse_diagnostics_assignment(&self) -> Result<DiagnosticsAssignment, ParserError> {
         // Parse the target - a simple identifier or host variable (prefix expression only)
         let target = self.parse_prefix()?;
-        self.expect_token(&Token::Eq)?;
+        if !self.consume_token(&Token::Assignment) {
+            self.expect_token(&Token::Eq)?;
+        }
         let item = self.parse_diagnostics_item()?;
         Ok(DiagnosticsAssignment { target, item })
     }
@@ -4295,7 +4320,10 @@ impl<'a> Parser<'a> {
                 Keyword::PG_EXCEPTION_CONTEXT => Ok(DiagnosticsItem::PgExceptionContext),
                 Keyword::PG_EXCEPTION_DETAIL => Ok(DiagnosticsItem::PgExceptionDetail),
                 Keyword::PG_EXCEPTION_HINT => Ok(DiagnosticsItem::PgExceptionHint),
-                _ => self.expected("diagnostics item", next_token),
+                _ => match plpgsql::plpgsql_diagnostics_item(w.value.as_ref()) {
+                    Some(item) => Ok(item),
+                    None => self.expected("diagnostics item", next_token),
+                },
             },
             _ => self.expected("diagnostics item", next_token),
         }
@@ -10121,13 +10149,26 @@ impl<'a> Parser<'a> {
     /// Parse a SQL/PSM data type (supports %TYPE and %ROWTYPE)
     fn parse_sql_psm_data_type(&self) -> Result<SqlPsmDataType, ParserError> {
         if self.parse_keyword(Keyword::RECORD) {
-            return Ok(SqlPsmDataType::Record);
+            return self.parse_sql_psm_array_suffix(SqlPsmDataType::Record);
         }
 
-        // Check for CURSOR declaration
+        // Check for CURSOR declaration. PostgreSQL writes the scroll option
+        // before the CURSOR keyword, PL/SQL after it.
+        let before_scroll = self.index.get();
+        let leading_scroll = if self.parse_keywords(&[Keyword::NO, Keyword::SCROLL]) {
+            CursorScrollOption::NoScroll
+        } else if self.parse_keyword(Keyword::SCROLL) {
+            CursorScrollOption::Scroll
+        } else {
+            CursorScrollOption::Unspecified
+        };
+        if !self.peek_keyword(Keyword::CURSOR) {
+            self.index.set(before_scroll);
+        }
         if self.parse_keyword(Keyword::CURSOR) {
-            // Parse scroll option
-            let scroll = if self.parse_keyword(Keyword::SCROLL) {
+            let scroll = if leading_scroll != CursorScrollOption::Unspecified {
+                leading_scroll
+            } else if self.parse_keyword(Keyword::SCROLL) {
                 CursorScrollOption::Scroll
             } else if self.parse_keyword(Keyword::NO) {
                 self.expect_keyword(Keyword::SCROLL)?;
@@ -10163,17 +10204,18 @@ impl<'a> Parser<'a> {
         // Try to parse as ObjectName for %TYPE or %ROWTYPE
         if let Ok(Some(result)) = self.maybe_parse(|parser| {
             let name = parser.parse_object_name(false)?;
-            if parser.consume_token(&BorrowedToken::Mod) {
+            let referenced = if parser.consume_token(&BorrowedToken::Mod) {
                 if parser.parse_keyword(Keyword::TYPE) {
-                    Ok(SqlPsmDataType::TypeOf(name))
+                    SqlPsmDataType::TypeOf(name)
                 } else if parser.parse_keyword(Keyword::ROWTYPE) {
-                    Ok(SqlPsmDataType::RowTypeOf(name))
+                    SqlPsmDataType::RowTypeOf(name)
                 } else {
-                    parser.expected("TYPE or ROWTYPE after %", parser.peek_token())
+                    return parser.expected("TYPE or ROWTYPE after %", parser.peek_token());
                 }
             } else {
-                parser.expected("% after object name", parser.peek_token())
-            }
+                return parser.expected("% after object name", parser.peek_token());
+            };
+            parser.parse_sql_psm_array_suffix(referenced)
         }) {
             return Ok(result);
         }
@@ -10225,38 +10267,18 @@ impl<'a> Parser<'a> {
             return Ok(PlSqlDeclaration::Exception { name });
         }
         if self.parse_keyword(Keyword::ALIAS) {
+            // `newname ALIAS FOR oldname` names any datum already in scope, not
+            // only a routine parameter; which one it is, and its type, is the
+            // server's to resolve.
             self.expect_keyword(Keyword::FOR)?;
-            let target = self.parse_expr()?;
-            let parameter = match &target {
-                Expr::Value(ValueWithSpan {
-                    value: Value::Placeholder(placeholder),
-                    ..
-                }) => placeholder
-                    .strip_prefix('$')
-                    .and_then(|index| index.parse::<usize>().ok())
-                    .and_then(|index| index.checked_sub(1))
-                    .and_then(|index| self.routine_args.get(index)),
-                Expr::Identifier(identifier) => self.routine_args.iter().find(|argument| {
-                    argument
-                        .name
-                        .as_ref()
-                        .is_some_and(|name| name.value.eq_ignore_ascii_case(&identifier.value))
-                }),
-                _ => None,
-            }
-            .ok_or_else(|| {
-                ParserError::ParserError(format!(
-                    "ALIAS FOR target {target} does not name a function parameter"
-                ))
-            })?;
             return Ok(SqlPsmDeclaration {
                 name,
                 constant: false,
-                data_type: SqlPsmDataType::DataType(parameter.data_type.clone()),
+                data_type: SqlPsmDataType::Alias(self.parse_expr()?),
                 collation: None,
                 not_null: false,
-                default_operator: Some(DeclarationAssignmentOperator::Assignment),
-                default: Some(target),
+                default_operator: None,
+                default: None,
             }
             .into());
         }
@@ -11215,20 +11237,11 @@ impl<'a> Parser<'a> {
 
     /// Create a sub-parser to parse SQL/PSM block content
     fn reparse_as_sql_psm_block(&self, body: &str) -> Result<BeginEndStatements, ParserError> {
-        self.reparse_as_sql_psm_block_with_args(body, &[])
-    }
-
-    fn reparse_as_sql_psm_block_with_args(
-        &self,
-        body: &str,
-        routine_args: &[OperateFunctionArg],
-    ) -> Result<BeginEndStatements, ParserError> {
         let dialect = self.dialect;
         let mut tokenizer = Tokenizer::new(dialect, body);
         let tokens = tokenizer.tokenize_with_location()?;
 
-        let mut parser = Parser::new(dialect).with_tokens_with_locations(tokens);
-        parser.routine_args = routine_args.to_vec();
+        let parser = Parser::new(dialect).with_tokens_with_locations(tokens);
         let _procedural = parser.enter_procedural_body();
         parser.parse_sql_psm_block()
     }
@@ -11314,7 +11327,8 @@ impl<'a> Parser<'a> {
         self.expect_token(&BorrowedToken::RParen)?;
 
         let return_type = if self.parse_keyword(Keyword::RETURNS) {
-            Some(self.parse_data_type()?)
+            let return_type = self.parse_data_type()?;
+            Some(self.parse_percent_type_suffix(return_type)?)
         } else {
             None
         };
@@ -11323,7 +11337,7 @@ impl<'a> Parser<'a> {
         struct Body {
             language: Option<Ident>,
             behavior: Option<FunctionBehavior>,
-            function_body: Option<CreateFunctionBody>,
+            function_bodies: Vec<CreateFunctionBody>,
             called_on_null: Option<FunctionCalledOnNull>,
             parallel: Option<FunctionParallel>,
             security: Option<ProcedureSecurity>,
@@ -11335,6 +11349,7 @@ impl<'a> Parser<'a> {
             set_options: Vec<ProcedureSetConfig>,
             sql_data_access: Option<SqlDataAccess>,
             polymorphic: bool,
+            attributes: Vec<RoutineAttribute>,
         }
         let mut body = Body::default();
         loop {
@@ -11347,26 +11362,25 @@ impl<'a> Parser<'a> {
                 Ok(())
             }
             if self.parse_keyword(Keyword::AS) {
-                ensure_not_set(&body.function_body, "AS")?;
                 if self.peek_keyword(Keyword::BEGIN) {
                     // AS BEGIN...END block
                     let _procedural = self.enter_procedural_body();
                     let begin_token = self.expect_keyword(Keyword::BEGIN)?;
                     let statements = self.parse_statement_list(&[Keyword::END])?;
                     let end_token = self.expect_keyword(Keyword::END)?;
-                    body.function_body = Some(CreateFunctionBody::AsBeginEnd(BeginEndStatements {
-                        begin_token: AttachedToken::from(begin_token),
-                        label: None,
-                        declarations: vec![],
-                        statements,
-                        exception_handlers: None,
-                        end_token: AttachedToken::from(end_token),
-                        end_label: None,
-                    }));
+                    body.function_bodies
+                        .push(CreateFunctionBody::AsBeginEnd(BeginEndStatements {
+                            begin_token: AttachedToken::from(begin_token),
+                            label: None,
+                            declarations: vec![],
+                            statements,
+                            exception_handlers: None,
+                            end_token: AttachedToken::from(end_token),
+                            end_label: None,
+                        }));
                 } else {
-                    body.function_body = Some(CreateFunctionBody::AsBeforeOptions(
-                        self.parse_create_function_body_string()?,
-                    ));
+                    body.function_bodies
+                        .push(self.parse_create_function_as_body()?);
                 }
             } else if self.parse_keyword(Keyword::LANGUAGE) {
                 ensure_not_set(&body.language, "LANGUAGE")?;
@@ -11493,24 +11507,31 @@ impl<'a> Parser<'a> {
             } else if self.parse_keyword(Keyword::POLYMORPHIC) {
                 body.polymorphic = true;
             } else if self.parse_keyword(Keyword::RETURN) {
-                ensure_not_set(&body.function_body, "RETURN")?;
-                body.function_body = Some(CreateFunctionBody::Return(self.parse_expr()?));
+                body.function_bodies
+                    .push(CreateFunctionBody::Return(self.parse_expr()?));
+            } else if self.peek_keywords(&[Keyword::BEGIN, Keyword::ATOMIC]) {
+                // SQL-standard function body: BEGIN ATOMIC statement; ... END
+                let _procedural = self.enter_procedural_body();
+                body.function_bodies
+                    .push(CreateFunctionBody::BeginAtomic(self.parse_atomic_block()?));
             } else if self.peek_keyword(Keyword::BEGIN) {
                 // SQL:2016 PSM BEGIN...END block (without AS prefix)
-                ensure_not_set(&body.function_body, "BEGIN...END")?;
                 let _procedural = self.enter_procedural_body();
                 let begin_token = self.expect_keyword(Keyword::BEGIN)?;
                 let statements = self.parse_statement_list(&[Keyword::END])?;
                 let end_token = self.expect_keyword(Keyword::END)?;
-                body.function_body = Some(CreateFunctionBody::AsBeginEnd(BeginEndStatements {
-                    begin_token: AttachedToken::from(begin_token),
-                    label: None,
-                    declarations: vec![],
-                    statements,
-                    exception_handlers: None,
-                    end_token: AttachedToken::from(end_token),
-                    end_label: None,
-                }));
+                body.function_bodies
+                    .push(CreateFunctionBody::AsBeginEnd(BeginEndStatements {
+                        begin_token: AttachedToken::from(begin_token),
+                        label: None,
+                        declarations: vec![],
+                        statements,
+                        exception_handlers: None,
+                        end_token: AttachedToken::from(end_token),
+                        end_label: None,
+                    }));
+            } else if let Some(attribute) = self.parse_routine_attribute()? {
+                body.attributes.push(attribute);
             } else {
                 break;
             }
@@ -11529,17 +11550,18 @@ impl<'a> Parser<'a> {
             None => true,
         };
         if should_reparse {
-            let body_str = match &body.function_body {
-                Some(CreateFunctionBody::AsBeforeOptions(ref expr)) => {
-                    Self::extract_string_body(expr)
+            for function_body in body.function_bodies.iter_mut() {
+                let body_str = match function_body {
+                    CreateFunctionBody::AsBeforeOptions(ref expr) => {
+                        Self::extract_string_body(expr)
+                    }
+                    _ => None,
+                };
+                if let Some(raw_body) = body_str {
+                    let rewritten_body = Self::rewrite_sql_psm_for_integer_ranges(&raw_body);
+                    let parsed_block = self.reparse_as_sql_psm_block(&rewritten_body)?;
+                    *function_body = CreateFunctionBody::AsBeginEnd(parsed_block);
                 }
-                _ => None,
-            };
-            if let Some(raw_body) = body_str {
-                let rewritten_body = Self::rewrite_sql_psm_for_integer_ranges(&raw_body);
-                let parsed_block =
-                    self.reparse_as_sql_psm_block_with_args(&rewritten_body, &args)?;
-                body.function_body = Some(CreateFunctionBody::AsBeginEnd(parsed_block));
             }
         }
 
@@ -11562,7 +11584,7 @@ impl<'a> Parser<'a> {
             support: body.support,
             set_options: body.set_options,
             language: body.language,
-            function_body: body.function_body,
+            function_body: Self::collapse_create_function_bodies(body.function_bodies),
             if_not_exists: false,
             using: None,
             determinism_specifier: None,
@@ -11570,6 +11592,7 @@ impl<'a> Parser<'a> {
             remote_connection: None,
             sql_data_access: body.sql_data_access,
             polymorphic: body.polymorphic,
+            attributes: body.attributes,
         }))
     }
 
@@ -11674,6 +11697,7 @@ impl<'a> Parser<'a> {
             set_options: vec![],
             sql_data_access: None,
             polymorphic: false,
+            attributes: vec![],
         }))
     }
 
@@ -11720,13 +11744,39 @@ impl<'a> Parser<'a> {
         };
 
         // parse: [ argname ] argtype
-        let mut name = None;
+        let mut name: Option<Ident> = None;
         let mut data_type = self.parse_data_type()?;
 
         // To check whether the first token is a name or a type, we need to
         // peek the next token, which if it is another type keyword, then the
         // first token is a name and not a type in itself.
         let data_type_idx = self.get_current_index();
+
+        // PostgreSQL also writes the mode after the name: `a VARIADIC int[]`.
+        let trailing_mode = if mode.is_none() {
+            self.parse_one_of_keywords(&[
+                Keyword::IN,
+                Keyword::OUT,
+                Keyword::INOUT,
+                Keyword::VARIADIC,
+            ])
+            .map(|keyword| match keyword {
+                Keyword::OUT => ArgMode::Out,
+                Keyword::INOUT => ArgMode::InOut,
+                Keyword::VARIADIC => ArgMode::Variadic,
+                _ => ArgMode::In,
+            })
+        } else {
+            None
+        };
+        if trailing_mode.is_some() {
+            let token = self.token_at(data_type_idx).clone();
+            if !matches!(token.token, BorrowedToken::Word(_)) {
+                return self.expected("a parameter name", token);
+            }
+            name = Some(Ident::new(token.to_string()));
+            data_type = self.parse_data_type()?;
+        }
 
         // DEFAULT will be parsed as `DataType::Custom`, which is undesirable in this context
         fn parse_data_type_no_default(parser: &Parser) -> Result<DataType, ParserError> {
@@ -11741,17 +11791,22 @@ impl<'a> Parser<'a> {
             }
         }
 
-        if let Some(next_data_type) = self.maybe_parse(parse_data_type_no_default)? {
-            let token = self.token_at(data_type_idx);
+        if trailing_mode.is_none() {
+            if let Some(next_data_type) = self.maybe_parse(parse_data_type_no_default)? {
+                let token = self.token_at(data_type_idx);
 
-            // We ensure that the token is a `Word` token, and not other special tokens.
-            if !matches!(token.token, BorrowedToken::Word(_)) {
-                return self.expected("a name or type", token.clone());
+                // We ensure that the token is a `Word` token, and not other special tokens.
+                if !matches!(token.token, BorrowedToken::Word(_)) {
+                    return self.expected("a name or type", token.clone());
+                }
+
+                name = Some(Ident::new(token.to_string()));
+                data_type = next_data_type;
             }
-
-            name = Some(Ident::new(token.to_string()));
-            data_type = next_data_type;
         }
+
+        // PostgreSQL's `func_type` allows `table_name.column_name%TYPE`.
+        data_type = self.parse_percent_type_suffix(data_type)?;
 
         // SQL:2016 XML passing mechanism: BY VALUE or BY REF
         let xml_passing = self.parse_xml_passing_mechanism()?;
@@ -11763,7 +11818,7 @@ impl<'a> Parser<'a> {
                 None
             };
         Ok(OperateFunctionArg {
-            mode,
+            mode: mode.or(trailing_mode),
             name,
             data_type,
             xml_passing,
@@ -15578,6 +15633,8 @@ impl<'a> Parser<'a> {
             Some(ArgMode::Out)
         } else if self.parse_keyword(Keyword::INOUT) {
             Some(ArgMode::InOut)
+        } else if self.parse_keyword(Keyword::VARIADIC) {
+            Some(ArgMode::Variadic)
         } else {
             None
         };
@@ -15599,6 +15656,8 @@ impl<'a> Parser<'a> {
                 Some(ArgMode::Out)
             } else if self.parse_keyword(Keyword::INOUT) {
                 Some(ArgMode::InOut)
+            } else if self.parse_keyword(Keyword::VARIADIC) {
+                Some(ArgMode::Variadic)
             } else {
                 None
             }
@@ -15637,6 +15696,9 @@ impl<'a> Parser<'a> {
             name = Some(Ident::new(token.to_string()));
             data_type = next_data_type;
         }
+
+        // PostgreSQL's `func_type` allows `table_name.column_name%TYPE`.
+        data_type = self.parse_percent_type_suffix(data_type)?;
 
         let mode = leading_mode.or(trailing_mode);
         let default =
@@ -28571,6 +28633,7 @@ impl<'a> Parser<'a> {
         let mut language: Option<Ident> = None;
         let mut security: Option<ProcedureSecurity> = None;
         let mut set_options = Vec::new();
+        let mut attributes = Vec::new();
         let mut has_as = false;
         let mut raw_body: Option<String> = None;
         let mut body: Option<ConditionalStatements> = None;
@@ -28651,9 +28714,17 @@ impl<'a> Parser<'a> {
                 } else {
                     body = Some(self.parse_conditional_statements(&[Keyword::END])?);
                 }
+            } else if body.is_none()
+                && raw_body.is_none()
+                && self.peek_keywords(&[Keyword::BEGIN, Keyword::ATOMIC])
+            {
+                // SQL-standard procedure body: BEGIN ATOMIC statement; ... END
+                body = Some(self.parse_procedure_atomic_body()?);
             } else if body.is_none() && raw_body.is_none() && self.peek_keyword(Keyword::BEGIN) {
                 // SQL:2016 PSM allows BEGIN...END bodies without AS.
                 body = Some(self.parse_conditional_statements(&[Keyword::END])?);
+            } else if let Some(attribute) = self.parse_routine_attribute()? {
+                attributes.push(attribute);
             } else {
                 break;
             }
@@ -28694,6 +28765,7 @@ impl<'a> Parser<'a> {
             language,
             security,
             set_options,
+            attributes,
             has_as,
             body,
         })

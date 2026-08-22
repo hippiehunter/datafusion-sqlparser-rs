@@ -424,6 +424,13 @@ pub enum DataType {
     ///
     /// [PostgreSQL]: https://www.postgresql.org/docs/17/datatype-textsearch.html
     TsQuery,
+    /// The type of a table column, written `table_name.column_name%TYPE`.
+    ///
+    /// PostgreSQL accepts this wherever a routine parameter or return type is
+    /// written, see `func_type` in its grammar.
+    ///
+    /// [PostgreSQL]: https://www.postgresql.org/docs/current/sql-createfunction.html
+    TypeOf(ObjectName),
 }
 
 impl fmt::Display for DataType {
@@ -702,6 +709,7 @@ impl fmt::Display for DataType {
             DataType::GeometricType(kind) => write!(f, "{kind}"),
             DataType::TsVector => write!(f, "TSVECTOR"),
             DataType::TsQuery => write!(f, "TSQUERY"),
+            DataType::TypeOf(name) => write!(f, "{name}%TYPE"),
         }
     }
 }

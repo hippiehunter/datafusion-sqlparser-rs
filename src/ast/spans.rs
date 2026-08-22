@@ -44,7 +44,8 @@ use super::{
     PlSqlUsingArgument, Pragma, Query, RaiseMessage, RaiseStatement, RaiseUsingItem,
     ReferentialAction, RenameSelectItem, RepeatStatement, ReplaceSelectElement, ReplaceSelectItem,
     ReturningClause, Select, SelectInto, SelectItem, SetExpr, SqlOption, SqlPsmAssignment,
-    SqlPsmDataType, SqlPsmDeclaration, Statement, Subscript, SubsetDefinition, SymbolDefinition,
+    SqlPsmDataType, SqlPsmDeclaration, SqlPsmQueryAssignment, Statement, Subscript,
+    SubsetDefinition, SymbolDefinition,
     TableAlias, TableAliasColumnDef, TableConstraint, TableFactor, TableObject,
     TableOptionsClustered, TableWithJoins, Update, UpdateTableFromKind, Use, Value, Values,
     ViewColumnDef, WhileStatement, WildcardAdditionalOptions, With, WithFill,
@@ -299,6 +300,8 @@ impl Spanned for Statement {
             Statement::Raise(stmt) => stmt.span(),
             Statement::Perform(stmt) => stmt.span(),
             Statement::SqlPsmAssignment(stmt) => stmt.span(),
+            Statement::SqlPsmQueryAssignment(stmt) => stmt.span(),
+            Statement::PlpgsqlAssert(stmt) => stmt.assert_token.0,
             Statement::Do(stmt) => stmt.span(),
             Statement::Null => Span::empty(),
             Statement::Call(function) => function.span(),
@@ -763,6 +766,7 @@ impl Spanned for CaseStatement {
             match_expr: _,
             when_blocks: _,
             oracle_when_controls: _,
+            when_values: _,
             else_block: _,
             end_case_token: end,
         } = self;
@@ -853,6 +857,9 @@ impl Spanned for ConditionalStatements {
                 union_spans(statements.iter().map(|s| s.span()))
             }
             ConditionalStatements::BeginEnd(bes) => bes.span(),
+            ConditionalStatements::BeginAtomic(block) => {
+                union_spans(block.statements.iter().map(|statement| statement.span()))
+            }
         }
     }
 }
@@ -919,6 +926,13 @@ impl Spanned for SqlPsmAssignment {
     fn span(&self) -> Span {
         let SqlPsmAssignment { target, value } = self;
         union_spans(iter::once(target.span()).chain(iter::once(value.span())))
+    }
+}
+
+impl Spanned for SqlPsmQueryAssignment {
+    fn span(&self) -> Span {
+        let SqlPsmQueryAssignment { target, query } = self;
+        union_spans(iter::once(target.span()).chain(iter::once(query.span())))
     }
 }
 
@@ -2714,6 +2728,8 @@ impl Spanned for SqlPsmDataType {
             SqlPsmDataType::RowTypeOf(name) => name.span(),
             SqlPsmDataType::Record => Span::empty(),
             SqlPsmDataType::Cursor(decl) => decl.span(),
+            SqlPsmDataType::Array(element) => element.span(),
+            SqlPsmDataType::Alias(target) => target.span(),
         }
     }
 }
