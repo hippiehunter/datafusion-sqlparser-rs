@@ -928,6 +928,7 @@ define_keywords!(
     QUERY,
     QUIESCE,
     QUOTE,
+    QUOTES,
     RAISE,
     RAISERROR,
     RANGE,

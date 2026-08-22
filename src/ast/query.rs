@@ -1596,6 +1596,15 @@ pub enum TableFactor {
         /// The alias for the table.
         alias: Option<TableAlias>,
     },
+    /// The SQL standard / PostgreSQL `JSON_TABLE` table-valued function.
+    ///
+    /// ```sql
+    /// SELECT * FROM JSON_TABLE(
+    ///     jsonb '[1, 2]',
+    ///     '$[*]' AS root COLUMNS (v INT PATH '$')
+    /// ) AS jt
+    /// ```
+    SqlJsonTable(SqlJsonTable),
     /// The MSSQL's `OPENJSON` table-valued function.
     ///
     /// ```sql
@@ -2946,6 +2955,7 @@ impl fmt::Display for TableFactor {
                 }
                 Ok(())
             }
+            TableFactor::SqlJsonTable(json_table) => write!(f, "{json_table}"),
             TableFactor::OpenJsonTable {
                 json_expr,
                 json_path,
@@ -3192,10 +3202,19 @@ impl TableAlias {
 
 impl fmt::Display for TableAlias {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // Output just the name - the AS keyword is handled by callers
-        write!(f, "{}", self.name)?;
+        // Output just the name - the AS keyword is handled by callers.
+        // PostgreSQL allows a column definition list with no alias name, as in
+        // `FROM json_populate_record(...) AS (x int)`; that form is recorded
+        // with an empty name.
+        let named = !self.name.value.is_empty();
+        if named {
+            write!(f, "{}", self.name)?;
+        }
         if !self.columns.is_empty() {
-            write!(f, " ({})", display_comma_separated(&self.columns))?;
+            if named {
+                f.write_str(" ")?;
+            }
+            write!(f, "({})", display_comma_separated(&self.columns))?;
         }
         Ok(())
     }
@@ -3357,6 +3376,9 @@ impl fmt::Display for Join {
                         JoinConstraint::On(expr) => write!(f, " ON {expr}"),
                         JoinConstraint::Using(attrs) => {
                             write!(f, " USING({})", display_comma_separated(attrs))
+                        }
+                        JoinConstraint::UsingWithAlias { columns, alias } => {
+                            write!(f, " USING({}) AS {alias}", display_comma_separated(columns))
                         }
                         _ => Ok(()),
                     }
@@ -3561,6 +3583,14 @@ pub enum JoinConstraint {
     Using(Vec<ObjectName>),
     Natural,
     None,
+    /// `USING (col, ...) AS <alias>`, where the alias names the merged
+    /// join columns as a row variable.
+    ///
+    /// See [PostgreSQL](https://www.postgresql.org/docs/18/queries-table-expressions.html#QUERIES-JOIN)
+    UsingWithAlias {
+        columns: Vec<ObjectName>,
+        alias: Ident,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]

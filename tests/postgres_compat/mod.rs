@@ -216,3 +216,5 @@ pub mod metadata;
 
 // Utility and transaction statements
 pub mod pg_utility;
+// SQL/JSON functions
+pub mod sql_json;

@@ -1859,6 +1859,7 @@ impl Spanned for Expr {
                 predicate,
             } => collection.span().union(&predicate.span()),
             Expr::CurrentOf { cursor_name } => cursor_name.span,
+            Expr::JsonFormatted(value) => value.expr.span(),
         }
     }
 }
@@ -2041,6 +2042,9 @@ impl Spanned for FunctionArgumentClause {
             FunctionArgumentClause::Having(HavingBound(_kind, expr)) => expr.span(),
             FunctionArgumentClause::Separator(value) => value.span(),
             FunctionArgumentClause::JsonNullClause(_) => Span::empty(),
+            FunctionArgumentClause::JsonPassing(_) => Span::empty(),
+            FunctionArgumentClause::JsonQuotes(_) => Span::empty(),
+            FunctionArgumentClause::JsonFormat(_) => Span::empty(),
             FunctionArgumentClause::JsonReturningClause(_) => Span::empty(),
             FunctionArgumentClause::JsonOnEmpty(behavior) => match behavior {
                 JsonOnBehavior::Default(expr) => expr.span(),
@@ -2250,6 +2254,7 @@ impl Spanned for TableFactor {
                     .chain(alias.as_ref().map(|alias| alias.span())),
             ),
             TableFactor::JsonTable { .. } => Span::empty(),
+            TableFactor::SqlJsonTable(_) => Span::empty(),
             TableFactor::XmlTable { .. } => Span::empty(),
             TableFactor::Pivot {
                 table,
@@ -2428,6 +2433,7 @@ impl Spanned for FunctionArgExpr {
                 union_spans(object_name.0.iter().map(|i| i.span()))
             }
             FunctionArgExpr::Wildcard => Span::empty(),
+            FunctionArgExpr::Query(query) => query.span(),
         }
     }
 }
@@ -2531,6 +2537,9 @@ impl Spanned for JoinConstraint {
         match self {
             JoinConstraint::On(expr) => expr.span(),
             JoinConstraint::Using(vec) => union_spans(vec.iter().map(|i| i.span())),
+            JoinConstraint::UsingWithAlias { columns, alias } => union_spans(
+                columns.iter().map(|i| i.span()).chain(core::iter::once(alias.span)),
+            ),
             JoinConstraint::Natural => Span::empty(),
             JoinConstraint::None => Span::empty(),
         }

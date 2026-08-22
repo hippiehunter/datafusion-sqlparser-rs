@@ -341,30 +341,24 @@ mod t826_json_table {
     #[test]
     fn t826_01_json_table_basic() {
         // SQL:2016 T826-01: JSON_TABLE
-        // Note: COLUMNS formats without space before parentheses
-        one_statement_parses_to_std(
+        verified_standard_stmt(
             "SELECT * FROM JSON_TABLE(doc, '$.items[*]' COLUMNS (id INT PATH '$.id'))",
-            "SELECT * FROM JSON_TABLE(doc, '$.items[*]' COLUMNS(id INT PATH '$.id'))",
         );
     }
 
     #[test]
     fn t826_02_json_table_multiple_columns() {
         // SQL:2016 T826-02: JSON_TABLE with multiple columns
-        // Note: COLUMNS formats without space before parentheses
-        one_statement_parses_to_std(
-            "SELECT * FROM JSON_TABLE(data, '$.users[*]' COLUMNS (name VARCHAR(100) PATH '$.name', age INT PATH '$.age', city VARCHAR(50) PATH '$.city'))",
-            "SELECT * FROM JSON_TABLE(data, '$.users[*]' COLUMNS(name VARCHAR(100) PATH '$.name', age INT PATH '$.age', city VARCHAR(50) PATH '$.city'))"
+        verified_standard_stmt(
+            "SELECT * FROM JSON_TABLE(data, '$.users[*]' COLUMNS (name VARCHAR(100) PATH '$.name', age INT PATH '$.age', city VARCHAR(50) PATH '$.city'))"
         );
     }
 
     #[test]
     fn t826_03_json_table_nested() {
         // SQL:2016 T826-03: JSON_TABLE with nested paths
-        // Note: Outer COLUMNS has no space, but nested COLUMNS keeps space
-        one_statement_parses_to_std(
-            "SELECT * FROM JSON_TABLE(doc, '$' COLUMNS (NESTED PATH '$.items[*]' COLUMNS (id INT PATH '$.id')))",
-            "SELECT * FROM JSON_TABLE(doc, '$' COLUMNS(NESTED PATH '$.items[*]' COLUMNS (id INT PATH '$.id')))"
+        verified_standard_stmt(
+            "SELECT * FROM JSON_TABLE(doc, '$' COLUMNS (NESTED PATH '$.items[*]' COLUMNS (id INT PATH '$.id')))"
         );
     }
 }

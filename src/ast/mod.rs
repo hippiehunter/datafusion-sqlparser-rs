@@ -152,6 +152,12 @@ mod operator;
 mod query;
 mod spans;
 pub use spans::Spanned;
+mod sql_json;
+pub use self::sql_json::{
+    JsonEncoding, JsonFormatClause, JsonFormattedExpr, JsonQuotesBehavior, JsonQuotesClause,
+    SqlJsonTable, SqlJsonTableColumn, SqlJsonTableExistsColumn, SqlJsonTableNestedColumn,
+    SqlJsonTableRegularColumn,
+};
 
 mod pg_utility;
 mod trigger;
@@ -1483,6 +1489,9 @@ pub enum Expr {
     CurrentOf {
         cursor_name: Ident,
     },
+    /// The SQL/JSON `<JSON value expression>`: an expression carrying an
+    /// explicit `FORMAT JSON [ENCODING ...]` clause, e.g. `'1' FORMAT JSON`.
+    JsonFormatted(JsonFormattedExpr),
 }
 
 impl Expr {
@@ -2525,6 +2534,7 @@ impl fmt::Display for Expr {
             Expr::CurrentOf { cursor_name } => {
                 write!(f, "CURRENT OF {cursor_name}")
             }
+            Expr::JsonFormatted(value) => write!(f, "{value}"),
         }
     }
 }
@@ -13534,6 +13544,9 @@ pub enum FunctionArgExpr {
     QualifiedWildcard(ObjectName),
     /// An unqualified `*`
     Wildcard,
+    /// A query written without enclosing parentheses, as accepted by
+    /// `JSON_ARRAY(SELECT ...)`.
+    Query(Box<Query>),
 }
 
 impl From<Expr> for FunctionArgExpr {
@@ -13552,6 +13565,7 @@ impl fmt::Display for FunctionArgExpr {
             FunctionArgExpr::Expr(expr) => write!(f, "{expr}"),
             FunctionArgExpr::QualifiedWildcard(prefix) => write!(f, "{prefix}.*"),
             FunctionArgExpr::Wildcard => f.write_str("*"),
+            FunctionArgExpr::Query(query) => write!(f, "{query}"),
         }
     }
 }
@@ -14190,6 +14204,12 @@ pub enum FunctionArgumentClause {
     JsonUniqueKeys(JsonPredicateUniqueKeyConstraint),
     /// Oracle SQL/JSON PASSING bindings.
     OracleJsonPassing(Vec<ExprWithAlias>),
+    /// `PASSING <value> AS <varname>, ...` for the SQL/JSON query functions.
+    JsonPassing(Vec<ExprWithAlias>),
+    /// `{KEEP | OMIT} QUOTES [ON SCALAR STRING]` for `JSON_QUERY`.
+    JsonQuotes(JsonQuotesClause),
+    /// `FORMAT JSON [ENCODING ...]` applied to a `JSON_ARRAY` query argument.
+    JsonFormat(JsonFormatClause),
 }
 
 impl fmt::Display for FunctionArgumentClause {
@@ -14220,6 +14240,11 @@ impl fmt::Display for FunctionArgumentClause {
             FunctionArgumentClause::OracleJsonPassing(bindings) => {
                 write!(f, "PASSING {}", display_comma_separated(bindings))
             }
+            FunctionArgumentClause::JsonPassing(bindings) => {
+                write!(f, "PASSING {}", display_comma_separated(bindings))
+            }
+            FunctionArgumentClause::JsonQuotes(quotes) => write!(f, "{quotes}"),
+            FunctionArgumentClause::JsonFormat(format) => write!(f, "{format}"),
         }
     }
 }
@@ -17197,11 +17222,17 @@ impl Display for JsonNullClause {
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct JsonReturningClause {
     pub data_type: DataType,
+    /// `FORMAT JSON [ENCODING ...]` qualifying the returned type.
+    pub format: Option<JsonFormatClause>,
 }
 
 impl Display for JsonReturningClause {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "RETURNING {}", self.data_type)
+        write!(f, "RETURNING {}", self.data_type)?;
+        if let Some(format) = &self.format {
+            write!(f, " {format}")?;
+        }
+        Ok(())
     }
 }
 
@@ -17251,6 +17282,8 @@ impl Display for JsonOnBehavior {
 pub enum JsonQueryWrapper {
     /// WITHOUT WRAPPER (default - return unwrapped)
     Without,
+    /// WITHOUT ARRAY WRAPPER (explicit form)
+    WithoutArray,
     /// WITH WRAPPER (shorthand for WITH UNCONDITIONAL ARRAY WRAPPER)
     With,
     /// WITH ARRAY WRAPPER
@@ -17269,6 +17302,7 @@ impl Display for JsonQueryWrapper {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             JsonQueryWrapper::Without => write!(f, "WITHOUT WRAPPER"),
+            JsonQueryWrapper::WithoutArray => write!(f, "WITHOUT ARRAY WRAPPER"),
             JsonQueryWrapper::With => write!(f, "WITH WRAPPER"),
             JsonQueryWrapper::WithArray => write!(f, "WITH ARRAY WRAPPER"),
             JsonQueryWrapper::WithConditional => write!(f, "WITH CONDITIONAL WRAPPER"),
