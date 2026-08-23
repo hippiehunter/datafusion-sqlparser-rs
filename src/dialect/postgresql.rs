@@ -137,6 +137,10 @@ impl Dialect for PostgreSqlDialect {
                 Some(Ok(COLLATE_PREC))
             }
             BorrowedToken::LBracket => Some(Ok(BRACKET_PREC)),
+            // `:=` is not an expression operator in PostgreSQL; it only
+            // separates a named argument from its value, so an expression
+            // ends in front of it.
+            BorrowedToken::Assignment => Some(Ok(0)),
             BorrowedToken::Arrow
             | BorrowedToken::LongArrow
             | BorrowedToken::HashArrow
@@ -280,6 +284,16 @@ impl Dialect for PostgreSqlDialect {
     /// SELECT json_object('label': 'value')
     /// ```
     fn supports_named_fn_args_with_expr_name(&self) -> bool {
+        true
+    }
+
+    /// See <https://www.postgresql.org/docs/current/sql-syntax-calling-funcs.html>
+    ///
+    /// Required to support the older named-notation spelling:
+    /// ```sql
+    /// SELECT make_interval(years := 2)
+    /// ```
+    fn supports_named_fn_args_with_assignment_operator(&self) -> bool {
         true
     }
 

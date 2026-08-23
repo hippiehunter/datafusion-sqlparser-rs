@@ -8284,3 +8284,22 @@ fn parse_postgres_virtual_generated_column() {
         }
     ));
 }
+
+#[test]
+fn parse_named_arguments_with_assignment_operator() {
+    let select = pg().verified_only_select("SELECT make_interval(years := 2, months := 6)");
+    let Expr::Function(function) = expr_from_projection(only(&select.projection)) else {
+        panic!("expected a function call");
+    };
+    let FunctionArguments::List(list) = &function.args else {
+        panic!("expected an argument list");
+    };
+    let expected = |name: &str, value: &str| FunctionArg::ExprNamed {
+        name: Expr::Identifier(Ident::new(name)),
+        arg: FunctionArgExpr::Expr(Expr::Value(
+            Value::Number(value.to_string(), false).with_empty_span(),
+        )),
+        operator: FunctionArgOperator::Assignment,
+    };
+    assert_eq!(list.args, vec![expected("years", "2"), expected("months", "6")]);
+}
