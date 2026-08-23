@@ -91,6 +91,10 @@ impl Dialect for PostgreSqlDialect {
         !ch.is_ascii()
     }
 
+    fn requires_numeric_literal_delimiter(&self) -> bool {
+        true
+    }
+
     fn supports_unicode_string_literal(&self) -> bool {
         true
     }
@@ -344,6 +348,10 @@ impl Dialect for PostgreSqlDialect {
     }
 
     fn supports_numeric_literal_underscores(&self) -> bool {
+        true
+    }
+
+    fn dollar_placeholder_must_be_numeric(&self) -> bool {
         true
     }
 

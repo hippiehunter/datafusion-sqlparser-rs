@@ -380,6 +380,14 @@ pub trait Dialect: Debug + Any {
         false
     }
 
+    /// Returns true if an identifier character immediately following a
+    /// numeric literal is a lexical error rather than the start of a new
+    /// token. PostgreSQL uses this rule to reject forms such as `123abc` and
+    /// malformed radix literals such as `0x0y`.
+    fn requires_numeric_literal_delimiter(&self) -> bool {
+        false
+    }
+
     /// Returns true if the dialect supports numbers containing underscores, e.g. `10_000_000`
     /// Returns true if the dialect supports non-decimal integer literals
     /// written as `0x`/`0o`/`0b` followed by digits of that radix, e.g.
@@ -866,6 +874,13 @@ pub trait Dialect: Debug + Any {
         false
     }
 
+    /// Returns true if a dollar placeholder must consist of `$` followed by
+    /// decimal digits. This is distinct from dollar-quoted strings, whose tag
+    /// cannot begin with a digit.
+    fn dollar_placeholder_must_be_numeric(&self) -> bool {
+        false
+    }
+
     /// Does the dialect support with clause in create index statement?
     /// e.g. `CREATE INDEX idx ON t WITH (key = value, key2)`
     fn supports_create_index_with_clause(&self) -> bool {
@@ -1266,6 +1281,7 @@ pub trait Dialect: Debug + Any {
                 .supports_named_fn_args_with_rarrow_operator(),
             supports_named_fn_args_with_expr_name: self.supports_named_fn_args_with_expr_name(),
             supports_numeric_prefix: self.supports_numeric_prefix(),
+            requires_numeric_literal_delimiter: self.requires_numeric_literal_delimiter(),
             supports_numeric_literal_underscores: self.supports_numeric_literal_underscores(),
             supports_radix_numeric_literals: self.supports_radix_numeric_literals(),
             supports_generic_typed_string_literals: self.supports_generic_typed_string_literals(),
@@ -1302,6 +1318,7 @@ pub trait Dialect: Debug + Any {
             allow_extract_custom: self.allow_extract_custom(),
             allow_extract_single_quotes: self.allow_extract_single_quotes(),
             supports_dollar_placeholder: self.supports_dollar_placeholder(),
+            dollar_placeholder_must_be_numeric: self.dollar_placeholder_must_be_numeric(),
             supports_create_index_with_clause: self.supports_create_index_with_clause(),
             require_interval_qualifier: self.require_interval_qualifier(),
             interval_requires_literal_value: self.interval_requires_literal_value(),
@@ -1383,6 +1400,7 @@ pub struct DialectFeatures {
     pub supports_named_fn_args_with_rarrow_operator: bool,
     pub supports_named_fn_args_with_expr_name: bool,
     pub supports_numeric_prefix: bool,
+    pub requires_numeric_literal_delimiter: bool,
     pub supports_numeric_literal_underscores: bool,
     /// See [Dialect::supports_radix_numeric_literals]
     pub supports_radix_numeric_literals: bool,
@@ -1417,6 +1435,7 @@ pub struct DialectFeatures {
     pub allow_extract_custom: bool,
     pub allow_extract_single_quotes: bool,
     pub supports_dollar_placeholder: bool,
+    pub dollar_placeholder_must_be_numeric: bool,
     pub supports_create_index_with_clause: bool,
     pub require_interval_qualifier: bool,
     pub interval_requires_literal_value: bool,
@@ -1593,6 +1612,7 @@ impl<D: Dialect> Dialect for DelegatingDialect<D> {
         supports_named_fn_args_with_rarrow_operator,
         supports_named_fn_args_with_expr_name,
         supports_numeric_prefix,
+        requires_numeric_literal_delimiter,
         supports_numeric_literal_underscores,
         supports_radix_numeric_literals,
         supports_generic_typed_string_literals,
@@ -1624,6 +1644,7 @@ impl<D: Dialect> Dialect for DelegatingDialect<D> {
         allow_extract_custom,
         allow_extract_single_quotes,
         supports_dollar_placeholder,
+        dollar_placeholder_must_be_numeric,
         supports_create_index_with_clause,
         require_interval_qualifier,
         interval_requires_literal_value,

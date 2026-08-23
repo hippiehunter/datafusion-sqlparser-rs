@@ -508,6 +508,49 @@ fn parse_non_decimal_integer_literals() {
 }
 
 #[test]
+fn reject_malformed_numeric_literals() {
+    for literal in [
+        "123abc",
+        "0x0o",
+        "0.a",
+        "0.0a",
+        ".0a",
+        "0.0e1a",
+        "0.0e",
+        "0.0e+a",
+        "1b",
+        "1o",
+        "1x",
+        "0b0x",
+        "0o0x",
+        "0x0y",
+        "0b",
+        "0o",
+        "0x",
+        "100_",
+        "100__000",
+        "1_000_.5",
+        "1_000._5",
+        "1_000.5_",
+        "1_000.5e_1",
+    ] {
+        let sql = format!("SELECT {literal}");
+        assert!(pg().parse_sql_statements(&sql).is_err(), "{sql}");
+    }
+}
+
+#[test]
+fn reject_malformed_positional_parameters() {
+    for parameter in ["$1a", "$0_1", "$name"] {
+        let sql = format!("SELECT {parameter}");
+        assert!(pg().parse_sql_statements(&sql).is_err(), "{sql}");
+    }
+
+    pg().verified_stmt("SELECT $1, $20::int");
+    pg().verified_stmt("SELECT $tag$body$tag$");
+}
+
+#[test]
 fn parse_unicode_literals_with_uescape() {
     // https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-SYNTAX-STRINGS-UESCAPE
     let stmt = pg().one_statement_parses_to(

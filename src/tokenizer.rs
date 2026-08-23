@@ -1418,8 +1418,23 @@ impl<'a> Tokenizer<'a> {
                     // followed by digits of the matching radix, optionally
                     // separated by single underscores.
                     if s == "0" && self.features.supports_radix_numeric_literals {
-                        if let Some(literal) = tokenize_radix_integer(chars) {
+                        if matches!(chars.peek(), Some('x' | 'X' | 'o' | 'O' | 'b' | 'B')) {
+                            let Some(literal) = tokenize_radix_integer(chars) else {
+                                return self.tokenizer_error(
+                                    chars.location(),
+                                    "Invalid radix numeric literal",
+                                );
+                            };
                             s += literal.as_str();
+                            let invalid_suffix = chars.peek().copied().is_some_and(|next| {
+                                self.dialect.is_identifier_part(next) || next == '.'
+                            });
+                            if self.features.requires_numeric_literal_delimiter && invalid_suffix {
+                                return self.tokenizer_error(
+                                    chars.location(),
+                                    "Invalid character after radix numeric literal",
+                                );
+                            }
                             return Ok(Some(Token::Number(s, false)));
                         }
                     }
@@ -1516,6 +1531,27 @@ impl<'a> Tokenizer<'a> {
                             // the value we have is part of an identifier.
                             return Ok(Some(Token::make_word(s.as_str(), None)));
                         }
+                    }
+
+                    if self.features.supports_numeric_literal_underscores
+                        && !numeric_literal_underscores_are_valid(&s)
+                    {
+                        return self.tokenizer_error(
+                            chars.location(),
+                            "Invalid underscore in numeric literal",
+                        );
+                    }
+
+                    if self.features.requires_numeric_literal_delimiter
+                        && chars
+                            .peek()
+                            .copied()
+                            .is_some_and(|next| self.dialect.is_identifier_part(next))
+                    {
+                        return self.tokenizer_error(
+                            chars.location(),
+                            "Invalid character after numeric literal",
+                        );
                     }
 
                     // Oracle's binary floating-point literal suffix is part of
@@ -2034,6 +2070,30 @@ impl<'a> Tokenizer<'a> {
             }));
         }
 
+        if self.features.dollar_placeholder_must_be_numeric
+            && chars.peek().is_some_and(char::is_ascii_digit)
+        {
+            let parameter_start = chars.byte_pos;
+            peeking_take_while_ref(chars, |ch| ch.is_ascii_digit());
+            if chars
+                .peek()
+                .copied()
+                .is_some_and(|next| self.dialect.is_identifier_part(next))
+            {
+                return self.tokenizer_error(
+                    chars.location(),
+                    "Invalid character after positional parameter",
+                );
+            }
+            let parameter = self.safe_slice(
+                chars.source,
+                parameter_start,
+                chars.byte_pos,
+                starting_loc,
+            )?;
+            return Ok(Token::Placeholder(format!("${parameter}")));
+        }
+
         // If it's not $$ we have 2 options :
         //   Case 2: $tag$text$tag$ (tagged dollar-quoted string) if dialect supports it
         //   Case 3: $placeholder (e.g., $1, $name)
@@ -2054,6 +2114,12 @@ impl<'a> Tokenizer<'a> {
                 value: value.into_owned(),
                 tag: tag.map(|t| t.into_owned()),
             }));
+        }
+        if self.features.dollar_placeholder_must_be_numeric {
+            return self.tokenizer_error(
+                starting_loc,
+                "A positional parameter must be '$' followed by decimal digits",
+            );
         }
 
         // Case 3: $placeholder (e.g., $1, $name)
@@ -3003,6 +3069,17 @@ fn tokenize_radix_integer(chars: &mut State<'_>) -> Option<String> {
         is_digit(ch) || (ch == '_' && next_ch.is_some_and(is_digit))
     });
     Some(literal)
+}
+
+fn numeric_literal_underscores_are_valid(literal: &str) -> bool {
+    let bytes = literal.as_bytes();
+    bytes.iter().enumerate().all(|(index, byte)| {
+        *byte != b'_'
+            || (index > 0
+                && index + 1 < bytes.len()
+                && bytes[index - 1].is_ascii_digit()
+                && bytes[index + 1].is_ascii_digit())
+    })
 }
 
 /// Scan a `U&'...'` string literal or `U&"..."` delimited identifier, together
