@@ -2978,14 +2978,25 @@ fn parse_array_multi_subscript() {
 
 #[test]
 fn parse_update_subscript_assignment() {
+    pg().verified_stmt("UPDATE foo SET bar[2] = 5 WHERE id = 7");
+    pg().verified_stmt("UPDATE foo AS f SET f.bar[warehouse_id] = f.bar[warehouse_id] + 1");
+}
+
+#[test]
+fn parse_quantified_like_patterns() {
+    pg().verified_stmt("SELECT 'foo' LIKE ANY (ARRAY['%a', '%o'])");
+    pg().verified_stmt("SELECT 'foo' LIKE ALL (ARRAY['f%', '%o'])");
+    pg().verified_stmt("SELECT 'foo' NOT ILIKE ANY (ARRAY['%A'])");
     pg().one_statement_parses_to(
-        "UPDATE foo SET bar[2] = 5 WHERE id = 7",
-        "UPDATE foo SET bar = array_set(bar, 2, 5) WHERE id = 7",
+        "SELECT 'foo' LIKE SOME (ARRAY['%a'])",
+        "SELECT 'foo' LIKE ANY (ARRAY['%a'])",
     );
-    pg().one_statement_parses_to(
-        "UPDATE foo AS f SET f.bar[warehouse_id] = f.bar[warehouse_id] + 1",
-        "UPDATE foo AS f SET f.bar = array_set(f.bar, warehouse_id, f.bar[warehouse_id] + 1)",
-    );
+    match pg().verified_expr("'foo' ILIKE ALL (ARRAY['F%'])") {
+        Expr::ILike { quantifier, .. } => {
+            assert_eq!(quantifier, Some(QuantifiedPredicateKind::All));
+        }
+        other => panic!("expected ILIKE, got {other:?}"),
+    }
 }
 
 #[test]

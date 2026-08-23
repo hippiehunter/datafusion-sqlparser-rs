@@ -1731,7 +1731,7 @@ impl Spanned for Expr {
                 expr,
                 pattern,
                 escape_char: _,
-                any: _,
+                quantifier: _,
             } => expr.span().union(&pattern.span()),
             Expr::OracleLike { expr, pattern, .. } => expr.span().union(&pattern.span()),
             Expr::ILike {
@@ -1739,7 +1739,7 @@ impl Spanned for Expr {
                 expr,
                 pattern,
                 escape_char: _,
-                any: _,
+                quantifier: _,
             } => expr.span().union(&pattern.span()),
             Expr::RLike { .. } => Span::empty(),
             Expr::IsNormalized {

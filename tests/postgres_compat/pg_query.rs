@@ -795,11 +795,18 @@ fn parse_update_target_mixing_subscripts_and_field_selections() {
 }
 
 #[test]
-fn parse_update_single_index_target_desugars_to_array_set() {
-    pg().one_statement_parses_to(
-        "UPDATE t SET a[2] = 5",
-        "UPDATE t SET a = array_set(a, 2, 5)",
-    );
+fn parse_update_single_index_target_is_an_indirection() {
+    let stmt = pg().verified_stmt("UPDATE t SET a[2] = 5");
+    match update_assignment_target(&stmt) {
+        AssignmentTarget::Indirection(target) => {
+            assert_eq!(target.column.to_string(), "a");
+            assert!(matches!(
+                target.indirection.as_slice(),
+                [AccessExpr::Subscript(Subscript::Index { .. })]
+            ));
+        }
+        other => panic!("expected an indirection target, got {other:?}"),
+    }
 }
 
 fn update_assignment_target(stmt: &Statement) -> AssignmentTarget {

@@ -1971,7 +1971,7 @@ fn parse_not_precedence() {
                     (Value::SingleQuotedString("b".into())).with_empty_span()
                 )),
                 escape_char: None,
-                any: false,
+                quantifier: None,
             }),
         },
     );
@@ -2004,7 +2004,7 @@ fn parse_null_like() {
         SelectItem::ExprWithAlias {
             expr: Expr::Like {
                 expr: Box::new(Expr::Identifier(Ident::new("column1"))),
-                any: false,
+                quantifier: None,
                 negated: false,
                 pattern: Box::new(Expr::Value((Value::Null).with_empty_span())),
                 escape_char: None,
@@ -2021,7 +2021,7 @@ fn parse_null_like() {
         SelectItem::ExprWithAlias {
             expr: Expr::Like {
                 expr: Box::new(Expr::Value((Value::Null).with_empty_span())),
-                any: false,
+                quantifier: None,
                 negated: false,
                 pattern: Box::new(Expr::Identifier(Ident::new("column1"))),
                 escape_char: None,
@@ -2052,7 +2052,7 @@ fn parse_ilike() {
                     (Value::SingleQuotedString("%a".to_string())).with_empty_span()
                 )),
                 escape_char: None,
-                any: false,
+                quantifier: None,
             },
             Box::into_owned(select.selection.unwrap())
         );
@@ -2071,7 +2071,7 @@ fn parse_ilike() {
                     (Value::SingleQuotedString("%a".to_string())).with_empty_span()
                 )),
                 escape_char: Some(Value::SingleQuotedString('^'.to_string())),
-                any: false,
+                quantifier: None,
             },
             Box::into_owned(select.selection.unwrap())
         );
@@ -2108,7 +2108,7 @@ fn parse_like() {
                     (Value::SingleQuotedString("%a".to_string())).with_empty_span()
                 )),
                 escape_char: None,
-                any: false,
+                quantifier: None,
             },
             Box::into_owned(select.selection.unwrap())
         );
@@ -2127,7 +2127,7 @@ fn parse_like() {
                     (Value::SingleQuotedString("%a".to_string())).with_empty_span()
                 )),
                 escape_char: Some(Value::SingleQuotedString('^'.to_string())),
-                any: false,
+                quantifier: None,
             },
             Box::into_owned(select.selection.unwrap())
         );
@@ -12433,7 +12433,7 @@ fn test_selective_aggregation() {
                             (Value::SingleQuotedString("a%".to_owned())).with_empty_span()
                         )),
                         escape_char: None,
-                        any: false,
+                        quantifier: None,
                     })),
                     null_treatment: None,
                     nth_value_order: None,

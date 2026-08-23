@@ -8276,7 +8276,7 @@ impl<'a> Parser<'a> {
                     } else if self.parse_keyword(Keyword::LIKE) {
                         Ok(Expr::Like {
                             negated,
-                            any: self.parse_keyword(Keyword::ANY),
+                            quantifier: self.parse_like_quantifier(),
                             expr: Box::new(expr),
                             pattern: Box::new(
                                 self.parse_subexpr(self.dialect.prec_value(Precedence::Like))?,
@@ -8286,7 +8286,7 @@ impl<'a> Parser<'a> {
                     } else if self.parse_keyword(Keyword::ILIKE) {
                         Ok(Expr::ILike {
                             negated,
-                            any: self.parse_keyword(Keyword::ANY),
+                            quantifier: self.parse_like_quantifier(),
                             expr: Box::new(expr),
                             pattern: Box::new(
                                 self.parse_subexpr(self.dialect.prec_value(Precedence::Like))?,
@@ -25879,28 +25879,27 @@ impl<'a> Parser<'a> {
         let AssignmentTarget::ColumnName(column) = target else {
             return Ok(Assignment { target, value });
         };
-        match indirection.as_slice() {
-            [] => Ok(Assignment {
+        if indirection.is_empty() {
+            return Ok(Assignment {
                 target: AssignmentTarget::ColumnName(column),
                 value,
+            });
+        }
+        Ok(Assignment {
+            target: AssignmentTarget::Indirection(ColumnTarget {
+                column,
+                indirection,
             }),
-            // A write through a single array index keeps desugaring into the
-            // `array_set` call the storage layer expects.
-            [AccessExpr::Subscript(Subscript::Index { index })] => {
-                let array_expr = Self::object_name_to_expr(&column)?;
-                let value = Self::build_array_set_expr(array_expr, index.clone(), value);
-                Ok(Assignment {
-                    target: AssignmentTarget::ColumnName(column),
-                    value,
-                })
-            }
-            _ => Ok(Assignment {
-                target: AssignmentTarget::Indirection(ColumnTarget {
-                    column,
-                    indirection,
-                }),
-                value,
-            }),
+            value,
+        })
+    }
+
+    /// The optional `ANY`/`SOME`/`ALL` quantifier after `LIKE`/`ILIKE`.
+    fn parse_like_quantifier(&self) -> Option<QuantifiedPredicateKind> {
+        match self.parse_one_of_keywords(&[Keyword::ANY, Keyword::SOME, Keyword::ALL]) {
+            Some(Keyword::ANY | Keyword::SOME) => Some(QuantifiedPredicateKind::Any),
+            Some(Keyword::ALL) => Some(QuantifiedPredicateKind::All),
+            _ => None,
         }
     }
 
@@ -25914,50 +25913,6 @@ impl<'a> Parser<'a> {
             let column = self.parse_object_name(false)?;
             Ok(AssignmentTarget::ColumnName(column))
         }
-    }
-
-    fn object_name_to_expr(column: &ObjectName) -> Result<Expr, ParserError> {
-        let idents = column
-            .0
-            .iter()
-            .map(|part| {
-                part.as_ident().cloned().ok_or_else(|| {
-                    ParserError::ParserError(
-                        "Subscript assignment targets must be identifier paths".to_string(),
-                    )
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        match idents.len() {
-            0 => Err(ParserError::ParserError(
-                "Subscript assignment target is empty".to_string(),
-            )),
-            1 => Ok(Expr::Identifier(idents[0].clone())),
-            _ => Ok(Expr::CompoundIdentifier(idents)),
-        }
-    }
-
-    fn build_array_set_expr(array_expr: Expr, index_expr: Expr, value_expr: Expr) -> Expr {
-        Expr::Function(Function {
-            name: ObjectName::from(vec![Ident::new("array_set")]),
-            uses_odbc_syntax: false,
-            parameters: FunctionArguments::None,
-            args: FunctionArguments::List(FunctionArgumentList {
-                duplicate_treatment: None,
-                args: vec![
-                    FunctionArg::Unnamed(FunctionArgExpr::Expr(array_expr)),
-                    FunctionArg::Unnamed(FunctionArgExpr::Expr(index_expr)),
-                    FunctionArg::Unnamed(FunctionArgExpr::Expr(value_expr)),
-                ],
-                clauses: vec![],
-            }),
-            filter: None,
-            null_treatment: None,
-            over: None,
-            within_group: vec![],
-            nth_value_order: None,
-        })
     }
 
     pub fn parse_function_args(&self) -> Result<FunctionArg, ParserError> {

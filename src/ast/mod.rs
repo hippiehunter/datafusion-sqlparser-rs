@@ -790,6 +790,18 @@ impl fmt::Display for QuantifiedPredicateKind {
     }
 }
 
+/// The `ANY `/`ALL ` prefix of a quantified LIKE pattern, empty otherwise.
+struct LikeQuantifierPrefix<'a>(Option<&'a QuantifiedPredicateKind>);
+
+impl fmt::Display for LikeQuantifierPrefix<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.0 {
+            Some(kind) => write!(f, "{kind} "),
+            None => Ok(()),
+        }
+    }
+}
+
 /// A WHEN clause in a CASE expression containing both
 /// the condition and its corresponding result
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
@@ -1131,11 +1143,11 @@ pub enum Expr {
         op: BinaryOperator,
         right: Box<Expr>,
     },
-    /// `[NOT] LIKE <pattern> [ESCAPE <escape_character>]`
+    /// `[NOT] LIKE [ANY | ALL] <pattern> [ESCAPE <escape_character>]`
     Like {
         negated: bool,
-        // The ANY keyword to match against a list of patterns
-        any: bool,
+        /// `ANY`/`SOME` or `ALL`: the pattern is an array of patterns.
+        quantifier: Option<QuantifiedPredicateKind>,
         expr: Box<Expr>,
         pattern: Box<Expr>,
         escape_char: Option<Value>,
@@ -1151,8 +1163,8 @@ pub enum Expr {
     /// `ILIKE` (case-insensitive `LIKE`)
     ILike {
         negated: bool,
-        // The ANY keyword to match against a list of patterns
-        any: bool,
+        /// `ANY`/`SOME` or `ALL`: the pattern is an array of patterns.
+        quantifier: Option<QuantifiedPredicateKind>,
         expr: Box<Expr>,
         pattern: Box<Expr>,
         escape_char: Option<Value>,
@@ -1970,26 +1982,21 @@ impl fmt::Display for Expr {
                 expr,
                 pattern,
                 escape_char,
-                any,
-            } => match escape_char {
-                Some(ch) => write!(
-                    f,
-                    "{} {}LIKE {}{} ESCAPE {}",
-                    expr,
-                    if *negated { "NOT " } else { "" },
-                    if *any { "ANY " } else { "" },
-                    pattern,
-                    ch
-                ),
-                _ => write!(
+                quantifier,
+            } => {
+                write!(
                     f,
                     "{} {}LIKE {}{}",
                     expr,
                     if *negated { "NOT " } else { "" },
-                    if *any { "ANY " } else { "" },
+                    LikeQuantifierPrefix(quantifier.as_ref()),
                     pattern
-                ),
-            },
+                )?;
+                if let Some(ch) = escape_char {
+                    write!(f, " ESCAPE {ch}")?;
+                }
+                Ok(())
+            }
             Expr::OracleLike {
                 kind,
                 negated,
@@ -2015,26 +2022,21 @@ impl fmt::Display for Expr {
                 expr,
                 pattern,
                 escape_char,
-                any,
-            } => match escape_char {
-                Some(ch) => write!(
-                    f,
-                    "{} {}ILIKE {}{} ESCAPE {}",
-                    expr,
-                    if *negated { "NOT " } else { "" },
-                    if *any { "ANY" } else { "" },
-                    pattern,
-                    ch
-                ),
-                _ => write!(
+                quantifier,
+            } => {
+                write!(
                     f,
                     "{} {}ILIKE {}{}",
                     expr,
                     if *negated { "NOT " } else { "" },
-                    if *any { "ANY " } else { "" },
+                    LikeQuantifierPrefix(quantifier.as_ref()),
                     pattern
-                ),
-            },
+                )?;
+                if let Some(ch) = escape_char {
+                    write!(f, " ESCAPE {ch}")?;
+                }
+                Ok(())
+            }
             Expr::RLike {
                 negated,
                 expr,
