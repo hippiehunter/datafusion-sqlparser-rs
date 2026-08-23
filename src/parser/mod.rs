@@ -8421,7 +8421,16 @@ impl<'a> Parser<'a> {
     /// Parse the `ESCAPE CHAR` portion of `LIKE`, `ILIKE`, and `SIMILAR TO`
     pub fn parse_escape_char(&self) -> Result<Option<Value>, ParserError> {
         if self.parse_keyword(Keyword::ESCAPE) {
-            Ok(Some(self.parse_value()?.into()))
+            let value = self.parse_value()?;
+            // The LIKE/SIMILAR escape must be a single character, so a cast on
+            // the escape literal — `ESCAPE '$'::bytea` for a bytea pattern —
+            // carries nothing beyond the literal itself. Absorb the cast here;
+            // otherwise the `::` would bind to the whole predicate and turn it
+            // into a cast of the boolean result.
+            while self.consume_token(&Token::DoubleColon) {
+                let _ = self.parse_data_type()?;
+            }
+            Ok(Some(value.into()))
         } else {
             Ok(None)
         }
