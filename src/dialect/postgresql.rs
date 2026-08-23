@@ -313,6 +313,10 @@ impl Dialect for PostgreSqlDialect {
         true
     }
 
+    fn supports_newline_string_literal_continuation(&self) -> bool {
+        true
+    }
+
     fn supports_radix_numeric_literals(&self) -> bool {
         true
     }

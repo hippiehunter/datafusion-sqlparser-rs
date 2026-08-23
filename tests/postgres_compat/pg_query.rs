@@ -860,3 +860,34 @@ fn merge_action(stmt: &Statement) -> MergeAction {
         other => panic!("expected a MERGE, got {other:?}"),
     }
 }
+
+/// The first projected string literal of `sql`, which is not required to
+/// round-trip because the literal was spelled across several lines.
+fn single_string_literal(sql: &str) -> String {
+    let select = pg().verified_only_select_with_canonical(sql, "");
+    match &select.projection[0] {
+        SelectItem::UnnamedExpr(Expr::Value(value))
+        | SelectItem::ExprWithAlias {
+            expr: Expr::Value(value),
+            ..
+        } => match &value.value {
+            Value::SingleQuotedString(text) => text.clone(),
+            other => panic!("expected a string literal, got {other:?}"),
+        },
+        other => panic!("expected a literal projection, got {other:?}"),
+    }
+}
+
+#[test]
+fn string_literals_continue_across_a_newline() {
+    assert_eq!(
+        single_string_literal("SELECT 'first line'\n' - next line'\n' - third line' AS s"),
+        "first line - next line - third line"
+    );
+    assert_eq!(single_string_literal("SELECT 'a'  \t\n\t 'b'"), "ab");
+    assert_eq!(single_string_literal("SELECT 'a'\n-- a comment\n'b'"), "ab");
+    assert_eq!(single_string_literal("SELECT 'a' -- a comment\n'b'"), "ab");
+    assert!(pg()
+        .parse_sql_statements("SELECT 'a'\n/* block */\n'b' AS b")
+        .is_err());
+}

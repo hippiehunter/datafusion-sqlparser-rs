@@ -1285,11 +1285,24 @@ impl<'a> Tokenizer<'a> {
                 }
                 // single quoted string
                 '\'' => {
-                    let s = self.tokenize_single_quoted_string_borrowed(
+                    let mut s = self.tokenize_single_quoted_string_borrowed(
                         chars,
                         '\'',
                         self.features.supports_string_literal_backslash_escape,
                     )?;
+                    if self.features.supports_newline_string_literal_continuation {
+                        while let Some(gap) = newline_string_continuation_len(chars) {
+                            for _ in 0..gap {
+                                chars.next();
+                            }
+                            let continued = self.tokenize_single_quoted_string_borrowed(
+                                chars,
+                                '\'',
+                                self.features.supports_string_literal_backslash_escape,
+                            )?;
+                            s.to_mut().push_str(&continued);
+                        }
+                    }
 
                     Ok(Some(BorrowedToken::SingleQuotedString(s)))
                 }
@@ -2604,6 +2617,35 @@ impl<'a> Tokenizer<'a> {
 /// Read from `chars` until `predicate` returns `false` or EOF is hit.
 /// Return the characters read as String, and keep the first non-matching
 /// char available as `chars.next()`.
+/// The number of characters of whitespace that separate the string constant
+/// just read from a continuation of it: PostgreSQL joins two string constants
+/// when the whitespace between them holds at least one newline, where a `--`
+/// comment counts as whitespace up to the newline that ends it and anything
+/// else, such as a block comment, ends the literal.
+fn newline_string_continuation_len(chars: &State) -> Option<usize> {
+    let rest = &chars.source[chars.byte_pos..];
+    let mut seen_newline = false;
+    let mut offset = 0usize;
+    loop {
+        let tail = &rest[offset..];
+        let ch = tail.chars().next()?;
+        match ch {
+            '\n' => {
+                seen_newline = true;
+                offset += 1;
+            }
+            ' ' | '\t' | '\r' | '\x0c' => offset += 1,
+            '-' if tail.starts_with("--") => {
+                let newline = tail.find('\n')?;
+                seen_newline = true;
+                offset += newline + 1;
+            }
+            '\'' if seen_newline => return Some(rest[..offset].chars().count()),
+            _ => return None,
+        }
+    }
+}
+
 fn peeking_take_while(chars: &mut State, predicate: impl FnMut(char) -> bool) -> String {
     peeking_take_while_ref(chars, predicate).to_string()
 }
