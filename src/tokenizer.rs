@@ -3041,7 +3041,18 @@ fn tokenize_unicode_escaped<'a>(
         }
     };
     let raw = &source[content_start..content_end];
-    let escape = consume_uescape_clause(chars).unwrap_or('\\');
+    let escape = match consume_uescape_clause(chars) {
+        // PostgreSQL: any single character except a hex digit, the plus
+        // sign, a quote, a double quote, or whitespace.
+        Some(c) if c.is_ascii_hexdigit() || matches!(c, '+' | '\'' | '"') || c.is_whitespace() => {
+            return Err(TokenizerError {
+                message: "invalid Unicode escape character".to_string(),
+                location: error_loc,
+            });
+        }
+        Some(c) => c,
+        None => '\\',
+    };
     unescape_unicode_content(raw, quote, escape, error_loc)
 }
 
