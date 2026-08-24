@@ -481,12 +481,12 @@ fn parse_create_sequence() {
 fn parse_postgres_user_aliases() {
     let create = pg().one_statement_parses_to(
         "CREATE USER alice WITH LOGIN PASSWORD 'secret'",
-        "CREATE ROLE alice LOGIN PASSWORD 'secret'",
+        "CREATE USER alice LOGIN PASSWORD 'secret'",
     );
-    assert!(
-        matches!(create, Statement::CreateRole(_)),
-        "CREATE USER should parse as CREATE ROLE, got {create:?}"
-    );
+    let Statement::CreateRole(role) = create else {
+        panic!("CREATE USER should parse as CreateRole, got {create:?}");
+    };
+    assert_eq!(role.kind, CreateRoleKind::User);
 
     let alter =
         pg().one_statement_parses_to("ALTER USER alice RESET ALL", "ALTER ROLE alice RESET ALL");
@@ -513,11 +513,12 @@ fn parse_postgres_user_aliases() {
 fn parse_postgres_create_user_quoted_name_strips_wrapper_quotes() {
     let create = pg().one_statement_parses_to(
         r#"CREATE USER "tpcc" PASSWORD 'secret'"#,
-        r#"CREATE ROLE "tpcc" PASSWORD 'secret'"#,
+        r#"CREATE USER "tpcc" PASSWORD 'secret'"#,
     );
     let Statement::CreateRole(role) = create else {
         panic!("CREATE USER should parse as CREATE ROLE");
     };
+    assert_eq!(role.kind, CreateRoleKind::User);
     assert_eq!(role.names.len(), 1);
     let Some(ObjectNamePart::Identifier(ident)) = role.names[0].0.first() else {
         panic!("expected CREATE ROLE name identifier");

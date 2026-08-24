@@ -1548,10 +1548,24 @@ impl<'a> Tokenizer<'a> {
                             .copied()
                             .is_some_and(|next| self.dialect.is_identifier_part(next))
                     {
-                        return self.tokenizer_error(
-                            chars.location(),
-                            "Invalid character after numeric literal",
-                        );
+                        // A lone storage-size suffix letter stays a separate
+                        // Word token (`SIZE 1G` in tablespace DDL parses as
+                        // Number + Word), mirroring the Oracle float-suffix
+                        // carve-out below. Anything longer or different is
+                        // the malformed-literal error PostgreSQL raises.
+                        let size_suffix = chars
+                            .peek()
+                            .copied()
+                            .is_some_and(|next| matches!(next, 'k' | 'K' | 'm' | 'M' | 'g' | 'G' | 't' | 'T' | 'p' | 'P'))
+                            && !chars
+                                .peek_nth(1)
+                                .is_some_and(|after| self.dialect.is_identifier_part(after));
+                        if !size_suffix {
+                            return self.tokenizer_error(
+                                chars.location(),
+                                "Invalid character after numeric literal",
+                            );
+                        }
                     }
 
                     // Oracle's binary floating-point literal suffix is part of

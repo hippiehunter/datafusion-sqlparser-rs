@@ -61,7 +61,7 @@ pub use self::data_type::{
 };
 pub use self::dcl::{
     AlterConfigurationOperation, AlterDefaultPrivilegesAction, AlterRoleOperation, CreateRole,
-    DefaultPrivilegeObject, ResetConfig, RoleOption, SetConfigValue, Use,
+    CreateRoleKind, DefaultPrivilegeObject, ResetConfig, RoleOption, SetConfigValue, Use,
 };
 pub use self::ddl::{
     Alignment, AlterColumnOperation, AlterIndexOperation, AlterPolicyOperation, AlterSchema,

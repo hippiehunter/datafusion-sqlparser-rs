@@ -33,9 +33,9 @@
 
 use crate::postgres_compat::common::*;
 use sqlparser::ast::{
-    AggregateArgs, CollationDefinition, CommentObject, CommentObjectDetail, DropBehavior,
-    GrantObjects, ObjectType, RoleGrantOptionValue, SqlOption, Statement, TriggerExecBodyType,
-    Value,
+    AggregateArgs, CollationDefinition, CommentObject, CommentObjectDetail, CreateRoleKind,
+    DropBehavior, GrantObjects, ObjectType, RoleGrantOptionValue, SqlOption, Statement,
+    TriggerExecBodyType, Value,
 };
 
 /// Parse `sql`, assert it renders back to exactly `sql`, and assert that the
@@ -765,10 +765,13 @@ fn create_role_records_the_password_encryption_spelling() {
 fn create_group_is_a_spelling_of_create_role() {
     let statement = one_statement_parses_to_pg(
         "CREATE GROUP my_group WITH NOLOGIN",
-        "CREATE ROLE my_group NOLOGIN",
+        "CREATE GROUP my_group NOLOGIN",
     );
     match statement {
-        Statement::CreateRole(role) => assert_eq!(role.login, Some(false)),
+        Statement::CreateRole(role) => {
+            assert_eq!(role.kind, CreateRoleKind::Group);
+            assert_eq!(role.login, Some(false));
+        }
         other => panic!("Expected CreateRole, got {other:?}"),
     }
 }

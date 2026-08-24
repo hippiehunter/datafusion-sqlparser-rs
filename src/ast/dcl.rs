@@ -392,12 +392,37 @@ impl fmt::Display for Use {
     }
 }
 
+/// Which spelling introduced a `CREATE ROLE` statement. PostgreSQL treats
+/// `CREATE USER` and `CREATE GROUP` as `CREATE ROLE`, but the spelling decides
+/// the `LOGIN` default: `CREATE USER` defaults to `LOGIN`, the others to
+/// `NOLOGIN`.
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum CreateRoleKind {
+    Role,
+    User,
+    Group,
+}
+
+impl fmt::Display for CreateRoleKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            CreateRoleKind::Role => write!(f, "ROLE"),
+            CreateRoleKind::User => write!(f, "USER"),
+            CreateRoleKind::Group => write!(f, "GROUP"),
+        }
+    }
+}
+
 /// CREATE ROLE statement
 /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-createrole.html)
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct CreateRole {
+    /// The statement spelling: `CREATE ROLE`, `CREATE USER` or `CREATE GROUP`.
+    pub kind: CreateRoleKind,
     pub names: Vec<ObjectName>,
     pub if_not_exists: bool,
     // Postgres
@@ -428,7 +453,8 @@ impl fmt::Display for CreateRole {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "CREATE ROLE {if_not_exists}{names}{superuser}{create_db}{create_role}{inherit}{login}{replication}{bypassrls}",
+            "CREATE {kind} {if_not_exists}{names}{superuser}{create_db}{create_role}{inherit}{login}{replication}{bypassrls}",
+            kind = self.kind,
             if_not_exists = if self.if_not_exists { "IF NOT EXISTS " } else { "" },
             names = display_separated(&self.names, ", "),
             superuser = match self.superuser {

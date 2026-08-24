@@ -9624,8 +9624,8 @@ impl<'a> Parser<'a> {
             if self.parse_keyword(Keyword::MAPPING) {
                 self.parse_create_user_mapping(create_token)
             } else if dialect_of!(self is PostgreSqlDialect) {
-                // PostgreSQL treats CREATE USER as an alias of CREATE ROLE.
-                self.parse_create_role()
+                // PostgreSQL treats CREATE USER as CREATE ROLE with a LOGIN default.
+                self.parse_create_role(CreateRoleKind::User)
             } else {
                 self.parse_create_user(or_replace)
             }
@@ -9660,7 +9660,7 @@ impl<'a> Parser<'a> {
         } else if self.parse_keyword(Keyword::DATABASE) {
             self.parse_create_database(create_token)
         } else if self.parse_keyword(Keyword::ROLE) {
-            self.parse_create_role()
+            self.parse_create_role(CreateRoleKind::Role)
         } else if self.parse_keyword(Keyword::SEQUENCE) {
             self.parse_create_sequence(create_token, temporary, unlogged)
         } else if self.parse_keyword(Keyword::TYPE) {
@@ -9688,7 +9688,7 @@ impl<'a> Parser<'a> {
             self.parse_create_event_trigger()
         } else if self.parse_keyword(Keyword::GROUP) {
             // PostgreSQL keeps CREATE GROUP as a spelling of CREATE ROLE.
-            self.parse_create_role()
+            self.parse_create_role(CreateRoleKind::Group)
         } else if self.parse_keyword(Keyword::SERVER) {
             self.parse_pg_create_server(create_token)
         } else if self.parse_keyword(Keyword::FOREIGN) {
@@ -12520,7 +12520,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn parse_create_role(&self) -> Result<Statement, ParserError> {
+    pub fn parse_create_role(&self, kind: CreateRoleKind) -> Result<Statement, ParserError> {
         let if_not_exists = self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
         let names = self.parse_comma_separated(|p| p.parse_object_name(false))?;
 
@@ -12744,6 +12744,7 @@ impl<'a> Parser<'a> {
         }
 
         Ok(CreateRole {
+            kind,
             names,
             if_not_exists,
             login,
