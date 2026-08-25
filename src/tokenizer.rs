@@ -1542,24 +1542,29 @@ impl<'a> Tokenizer<'a> {
                         );
                     }
 
+                    // Only an identifier *start* character is trailing junk.
+                    // `$` continues an identifier but cannot begin one, so it
+                    // opens a dollar-quoted string instead: `0$tag$$tag$1` is
+                    // three tokens in PostgreSQL, not a malformed literal.
                     if self.features.requires_numeric_literal_delimiter
                         && chars
                             .peek()
                             .copied()
-                            .is_some_and(|next| self.dialect.is_identifier_part(next))
+                            .is_some_and(|next| self.dialect.is_identifier_start(next))
                     {
                         // A lone storage-size suffix letter stays a separate
                         // Word token (`SIZE 1G` in tablespace DDL parses as
                         // Number + Word), mirroring the Oracle float-suffix
                         // carve-out below. Anything longer or different is
                         // the malformed-literal error PostgreSQL raises.
-                        let size_suffix = chars
-                            .peek()
-                            .copied()
-                            .is_some_and(|next| matches!(next, 'k' | 'K' | 'm' | 'M' | 'g' | 'G' | 't' | 'T' | 'p' | 'P'))
-                            && !chars
-                                .peek_nth(1)
-                                .is_some_and(|after| self.dialect.is_identifier_part(after));
+                        let size_suffix = chars.peek().copied().is_some_and(|next| {
+                            matches!(
+                                next,
+                                'k' | 'K' | 'm' | 'M' | 'g' | 'G' | 't' | 'T' | 'p' | 'P'
+                            )
+                        }) && !chars
+                            .peek_nth(1)
+                            .is_some_and(|after| self.dialect.is_identifier_part(after));
                         if !size_suffix {
                             return self.tokenizer_error(
                                 chars.location(),
@@ -2092,20 +2097,34 @@ impl<'a> Tokenizer<'a> {
             if chars
                 .peek()
                 .copied()
-                .is_some_and(|next| self.dialect.is_identifier_part(next))
+                .is_some_and(|next| self.dialect.is_identifier_start(next))
             {
                 return self.tokenizer_error(
                     chars.location(),
                     "Invalid character after positional parameter",
                 );
             }
-            let parameter = self.safe_slice(
-                chars.source,
-                parameter_start,
-                chars.byte_pos,
-                starting_loc,
-            )?;
+            let parameter =
+                self.safe_slice(chars.source, parameter_start, chars.byte_pos, starting_loc)?;
             return Ok(Token::Placeholder(format!("${parameter}")));
+        }
+
+        // PostgreSQL spells a placeholder `$` plus decimal digits and nothing
+        // else. A `$` that does not open a dollar-quoted string is a token in
+        // its own right, which the grammar either interprets — the row-pattern
+        // end anchor in MATCH_RECOGNIZE — or rejects. Consume only the `$` and
+        // leave any following word to tokenize as an identifier.
+        if self.features.dollar_placeholder_must_be_numeric {
+            let mut tag_len = 0;
+            while chars
+                .peek_nth(tag_len)
+                .is_some_and(|ch| ch.is_alphanumeric() || ch == '_')
+            {
+                tag_len += 1;
+            }
+            if chars.peek_nth(tag_len) != Some('$') {
+                return Ok(Token::Placeholder("$".to_string()));
+            }
         }
 
         // If it's not $$ we have 2 options :
@@ -2128,12 +2147,6 @@ impl<'a> Tokenizer<'a> {
                 value: value.into_owned(),
                 tag: tag.map(|t| t.into_owned()),
             }));
-        }
-        if self.features.dollar_placeholder_must_be_numeric {
-            return self.tokenizer_error(
-                starting_loc,
-                "A positional parameter must be '$' followed by decimal digits",
-            );
         }
 
         // Case 3: $placeholder (e.g., $1, $name)
@@ -3266,30 +3279,28 @@ mod tests {
         ];
         compare(expected, tokens);
 
-        all_dialects_where(|dialect| dialect.supports_numeric_literal_underscores()).tokenizes_to(
-            "SELECT 10_000, _10_000, 10_00_, 10___0",
-            vec![
-                Token::make_keyword("SELECT"),
-                Token::Whitespace(Whitespace::Space),
-                Token::Number("10_000".to_string(), false),
-                Token::Comma,
-                Token::Whitespace(Whitespace::Space),
-                Token::make_word("_10_000", None), // leading underscore tokenizes as a word (parsed as column identifier)
-                Token::Comma,
-                Token::Whitespace(Whitespace::Space),
-                Token::Number("10_00".to_string(), false),
-                Token::make_word("_", None), // trailing underscores tokenizes as a word (syntax error in some dialects)
-                Token::Comma,
-                Token::Whitespace(Whitespace::Space),
-                Token::Number("10".to_string(), false),
-                Token::make_word("___0", None), // multiple underscores tokenizes as a word (syntax error in some dialects)
-            ],
-        );
+        // A leading underscore makes the whole thing an identifier.
+        let sql = String::from("SELECT _10_000");
+        let tokens = Tokenizer::new(&dialect, &sql).tokenize().unwrap();
+        let expected = vec![
+            Token::make_keyword("SELECT"),
+            Token::Whitespace(Whitespace::Space),
+            Token::make_word("_10_000", None),
+        ];
+        compare(expected, tokens);
+
+        // A separator that does not join two digit groups runs the literal
+        // into an identifier, which PostgreSQL reports as trailing junk
+        // rather than splitting into a number and a word.
+        for sql in ["SELECT 10_00_", "SELECT 10___0"] {
+            let err = Tokenizer::new(&dialect, sql).tokenize().unwrap_err();
+            assert_eq!(err.message, "Invalid character after numeric literal");
+        }
     }
 
     #[test]
     fn tokenize_select_exponent() {
-        let sql = String::from("SELECT 1e10, 1e-10, 1e+10, 1ea, 1e-10a, 1e-10-10");
+        let sql = String::from("SELECT 1e10, 1e-10, 1e+10, 1e-10-10");
         let dialect = PostgreSqlDialect {};
         let tokens = Tokenizer::new(&dialect, &sql).tokenize().unwrap();
 
@@ -3305,20 +3316,19 @@ mod tests {
             Token::Number(String::from("1e+10"), false),
             Token::Comma,
             Token::Whitespace(Whitespace::Space),
-            Token::Number(String::from("1"), false),
-            Token::make_word("ea", None),
-            Token::Comma,
-            Token::Whitespace(Whitespace::Space),
-            Token::Number(String::from("1e-10"), false),
-            Token::make_word("a", None),
-            Token::Comma,
-            Token::Whitespace(Whitespace::Space),
             Token::Number(String::from("1e-10"), false),
             Token::Minus,
             Token::Number(String::from("10"), false),
         ];
 
         compare(expected, tokens);
+
+        // An unconsumed exponent letter, or a letter after a complete
+        // exponent, is trailing junk in PostgreSQL.
+        for sql in ["SELECT 1ea", "SELECT 1e-10a"] {
+            let err = Tokenizer::new(&dialect, sql).tokenize().unwrap_err();
+            assert_eq!(err.message, "Invalid character after numeric literal");
+        }
     }
 
     #[test]

@@ -711,7 +711,7 @@ where
 /// # use sqlparser::dialect::PostgreSqlDialect;
 /// # use sqlparser::ast::{Statement, visit_statements_mut};
 /// # use core::ops::ControlFlow;
-/// let sql = "SELECT x FROM foo LIMIT 9+$limit; SELECT * FROM t LIMIT f()";
+/// let sql = "SELECT x FROM foo LIMIT 9+$1; SELECT * FROM t LIMIT f()";
 /// let mut statements = Parser::parse_sql(&PostgreSqlDialect{}, sql).unwrap();
 ///
 /// // Remove all select limits in outer statements (not in sub-queries)

@@ -18897,6 +18897,21 @@ impl<'a> Parser<'a> {
             {
                 ok_value(Value::PlSqlInquiryDirective(s.to_string()))
             }
+            // A `$` that opens neither a positional parameter nor a
+            // dollar-quoted string reaches the parser as a bare placeholder.
+            // It is not a value; the row-pattern end anchor is the only place
+            // the grammar accepts it.
+            BorrowedToken::Placeholder(ref s)
+                if s == "$" && self.dialect.dollar_placeholder_must_be_numeric() =>
+            {
+                self.expected(
+                    "a value",
+                    TokenWithSpan {
+                        token: BorrowedToken::Placeholder(s.clone()),
+                        span,
+                    },
+                )
+            }
             BorrowedToken::Placeholder(ref s) => ok_value(Value::Placeholder(s.to_string())),
             tok @ BorrowedToken::Colon | tok @ BorrowedToken::AtSign => {
                 // 1. Not calling self.parse_identifier(false)?

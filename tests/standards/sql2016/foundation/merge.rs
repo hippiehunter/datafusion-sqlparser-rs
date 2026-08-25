@@ -18,6 +18,8 @@
 //! SQL:2016 MERGE Statement Tests (ISO/IEC 9075-2, Features F312-F314)
 
 use crate::standards::common::one_statement_parses_to_std;
+use sqlparser::dialect::MsSqlDialect;
+use sqlparser::test_utils::TestedDialects;
 
 // ==================== F312: MERGE Statement ====================
 
@@ -265,6 +267,23 @@ fn merge_with_join() {
 #[test]
 fn merge_output() {
     one_statement_parses_to_std(
+        "MERGE INTO target t USING source s ON t.id = s.id \
+         WHEN MATCHED THEN UPDATE SET t.value = s.value \
+         WHEN NOT MATCHED THEN INSERT (id, value) VALUES (s.id, s.value) \
+         OUTPUT inserted.id, deleted.value",
+        "MERGE INTO target AS t USING source AS s ON t.id = s.id \
+         WHEN MATCHED THEN UPDATE SET t.value = s.value \
+         WHEN NOT MATCHED THEN INSERT (id, value) VALUES (s.id, s.value) \
+         OUTPUT inserted.id, deleted.value",
+    );
+}
+
+/// `$action` is Transact-SQL's MERGE pseudo-column. PostgreSQL spells a
+/// placeholder `$` plus digits and has no other meaning for a bare `$`, so
+/// this form belongs to the dialect that defines it.
+#[test]
+fn merge_output_action_pseudo_column() {
+    TestedDialects::new(vec![Box::new(MsSqlDialect {})]).one_statement_parses_to(
         "MERGE INTO target t USING source s ON t.id = s.id \
          WHEN MATCHED THEN UPDATE SET t.value = s.value \
          WHEN NOT MATCHED THEN INSERT (id, value) VALUES (s.id, s.value) \
