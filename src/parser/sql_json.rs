@@ -28,11 +28,12 @@ use alloc::{vec, vec::Vec};
 use super::{Parser, ParserError};
 use crate::{
     ast::{
-        Expr, ExprWithAlias, FunctionArgExpr, FunctionArgumentClause, FunctionArgumentList,
-        JsonEncoding, JsonFormatClause, JsonFormattedExpr, JsonOnBehavior, JsonQueryWrapper,
-        JsonQuotesBehavior, JsonQuotesClause, JsonReturningClause, ObjectName, SqlJsonTable,
-        SqlJsonTableColumn, SqlJsonTableExistsColumn, SqlJsonTableNestedColumn,
-        SqlJsonTableRegularColumn, TableFactor, Value,
+        helpers::attached_token::AttachedToken, Expr, ExprWithAlias, FunctionArgExpr,
+        FunctionArgumentClause, FunctionArgumentList, JsonEncoding, JsonFormatClause,
+        JsonFormattedExpr, JsonOnBehavior, JsonQueryWrapper, JsonQuotesBehavior, JsonQuotesClause,
+        JsonReturningClause, ObjectName, SqlJsonTable, SqlJsonTableColumn,
+        SqlJsonTableExistsColumn, SqlJsonTableNestedColumn, SqlJsonTableRegularColumn, TableFactor,
+        Value,
     },
     keywords::Keyword,
     tokenizer::BorrowedToken,
@@ -115,13 +116,14 @@ impl Parser<'_> {
         let query = self.parse_query()?;
         let mut clauses = vec![];
         self.parse_sql_json_call_clauses(&mut clauses)?;
-        self.expect_token(&BorrowedToken::RParen)?;
+        let close_paren = self.expect_token(&BorrowedToken::RParen)?;
         Ok(FunctionArgumentList {
             duplicate_treatment: None,
             args: vec![crate::ast::FunctionArg::Unnamed(FunctionArgExpr::Query(
                 query,
             ))],
             clauses,
+            close_paren_token: AttachedToken::from(close_paren),
         })
     }
 

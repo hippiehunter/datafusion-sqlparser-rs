@@ -623,6 +623,7 @@ where
 ///               duplicate_treatment: None,
 ///               args: vec![FunctionArg::Unnamed(FunctionArgExpr::Expr(old_expr))],
 ///               clauses: vec![],
+///               close_paren_token: helpers::attached_token::AttachedToken::empty(),
 ///           }),
 ///           null_treatment: None,
 ///           filter: None,

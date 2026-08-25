@@ -23,17 +23,17 @@ use alloc::{
 use super::{Parser, ParserError};
 use crate::ast::helpers::attached_token::AttachedToken;
 use crate::ast::{
-    AllInTablespaceObjectType, AlterCollationAction,
-    AlterConfigurationOperation, AlterDatabaseOption, AlterDomainAction, AlterEventTriggerAction,
-    AlterGroupAction, AlterIndexOperation, AlterMaterializedViewAction,
-    AlterMaterializedViewOperation, AlterObject, AlterObjectAction, AlterObjectTarget,
-    AlterOperatorAction, AlterOperatorArgs, AlterRoutineAction, AlterSequenceOperation,
-    AlterStatisticsAction, AlterTextSearchConfigurationAction, AlterTextSearchDictionaryAction,
-    AlterTriggerAction, AlterTypeAction, AlterTypeOperation, AlterViewOperation, DataType,
-    DatabaseOptionValue, DefinitionElement, DefinitionValue, EventTriggerEnableMode, Expr,
-    FunctionBehavior, FunctionCalledOnNull, FunctionParallel, Ident, ObjectName,
-    ProcedureSecurity, ProcedureSetConfig, ResetConfig, RoutineKind,
-    RoutineOption, SetConfigValue, SetStatisticsValue, SqlOption, Statement,
+    AllInTablespaceObjectType, AlterCollationAction, AlterConfigurationOperation,
+    AlterDatabaseOption, AlterDomainAction, AlterEventTriggerAction, AlterGroupAction,
+    AlterIndexOperation, AlterMaterializedViewAction, AlterMaterializedViewOperation, AlterObject,
+    AlterObjectAction, AlterObjectTarget, AlterOperatorAction, AlterOperatorArgs,
+    AlterRoutineAction, AlterSequenceOperation, AlterStatisticsAction,
+    AlterTextSearchConfigurationAction, AlterTextSearchDictionaryAction, AlterTriggerAction,
+    AlterTypeAction, AlterTypeOperation, AlterViewOperation, DataType, DatabaseOptionValue,
+    DefinitionElement, DefinitionValue, EventTriggerEnableMode, Expr, FunctionBehavior,
+    FunctionCalledOnNull, FunctionParallel, Ident, ObjectName, ProcedureSecurity,
+    ProcedureSetConfig, ResetConfig, RoutineKind, RoutineOption, SetConfigValue,
+    SetStatisticsValue, SqlOption, Statement,
 };
 use crate::keywords::Keyword;
 use crate::tokenizer::BorrowedToken;

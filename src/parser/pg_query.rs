@@ -19,11 +19,12 @@ use super::{Parser, ParserError};
 use crate::arena::AstBox as Box;
 use crate::{
     ast::{
-        AccessExpr, BinaryOperator, ColumnTarget, ConflictIndexElement, ConflictInference,
-        ConflictTarget, DataType, Expr, Function, FunctionArgumentList, FunctionArguments, Ident,
-        ObjectName, ObjectNamePart, OrderByOptions, OverridingKind, ReturningRowAlias,
-        ReturningRowVersion, TableFactor, TableFunctionArgs, TableFunctionColumnDef,
-        TableFunctionItem, TrimWhereField, XmlRootStandalone, XmlRootVersion,
+        helpers::attached_token::AttachedToken, AccessExpr, BinaryOperator, ColumnTarget,
+        ConflictIndexElement, ConflictInference, ConflictTarget, DataType, Expr, Function,
+        FunctionArgumentList, FunctionArguments, Ident, ObjectName, ObjectNamePart, OrderByOptions,
+        OverridingKind, ReturningRowAlias, ReturningRowVersion, TableFactor, TableFunctionArgs,
+        TableFunctionColumnDef, TableFunctionItem, TrimWhereField, XmlRootStandalone,
+        XmlRootVersion,
     },
     dialect::Precedence,
     keywords::{get_keyword, Keyword, POSTGRES_RESERVED_KEYWORDS},
@@ -597,7 +598,6 @@ impl Parser<'_> {
         self.expect_token(&BorrowedToken::RParen)?;
         Ok(items)
     }
-
 }
 
 /// Rebuild the function call expression of a PostgreSQL table function from the
@@ -611,6 +611,9 @@ pub(super) fn table_function_call(name: ObjectName, args: Option<TableFunctionAr
             duplicate_treatment: None,
             args: args.map(|args| args.args).unwrap_or_default(),
             clauses: vec![],
+            // The `FROM` clause parser consumed the call, so the closing paren
+            // is not available to attach here.
+            close_paren_token: AttachedToken::empty(),
         }),
         filter: None,
         nth_value_order: None,

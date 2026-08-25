@@ -1207,6 +1207,7 @@ fn parse_select_count_wildcard() {
                 duplicate_treatment: None,
                 args: vec![FunctionArg::Unnamed(FunctionArgExpr::Wildcard)],
                 clauses: vec![],
+                close_paren_token: AttachedToken::empty(),
             }),
             null_treatment: None,
             nth_value_order: None,
@@ -1234,6 +1235,7 @@ fn parse_select_count_distinct() {
                     expr: Box::new(Expr::Identifier(Ident::new("x"))),
                 }))],
                 clauses: vec![],
+                close_paren_token: AttachedToken::empty(),
             }),
             null_treatment: None,
             nth_value_order: None,
@@ -1988,6 +1990,7 @@ fn parse_not_precedence() {
                     (Value::SingleQuotedString("a".into())).with_empty_span()
                 )],
                 negated: true,
+                close_paren_token: AttachedToken::empty(),
             }),
         },
     );
@@ -2234,6 +2237,7 @@ fn parse_in_list() {
                     Expr::Value((Value::SingleQuotedString("MED".to_string())).with_empty_span()),
                 ],
                 negated,
+                close_paren_token: AttachedToken::empty(),
             },
             Box::into_owned(select.selection.unwrap())
         );
@@ -2763,6 +2767,7 @@ fn parse_select_having() {
                         duplicate_treatment: None,
                         args: vec![FunctionArg::Unnamed(FunctionArgExpr::Wildcard)],
                         clauses: vec![],
+                        close_paren_token: AttachedToken::empty(),
                     }),
                     null_treatment: None,
                     nth_value_order: None,
@@ -3178,6 +3183,7 @@ fn parse_listagg() {
                         with_count: false,
                     }
                 )],
+                close_paren_token: AttachedToken::empty(),
             }),
             filter: None,
             null_treatment: None,
@@ -5387,6 +5393,7 @@ fn parse_named_argument_function() {
                     },
                 ],
                 clauses: vec![],
+                close_paren_token: AttachedToken::empty(),
             }),
             null_treatment: None,
             nth_value_order: None,
@@ -5429,6 +5436,7 @@ fn parse_window_functions() {
                 duplicate_treatment: None,
                 args: vec![],
                 clauses: vec![],
+                close_paren_token: AttachedToken::empty(),
             }),
             null_treatment: None,
             nth_value_order: None,
@@ -5606,6 +5614,7 @@ fn test_parse_named_window() {
                             }),
                         ))],
                         clauses: vec![],
+                        close_paren_token: AttachedToken::empty(),
                     }),
                     null_treatment: None,
                     nth_value_order: None,
@@ -5642,6 +5651,7 @@ fn test_parse_named_window() {
                             }),
                         ))],
                         clauses: vec![],
+                        close_paren_token: AttachedToken::empty(),
                     }),
                     null_treatment: None,
                     nth_value_order: None,
@@ -10162,6 +10172,7 @@ fn parse_time_functions() {
                 duplicate_treatment: None,
                 args: vec![],
                 clauses: vec![],
+                close_paren_token: AttachedToken::empty(),
             }),
             null_treatment: None,
             nth_value_order: None,
@@ -11838,6 +11849,7 @@ fn parse_call() {
                     (Value::SingleQuotedString("a".to_string())).with_empty_span()
                 )))],
                 clauses: vec![],
+                close_paren_token: AttachedToken::empty(),
             }),
             name: ObjectName::from(vec![Ident::new("my_procedure")]),
             filter: None,
@@ -12404,6 +12416,7 @@ fn test_selective_aggregation() {
                         Expr::Identifier(Ident::new("name"))
                     ))],
                     clauses: vec![],
+                    close_paren_token: AttachedToken::empty(),
                 }),
                 filter: Some(Box::new(Expr::IsNotNull {
                     expr: Box::new(Expr::Identifier(Ident::new("name"))),
@@ -12425,6 +12438,7 @@ fn test_selective_aggregation() {
                             Expr::Identifier(Ident::new("name"))
                         ))],
                         clauses: vec![],
+                        close_paren_token: AttachedToken::empty(),
                     }),
                     filter: Some(Box::new(Expr::Like {
                         negated: false,
@@ -13533,6 +13547,7 @@ fn parse_composite_access_expr() {
                         Expr::Identifier(Ident::new("a"))
                     ))],
                     clauses: vec![],
+                    close_paren_token: AttachedToken::empty(),
                 }),
                 null_treatment: None,
                 nth_value_order: None,
@@ -13558,6 +13573,7 @@ fn parse_composite_access_expr() {
                         Expr::Identifier(Ident::new("a"))
                     ))],
                     clauses: vec![],
+                    close_paren_token: AttachedToken::empty(),
                 }),
                 null_treatment: None,
                 nth_value_order: None,
@@ -13585,6 +13601,7 @@ fn parse_composite_access_expr() {
                     Expr::Identifier(Ident::new("a")),
                 ))],
                 clauses: vec![],
+                close_paren_token: AttachedToken::empty(),
             }),
             null_treatment: None,
             nth_value_order: None,
@@ -13744,6 +13761,34 @@ fn test_case_statement_span() {
         parser.parse_statement().unwrap().span(),
         Span::new(Location::new(1, 1), Location::new(1, sql.len() as u64 + 1))
     );
+}
+
+/// An expression that ends in a closing parenthesis has to span it: a caller
+/// that slices the source by the span — to persist a column default or a CHECK
+/// predicate, say — otherwise stores something that no longer parses, such as
+/// `random` for `random()` or `a IN (1, 2` for `a IN (1, 2)`.
+#[test]
+fn test_expression_spans_cover_the_closing_paren() {
+    for expression in [
+        "random()",
+        "count(*)",
+        "coalesce(a, 1)",
+        "a IN (1, 2)",
+        "a NOT IN ('x')",
+    ] {
+        let parser = Parser::new(&PostgreSqlDialect {})
+            .try_with_sql(expression)
+            .unwrap();
+        let span = parser.parse_expr().unwrap().span();
+        assert_eq!(
+            span,
+            Span::new(
+                Location::new(1, 1),
+                Location::new(1, expression.len() as u64 + 1)
+            ),
+            "span of `{expression}` must cover the whole expression"
+        );
+    }
 }
 
 #[test]

@@ -3148,6 +3148,7 @@ fn parse_create_indices_with_operator_classes() {
                                 ))),
                             ],
                             clauses: vec![],
+                            close_paren_token: AttachedToken::empty(),
                         }),
                         filter: None,
                         null_treatment: None,
@@ -4072,6 +4073,7 @@ fn test_composite_value() {
                         }
                     )))],
                     clauses: vec![],
+                    close_paren_token: AttachedToken::empty(),
                 }),
                 null_treatment: None,
                 nth_value_order: None,
@@ -4885,6 +4887,7 @@ fn parse_delimited_identifiers() {
                 duplicate_treatment: None,
                 args: vec![],
                 clauses: vec![],
+                close_paren_token: AttachedToken::empty(),
             }),
             null_treatment: None,
             nth_value_order: None,
@@ -8313,5 +8316,8 @@ fn parse_named_arguments_with_assignment_operator() {
         )),
         operator: FunctionArgOperator::Assignment,
     };
-    assert_eq!(list.args, vec![expected("years", "2"), expected("months", "6")]);
+    assert_eq!(
+        list.args,
+        vec![expected("years", "2"), expected("months", "6")]
+    );
 }

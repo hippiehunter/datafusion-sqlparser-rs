@@ -508,6 +508,7 @@ pub fn call(function: &str, args: impl IntoIterator<Item = Expr>) -> Expr {
                 .map(|arg| FunctionArg::Unnamed(FunctionArgExpr::Expr(arg)))
                 .collect(),
             clauses: vec![],
+            close_paren_token: AttachedToken::empty(),
         }),
         filter: None,
         nth_value_order: None,

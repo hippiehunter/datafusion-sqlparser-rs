@@ -51,13 +51,13 @@ use core::cell::{Cell, RefCell};
 use sqlparser::parser::ParserState::ColumnDefinition;
 
 mod alter;
-mod pg_utility;
-mod sql_json;
-mod plpgsql;
 mod alter_objects;
 mod object_ddl;
-mod table_ddl;
 mod pg_query;
+mod pg_utility;
+mod plpgsql;
+mod sql_json;
+mod table_ddl;
 
 use pg_query::table_function_call;
 
@@ -8621,7 +8621,16 @@ impl<'a> Parser<'a> {
             });
         }
         self.expect_token(&BorrowedToken::LParen)?;
-        let in_op = match self.maybe_parse(|p| p.parse_query())? {
+        let subquery = self.maybe_parse(|p| p.parse_query())?;
+        let list = match subquery {
+            Some(_) => Vec::new(),
+            None if self.features.supports_in_empty_list => {
+                self.parse_comma_separated0(Parser::parse_expr, BorrowedToken::RParen)?
+            }
+            None => self.parse_comma_separated(Parser::parse_expr)?,
+        };
+        let close_paren = self.expect_token(&BorrowedToken::RParen)?;
+        Ok(match subquery {
             Some(subquery) => Expr::InSubquery {
                 expr: Box::new(expr),
                 subquery,
@@ -8629,16 +8638,11 @@ impl<'a> Parser<'a> {
             },
             None => Expr::InList {
                 expr: Box::new(expr),
-                list: if self.features.supports_in_empty_list {
-                    self.parse_comma_separated0(Parser::parse_expr, BorrowedToken::RParen)?
-                } else {
-                    self.parse_comma_separated(Parser::parse_expr)?
-                },
+                list,
                 negated,
+                close_paren_token: AttachedToken::from(close_paren),
             },
-        };
-        self.expect_token(&BorrowedToken::RParen)?;
-        Ok(in_op)
+        })
     }
 
     /// Parses `BETWEEN [SYMMETRIC|ASYMMETRIC] <low> AND <high>`, assuming the `BETWEEN` keyword was already consumed.
@@ -13980,10 +13984,7 @@ impl<'a> Parser<'a> {
         } else if self.parse_keywords(&[Keyword::RENAME, Keyword::TO]) {
             AlterPublicationAction::RenameTo(self.parse_identifier()?)
         } else {
-            return self.expected(
-                "ADD, SET, DROP, OWNER TO, or RENAME TO",
-                self.peek_token(),
-            );
+            return self.expected("ADD, SET, DROP, OWNER TO, or RENAME TO", self.peek_token());
         };
         Ok(Statement::AlterPublication { name, action })
     }
@@ -18019,7 +18020,8 @@ impl<'a> Parser<'a> {
     pub fn parse_alter_materialized_view(&self) -> Result<Statement, ParserError> {
         if self.parse_keywords(&[Keyword::ALL, Keyword::IN, Keyword::TABLESPACE]) {
             let alter_token = self.get_alter_token();
-            let target = self.parse_all_in_tablespace(AllInTablespaceObjectType::MaterializedView)?;
+            let target =
+                self.parse_all_in_tablespace(AllInTablespaceObjectType::MaterializedView)?;
             return Ok(Statement::AlterObject(AlterObject {
                 alter_token,
                 target,
@@ -26231,6 +26233,7 @@ impl<'a> Parser<'a> {
                 duplicate_treatment: None,
                 args: vec![],
                 clauses,
+                close_paren_token: self.attached_token_from_current(),
             });
         }
 
@@ -26306,11 +26309,12 @@ impl<'a> Parser<'a> {
 
         self.parse_sql_json_call_clauses(&mut clauses)?;
 
-        self.expect_token(&BorrowedToken::RParen)?;
+        let close_paren = self.expect_token(&BorrowedToken::RParen)?;
         Ok(FunctionArgumentList {
             duplicate_treatment,
             args,
             clauses,
+            close_paren_token: AttachedToken::from(close_paren),
         })
     }
 

@@ -45,10 +45,10 @@ use super::{
     ReferentialAction, RenameSelectItem, RepeatStatement, ReplaceSelectElement, ReplaceSelectItem,
     ReturningClause, Select, SelectInto, SelectItem, SetExpr, SqlOption, SqlPsmAssignment,
     SqlPsmDataType, SqlPsmDeclaration, SqlPsmQueryAssignment, Statement, Subscript,
-    SubsetDefinition, SymbolDefinition,
-    TableAlias, TableAliasColumnDef, TableConstraint, TableFactor, TableObject,
-    TableOptionsClustered, TableWithJoins, Update, UpdateTableFromKind, Use, Value, Values,
-    ViewColumnDef, WhileStatement, WildcardAdditionalOptions, With, WithFill, XmlRootVersion,
+    SubsetDefinition, SymbolDefinition, TableAlias, TableAliasColumnDef, TableConstraint,
+    TableFactor, TableObject, TableOptionsClustered, TableWithJoins, Update, UpdateTableFromKind,
+    Use, Value, Values, ViewColumnDef, WhileStatement, WildcardAdditionalOptions, With, WithFill,
+    XmlRootVersion,
 };
 
 /// Given an iterator of spans, return the [Span::union] of all spans.
@@ -1704,8 +1704,11 @@ impl Spanned for Expr {
                 expr,
                 list,
                 negated: _,
+                close_paren_token,
             } => union_spans(
-                core::iter::once(expr.span()).chain(list.iter().map(|item| item.span())),
+                core::iter::once(expr.span())
+                    .chain(list.iter().map(|item| item.span()))
+                    .chain(core::iter::once(close_paren_token.0)),
             ),
             Expr::InSubquery {
                 expr,
@@ -2144,13 +2147,15 @@ impl Spanned for FunctionArgumentList {
             duplicate_treatment: _, // enum
             args,
             clauses,
+            close_paren_token,
         } = self;
 
         union_spans(
             // # todo: duplicate-treatment span
             args.iter()
                 .map(|i| i.span())
-                .chain(clauses.iter().map(|i| i.span())),
+                .chain(clauses.iter().map(|i| i.span()))
+                .chain(core::iter::once(close_paren_token.0)),
         )
     }
 }
@@ -2678,7 +2683,10 @@ impl Spanned for JoinConstraint {
             JoinConstraint::On(expr) => expr.span(),
             JoinConstraint::Using(vec) => union_spans(vec.iter().map(|i| i.span())),
             JoinConstraint::UsingWithAlias { columns, alias } => union_spans(
-                columns.iter().map(|i| i.span()).chain(core::iter::once(alias.span)),
+                columns
+                    .iter()
+                    .map(|i| i.span())
+                    .chain(core::iter::once(alias.span)),
             ),
             JoinConstraint::Natural => Span::empty(),
             JoinConstraint::None => Span::empty(),

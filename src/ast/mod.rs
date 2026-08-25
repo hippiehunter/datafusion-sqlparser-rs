@@ -1115,6 +1115,11 @@ pub enum Expr {
         expr: Box<Expr>,
         list: Vec<Expr>,
         negated: bool,
+        /// The `)` that closes the list. The list's own elements stop one
+        /// character short of it, so without this the span of the whole test
+        /// would end at the last value and slicing the source by it would
+        /// yield an unbalanced expression.
+        close_paren_token: AttachedToken,
     },
     /// `[ NOT ] IN (SELECT ...)`
     InSubquery {
@@ -1932,6 +1937,7 @@ impl fmt::Display for Expr {
                 expr,
                 list,
                 negated,
+                ..
             } => write!(
                 f,
                 "{} {}IN ({})",
@@ -14640,6 +14646,11 @@ pub struct FunctionArgumentList {
     pub args: Vec<FunctionArg>,
     /// Additional clauses specified within the argument list.
     pub clauses: Vec<FunctionArgumentClause>,
+    /// The `)` that closes the list. It is the only part of a call with no
+    /// arguments that has a position, so without it the span of `f()` would
+    /// stop at the function name and slicing the source by that span would
+    /// yield `f`.
+    pub close_paren_token: AttachedToken,
 }
 
 impl fmt::Display for FunctionArgumentList {
