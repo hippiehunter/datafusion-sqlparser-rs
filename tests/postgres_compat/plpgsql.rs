@@ -27,7 +27,8 @@ use crate::postgres_compat::common::*;
 use sqlparser::ast::{
     ArgMode, AtomicBlock, BeginEndStatements, ConditionalStatements, CreateFunctionBody, DataType,
     DiagnosticsItem, ExecuteInto, Expr, ForLoopVariant, FunctionBehavior, FunctionCalledOnNull,
-    FunctionParallel, GetDiagnosticsKind, PlSqlDeclaration, RoutineAttribute, SqlPsmDataType,
+    FunctionParallel, GetDiagnosticsKind, OpenFor, PlSqlDeclaration, RoutineAttribute,
+    SqlPsmDataType,
     Statement,
 };
 
@@ -530,6 +531,26 @@ fn test_for_over_scalar_target_list() {
             assert!(matches!(statement.variant, ForLoopVariant::InQuery(_)));
         }
         other => panic!("expected a FOR loop, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_open_bound_cursor_accepts_postgresql_named_arguments() {
+    let block = function_block(
+        "CREATE FUNCTION f() RETURNS void LANGUAGE plpgsql AS $$ \
+         DECLARE c CURSOR (lo int, hi int) FOR SELECT lo + hi; \
+         BEGIN OPEN c(hi := 3, lo => 2); END $$",
+    );
+    match &block.statements[0] {
+        Statement::Open(open) => match open.open_for.as_ref() {
+            Some(OpenFor::BoundCursorArgs(args)) => {
+                assert_eq!(args.len(), 2);
+                assert_eq!(args[0].name.as_ref().map(|name| name.value.as_str()), Some("hi"));
+                assert_eq!(args[1].name.as_ref().map(|name| name.value.as_str()), Some("lo"));
+            }
+            other => panic!("expected bound cursor arguments, got {other:?}"),
+        },
+        other => panic!("expected OPEN, got {other:?}"),
     }
 }
 

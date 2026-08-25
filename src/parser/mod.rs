@@ -18363,9 +18363,19 @@ impl<'a> Parser<'a> {
         let open_for = if self.consume_token(&BorrowedToken::LParen) {
             // OPEN cursor_name(args) - bound cursor with arguments
             let args = self.parse_comma_separated(|parser| {
-                let name = if parser.peek_nth_token_ref(1).token == BorrowedToken::RArrow {
+                let named_operator = &parser.peek_nth_token_ref(1).token;
+                let name = if matches!(
+                    named_operator,
+                    BorrowedToken::RArrow | BorrowedToken::Assignment
+                ) {
                     let name = parser.parse_identifier()?;
-                    parser.expect_token(&BorrowedToken::RArrow)?;
+                    let operator = parser.next_token();
+                    if !matches!(
+                        operator.token,
+                        BorrowedToken::RArrow | BorrowedToken::Assignment
+                    ) {
+                        return parser.expected("=> or :=", operator);
+                    }
                     Some(name)
                 } else {
                     None
