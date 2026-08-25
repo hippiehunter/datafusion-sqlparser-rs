@@ -624,6 +624,37 @@ fn test_foreach_over_array() {
     }
 }
 
+#[test]
+fn test_foreach_composite_element_target_list() {
+    let block = function_block(
+        "CREATE FUNCTION f(a pair_type[]) RETURNS void LANGUAGE plpgsql \
+         AS $$ DECLARE x INT; y INT; BEGIN FOREACH x, y IN ARRAY a LOOP NULL; END LOOP; END $$",
+    );
+    match &block.statements[0] {
+        Statement::Foreach(statement) => {
+            assert_eq!(statement.loop_name.value, "x");
+            assert_eq!(statement.additional_loop_names.len(), 1);
+            assert_eq!(statement.additional_loop_names[0].value, "y");
+        }
+        other => panic!("expected FOREACH, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_for_over_explicit_cursor_variable() {
+    let block = function_block(
+        "CREATE FUNCTION f() RETURNS void LANGUAGE plpgsql AS $$ \
+         DECLARE c CURSOR FOR SELECT 1; BEGIN FOR r IN c LOOP NULL; END LOOP; END $$",
+    );
+    match &block.statements[0] {
+        Statement::For(statement) => assert!(matches!(
+            statement.variant,
+            ForLoopVariant::CursorVariable { .. }
+        )),
+        other => panic!("expected FOR loop, got {other:?}"),
+    }
+}
+
 // =============================================================================
 // CASE
 // =============================================================================

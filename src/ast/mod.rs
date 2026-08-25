@@ -3657,6 +3657,9 @@ pub struct ForeachStatement {
     pub label: Option<Ident>,
     /// The loop variable name
     pub loop_name: Ident,
+    /// Additional scalar targets used when an array element is composite:
+    /// `FOREACH x, y IN ARRAY composite_array`.
+    pub additional_loop_names: Vec<Ident>,
     /// Optional SLICE number for multidimensional arrays
     pub slice: Option<u32>,
     /// The array expression to iterate over
@@ -3673,6 +3676,7 @@ impl fmt::Display for ForeachStatement {
             token: _,
             label,
             loop_name,
+            additional_loop_names,
             slice,
             array_expr,
             body,
@@ -3682,6 +3686,9 @@ impl fmt::Display for ForeachStatement {
             write!(f, "{label}: ")?;
         }
         write!(f, "FOREACH {loop_name}")?;
+        for name in additional_loop_names {
+            write!(f, ", {name}")?;
+        }
         if let Some(slice_num) = slice {
             write!(f, " SLICE {slice_num}")?;
         }

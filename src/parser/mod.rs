@@ -3991,7 +3991,7 @@ impl<'a> Parser<'a> {
                 let reverse = self.parse_keyword(Keyword::REVERSE);
                 let lower = Box::new(self.parse_expr()?);
 
-                if self.dialect.is::<OracleDialect>() && self.peek_keyword(Keyword::LOOP) {
+                if self.peek_keyword(Keyword::LOOP) {
                     ForLoopVariant::CursorVariable { cursor: lower }
                 } else {
                     if !self.parse_keyword(Keyword::TO) {
@@ -4130,6 +4130,9 @@ impl<'a> Parser<'a> {
 
         // Parse loop variable name
         let loop_name = self.parse_identifier()?;
+        // PostgreSQL permits a scalar target list when the array element is
+        // composite: FOREACH x, y IN ARRAY values.
+        let additional_loop_names = self.parse_plpgsql_for_targets()?;
 
         // Check for optional SLICE number
         let slice = if self.parse_keyword(Keyword::SLICE) {
@@ -4188,6 +4191,7 @@ impl<'a> Parser<'a> {
             token,
             label,
             loop_name,
+            additional_loop_names,
             slice,
             array_expr,
             body,
