@@ -12391,7 +12391,7 @@ impl fmt::Display for Statement {
                 if let Some(tenant) = tenant {
                     write!(f, " TENANT {tenant}")?;
                 } else if let Some(obj) = object_type {
-                    write!(f, " {obj}")?;
+                    write!(f, " TABLE {obj}")?;
                 } else {
                     write!(f, " DATABASE")?;
                 }

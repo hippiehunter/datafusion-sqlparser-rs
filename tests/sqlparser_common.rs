@@ -16323,6 +16323,50 @@ fn parse_restore_tenant() {
 }
 
 #[test]
+fn parse_restore_table_and_database() {
+    for (sql, expected_table) in [
+        ("RESTORE DATABASE", None),
+        ("RESTORE DATABASE TO TIMESTAMP '2026-07-01T00:00:00Z' DRY RUN", None),
+        ("RESTORE TABLE public.orders TO LSN 42", Some("public.orders")),
+        (
+            "RESTORE TABLE \"Mixed Case\" FROM 'file:///backups/prod' TO HLC '7' DRY RUN",
+            Some("\"Mixed Case\""),
+        ),
+    ] {
+        match verified_stmt(sql) {
+            Statement::Restore {
+                object_type,
+                tenant,
+                ..
+            } => {
+                assert!(tenant.is_none(), "{sql}");
+                assert_eq!(
+                    expected_table.map(str::to_string),
+                    object_type.map(|name| name.to_string()),
+                    "{sql}"
+                );
+            }
+            other => panic!("expected RESTORE statement, got {other:?}"),
+        }
+    }
+
+    // The statement must name what it rewrites; nothing defaults to a
+    // whole-database restore.
+    for invalid in [
+        "RESTORE",
+        "RESTORE TO LSN 42",
+        "RESTORE orders TO LSN 42",
+        "RESTORE TABLE",
+        "RESTORE TABLE orders TO",
+    ] {
+        assert!(
+            all_dialects().parse_sql_statements(invalid).is_err(),
+            "{invalid}"
+        );
+    }
+}
+
+#[test]
 fn parse_heap_reorganization() {
     let dialects = all_dialects_where(|dialect| dialect.is::<PostgreSqlDialect>());
     let statement = dialects.verified_stmt("ALTER TABLE public.orders REORGANIZE");

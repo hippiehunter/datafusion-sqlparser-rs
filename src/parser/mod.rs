@@ -27481,6 +27481,9 @@ impl<'a> Parser<'a> {
     /// TO {TIMESTAMP '<ts>' | HLC '<n>' | LSN <n>} [AS NEW TENANT <name>] [DRY RUN]
     pub fn parse_restore(&self) -> Result<Statement, ParserError> {
         let mut tenant = None;
+        // A restore rewrites data; the statement names what it rewrites.
+        // Defaulting a bare RESTORE to the whole database would turn a typo
+        // into a destructive full restore.
         let object_type = if self.parse_keyword(Keyword::DATABASE) {
             None
         } else if self.parse_keyword(Keyword::TABLE) {
@@ -27489,7 +27492,7 @@ impl<'a> Parser<'a> {
             tenant = Some(self.parse_identifier()?);
             None
         } else {
-            None
+            return self.expected("DATABASE, TABLE, or TENANT after RESTORE", self.peek_token());
         };
 
         let location = if self.parse_keyword(Keyword::FROM) {
