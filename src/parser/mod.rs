@@ -22765,6 +22765,23 @@ impl<'a> Parser<'a> {
                 self.parse_xml_table_factor(true)
             } else if self.peek_rows_from() {
                 self.parse_rows_from_table_factor(true)
+            } else if dialect_of!(self is PostgreSqlDialect) && self.parse_keyword(Keyword::UNNEST) {
+                // LATERAL UNNEST(expr) [WITH ORDINALITY] [[AS] alias(cols)] —
+                // PostgreSQL's set-returning form; UNNEST in FROM is
+                // implicitly lateral, so the keyword adds nothing beyond
+                // permission to reference earlier FROM items.
+                self.expect_token(&BorrowedToken::LParen)?;
+                let array_exprs = self.parse_comma_separated(Parser::parse_expr)?;
+                self.expect_token(&BorrowedToken::RParen)?;
+                let with_ordinality = self.parse_keywords(&[Keyword::WITH, Keyword::ORDINALITY]);
+                let alias = self.maybe_parse_table_alias()?;
+                Ok(TableFactor::UNNEST {
+                    alias,
+                    array_exprs,
+                    with_offset: false,
+                    with_offset_alias: None,
+                    with_ordinality,
+                })
             } else {
                 let name = self.parse_object_name(false)?;
                 self.expect_token(&BorrowedToken::LParen)?;
