@@ -176,12 +176,18 @@ fn test_create_procedure_language_case_insensitive() {
 // ============================================================================
 
 #[test]
-fn test_create_or_replace_procedure_not_supported() {
+fn test_create_or_replace_procedure() {
     // https://www.postgresql.org/docs/current/sql-createprocedure.html
     // CREATE OR REPLACE PROCEDURE was added in PostgreSQL 11
-    // The AST has or_alter but not or_replace for procedures
-    // This is a gap in the current implementation
-    pg_expect_parse_error!("CREATE OR REPLACE PROCEDURE replace_test() AS BEGIN SELECT 1; END");
+    pg_test!(
+        "CREATE OR REPLACE PROCEDURE replace_test() AS BEGIN SELECT 1; END",
+        |stmt: Statement| {
+            let proc = extract_create_procedure(&stmt);
+            assert_eq!(proc.name.to_string(), "replace_test");
+            assert!(proc.or_replace, "Expected or_replace=true");
+            assert!(!proc.or_alter, "Expected or_alter=false");
+        }
+    );
 }
 
 #[test]

@@ -113,6 +113,7 @@ fn parse_create_procedure() {
         Statement::CreateProcedure {
             create_token: AttachedToken::empty(),
             or_alter: true,
+            or_replace: false,
             attributes: vec![],
             body: ConditionalStatements::BeginEnd(BeginEndStatements {
                 begin_token: AttachedToken::empty(),

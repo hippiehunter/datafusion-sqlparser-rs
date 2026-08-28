@@ -40,7 +40,7 @@
 //!
 //! ### Basic Syntax (`basic.rs`)
 //! - CREATE PROCEDURE name() AS body
-//! - CREATE OR REPLACE PROCEDURE (gap: AST has or_alter, not or_replace)
+//! - CREATE OR REPLACE PROCEDURE
 //! - Schema-qualified names
 //! - LANGUAGE clause (SQL, plpgsql, C, etc.)
 //! - Dollar-quoted bodies ($$ ... $$)
@@ -71,7 +71,8 @@
 //! ```rust,ignore
 //! Statement::CreateProcedure {
 //!     create_token: AttachedToken,
-//!     or_alter: bool,                      // Note: or_alter, not or_replace
+//!     or_alter: bool,
+//!     or_replace: bool,
 //!     name: ObjectName,
 //!     params: Option<Vec<ProcedureParam>>,
 //!     language: Option<Ident>,
@@ -91,7 +92,7 @@
 //!
 //! The AST is missing several PostgreSQL CREATE PROCEDURE features:
 //!
-//! 1. **or_replace**: AST has `or_alter` (SQL Server) but not `or_replace` (PostgreSQL)
+//! 1. **or_replace**: carried on the AST since the PostgreSQL 11 form was added
 //! 2. **Security options**: SECURITY DEFINER / SECURITY INVOKER not in AST
 //! 3. **SET options**: SET configuration_parameter not in AST
 //! 4. **TRANSFORM**: Type transformation for non-SQL languages not in AST

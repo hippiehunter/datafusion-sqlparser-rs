@@ -464,11 +464,13 @@ impl Spanned for Statement {
                 create_token,
                 schema_name,
                 clone,
+                schema_elements,
                 ..
             } => create_token
                 .0
                 .union(&schema_name.span())
-                .union_opt(&clone.as_ref().map(|c| c.span())),
+                .union_opt(&clone.as_ref().map(|c| c.span()))
+                .union_opt(&schema_elements.last().map(|element| element.span)),
             Statement::CreateDatabase {
                 create_token,
                 db_name,

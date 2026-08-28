@@ -9638,7 +9638,7 @@ impl<'a> Parser<'a> {
                 self.parse_create_user(or_replace)
             }
         } else if self.parse_keyword(Keyword::PROCEDURE) {
-            self.parse_create_procedure(create_token, or_alter)
+            self.parse_create_procedure(create_token, or_alter, or_replace)
         } else if self.parse_keyword(Keyword::RULE) {
             self.parse_create_rule(or_replace)
         } else if self.parse_keyword(Keyword::AGGREGATE) {
@@ -29107,6 +29107,7 @@ impl<'a> Parser<'a> {
         &self,
         create_token: AttachedToken,
         or_alter: bool,
+        or_replace: bool,
     ) -> Result<Statement, ParserError> {
         let name = self.parse_object_name(false)?;
         let params = self.parse_optional_procedure_parameters()?;
@@ -29252,6 +29253,7 @@ impl<'a> Parser<'a> {
             create_token,
             name,
             or_alter,
+            or_replace,
             params,
             language,
             security,

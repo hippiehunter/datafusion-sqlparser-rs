@@ -33,12 +33,12 @@ use crate::ast::table_ddl::{
 use crate::ast::{
     AlterColumnOperation, AlterTableOperation, Box, ColumnDef, ColumnOption, ColumnOptionDef,
     CreateTableLike, CreateTableLikeDefaults, CreateTableLikeOption, Expr, GeneratedAs, Ident,
-    ObjectName, ReferentialAction, SequenceOptions, SqlMedOptionAction, SqlOption, Statement,
-    TableConstraint, TriggerGroup, UnaryOperator, UserDefinedTypeStorage,
+    ObjectName, ReferentialAction, SchemaElement, SequenceOptions, SqlMedOptionAction, SqlOption,
+    Statement, TableConstraint, TriggerGroup, UnaryOperator, UserDefinedTypeStorage,
 };
 use crate::dialect::PostgreSqlDialect;
 use crate::keywords::Keyword;
-use crate::tokenizer::BorrowedToken;
+use crate::tokenizer::{BorrowedToken, Span};
 
 impl Parser<'_> {
     /// Whether the token `n` positions ahead is the given keyword.
@@ -721,13 +721,20 @@ impl Parser<'_> {
     }
 
     /// Parses the statements that may follow a `CREATE SCHEMA` name and be
-    /// created inside the new schema.
-    pub(super) fn parse_schema_elements(&self) -> Result<Vec<Statement>, ParserError> {
+    /// created inside the new schema. Each element carries the exact source
+    /// span consumed for it, as a top-level statement does.
+    pub(super) fn parse_schema_elements(&self) -> Result<Vec<SchemaElement>, ParserError> {
         let mut elements = Vec::new();
         loop {
+            let start = self.peek_token_ref().span.start;
             if self.peek_keyword(Keyword::GRANT) {
                 self.expect_keyword(Keyword::GRANT)?;
-                elements.push(self.parse_grant()?);
+                let statement = self.parse_grant()?;
+                let end = self.get_current_token().span.end;
+                elements.push(SchemaElement {
+                    statement,
+                    span: Span::new(start, end),
+                });
                 continue;
             }
             if !self.peek_keyword(Keyword::CREATE) {
@@ -754,7 +761,12 @@ impl Parser<'_> {
                 break;
             }
             self.expect_keyword(Keyword::CREATE)?;
-            elements.push(self.parse_create()?);
+            let statement = self.parse_create()?;
+            let end = self.get_current_token().span.end;
+            elements.push(SchemaElement {
+                statement,
+                span: Span::new(start, end),
+            });
         }
         Ok(elements)
     }

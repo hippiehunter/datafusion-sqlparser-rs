@@ -1220,7 +1220,7 @@ fn create_schema_with_elements() {
             schema_elements, ..
         } => {
             assert_eq!(schema_elements.len(), 1);
-            assert!(matches!(schema_elements[0], Statement::CreateTable(_)));
+            assert!(matches!(schema_elements[0].statement, Statement::CreateTable(_)));
         }
         other => panic!("expected CREATE SCHEMA, got {other:?}"),
     }
@@ -1247,7 +1247,7 @@ fn create_schema_with_elements() {
             schema_elements, ..
         } => {
             assert_eq!(schema_elements.len(), 2);
-            assert!(matches!(schema_elements[1], Statement::Grant { .. }));
+            assert!(matches!(schema_elements[1].statement, Statement::Grant { .. }));
         }
         other => panic!("expected CREATE SCHEMA, got {other:?}"),
     }

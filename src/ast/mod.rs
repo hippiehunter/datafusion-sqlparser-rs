@@ -8191,7 +8191,9 @@ pub enum Statement {
         /// ```sql
         /// CREATE SCHEMA myschema CREATE TABLE tab (id int) CREATE VIEW vw AS SELECT id FROM tab
         /// ```
-        schema_elements: Vec<Statement>,
+        /// Elements created inside the new schema, each with the exact
+        /// source span the parser consumed for it.
+        schema_elements: Vec<SchemaElement>,
     },
     /// ```sql
     /// CREATE DATABASE
@@ -8240,6 +8242,8 @@ pub enum Statement {
         /// The `CREATE` token
         create_token: AttachedToken,
         or_alter: bool,
+        /// `CREATE OR REPLACE PROCEDURE` (PostgreSQL).
+        or_replace: bool,
         name: ObjectName,
         params: Option<Vec<ProcedureParam>>,
         language: Option<Ident>,
@@ -11542,6 +11546,7 @@ impl fmt::Display for Statement {
                 create_token: _,
                 name,
                 or_alter,
+                or_replace,
                 params,
                 language,
                 security,
@@ -11552,7 +11557,8 @@ impl fmt::Display for Statement {
             } => {
                 write!(
                     f,
-                    "CREATE {or_alter}PROCEDURE {name}",
+                    "CREATE {or_replace}{or_alter}PROCEDURE {name}",
+                    or_replace = if *or_replace { "OR REPLACE " } else { "" },
                     or_alter = if *or_alter { "OR ALTER " } else { "" },
                     name = name
                 )?;
@@ -17367,6 +17373,53 @@ impl fmt::Display for SchemaName {
                 write!(f, "{name} AUTHORIZATION {authorization}")
             }
         }
+    }
+}
+
+/// One statement written inside `CREATE SCHEMA`, created in the new schema.
+///
+/// `span` is the exact top-level source span the parser consumed for the
+/// element, the same way a document records its top-level statement spans,
+/// so the element can be prepared from the owning document's source without
+/// re-rendering it. Spans are ignored in comparisons, hashes, and ordering,
+/// as they are for [`Ident`].
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct SchemaElement {
+    pub statement: Statement,
+    pub span: Span,
+}
+
+impl PartialEq for SchemaElement {
+    fn eq(&self, other: &Self) -> bool {
+        self.statement == other.statement
+    }
+}
+
+impl Eq for SchemaElement {}
+
+impl core::hash::Hash for SchemaElement {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        self.statement.hash(state);
+    }
+}
+
+impl PartialOrd for SchemaElement {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for SchemaElement {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.statement.cmp(&other.statement)
+    }
+}
+
+impl fmt::Display for SchemaElement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.statement)
     }
 }
 

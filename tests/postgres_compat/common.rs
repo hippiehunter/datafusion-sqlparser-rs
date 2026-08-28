@@ -142,6 +142,7 @@ pub fn extract_create_function(stmt: &Statement) -> &CreateFunction {
 #[derive(Debug)]
 pub struct CreateProcedureExtract<'a> {
     pub or_alter: bool,
+    pub or_replace: bool,
     pub name: &'a ObjectName,
     pub params: &'a Option<Vec<ProcedureParam>>,
     pub language: &'a Option<Ident>,
@@ -159,6 +160,7 @@ pub fn extract_create_procedure(stmt: &Statement) -> CreateProcedureExtract<'_> 
     match stmt {
         Statement::CreateProcedure {
             or_alter,
+            or_replace,
             name,
             params,
             language,
@@ -168,6 +170,7 @@ pub fn extract_create_procedure(stmt: &Statement) -> CreateProcedureExtract<'_> 
             ..
         } => CreateProcedureExtract {
             or_alter: *or_alter,
+            or_replace: *or_replace,
             name,
             params,
             language,
