@@ -33,9 +33,9 @@
 
 use crate::postgres_compat::common::*;
 use sqlparser::ast::{
-    AggregateArgs, CollationDefinition, CommentObject, CommentObjectDetail, CreateRoleKind,
-    DropBehavior, GrantObjects, ObjectType, RoleGrantOptionValue, SqlOption, Statement,
-    TriggerExecBodyType, Value,
+    AggregateArgs, CollationDefinition, CommentObject, CommentObjectDetail,
+    CreateAggregateOptionValue, CreateRoleKind, DataType, DropBehavior, GrantObjects, ObjectType,
+    RoleGrantOptionValue, SqlOption, Statement, TriggerExecBodyType, Value,
 };
 
 /// Parse `sql`, assert it renders back to exactly `sql`, and assert that the
@@ -637,9 +637,36 @@ fn create_aggregate_old_syntax_has_no_argument_list() {
             assert!(aggregate.signature.is_none());
             assert!(aggregate.args.is_empty());
             assert_eq!(aggregate.options.len(), 3);
+            assert!(matches!(
+                aggregate.options[0].value,
+                CreateAggregateOptionValue::Type(DataType::Int4(_))
+            ));
+            assert!(matches!(
+                aggregate.options[2].value,
+                CreateAggregateOptionValue::Type(DataType::Int4(_))
+            ));
         }
         other => panic!("Expected CreateAggregate, got {other:?}"),
     }
+}
+
+#[test]
+fn create_aggregate_keeps_type_attributes_typed() {
+    let statement = roundtrip(
+        "CREATE AGGREGATE my_agg (numeric(12, 3)[]) (sfunc = step, stype = numeric(20, 4)[], mstype = \"StateType\")",
+    );
+    let Statement::CreateAggregate(aggregate) = statement else {
+        panic!("expected CREATE AGGREGATE");
+    };
+    assert!(matches!(
+        aggregate.options[1].value,
+        CreateAggregateOptionValue::Type(DataType::Array(_))
+    ));
+    assert!(matches!(
+        aggregate.options[2].value,
+        CreateAggregateOptionValue::Type(DataType::Custom(ref name, _))
+            if name.to_string() == "\"StateType\""
+    ));
 }
 
 #[test]

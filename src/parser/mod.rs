@@ -13195,7 +13195,7 @@ impl<'a> Parser<'a> {
             Some(AggregateArgs::Args(args)) => args.clone(),
             _ => vec![],
         };
-        let options = self.parse_definition_list()?;
+        let options = self.parse_aggregate_definition_list()?;
         Ok(Statement::CreateAggregate(CreateAggregate {
             or_replace,
             if_not_exists,

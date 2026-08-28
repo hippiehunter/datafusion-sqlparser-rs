@@ -4255,7 +4255,30 @@ pub struct CreateAggregate {
     /// The argument list as written, or `None` for the old syntax where the
     /// aggregate's arguments are given by the `BASETYPE` option instead.
     pub signature: Option<AggregateArgs>,
-    pub options: Vec<SqlOption>,
+    pub options: Vec<CreateAggregateOption>,
+}
+
+/// One PostgreSQL `CREATE AGGREGATE` definition attribute.
+///
+/// Aggregate state and base types are grammar-level type names, not SQL
+/// expressions. Keeping them typed here lets every consumer resolve the
+/// original type node directly, including modifiers, arrays, and quoted
+/// names, without rendering and reparsing AST.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct CreateAggregateOption {
+    pub name: Ident,
+    pub value: CreateAggregateOptionValue,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum CreateAggregateOptionValue {
+    Flag,
+    Type(DataType),
+    Expr(Expr),
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
@@ -4420,6 +4443,17 @@ impl fmt::Display for CreateAggregate {
             write!(f, " {signature}")?;
         }
         write!(f, " ({})", display_comma_separated(&self.options))
+    }
+}
+
+impl fmt::Display for CreateAggregateOption {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.name)?;
+        match &self.value {
+            CreateAggregateOptionValue::Flag => Ok(()),
+            CreateAggregateOptionValue::Type(data_type) => write!(f, " = {data_type}"),
+            CreateAggregateOptionValue::Expr(expr) => write!(f, " = {expr}"),
+        }
     }
 }
 

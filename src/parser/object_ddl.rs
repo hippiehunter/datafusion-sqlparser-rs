@@ -24,11 +24,12 @@ use alloc::{
 use super::{Parser, ParserError};
 use crate::ast::{
     AggregateArgs, AggregateSignature, CastSignature, CollationDefinition, CommentObject,
-    CommentObjectDetail, CreateCollation, CreateConversion, CreateEventTrigger, CreateLanguage,
-    DropAggregate, DropCast, DropOperator, DropOperatorClass, DropOwned, DropRoutine,
-    DropTransform, EventTriggerCondition, Expr, Ident, ObjectName, ObjectNamePart,
-    OperatorOperandTypes, OperatorSignature, ReassignOwned, RoleGrantOption, RoleGrantOptionValue,
-    SqlOption, Statement, TriggerExecBody, TriggerExecBodyType,
+    CommentObjectDetail, CreateAggregateOption, CreateAggregateOptionValue, CreateCollation,
+    CreateConversion, CreateEventTrigger, CreateLanguage, DropAggregate, DropCast, DropOperator,
+    DropOperatorClass, DropOwned, DropRoutine, DropTransform, EventTriggerCondition, Expr, Ident,
+    ObjectName, ObjectNamePart, OperatorOperandTypes, OperatorSignature, ReassignOwned,
+    RoleGrantOption, RoleGrantOptionValue, SqlOption, Statement, TriggerExecBody,
+    TriggerExecBodyType,
 };
 use crate::keywords::Keyword;
 use crate::tokenizer::{BorrowedToken, Token, TokenWithSpan};
@@ -592,6 +593,62 @@ impl Parser<'_> {
             self.parse_comma_separated0(Parser::parse_definition_option, Token::RParen)?;
         self.expect_token(&Token::RParen)?;
         Ok(options)
+    }
+
+    /// Parse the definition list of `CREATE AGGREGATE`, retaining grammar
+    /// type attributes as typed AST instead of coercing them into expressions.
+    pub(super) fn parse_aggregate_definition_list(
+        &self,
+    ) -> Result<Vec<CreateAggregateOption>, ParserError> {
+        self.expect_token(&Token::LParen)?;
+        let options = self.parse_comma_separated0(
+            Parser::parse_aggregate_definition_option,
+            Token::RParen,
+        )?;
+        self.expect_token(&Token::RParen)?;
+        Ok(options)
+    }
+
+    fn parse_aggregate_definition_option(
+        &self,
+    ) -> Result<CreateAggregateOption, ParserError> {
+        let name = self.parse_identifier()?;
+        if !self.consume_token(&Token::Eq) {
+            return Ok(CreateAggregateOption {
+                name,
+                value: CreateAggregateOptionValue::Flag,
+            });
+        }
+        if ["basetype", "stype", "mstype"]
+            .iter()
+            .any(|typed| name.value.eq_ignore_ascii_case(typed))
+        {
+            let data_type = self.parse_data_type()?;
+            self.expect_definition_value_end()?;
+            return Ok(CreateAggregateOption {
+                name,
+                value: CreateAggregateOptionValue::Type(data_type),
+            });
+        }
+        let value = if let Some(value) =
+            self.maybe_parse(|parser| parser.parse_definition_operator_value())?
+        {
+            value
+        } else if self.parse_keyword(Keyword::NONE) {
+            Expr::Identifier(Ident::new("NONE"))
+        } else if let Some(value) = self.maybe_parse(|parser| {
+            let expr = parser.parse_expr()?;
+            parser.expect_definition_value_end()?;
+            Ok(expr)
+        })? {
+            value
+        } else {
+            return self.expected("an aggregate definition value", self.peek_token());
+        };
+        Ok(CreateAggregateOption {
+            name,
+            value: CreateAggregateOptionValue::Expr(value),
+        })
     }
 
     /// Parse one `name [= value]` property of a definition list. PostgreSQL
