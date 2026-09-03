@@ -814,6 +814,11 @@ pub const RELATIONAL_CASES: &[OracleCase] = &[
         sql: "CREATE TABLE numeric_types (a NUMBER(38,10), b FLOAT(126), c BINARY_FLOAT, d BINARY_DOUBLE, e INTEGER)",
     },
     OracleCase {
+        id: "types.numeric_max_precision",
+        feature: "Data types: NUMBER with a maximum precision",
+        sql: "CREATE TABLE number_max_precision (a NUMBER(*,10), b NUMBER(*,0), c NUMBER(*,-2))",
+    },
+    OracleCase {
         id: "types.character",
         feature: "Data types: character",
         sql: "CREATE TABLE character_types (a CHAR(10 BYTE), b VARCHAR2(100 CHAR), c NCHAR(10), d NVARCHAR2(100), e CLOB, f NCLOB)",

@@ -30,6 +30,14 @@ pub enum GrammarScope {
 
 pub const GRAMMAR_OBLIGATIONS: &[GrammarObligation] = &[
     GrammarObligation {
+        production: "star_numeric_precision",
+        scope: GrammarScope::OracleSpecific {
+            isolation_case: "types.numeric_max_precision",
+        },
+        positive_cases: &["types.numeric_max_precision"],
+        negative_cases: &["types.number.star_scale", "types.number.star_twice"],
+    },
+    GrammarObligation {
         production: "alternative_quoting",
         scope: GrammarScope::OracleSpecific {
             isolation_case: "lex.string.alternative_quote",

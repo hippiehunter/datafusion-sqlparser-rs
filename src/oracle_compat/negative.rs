@@ -22,6 +22,14 @@ pub struct NegativeCase {
 
 pub const NEGATIVE_CASES: &[NegativeCase] = &[
     NegativeCase {
+        id: "types.number.star_scale",
+        sql: "CREATE TABLE number_star_scale (a NUMBER(10,*))",
+    },
+    NegativeCase {
+        id: "types.number.star_twice",
+        sql: "CREATE TABLE number_star_twice (a NUMBER(*,*))",
+    },
+    NegativeCase {
         id: "lex.alternative_quote.unclosed",
         sql: "SELECT q'[Oracle text' FROM dual",
     },

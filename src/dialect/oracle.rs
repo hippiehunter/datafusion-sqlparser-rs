@@ -69,6 +69,10 @@ impl Dialect for OracleDialect {
         true
     }
 
+    fn supports_star_numeric_precision(&self) -> bool {
+        true
+    }
+
     fn supports_execute_immediate(&self) -> bool {
         true
     }

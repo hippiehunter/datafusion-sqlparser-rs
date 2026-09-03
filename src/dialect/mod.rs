@@ -321,6 +321,13 @@ pub trait Dialect: Debug + Any {
         false
     }
 
+    /// Returns true if the dialect writes an exact-numeric type's maximum
+    /// precision as `*`, as in Oracle's `NUMBER(*, 10)`. The star stands only
+    /// where a precision stands; a scale is still a literal integer.
+    fn supports_star_numeric_precision(&self) -> bool {
+        false
+    }
+
     /// Returns true if the dialect supports `EXECUTE IMMEDIATE` statements.
     fn supports_execute_immediate(&self) -> bool {
         false
@@ -1267,6 +1274,7 @@ pub trait Dialect: Debug + Any {
             supports_outer_join_operator: self.supports_outer_join_operator(),
             supports_cross_join_constraint: self.supports_cross_join_constraint(),
             supports_connect_by: self.supports_connect_by(),
+            supports_star_numeric_precision: self.supports_star_numeric_precision(),
             supports_execute_immediate: self.supports_execute_immediate(),
             supports_match_recognize: self.supports_match_recognize(),
             supports_in_empty_list: self.supports_in_empty_list(),
@@ -1389,6 +1397,7 @@ pub struct DialectFeatures {
     pub supports_outer_join_operator: bool,
     pub supports_cross_join_constraint: bool,
     pub supports_connect_by: bool,
+    pub supports_star_numeric_precision: bool,
     pub supports_execute_immediate: bool,
     pub supports_match_recognize: bool,
     pub supports_in_empty_list: bool,
@@ -1601,6 +1610,7 @@ impl<D: Dialect> Dialect for DelegatingDialect<D> {
         supports_outer_join_operator,
         supports_cross_join_constraint,
         supports_connect_by,
+        supports_star_numeric_precision,
         supports_execute_immediate,
         supports_match_recognize,
         supports_in_empty_list,

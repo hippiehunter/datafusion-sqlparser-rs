@@ -20605,6 +20605,16 @@ impl<'a> Parser<'a> {
             loop {
                 let next_token = self.next_token();
                 match next_token.token {
+                    // Oracle writes an exact-numeric type's maximum precision
+                    // as `*`, e.g. `NUMBER(*, 10)`. It is a precision, so it is
+                    // only ever the first modifier, and only where the dialect
+                    // defines it.
+                    BorrowedToken::Mul
+                        if self.features.supports_star_numeric_precision
+                            && modifiers.is_empty() =>
+                    {
+                        modifiers.push("*".to_string())
+                    }
                     BorrowedToken::Word(w) => modifiers.push(w.to_string()),
                     BorrowedToken::Number(n, _) => modifiers.push(n),
                     BorrowedToken::SingleQuotedString(s) => modifiers.push(s.into_owned()),
@@ -22765,7 +22775,8 @@ impl<'a> Parser<'a> {
                 self.parse_xml_table_factor(true)
             } else if self.peek_rows_from() {
                 self.parse_rows_from_table_factor(true)
-            } else if dialect_of!(self is PostgreSqlDialect) && self.parse_keyword(Keyword::UNNEST) {
+            } else if dialect_of!(self is PostgreSqlDialect) && self.parse_keyword(Keyword::UNNEST)
+            {
                 // LATERAL UNNEST(expr) [WITH ORDINALITY] [[AS] alias(cols)] —
                 // PostgreSQL's set-returning form; UNNEST in FROM is
                 // implicitly lateral, so the keyword adds nothing beyond
@@ -27509,7 +27520,10 @@ impl<'a> Parser<'a> {
             tenant = Some(self.parse_identifier()?);
             None
         } else {
-            return self.expected("DATABASE, TABLE, or TENANT after RESTORE", self.peek_token());
+            return self.expected(
+                "DATABASE, TABLE, or TENANT after RESTORE",
+                self.peek_token(),
+            );
         };
 
         let location = if self.parse_keyword(Keyword::FROM) {
