@@ -1491,18 +1491,26 @@ fn parse_escaped_quote_identifiers_with_escape() {
 
 #[test]
 fn parse_escaped_quote_identifiers_with_no_escape() {
+    // No-escape mode keeps the source's doubled backtick in the identifier
+    // value; Display escapes every quote in a value, so the statement does
+    // not round-trip and is compared as parsed.
     let sql = "SELECT `quoted `` identifier`";
+    let stmt = TestedDialects::new_with_options(
+        vec![std::boxed::Box::new(MySqlDialect {})],
+        ParserOptions {
+            trailing_commas: false,
+            bracket_quoted_identifiers: false,
+            unescape: false,
+            require_semicolon_stmt_delimiter: true,
+        },
+    )
+    .parse_sql_statements(sql)
+    .unwrap()
+    .pop()
+    .unwrap();
+    assert_eq!(stmt.to_string(), "SELECT `quoted ```` identifier`");
     assert_eq!(
-        TestedDialects::new_with_options(
-            vec![std::boxed::Box::new(MySqlDialect {})],
-            ParserOptions {
-                trailing_commas: false,
-                bracket_quoted_identifiers: false,
-                unescape: false,
-                require_semicolon_stmt_delimiter: true,
-            }
-        )
-        .verified_stmt(sql),
+        stmt,
         Statement::Query(Box::new(Query {
             with: None,
             body: Box::new(SetExpr::Select(Box::new(Select {
@@ -1574,12 +1582,17 @@ fn parse_escaped_backticks_with_escape() {
 #[test]
 fn parse_escaped_backticks_with_no_escape() {
     let sql = "SELECT ```quoted identifier```";
+    let stmt = TestedDialects::new_with_options(
+        vec![std::boxed::Box::new(MySqlDialect {})],
+        ParserOptions::new().with_unescape(false),
+    )
+    .parse_sql_statements(sql)
+    .unwrap()
+    .pop()
+    .unwrap();
+    assert_eq!(stmt.to_string(), "SELECT `````quoted identifier`````");
     assert_eq!(
-        TestedDialects::new_with_options(
-            vec![std::boxed::Box::new(MySqlDialect {})],
-            ParserOptions::new().with_unescape(false)
-        )
-        .verified_stmt(sql),
+        stmt,
         Statement::Query(Box::new(Query {
             with: None,
             body: Box::new(SetExpr::Select(Box::new(Select {
@@ -1624,27 +1637,45 @@ fn parse_unterminated_escape() {
 }
 
 #[test]
-fn check_roundtrip_of_escaped_string() {
+fn no_escape_mode_display_escapes_every_quote() {
+    // In no-escape mode the value keeps the source's escape sequences
+    // verbatim. Display does not know how a value was tokenized and escapes
+    // every quote character, so a value that already carries escapes is
+    // written with its quotes doubled again; only the parsed value is stable.
     let options = ParserOptions::new().with_unescape(false);
-
-    TestedDialects::new_with_options(vec![std::boxed::Box::new(MySqlDialect {})], options.clone())
-        .verified_stmt(r"SELECT 'I\'m fine'");
-    TestedDialects::new_with_options(vec![std::boxed::Box::new(MySqlDialect {})], options.clone())
-        .verified_stmt(r#"SELECT 'I''m fine'"#);
-    TestedDialects::new_with_options(vec![std::boxed::Box::new(MySqlDialect {})], options.clone())
-        .verified_stmt(r"SELECT 'I\\\'m fine'");
-    TestedDialects::new_with_options(vec![std::boxed::Box::new(MySqlDialect {})], options.clone())
-        .verified_stmt(r"SELECT 'I\\\'m fine'");
-    TestedDialects::new_with_options(vec![std::boxed::Box::new(MySqlDialect {})], options.clone())
-        .verified_stmt(r#"SELECT "I\"m fine""#);
-    TestedDialects::new_with_options(vec![std::boxed::Box::new(MySqlDialect {})], options.clone())
-        .verified_stmt(r#"SELECT "I""m fine""#);
-    TestedDialects::new_with_options(vec![std::boxed::Box::new(MySqlDialect {})], options.clone())
-        .verified_stmt(r#"SELECT "I\\\"m fine""#);
-    TestedDialects::new_with_options(vec![std::boxed::Box::new(MySqlDialect {})], options.clone())
-        .verified_stmt(r#"SELECT "I\\\"m fine""#);
-    TestedDialects::new_with_options(vec![std::boxed::Box::new(MySqlDialect {})], options.clone())
-        .verified_stmt(r#"SELECT "I'm ''fine''""#);
+    for (sql, value, displayed) in [
+        (r"SELECT 'I\'m fine'", r"I\'m fine", r"SELECT 'I\''m fine'"),
+        (r"SELECT 'I''m fine'", r"I''m fine", r"SELECT 'I''''m fine'"),
+        (r"SELECT 'I\\\'m fine'", r"I\\\'m fine", r"SELECT 'I\\\''m fine'"),
+        (r#"SELECT "I\"m fine""#, r#"I\"m fine"#, r#"SELECT "I\""m fine""#),
+        (r#"SELECT "I""m fine""#, r#"I""m fine"#, r#"SELECT "I""""m fine""#),
+        (r#"SELECT "I\\\"m fine""#, r#"I\\\"m fine"#, r#"SELECT "I\\\""m fine""#),
+        (r#"SELECT "I'm ''fine''""#, r#"I'm ''fine''"#, r#"SELECT "I'm ''fine''""#),
+    ] {
+        let stmt = TestedDialects::new_with_options(
+            vec![std::boxed::Box::new(MySqlDialect {})],
+            options.clone(),
+        )
+        .parse_sql_statements(sql)
+        .unwrap()
+        .pop()
+        .unwrap();
+        let Statement::Query(query) = &stmt else {
+            panic!("{sql} did not parse as a query");
+        };
+        let SetExpr::Select(select) = query.body.as_ref() else {
+            panic!("{sql} did not parse as a select");
+        };
+        let parsed = match expr_from_projection(only(&select.projection)) {
+            Expr::Value(ValueWithSpan {
+                value: Value::SingleQuotedString(v) | Value::DoubleQuotedString(v),
+                ..
+            }) => v.as_str(),
+            other => panic!("{sql} projected {other:?}"),
+        };
+        assert_eq!(parsed, value, "value of {sql}");
+        assert_eq!(stmt.to_string(), displayed, "display of {sql}");
+    }
 }
 
 #[test]

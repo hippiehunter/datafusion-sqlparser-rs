@@ -1397,13 +1397,25 @@ fn parse_escaped_single_quote_string_predicate_with_no_escape() {
     let sql = "SELECT id, fname, lname FROM customer \
                WHERE salary <> 'Jim''s salary'";
 
-    let ast = TestedDialects::new_with_options(
+    // No-escape mode keeps the doubled quote in the value, and Display
+    // escapes every quote in a value, so the statement does not round-trip
+    // and is compared as parsed.
+    let stmt = TestedDialects::new_with_options(
         vec![std::boxed::Box::new(MySqlDialect {})],
         ParserOptions::new()
             .with_trailing_commas(true)
             .with_unescape(false),
     )
-    .verified_only_select(sql);
+    .parse_sql_statements(sql)
+    .unwrap()
+    .pop()
+    .unwrap();
+    let Statement::Query(query) = stmt else {
+        panic!("expected a query");
+    };
+    let SetExpr::Select(ast) = query.body.as_ref() else {
+        panic!("expected a select");
+    };
 
     assert_eq!(
         Some(Expr::BinaryOp {
@@ -1413,7 +1425,7 @@ fn parse_escaped_single_quote_string_predicate_with_no_escape() {
                 (Value::SingleQuotedString("Jim''s salary".to_string())).with_empty_span()
             )),
         }),
-        ast.selection.map(Box::into_owned),
+        ast.selection.clone().map(Box::into_owned),
     );
 }
 
@@ -10912,11 +10924,16 @@ fn parse_escaped_string_with_unescape() {
 #[test]
 fn parse_escaped_string_without_unescape() {
     fn assert_mysql_query_value(sql: &str, quoted: &str) {
+        // No-escape mode does not round-trip through Display, which
+        // escapes every quote in a value; compare the parsed value only.
         let stmt = TestedDialects::new_with_options(
             vec![std::boxed::Box::new(MySqlDialect {})],
             ParserOptions::new().with_unescape(false),
         )
-        .one_statement_parses_to(sql, "");
+        .parse_sql_statements(sql)
+        .unwrap()
+        .pop()
+        .unwrap();
 
         match stmt {
             Statement::Query(query) => match query.body.as_ref() {

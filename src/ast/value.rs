@@ -480,56 +480,21 @@ pub struct EscapeQuotedString<'a> {
 
 impl fmt::Display for EscapeQuotedString<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // EscapeQuotedString doesn't know which mode of escape was
-        // chosen by the user. So this code must to correctly display
-        // strings without knowing if the strings are already escaped
-        // or not.
-        //
-        // If the quote symbol in the string is repeated twice, OR, if
-        // the quote symbol is after backslash, display all the chars
-        // without any escape. However, if the quote symbol is used
-        // just between usual chars, `fmt()` should display it twice."
-        //
-        // The following table has examples
-        //
-        // | original query | mode      | AST Node                                           | serialized   |
-        // | -------------  | --------- | -------------------------------------------------- | ------------ |
-        // | `"A""B""A"`    | no-escape | `DoubleQuotedString(String::from("A\"\"B\"\"A"))`  | `"A""B""A"`  |
-        // | `"A""B""A"`    | default   | `DoubleQuotedString(String::from("A\"B\"A"))`      | `"A""B""A"`  |
-        // | `"A\"B\"A"`    | no-escape | `DoubleQuotedString(String::from("A\\\"B\\\"A"))`  | `"A\"B\"A"`  |
-        // | `"A\"B\"A"`    | default   | `DoubleQuotedString(String::from("A\"B\"A"))`      | `"A""B""A"`  |
+        // The tokenizer hands the AST the literal's value with every escape
+        // resolved, so each quote character in the value is a real quote and
+        // is written twice. Guessing that a doubled quote or a backslash
+        // before a quote was "already escaped" rendered `a''b` as `'a''b'`,
+        // which reads back as `a'b`, and `\'` as `\'`, which ends a
+        // standard-conforming string.
         let quote = self.quote;
-        let mut previous_char = char::default();
         let mut start_idx = 0;
-        let mut peekable_chars = self.string.char_indices().peekable();
-        while let Some(&(idx, ch)) = peekable_chars.peek() {
-            match ch {
-                char if char == quote => {
-                    if previous_char == '\\' {
-                        // the quote is already escaped with a backslash, skip
-                        peekable_chars.next();
-                        continue;
-                    }
-                    peekable_chars.next();
-                    match peekable_chars.peek() {
-                        Some((_, c)) if *c == quote => {
-                            // the quote is already escaped with another quote, skip
-                            peekable_chars.next();
-                        }
-                        _ => {
-                            // The quote is not escaped.
-                            // Including idx in the range, so the quote at idx will be printed twice:
-                            // in this call to write_str() and in the next one.
-                            f.write_str(&self.string[start_idx..=idx])?;
-                            start_idx = idx;
-                        }
-                    }
-                }
-                _ => {
-                    peekable_chars.next();
-                }
+        for (idx, ch) in self.string.char_indices() {
+            if ch == quote {
+                // Include the quote at idx so it is written twice: once here
+                // and once at the head of the next segment.
+                f.write_str(&self.string[start_idx..=idx])?;
+                start_idx = idx;
             }
-            previous_char = ch;
         }
         f.write_str(&self.string[start_idx..])?;
         Ok(())

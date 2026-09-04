@@ -8321,3 +8321,18 @@ fn parse_named_arguments_with_assignment_operator() {
         vec![expected("years", "2"), expected("months", "6")]
     );
 }
+
+#[test]
+fn partition_of_table_displays_without_an_empty_column_list() {
+    pg().verified_stmt("CREATE TABLE p1 PARTITION OF p FOR VALUES FROM (0) TO (100)");
+    pg().verified_stmt("CREATE TABLE p2 PARTITION OF p FOR VALUES IN (1)");
+    pg().verified_stmt("CREATE TABLE p3 PARTITION OF p DEFAULT");
+    pg().verified_stmt("CREATE TABLE empty ()");
+}
+
+#[test]
+fn string_values_with_consecutive_quotes_display_every_quote_doubled() {
+    pg().verified_stmt("SELECT 'a''''b'");
+    pg().verified_stmt("SELECT '''joe''''s'' cafe'::TSVECTOR");
+    pg().verified_stmt(r#"SELECT "a""""b" FROM t"#);
+}

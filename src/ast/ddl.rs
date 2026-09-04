@@ -2953,8 +2953,11 @@ impl fmt::Display for CreateTable {
             && self.execute.is_none()
             && self.like.is_none()
             && self.clone.is_none()
+            && self.partition_of.is_none()
         {
-            // PostgreSQL allows `CREATE TABLE t ();`, but requires empty parens
+            // PostgreSQL allows `CREATE TABLE t ();`, but requires empty parens.
+            // A partition (`PARTITION OF parent`) takes its columns from the
+            // parent and never writes an empty list.
             f.write_str(" ()")?;
         } else if let Some(CreateTableLikeKind::Parenthesized(like_in_columns_list)) = &self.like {
             write!(f, " ({like_in_columns_list})")?;
