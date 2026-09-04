@@ -28,8 +28,7 @@ use sqlparser::ast::{
     ArgMode, AtomicBlock, BeginEndStatements, ConditionalStatements, CreateFunctionBody, DataType,
     DiagnosticsItem, ExecuteInto, Expr, ForLoopVariant, FunctionBehavior, FunctionCalledOnNull,
     FunctionParallel, GetDiagnosticsKind, OpenFor, PlSqlDeclaration, RoutineAttribute,
-    SqlPsmDataType,
-    Statement,
+    SqlPsmDataType, Statement,
 };
 
 // =============================================================================
@@ -545,8 +544,14 @@ fn test_open_bound_cursor_accepts_postgresql_named_arguments() {
         Statement::Open(open) => match open.open_for.as_ref() {
             Some(OpenFor::BoundCursorArgs(args)) => {
                 assert_eq!(args.len(), 2);
-                assert_eq!(args[0].name.as_ref().map(|name| name.value.as_str()), Some("hi"));
-                assert_eq!(args[1].name.as_ref().map(|name| name.value.as_str()), Some("lo"));
+                assert_eq!(
+                    args[0].name.as_ref().map(|name| name.value.as_str()),
+                    Some("hi")
+                );
+                assert_eq!(
+                    args[1].name.as_ref().map(|name| name.value.as_str()),
+                    Some("lo")
+                );
             }
             other => panic!("expected bound cursor arguments, got {other:?}"),
         },

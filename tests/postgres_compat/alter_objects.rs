@@ -21,17 +21,17 @@
 //! Reference: <https://www.postgresql.org/docs/current/sql-commands.html>
 
 use sqlparser::ast::{
-    AggregateArgs, AllInTablespaceObjectType, AlterCollationAction,
-    AlterConfigurationOperation, AlterDatabaseOption, AlterDomainAction, AlterEventTriggerAction,
-    AlterGroupAction, AlterIndexOperation, AlterMaterializedViewAction,
-    AlterMaterializedViewOperation, AlterObjectAction, AlterObjectTarget, AlterOperatorAction,
-    AlterPublicationAction, AlterRoutineAction, AlterSequenceOperation, AlterStatisticsAction,
-    AlterSubscriptionAction, AlterTextSearchConfigurationAction, AlterTextSearchDictionaryAction,
-    AlterTriggerAction, AlterTypeAction, AlterTypeOperation, AlterViewOperation, DataType,
-    DatabaseOptionValue, DefinitionValue, DropBehavior, EventTriggerEnableMode, Expr,
-    FunctionBehavior, FunctionCalledOnNull, FunctionParallel, Ident, ObjectName, Owner,
-    ProcedureSecurity, ResetConfig, RoutineKind, RoutineOption, SetConfigValue, SqlOption,
-    SetStatisticsValue, Statement, TableConstraint,
+    AggregateArgs, AllInTablespaceObjectType, AlterCollationAction, AlterConfigurationOperation,
+    AlterDatabaseOption, AlterDomainAction, AlterEventTriggerAction, AlterGroupAction,
+    AlterIndexOperation, AlterMaterializedViewAction, AlterMaterializedViewOperation,
+    AlterObjectAction, AlterObjectTarget, AlterOperatorAction, AlterPublicationAction,
+    AlterRoutineAction, AlterSequenceOperation, AlterStatisticsAction, AlterSubscriptionAction,
+    AlterTextSearchConfigurationAction, AlterTextSearchDictionaryAction, AlterTriggerAction,
+    AlterTypeAction, AlterTypeOperation, AlterViewOperation, DataType, DatabaseOptionValue,
+    DefinitionValue, DropBehavior, EventTriggerEnableMode, Expr, FunctionBehavior,
+    FunctionCalledOnNull, FunctionParallel, Ident, ObjectName, Owner, ProcedureSecurity,
+    ResetConfig, RoutineKind, RoutineOption, SetConfigValue, SetStatisticsValue, SqlOption,
+    Statement, TableConstraint,
 };
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::test_utils::TestedDialects;
@@ -112,10 +112,7 @@ fn parse_alter_aggregate_star_signature() {
 fn parse_alter_aggregate_ordered_set_signature() {
     match alter_object_target("ALTER AGGREGATE pct(FLOAT8 ORDER BY FLOAT8) SET SCHEMA s") {
         AlterObjectTarget::Aggregate { signature, .. } => match signature {
-            AggregateArgs::OrderedSet {
-                direct,
-                ordered,
-            } => {
+            AggregateArgs::OrderedSet { direct, ordered } => {
                 assert_eq!(direct.len(), 1);
                 assert_eq!(ordered.len(), 1);
             }

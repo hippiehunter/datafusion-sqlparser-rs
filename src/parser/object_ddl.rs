@@ -601,17 +601,13 @@ impl Parser<'_> {
         &self,
     ) -> Result<Vec<CreateAggregateOption>, ParserError> {
         self.expect_token(&Token::LParen)?;
-        let options = self.parse_comma_separated0(
-            Parser::parse_aggregate_definition_option,
-            Token::RParen,
-        )?;
+        let options =
+            self.parse_comma_separated0(Parser::parse_aggregate_definition_option, Token::RParen)?;
         self.expect_token(&Token::RParen)?;
         Ok(options)
     }
 
-    fn parse_aggregate_definition_option(
-        &self,
-    ) -> Result<CreateAggregateOption, ParserError> {
+    fn parse_aggregate_definition_option(&self) -> Result<CreateAggregateOption, ParserError> {
         let name = self.parse_identifier()?;
         if !self.consume_token(&Token::Eq) {
             return Ok(CreateAggregateOption {

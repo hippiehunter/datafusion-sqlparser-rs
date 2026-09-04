@@ -16,16 +16,16 @@
 // under the License.
 
 //! SQL Abstract Syntax Tree (AST) types
-pub use crate::arena::AstBox;
 pub use self::alter_objects::{
-    AllInTablespaceObjectType, AlterCollationAction, AlterDatabaseOption,
-    AlterDomainAction, AlterEventTriggerAction, AlterGroupAction, AlterMaterializedViewAction,
-    AlterObject, AlterObjectAction, AlterObjectTarget, AlterOperatorAction, AlterOperatorArgs,
+    AllInTablespaceObjectType, AlterCollationAction, AlterDatabaseOption, AlterDomainAction,
+    AlterEventTriggerAction, AlterGroupAction, AlterMaterializedViewAction, AlterObject,
+    AlterObjectAction, AlterObjectTarget, AlterOperatorAction, AlterOperatorArgs,
     AlterRoutineAction, AlterSequenceOperation, AlterStatisticsAction,
     AlterTextSearchConfigurationAction, AlterTextSearchDictionaryAction, AlterTriggerAction,
     AlterTypeAction, DatabaseOptionValue, DefinitionElement, DefinitionValue,
     EventTriggerEnableMode, RoutineKind, RoutineOption,
 };
+pub use crate::arena::AstBox;
 pub(crate) use crate::arena::AstBox as Box;
 #[cfg(not(feature = "std"))]
 use alloc::{
@@ -47,7 +47,7 @@ use core::{
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "visitor")]
-use sqlparser_derive::{Visit, VisitMut};
+use sqlparser_derive::{NoInlineClone, NoInlineDebug, NoInlinePartialEq, Visit, VisitMut};
 
 use crate::{display_utils::SpaceOrNewline, tokenizer::Span};
 use crate::{
@@ -70,15 +70,15 @@ pub use self::ddl::{
     AlterTypeRenameValue, AlterViewOperation, ColumnDef, ColumnOption, ColumnOptionDef,
     ColumnOptions, ConstraintCharacteristics, CreateAggregate, CreateAggregateOption,
     CreateAggregateOptionValue, CreateAssertion, CreateCast, CreateCastContext, CreateCastMethod,
-    CreateDomain, CreateExtension, CreateFunction,
-    CreateIndex, CreateOperator, CreateOperatorClass, CreateOperatorFamily, CreatePropertyGraph,
-    CreateStatistics, CreateTable, CreateTableSystemVersioning, CreateTrigger, CreateTypedTable,
-    CreateView, Deduplicate, DeferrableInitial, DropBehavior, DropExtension, DropFunction,
-    DropPropertyGraph, DropTrigger, GeneratedAs, GeneratedExpressionMode, GraphEdgeEndpoint,
-    GraphEdgeTableDefinition, GraphKeyClause, GraphPropertiesClause, GraphPropertyDefinition,
-    GraphVertexTableDefinition, IdentityParameters, IdentityProperty, IdentityPropertyFormatKind,
-    IdentityPropertyKind, IdentityPropertyOrder, IndexColumn, IndexOption, IndexType,
-    KeyOrIndexDisplay, NullsDistinctOption, OperatorArgTypes, OperatorClassItem, OperatorPurpose,
+    CreateDomain, CreateExtension, CreateFunction, CreateIndex, CreateOperator,
+    CreateOperatorClass, CreateOperatorFamily, CreatePropertyGraph, CreateStatistics, CreateTable,
+    CreateTableSystemVersioning, CreateTrigger, CreateTypedTable, CreateView, Deduplicate,
+    DeferrableInitial, DropBehavior, DropExtension, DropFunction, DropPropertyGraph, DropTrigger,
+    GeneratedAs, GeneratedExpressionMode, GraphEdgeEndpoint, GraphEdgeTableDefinition,
+    GraphKeyClause, GraphPropertiesClause, GraphPropertyDefinition, GraphVertexTableDefinition,
+    IdentityParameters, IdentityProperty, IdentityPropertyFormatKind, IdentityPropertyKind,
+    IdentityPropertyOrder, IndexColumn, IndexOption, IndexType, KeyOrIndexDisplay,
+    NullsDistinctOption, OperatorArgTypes, OperatorClassItem, OperatorPurpose,
     OracleCreateMaterializedViewOptions, OracleCreateViewOptions, OracleMaterializedViewBuild,
     OracleObjectView, OraclePartitionDefinition, OracleViewConstraint, Owner, Partition,
     PartitionByClause, PartitionKeyDef, PartitionKeyExpr, PartitionStrategy, ProcedureParam,
@@ -130,16 +130,16 @@ pub use self::query::{
     XmlWhitespace,
 };
 
-pub use self::pg_utility::{
-    PgRelationExpr, PreparedTransactionAction, PreparedTransactionStatement, VacuumOption,
-    VacuumOptionName, VacuumOptionValue, VacuumRelation,
-};
 pub use self::object_ddl::{
     AggregateArgs, AggregateSignature, CastSignature, CollationDefinition, CommentObjectDetail,
     CreateCollation, CreateConversion, CreateEventTrigger, CreateLanguage, DropAggregate, DropCast,
     DropOperator, DropOperatorClass, DropOwned, DropRoutine, DropTransform, EventTriggerCondition,
     OperatorOperandTypes, OperatorSignature, PasswordEncryption, ReassignOwned, RoleGrantOption,
     RoleGrantOptionValue,
+};
+pub use self::pg_utility::{
+    PgRelationExpr, PreparedTransactionAction, PreparedTransactionStatement, VacuumOption,
+    VacuumOptionName, VacuumOptionValue, VacuumRelation,
 };
 
 pub use self::trigger::{
@@ -183,9 +183,7 @@ pub use table_ddl::{
 };
 mod operator;
 mod plpgsql;
-pub use self::plpgsql::{
-    AtomicBlock, PlpgsqlAssert, RoutineAttribute, SqlPsmQueryAssignment,
-};
+pub use self::plpgsql::{AtomicBlock, PlpgsqlAssert, RoutineAttribute, SqlPsmQueryAssignment};
 mod pg_query;
 mod query;
 mod spans;
@@ -864,11 +862,12 @@ impl fmt::Display for BetweenSymmetric {
 /// of the expression (not bitwise comparison). This means that `Expr` instances
 /// that are semantically equivalent but have different spans (locations in the
 /// source tree) will compare as equal.
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[derive(Clone, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(not(feature = "visitor"), derive(Debug, PartialEq))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(
     feature = "visitor",
-    derive(Visit, VisitMut),
+    derive(NoInlineDebug, NoInlinePartialEq, Visit, VisitMut),
     visit(with = "visit_expr")
 )]
 pub enum Expr {
@@ -7123,11 +7122,12 @@ pub enum EncryptionKeyOperation {
 
 /// A top-level statement (SELECT, INSERT, CREATE, etc.)
 #[allow(clippy::large_enum_variant)]
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[derive(PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(not(feature = "visitor"), derive(Debug, Clone, PartialEq))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(
     feature = "visitor",
-    derive(Visit, VisitMut),
+    derive(NoInlineClone, NoInlineDebug, NoInlinePartialEq, Visit, VisitMut),
     visit(with = "visit_statement")
 )]
 pub enum Statement {
@@ -10968,16 +10968,23 @@ pub enum AlterMaterializedViewOperation {
         mode: OracleMaterializedViewRefreshMode,
     },
     /// `RENAME TO new_name`
-    RenameTo { new_name: Ident },
+    RenameTo {
+        new_name: Ident,
+    },
     /// `SET SCHEMA new_schema`
-    SetSchema { new_schema: ObjectName },
+    SetSchema {
+        new_schema: ObjectName,
+    },
     /// `RENAME [ COLUMN ] column_name TO new_column_name`
     RenameColumn {
         old_column_name: Ident,
         new_column_name: Ident,
     },
     /// `[ NO ] DEPENDS ON EXTENSION extension_name`
-    DependsOnExtension { no: bool, extension_name: Ident },
+    DependsOnExtension {
+        no: bool,
+        extension_name: Ident,
+    },
     /// `action [, ...]`, the table-shaped actions of `ALTER MATERIALIZED VIEW`
     Actions(Vec<AlterMaterializedViewAction>),
 }
@@ -19071,6 +19078,66 @@ mod tests {
     use crate::tokenizer::Location;
 
     use super::*;
+
+    #[cfg(feature = "visitor")]
+    #[derive(sqlparser_derive::NoInlineDebug, sqlparser_derive::NoInlinePartialEq)]
+    enum NoInlineDerived {
+        Named { value: Vec<u8>, enabled: bool },
+        Tuple(String, usize),
+        Unit,
+    }
+
+    #[cfg(feature = "visitor")]
+    #[allow(dead_code)]
+    #[derive(Debug)]
+    enum StandardDebugDerived {
+        Named { value: Vec<u8>, enabled: bool },
+        Tuple(String, usize),
+        Unit,
+    }
+
+    #[cfg(feature = "visitor")]
+    #[test]
+    fn no_inline_derives_match_standard_enum_semantics() {
+        let cases = [
+            (
+                NoInlineDerived::Named {
+                    value: vec![1, 2],
+                    enabled: true,
+                },
+                StandardDebugDerived::Named {
+                    value: vec![1, 2],
+                    enabled: true,
+                },
+            ),
+            (
+                NoInlineDerived::Tuple("value".to_string(), 7),
+                StandardDebugDerived::Tuple("value".to_string(), 7),
+            ),
+            (NoInlineDerived::Unit, StandardDebugDerived::Unit),
+        ];
+
+        for (actual, standard) in cases {
+            assert_eq!(format!("{actual:?}"), format!("{standard:?}"));
+            assert_eq!(format!("{actual:#?}"), format!("{standard:#?}"));
+        }
+
+        assert!(NoInlineDerived::Unit == NoInlineDerived::Unit);
+        assert!(
+            NoInlineDerived::Tuple("value".to_string(), 7)
+                == NoInlineDerived::Tuple("value".to_string(), 7)
+        );
+        assert!(
+            NoInlineDerived::Named {
+                value: vec![1, 2],
+                enabled: true,
+            } != NoInlineDerived::Named {
+                value: vec![1, 3],
+                enabled: true,
+            }
+        );
+        assert!(NoInlineDerived::Unit != NoInlineDerived::Tuple(String::new(), 0));
+    }
 
     #[test]
     fn test_window_frame_default() {

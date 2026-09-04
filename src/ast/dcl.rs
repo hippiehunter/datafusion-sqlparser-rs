@@ -226,11 +226,17 @@ pub enum AlterConfigurationOperation {
         config_name: ResetConfig,
     },
     /// `ALTER DATABASE name RENAME TO new_name`
-    RenameTo { new_name: Ident },
+    RenameTo {
+        new_name: Ident,
+    },
     /// `ALTER DATABASE name OWNER TO new_owner`
-    OwnerTo { new_owner: Owner },
+    OwnerTo {
+        new_owner: Owner,
+    },
     /// `ALTER DATABASE name SET TABLESPACE new_tablespace`
-    SetTablespace { tablespace_name: Ident },
+    SetTablespace {
+        tablespace_name: Ident,
+    },
     /// `ALTER DATABASE name REFRESH COLLATION VERSION`
     RefreshCollationVersion,
     /// `ALTER DATABASE name [ WITH ] option [ ... ]`

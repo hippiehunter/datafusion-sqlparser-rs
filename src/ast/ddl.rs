@@ -47,14 +47,13 @@ use crate::ast::{
         UniqueConstraint,
     },
     AggregateArgs, AlterTypeAction, ArgMode, AttachedToken, CommentDef, ConditionalStatements,
-    CreateFunctionBody,
-    CreateFunctionUsing, CreateTableLikeKind, CreateTableOptions, CreateViewParams, DataType, Expr,
-    FunctionBehavior, FunctionCalledOnNull, FunctionDesc, FunctionDeterminismSpecifier,
-    FunctionParallel, Ident, MaterializedViewRefreshSchedule, MySQLColumnPosition, ObjectName,
-    OnCommit, OperateFunctionArg, OrderByExpr, PartitionBoundSpec, ProcedureSecurity,
-    ProcedureSetConfig, Query, RoutineAttribute, SequenceOptions, Spanned, SqlDataAccess,
-    SqlMedOptionAction, SqlOption, TableVersion, TriggerEvent, TriggerExecBody, TriggerObject,
-    TriggerPeriod, TriggerReferencing, ValueWithSpan,
+    CreateFunctionBody, CreateFunctionUsing, CreateTableLikeKind, CreateTableOptions,
+    CreateViewParams, DataType, Expr, FunctionBehavior, FunctionCalledOnNull, FunctionDesc,
+    FunctionDeterminismSpecifier, FunctionParallel, Ident, MaterializedViewRefreshSchedule,
+    MySQLColumnPosition, ObjectName, OnCommit, OperateFunctionArg, OrderByExpr, PartitionBoundSpec,
+    ProcedureSecurity, ProcedureSetConfig, Query, RoutineAttribute, SequenceOptions, Spanned,
+    SqlDataAccess, SqlMedOptionAction, SqlOption, TableVersion, TriggerEvent, TriggerExecBody,
+    TriggerObject, TriggerPeriod, TriggerReferencing, ValueWithSpan,
 };
 use crate::display_utils::{DisplayCommaSeparated, Indent, NewLine, SpaceOrNewline};
 use crate::tokenizer::{Span, Token};
@@ -932,7 +931,10 @@ impl fmt::Display for AlterIndexOperation {
             AlterIndexOperation::AlterColumnSetStatistics {
                 column_number,
                 statistics,
-            } => write!(f, "ALTER COLUMN {column_number} SET STATISTICS {statistics}"),
+            } => write!(
+                f,
+                "ALTER COLUMN {column_number} SET STATISTICS {statistics}"
+            ),
         }
     }
 }
@@ -957,9 +959,13 @@ pub enum AlterTypeOperation {
     AddValue(AlterTypeAddValue),
     RenameValue(AlterTypeRenameValue),
     /// `OWNER TO { new_owner | CURRENT_ROLE | CURRENT_USER | SESSION_USER }`
-    OwnerTo { new_owner: Owner },
+    OwnerTo {
+        new_owner: Owner,
+    },
     /// `SET SCHEMA new_schema`
-    SetSchema { new_schema: ObjectName },
+    SetSchema {
+        new_schema: ObjectName,
+    },
     /// `RENAME ATTRIBUTE attribute_name TO new_attribute_name [ CASCADE | RESTRICT ]`
     RenameAttribute {
         old_name: Ident,
@@ -967,7 +973,9 @@ pub enum AlterTypeOperation {
         drop_behavior: Option<DropBehavior>,
     },
     /// `SET ( property = value [, ...] )`
-    SetProperties { properties: Vec<SqlOption> },
+    SetProperties {
+        properties: Vec<SqlOption>,
+    },
     /// `action [, ...]`, the composite-type attribute actions
     Actions(Vec<AlterTypeAction>),
 }
@@ -3340,9 +3348,7 @@ impl fmt::Display for CreateFunction {
                     } => write!(f, " AS {obj_file}, {link_symbol}")?,
                     CreateFunctionBody::Return(expr) => write!(f, " RETURN {expr}")?,
                     CreateFunctionBody::AsReturnExpr(expr) => write!(f, " AS RETURN {expr}")?,
-                    CreateFunctionBody::AsReturnSelect(select) => {
-                        write!(f, " AS RETURN {select}")?
-                    }
+                    CreateFunctionBody::AsReturnSelect(select) => write!(f, " AS RETURN {select}")?,
                     CreateFunctionBody::AsBeginEnd(bes) => write!(f, " AS $$ {bes} $$")?,
                     CreateFunctionBody::BeginAtomic(block) => write!(f, " {block}")?,
                     CreateFunctionBody::Multiple(_) => {}

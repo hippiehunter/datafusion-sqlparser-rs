@@ -27,93 +27,112 @@ use crate::ast::Box;
 use crate::ast::{DataType, Expr, ObjectName, Query, Statement, TableFactor, Value};
 use core::ops::ControlFlow;
 
+/// The non-generic recursive walk implemented by every visitable AST node.
+///
+/// This is the code-generation boundary: derived implementations recurse only
+/// through `VisitErased`, so the complete AST walk is emitted once instead of
+/// once for every concrete visitor type. Most callers should use [`Visit`],
+/// which preserves typed early-exit payloads through a shallow adapter.
+pub trait VisitErased {
+    fn visit_erased(&self, visitor: &mut dyn Visitor<Break = ()>) -> ControlFlow<()>;
+}
+
 /// A type that can be visited by a [`Visitor`]. See [`Visitor`] for
 /// recursively visiting parsed SQL statements.
 ///
-/// # Note
-///
-/// This trait should be automatically derived for sqlparser AST nodes
-/// using the [Visit](sqlparser_derive::Visit) proc macro.
-///
-/// ```text
-/// #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-/// ```
-pub trait Visit {
-    fn visit<V: Visitor>(&self, visitor: &mut V) -> ControlFlow<V::Break>;
-}
-
-/// A type that can be visited by a [`VisitorMut`]. See [`VisitorMut`] for
-/// recursively visiting parsed SQL statements.
-///
-/// # Note
-///
-/// This trait should be automatically derived for sqlparser AST nodes
-/// using the [VisitMut](sqlparser_derive::VisitMut) proc macro.
+/// This compatibility trait retains the original typed `Break` API. Its
+/// blanket implementation only adapts visitor hooks and then enters the
+/// non-generic [`VisitErased`] recursion.
 ///
 /// ```text
 /// #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 /// ```
-pub trait VisitMut {
-    fn visit<V: VisitorMut>(&mut self, visitor: &mut V) -> ControlFlow<V::Break>;
+pub trait Visit: VisitErased {
+    fn visit<V: Visitor + ?Sized>(&self, visitor: &mut V) -> ControlFlow<V::Break> {
+        drive_visit(self, visitor)
+    }
 }
 
-impl<T: Visit> Visit for Option<T> {
-    fn visit<V: Visitor>(&self, visitor: &mut V) -> ControlFlow<V::Break> {
+impl<T: VisitErased + ?Sized> Visit for T {}
+
+/// The non-generic mutating counterpart of [`VisitErased`].
+pub trait VisitMutErased {
+    fn visit_mut_erased(&mut self, visitor: &mut dyn VisitorMut<Break = ()>) -> ControlFlow<()>;
+}
+
+/// The typed-break compatibility wrapper over [`VisitMutErased`].
+pub trait VisitMut: VisitMutErased {
+    fn visit<V: VisitorMut + ?Sized>(&mut self, visitor: &mut V) -> ControlFlow<V::Break> {
+        drive_visit_mut(self, visitor)
+    }
+}
+
+impl<T: VisitMutErased + ?Sized> VisitMut for T {}
+
+impl<T: VisitErased> VisitErased for Option<T> {
+    fn visit_erased(&self, visitor: &mut dyn Visitor<Break = ()>) -> ControlFlow<()> {
         if let Some(s) = self {
-            s.visit(visitor)?;
+            s.visit_erased(visitor)?;
         }
         ControlFlow::Continue(())
     }
 }
 
-impl<T: Visit> Visit for Vec<T> {
-    fn visit<V: Visitor>(&self, visitor: &mut V) -> ControlFlow<V::Break> {
+impl<T: VisitErased> VisitErased for Vec<T> {
+    /// Protect the collection indirection rather than every derived AST node.
+    /// Every recursive owned AST cycle must cross `Vec` or [`Box`], so this
+    /// retains segmented-stack growth without specializing stacker for leaves.
+    #[cfg_attr(feature = "recursive-protection", recursive::recursive)]
+    fn visit_erased(&self, visitor: &mut dyn Visitor<Break = ()>) -> ControlFlow<()> {
         for v in self {
-            v.visit(visitor)?;
+            v.visit_erased(visitor)?;
         }
         ControlFlow::Continue(())
     }
 }
 
-impl<T: Visit> Visit for Box<T> {
-    fn visit<V: Visitor>(&self, visitor: &mut V) -> ControlFlow<V::Break> {
-        T::visit(self, visitor)
+impl<T: VisitErased> VisitErased for Box<T> {
+    #[cfg_attr(feature = "recursive-protection", recursive::recursive)]
+    fn visit_erased(&self, visitor: &mut dyn Visitor<Break = ()>) -> ControlFlow<()> {
+        T::visit_erased(self, visitor)
     }
 }
 
-impl<T: VisitMut> VisitMut for Option<T> {
-    fn visit<V: VisitorMut>(&mut self, visitor: &mut V) -> ControlFlow<V::Break> {
+impl<T: VisitMutErased> VisitMutErased for Option<T> {
+    fn visit_mut_erased(&mut self, visitor: &mut dyn VisitorMut<Break = ()>) -> ControlFlow<()> {
         if let Some(s) = self {
-            s.visit(visitor)?;
+            s.visit_mut_erased(visitor)?;
         }
         ControlFlow::Continue(())
     }
 }
 
-impl<T: VisitMut> VisitMut for Vec<T> {
-    fn visit<V: VisitorMut>(&mut self, visitor: &mut V) -> ControlFlow<V::Break> {
+impl<T: VisitMutErased> VisitMutErased for Vec<T> {
+    #[cfg_attr(feature = "recursive-protection", recursive::recursive)]
+    fn visit_mut_erased(&mut self, visitor: &mut dyn VisitorMut<Break = ()>) -> ControlFlow<()> {
         for v in self {
-            v.visit(visitor)?;
+            v.visit_mut_erased(visitor)?;
         }
         ControlFlow::Continue(())
     }
 }
 
-impl<T: VisitMut> VisitMut for Box<T> {
-    fn visit<V: VisitorMut>(&mut self, visitor: &mut V) -> ControlFlow<V::Break> {
-        T::visit(self, visitor)
+impl<T: VisitMutErased> VisitMutErased for Box<T> {
+    #[cfg_attr(feature = "recursive-protection", recursive::recursive)]
+    fn visit_mut_erased(&mut self, visitor: &mut dyn VisitorMut<Break = ()>) -> ControlFlow<()> {
+        T::visit_mut_erased(self, visitor)
     }
 }
 
 macro_rules! visit_noop {
     ($($t:ty),+) => {
-        $(impl Visit for $t {
-            fn visit<V: Visitor>(&self, _visitor: &mut V) -> ControlFlow<V::Break> {
+        $(impl VisitErased for $t {
+            fn visit_erased(&self, _visitor: &mut dyn Visitor<Break = ()>) -> ControlFlow<()> {
                ControlFlow::Continue(())
             }
         })+
-        $(impl VisitMut for $t {
-            fn visit<V: VisitorMut>(&mut self, _visitor: &mut V) -> ControlFlow<V::Break> {
+        $(impl VisitMutErased for $t {
+            fn visit_mut_erased(&mut self, _visitor: &mut dyn VisitorMut<Break = ()>) -> ControlFlow<()> {
                ControlFlow::Continue(())
             }
         })+
@@ -126,14 +145,14 @@ visit_noop!(u8, u16, u32, u64, i8, i16, i32, i64, char, bool, String);
 visit_noop!(bigdecimal::BigDecimal);
 
 // Implement Visit and VisitMut for Cow<str> to support the lifetime parameter in BorrowedToken
-impl<'a> Visit for Cow<'a, str> {
-    fn visit<V: Visitor>(&self, _visitor: &mut V) -> ControlFlow<V::Break> {
+impl<'a> VisitErased for Cow<'a, str> {
+    fn visit_erased(&self, _visitor: &mut dyn Visitor<Break = ()>) -> ControlFlow<()> {
         ControlFlow::Continue(())
     }
 }
 
-impl<'a> VisitMut for Cow<'a, str> {
-    fn visit<V: VisitorMut>(&mut self, _visitor: &mut V) -> ControlFlow<V::Break> {
+impl<'a> VisitMutErased for Cow<'a, str> {
+    fn visit_mut_erased(&mut self, _visitor: &mut dyn VisitorMut<Break = ()>) -> ControlFlow<()> {
         ControlFlow::Continue(())
     }
 }
@@ -424,6 +443,123 @@ pub trait VisitorMut {
     /// Invoked for any AttachedToken that appear in the AST after visiting children
     fn post_visit_token(&mut self, _token: &mut AttachedToken) -> ControlFlow<Self::Break> {
         ControlFlow::Continue(())
+    }
+}
+
+fn erase_break<B>(slot: &mut Option<B>, flow: ControlFlow<B>) -> ControlFlow<()> {
+    match flow {
+        ControlFlow::Continue(()) => ControlFlow::Continue(()),
+        ControlFlow::Break(value) => {
+            *slot = Some(value);
+            ControlFlow::Break(())
+        }
+    }
+}
+
+/// Shallow adapter from the public typed-break visitor API to the one erased
+/// visitor type used by every recursive `VisitErased` implementation.
+struct VisitorAdapter<'a, V: Visitor + ?Sized> {
+    visitor: &'a mut V,
+    break_value: Option<V::Break>,
+}
+
+macro_rules! forward_visitor_hooks {
+    ($($hook:ident: $node:ty),* $(,)?) => {
+        $(
+            fn $hook(&mut self, node: $node) -> ControlFlow<()> {
+                let flow = self.visitor.$hook(node);
+                erase_break(&mut self.break_value, flow)
+            }
+        )*
+    };
+}
+
+impl<V: Visitor + ?Sized> Visitor for VisitorAdapter<'_, V> {
+    type Break = ();
+
+    forward_visitor_hooks! {
+        pre_visit_query: &Query,
+        post_visit_query: &Query,
+        pre_visit_relation: &ObjectName,
+        post_visit_relation: &ObjectName,
+        pre_visit_table_factor: &TableFactor,
+        post_visit_table_factor: &TableFactor,
+        pre_visit_expr: &Expr,
+        post_visit_expr: &Expr,
+        pre_visit_statement: &Statement,
+        post_visit_statement: &Statement,
+        pre_visit_value: &Value,
+        post_visit_value: &Value,
+        pre_visit_data_type: &DataType,
+        post_visit_data_type: &DataType,
+        pre_visit_token: &AttachedToken,
+        post_visit_token: &AttachedToken,
+    }
+}
+
+struct VisitorMutAdapter<'a, V: VisitorMut + ?Sized> {
+    visitor: &'a mut V,
+    break_value: Option<V::Break>,
+}
+
+impl<V: VisitorMut + ?Sized> VisitorMut for VisitorMutAdapter<'_, V> {
+    type Break = ();
+
+    forward_visitor_hooks! {
+        pre_visit_query: &mut Query,
+        post_visit_query: &mut Query,
+        pre_visit_relation: &mut ObjectName,
+        post_visit_relation: &mut ObjectName,
+        pre_visit_table_factor: &mut TableFactor,
+        post_visit_table_factor: &mut TableFactor,
+        pre_visit_expr: &mut Expr,
+        post_visit_expr: &mut Expr,
+        pre_visit_statement: &mut Statement,
+        post_visit_statement: &mut Statement,
+        pre_visit_value: &mut Value,
+        post_visit_value: &mut Value,
+        pre_visit_data_type: &mut DataType,
+        post_visit_data_type: &mut DataType,
+        pre_visit_token: &mut AttachedToken,
+        post_visit_token: &mut AttachedToken,
+    }
+}
+
+fn drive_visit<T, V>(node: &T, visitor: &mut V) -> ControlFlow<V::Break>
+where
+    T: VisitErased + ?Sized,
+    V: Visitor + ?Sized,
+{
+    let mut adapter = VisitorAdapter {
+        visitor,
+        break_value: None,
+    };
+    let flow = node.visit_erased(&mut adapter);
+    match (flow, adapter.break_value) {
+        (_, Some(value)) => ControlFlow::Break(value),
+        (ControlFlow::Continue(()), None) => ControlFlow::Continue(()),
+        (ControlFlow::Break(()), None) => {
+            unreachable!("VisitErased returned Break without a visitor break payload")
+        }
+    }
+}
+
+fn drive_visit_mut<T, V>(node: &mut T, visitor: &mut V) -> ControlFlow<V::Break>
+where
+    T: VisitMutErased + ?Sized,
+    V: VisitorMut + ?Sized,
+{
+    let mut adapter = VisitorMutAdapter {
+        visitor,
+        break_value: None,
+    };
+    let flow = node.visit_mut_erased(&mut adapter);
+    match (flow, adapter.break_value) {
+        (_, Some(value)) => ControlFlow::Break(value),
+        (ControlFlow::Continue(()), None) => ControlFlow::Continue(()),
+        (ControlFlow::Break(()), None) => {
+            unreachable!("VisitMutErased returned Break without a visitor break payload")
+        }
     }
 }
 
@@ -1016,6 +1152,29 @@ mod tests {
         let flow = s.visit(&mut visitor);
         assert_eq!(flow, ControlFlow::Continue(()));
     }
+
+    struct BreakOnRelation;
+
+    impl Visitor for BreakOnRelation {
+        type Break = String;
+
+        fn pre_visit_relation(&mut self, relation: &ObjectName) -> ControlFlow<Self::Break> {
+            ControlFlow::Break(relation.to_string())
+        }
+    }
+
+    #[test]
+    fn typed_break_payload_survives_erased_recursion() {
+        let dialect = PostgreSqlDialect {};
+        let statement = Parser::parse_sql(&dialect, "SELECT * FROM first, second")
+            .unwrap()
+            .remove(0);
+
+        assert_eq!(
+            statement.visit(&mut BreakOnRelation),
+            ControlFlow::Break("first".to_string())
+        );
+    }
 }
 
 #[cfg(test)]
@@ -1080,5 +1239,30 @@ mod visit_mut_tests {
             let mutated = do_visit_mut(sql, &mut visitor);
             assert_eq!(mutated.to_string(), expected)
         }
+    }
+
+    struct QuickMutVisitor;
+
+    impl VisitorMut for QuickMutVisitor {
+        type Break = ();
+    }
+
+    #[test]
+    fn mutable_overflow_protection_crosses_ast_box_edges() {
+        let condition = (0..1000)
+            .map(|index| format!("X = {index}"))
+            .collect::<Vec<_>>()
+            .join(" OR ");
+        let mut statement = Parser::parse_sql(
+            &PostgreSqlDialect {},
+            &format!("SELECT x WHERE {condition}"),
+        )
+        .unwrap()
+        .remove(0);
+
+        assert_eq!(
+            statement.visit(&mut QuickMutVisitor),
+            ControlFlow::Continue(())
+        );
     }
 }

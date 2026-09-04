@@ -38,8 +38,8 @@ use crate::ast::helpers::attached_token::AttachedToken;
 use crate::ast::{
     display_comma_separated, AggregateArgs, DataType, DropBehavior, Expr, FunctionBehavior,
     FunctionCalledOnNull, FunctionDesc, FunctionParallel, Ident, ObjectName, Owner,
-    SetStatisticsValue,
-    ProcedureSecurity, ProcedureSetConfig, ResetConfig, SqlOption, TableConstraint,
+    ProcedureSecurity, ProcedureSetConfig, ResetConfig, SetStatisticsValue, SqlOption,
+    TableConstraint,
 };
 
 /// An `ALTER <object>` statement for a PostgreSQL object that is neither a
@@ -275,7 +275,6 @@ impl fmt::Display for AllInTablespaceObjectType {
         })
     }
 }
-
 
 /// An action of `ALTER COLLATION`.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
@@ -655,7 +654,6 @@ impl fmt::Display for AlterStatisticsAction {
         }
     }
 }
-
 
 /// An action of `ALTER TEXT SEARCH CONFIGURATION`.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]

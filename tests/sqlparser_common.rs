@@ -16326,8 +16326,14 @@ fn parse_restore_tenant() {
 fn parse_restore_table_and_database() {
     for (sql, expected_table) in [
         ("RESTORE DATABASE", None),
-        ("RESTORE DATABASE TO TIMESTAMP '2026-07-01T00:00:00Z' DRY RUN", None),
-        ("RESTORE TABLE public.orders TO LSN 42", Some("public.orders")),
+        (
+            "RESTORE DATABASE TO TIMESTAMP '2026-07-01T00:00:00Z' DRY RUN",
+            None,
+        ),
+        (
+            "RESTORE TABLE public.orders TO LSN 42",
+            Some("public.orders"),
+        ),
         (
             "RESTORE TABLE \"Mixed Case\" FROM 'file:///backups/prod' TO HLC '7' DRY RUN",
             Some("\"Mixed Case\""),
