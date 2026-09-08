@@ -5179,13 +5179,18 @@ impl<'a> Parser<'a> {
         Ok(StorageSize { value, unit })
     }
 
-    /// Parses `CREATE TABLESPACE [IF NOT EXISTS] name LOCATION 'directory' [ WITH ( ... ) ]`.
+    /// Parses `CREATE TABLESPACE [IF NOT EXISTS] name [OWNER role] LOCATION 'directory' [ WITH ( ... ) ]`.
     pub fn parse_create_tablespace(
         &self,
         create_token: AttachedToken,
     ) -> Result<Statement, ParserError> {
         let if_not_exists = self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
         let name = self.parse_identifier()?;
+        let owner = if self.parse_keyword(Keyword::OWNER) {
+            Some(self.parse_identifier()?)
+        } else {
+            None
+        };
         self.expect_keyword(Keyword::LOCATION)?;
         let location = self.parse_value()?.value;
         let options = self.parse_options(Keyword::WITH)?;
@@ -5193,6 +5198,7 @@ impl<'a> Parser<'a> {
             create_token,
             if_not_exists,
             name,
+            owner,
             location,
             options,
         })
@@ -24577,7 +24583,12 @@ impl<'a> Parser<'a> {
                         self.peek_token(),
                     );
                 }
-            } else if self.peek_keyword(Keyword::AT) || self.peek_keyword(Keyword::BEFORE) {
+            } else if (self.peek_keyword(Keyword::AT) || self.peek_keyword(Keyword::BEFORE))
+                && matches!(self.peek_nth_token_ref(1).token, BorrowedToken::LParen)
+            {
+                // Snowflake `AT(...)` / `BEFORE(...)` time travel. Without the
+                // parenthesis these words are ordinary table aliases, as in
+                // pg_dump's `LEFT JOIN pg_type at ON at.oid = ...`.
                 let func_name = self.parse_object_name(true)?;
                 let func = self.parse_function(func_name)?;
                 return Ok(Some(TableVersion::Function(func)));

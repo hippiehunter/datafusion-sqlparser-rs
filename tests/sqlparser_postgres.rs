@@ -8336,3 +8336,17 @@ fn string_values_with_consecutive_quotes_display_every_quote_doubled() {
     pg().verified_stmt("SELECT '''joe''''s'' cafe'::TSVECTOR");
     pg().verified_stmt(r#"SELECT "a""""b" FROM t"#);
 }
+
+#[test]
+fn parse_at_and_before_as_table_aliases() {
+    // Time-travel `AT(...)` / `BEFORE(...)` only claims the word when a
+    // parenthesis follows; pg_dump aliases pg_type as `at`.
+    pg().verified_only_select(
+        "SELECT a.attname FROM pg_type AS ct JOIN pg_attribute AS a ON a.attrelid = ct.typrelid \
+         LEFT JOIN pg_type AS at ON at.oid = a.atttypid WHERE ct.oid = 1",
+    );
+    pg().one_statement_parses_to(
+        "SELECT at.oid FROM pg_type at, pg_class before WHERE at.oid = before.reltype",
+        "SELECT at.oid FROM pg_type AS at, pg_class AS before WHERE at.oid = before.reltype",
+    );
+}

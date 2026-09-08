@@ -16148,6 +16148,13 @@ fn parse_create_tablespace() {
         other => panic!("expected CREATE TABLESPACE, got {other:?}"),
     }
 
+    match dialects.verified_stmt("CREATE TABLESPACE fast OWNER dba LOCATION '/mnt/nvme'") {
+        Statement::CreateTablespace { owner, .. } => {
+            assert_eq!("dba", owner.expect("owner").to_string());
+        }
+        other => panic!("expected CREATE TABLESPACE, got {other:?}"),
+    }
+
     // LOCATION is mandatory: a tablespace with no directory has nowhere to
     // create the datafiles ALTER TABLESPACE ... ADD DATAFILE asks for.
     assert!(dialects

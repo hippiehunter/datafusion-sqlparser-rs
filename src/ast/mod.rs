@@ -8703,13 +8703,15 @@ pub enum Statement {
         tablespace_name: ObjectName,
     },
     /// ```sql
-    /// CREATE TABLESPACE tablespace_name LOCATION 'directory' [ WITH ( option = value, ... ) ]
+    /// CREATE TABLESPACE tablespace_name [ OWNER role ] LOCATION 'directory' [ WITH ( option = value, ... ) ]
     /// ```
     CreateTablespace {
         #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
         create_token: AttachedToken,
         if_not_exists: bool,
         name: Ident,
+        /// The owning role, as pg_dumpall emits it (`OWNER role`).
+        owner: Option<Ident>,
         /// The directory new datafiles are created in. PostgreSQL spells this
         /// `LOCATION`; it is mandatory because a tablespace with no location
         /// has nowhere to put the datafiles `ALTER TABLESPACE … ADD DATAFILE`
@@ -12983,6 +12985,7 @@ impl fmt::Display for Statement {
             Statement::CreateTablespace {
                 if_not_exists,
                 name,
+                owner,
                 location,
                 options,
                 ..
@@ -12991,7 +12994,11 @@ impl fmt::Display for Statement {
                 if *if_not_exists {
                     write!(f, "IF NOT EXISTS ")?;
                 }
-                write!(f, "{name} LOCATION {location}")?;
+                write!(f, "{name}")?;
+                if let Some(owner) = owner {
+                    write!(f, " OWNER {owner}")?;
+                }
+                write!(f, " LOCATION {location}")?;
                 if !options.is_empty() {
                     write!(f, " WITH ({})", display_comma_separated(options))?;
                 }
