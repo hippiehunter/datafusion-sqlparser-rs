@@ -23826,6 +23826,7 @@ impl<'a> Parser<'a> {
         let variable = if self.peek_token().token != BorrowedToken::Colon
             && self.peek_token().token != BorrowedToken::LBrace
             && self.peek_token().token != BorrowedToken::RParen
+            && !(self.dialect.is::<OracleDialect>() && self.peek_keyword(Keyword::IS))
             && !matches!(self.peek_token().token, BorrowedToken::Word(w) if w.keyword == Keyword::WHERE)
         {
             Some(self.parse_identifier()?)
@@ -23939,6 +23940,7 @@ impl<'a> Parser<'a> {
             && self.peek_token().token != BorrowedToken::Colon
             && self.peek_token().token != BorrowedToken::LBrace
             && self.peek_token().token != BorrowedToken::RBracket
+            && !(self.dialect.is::<OracleDialect>() && self.peek_keyword(Keyword::IS))
             && !matches!(self.peek_token().token, BorrowedToken::Word(w) if w.keyword == Keyword::WHERE)
         {
             Some(self.parse_identifier()?)
