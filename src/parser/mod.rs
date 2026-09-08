@@ -28273,7 +28273,9 @@ impl<'a> Parser<'a> {
                     SequenceOptions::Cache(_) | SequenceOptions::NoCache => 4,
                     SequenceOptions::Cycle(_) => 5,
                     SequenceOptions::Order(_) => 6,
-                    SequenceOptions::Restart { .. } | SequenceOptions::As(_) => continue,
+                    SequenceOptions::Restart { .. }
+                    | SequenceOptions::As(_)
+                    | SequenceOptions::SequenceName(_) => continue,
                 };
                 if seen[index] {
                     return parser_err!(
@@ -28334,6 +28336,14 @@ impl<'a> Parser<'a> {
                     sequence_options.push(SequenceOptions::Cycle(true));
                     continue;
                 }
+            }
+
+            // PostgreSQL identity columns: [ SEQUENCE NAME name ]
+            if self.parse_keywords(&[Keyword::SEQUENCE, Keyword::NAME]) {
+                sequence_options.push(SequenceOptions::SequenceName(
+                    self.parse_object_name(false)?,
+                ));
+                continue;
             }
 
             //[ INCREMENT [ BY ] increment ]

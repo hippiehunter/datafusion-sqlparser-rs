@@ -13071,6 +13071,9 @@ pub enum SequenceOptions {
     },
     /// PostgreSQL `ALTER SEQUENCE ... AS data_type`
     As(DataType),
+    /// PostgreSQL identity column option naming the backing sequence:
+    /// `GENERATED ... AS IDENTITY (SEQUENCE NAME name ...)`
+    SequenceName(ObjectName),
 }
 
 impl fmt::Display for SequenceOptions {
@@ -13086,6 +13089,9 @@ impl fmt::Display for SequenceOptions {
             }
             SequenceOptions::As(data_type) => {
                 write!(f, " AS {data_type}")
+            }
+            SequenceOptions::SequenceName(name) => {
+                write!(f, " SEQUENCE NAME {name}")
             }
             SequenceOptions::MinValue(Some(expr)) => {
                 write!(f, " MINVALUE {expr}")
