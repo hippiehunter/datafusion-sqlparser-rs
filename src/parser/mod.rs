@@ -9606,6 +9606,9 @@ impl<'a> Parser<'a> {
         }
         if self.parse_keyword(Keyword::TABLE) {
             self.parse_create_table(or_replace, temporary, global, unlogged)
+        } else if self.parse_keywords(&[Keyword::RECURSIVE, Keyword::VIEW]) {
+            self.prev_token();
+            self.parse_create_recursive_view(or_alter, or_replace, temporary, create_view_params)
         } else if self.peek_keyword(Keyword::MATERIALIZED)
             || self.peek_keyword(Keyword::VIEW)
             || (self.dialect.is::<OracleDialect>()
@@ -12170,6 +12173,49 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// `CREATE RECURSIVE VIEW name (columns) AS query` is PostgreSQL's
+    /// shorthand for a view over a recursive common table expression; it is
+    /// parsed as `CREATE VIEW name (columns) AS WITH RECURSIVE name (columns)
+    /// AS (query) SELECT columns FROM name`, which is also how PostgreSQL
+    /// stores and displays it.
+    fn parse_create_recursive_view(
+        &self,
+        or_alter: bool,
+        or_replace: bool,
+        temporary: bool,
+        create_view_params: Option<CreateViewParams>,
+    ) -> Result<Statement, ParserError> {
+        let statement =
+            self.parse_create_view(or_alter, or_replace, temporary, create_view_params)?;
+        let Statement::CreateView(mut view) = statement else {
+            return Ok(statement);
+        };
+        if view.columns.is_empty() {
+            return self.expected("a column list for a RECURSIVE VIEW", self.peek_token());
+        }
+        let cte_name = view
+            .name
+            .0
+            .last()
+            .map(ToString::to_string)
+            .unwrap_or_else(|| view.name.to_string());
+        let columns = view
+            .columns
+            .iter()
+            .map(|column| column.name.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let rewritten = format!(
+            "WITH RECURSIVE {cte_name} ({columns}) AS ({}) SELECT {columns} FROM {cte_name}",
+            view.query
+        );
+        let query = Parser::new(self.dialect)
+            .try_with_sql(&rewritten)?
+            .parse_query()?;
+        view.query = Box::new(box_into_inner(query));
+        Ok(Statement::CreateView(view))
+    }
+
     pub fn parse_create_view(
         &self,
         or_alter: bool,
@@ -12839,8 +12885,10 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
+        // The default is a column-option expression: a trailing `NOT NULL`
+        // is the domain's constraint, not a null test on the default.
         let default = if self.parse_keyword(Keyword::DEFAULT) {
-            Some(self.parse_expr()?)
+            Some(self.with_state(ColumnDefinition, |parser| parser.parse_column_option_expr())?)
         } else {
             None
         };
