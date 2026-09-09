@@ -9320,7 +9320,8 @@ fn parse_grant() {
         Statement::Grant { privileges, .. } => {
             assert_eq!(
                 Privileges::All {
-                    with_privileges_keyword: true
+                    with_privileges_keyword: true,
+                    columns: None,
                 },
                 privileges
             );
@@ -9338,6 +9339,7 @@ fn parse_grant() {
             (
                 Privileges::All {
                     with_privileges_keyword,
+                    columns: None,
                 },
                 Some(GrantObjects::Schemas(schemas)),
             ) => {
@@ -9443,7 +9445,8 @@ fn test_revoke() {
         } => {
             assert_eq!(
                 Privileges::All {
-                    with_privileges_keyword: true
+                    with_privileges_keyword: true,
+                    columns: None,
                 },
                 privileges
             );
@@ -9509,7 +9512,8 @@ fn test_revoke_with_cascade() {
         } => {
             assert_eq!(
                 Privileges::All {
-                    with_privileges_keyword: true
+                    with_privileges_keyword: true,
+                    columns: None,
                 },
                 privileges
             );

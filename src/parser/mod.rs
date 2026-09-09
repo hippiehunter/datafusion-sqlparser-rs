@@ -18019,9 +18019,7 @@ impl<'a> Parser<'a> {
         let grant_option_for =
             !is_grant && self.parse_keywords(&[Keyword::GRANT, Keyword::OPTION, Keyword::FOR]);
         let privileges = if self.parse_keyword(Keyword::ALL) {
-            Privileges::All {
-                with_privileges_keyword: self.parse_keyword(Keyword::PRIVILEGES),
-            }
+            self.parse_all_privileges()?
         } else {
             Privileges::Actions(self.parse_actions_list()?)
         };
@@ -25086,9 +25084,7 @@ impl<'a> Parser<'a> {
         &self,
     ) -> Result<(Privileges, Option<GrantObjects>), ParserError> {
         let privileges = if self.parse_keyword(Keyword::ALL) {
-            Privileges::All {
-                with_privileges_keyword: self.parse_keyword(Keyword::PRIVILEGES),
-            }
+            self.parse_all_privileges()?
         } else {
             let actions = self.parse_actions_list()?;
             Privileges::Actions(actions)
@@ -25337,16 +25333,27 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn parse_grant_permission(&self) -> Result<Action, ParserError> {
-        fn parse_columns(parser: &Parser) -> Result<Option<Vec<Ident>>, ParserError> {
-            let columns = parser.parse_parenthesized_column_list(Optional, false)?;
-            if columns.is_empty() {
-                Ok(None)
-            } else {
-                Ok(Some(columns))
-            }
+    /// The optional parenthesized column list that follows a column-level
+    /// privilege (`SELECT (a, b)`) or `ALL [PRIVILEGES]` in GRANT and REVOKE.
+    fn parse_privilege_columns(&self) -> Result<Option<Vec<Ident>>, ParserError> {
+        let columns = self.parse_parenthesized_column_list(Optional, false)?;
+        if columns.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(columns))
         }
+    }
 
+    /// `ALL [PRIVILEGES] [(column, ...)]`, with the `ALL` keyword already consumed.
+    fn parse_all_privileges(&self) -> Result<Privileges, ParserError> {
+        let with_privileges_keyword = self.parse_keyword(Keyword::PRIVILEGES);
+        Ok(Privileges::All {
+            with_privileges_keyword,
+            columns: self.parse_privilege_columns()?,
+        })
+    }
+
+    pub fn parse_grant_permission(&self) -> Result<Action, ParserError> {
         // Multi-word privileges
         if self.parse_keywords(&[Keyword::IMPORTED, Keyword::PRIVILEGES]) {
             Ok(Action::ImportedPrivileges)
@@ -25404,7 +25411,7 @@ impl<'a> Parser<'a> {
             Ok(Action::Failover)
         } else if self.parse_keyword(Keyword::INSERT) {
             Ok(Action::Insert {
-                columns: parse_columns(self)?,
+                columns: self.parse_privilege_columns()?,
             })
         } else if self.parse_keyword(Keyword::MANAGE) {
             Ok(Action::Manage)
@@ -25416,7 +25423,7 @@ impl<'a> Parser<'a> {
             Ok(Action::Operate)
         } else if self.parse_keyword(Keyword::REFERENCES) {
             Ok(Action::References {
-                columns: parse_columns(self)?,
+                columns: self.parse_privilege_columns()?,
             })
         } else if self.parse_keyword(Keyword::READ) {
             Ok(Action::Read)
@@ -25429,7 +25436,7 @@ impl<'a> Parser<'a> {
             Ok(Action::Role { role })
         } else if self.parse_keyword(Keyword::SELECT) {
             Ok(Action::Select {
-                columns: parse_columns(self)?,
+                columns: self.parse_privilege_columns()?,
             })
         } else if self.parse_keyword(Keyword::TEMPORARY) {
             Ok(Action::Temporary)
@@ -25439,7 +25446,7 @@ impl<'a> Parser<'a> {
             Ok(Action::Truncate)
         } else if self.parse_keyword(Keyword::UPDATE) {
             Ok(Action::Update {
-                columns: parse_columns(self)?,
+                columns: self.parse_privilege_columns()?,
             })
         } else if self.parse_keyword(Keyword::USE) {
             self.expect_keywords(&[Keyword::FOR, Keyword::REWRITE])?;

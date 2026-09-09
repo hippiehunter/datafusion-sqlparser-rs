@@ -8157,6 +8157,42 @@ fn parse_alter_default_privileges() {
 }
 
 #[test]
+fn parse_grant_all_with_column_list() {
+    for (sql, with_privileges_keyword, expected_columns) in [
+        (
+            "GRANT ALL (id, nm) ON TABLE t TO r",
+            false,
+            vec!["id", "nm"],
+        ),
+        ("GRANT ALL PRIVILEGES (id) ON t TO r", true, vec!["id"]),
+    ] {
+        let Statement::Grant { privileges, .. } = pg().verified_stmt(sql) else {
+            panic!("expected GRANT for {sql}");
+        };
+        assert_eq!(
+            privileges,
+            Privileges::All {
+                with_privileges_keyword,
+                columns: Some(expected_columns.into_iter().map(Ident::new).collect()),
+            }
+        );
+    }
+
+    let Statement::Revoke { privileges, .. } =
+        pg().verified_stmt("REVOKE ALL (id) ON TABLE t FROM r")
+    else {
+        panic!("expected REVOKE");
+    };
+    assert_eq!(
+        privileges,
+        Privileges::All {
+            with_privileges_keyword: false,
+            columns: Some(vec![Ident::new("id")]),
+        }
+    );
+}
+
+#[test]
 fn parse_grant_foreign_objects() {
     for sql in [
         "GRANT USAGE ON FOREIGN DATA WRAPPER custom_fdw TO reader",

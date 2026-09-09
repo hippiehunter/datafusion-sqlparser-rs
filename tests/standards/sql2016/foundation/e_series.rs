@@ -2275,6 +2275,7 @@ mod e081_basic_privileges {
                 if let Statement::Grant { privileges, .. } = stmt {
                     if let Privileges::All {
                         with_privileges_keyword,
+                        columns: None,
                     } = privileges
                     {
                         assert!(with_privileges_keyword);

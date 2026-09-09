@@ -13411,6 +13411,10 @@ pub enum Privileges {
     All {
         /// Optional keyword from the spec, ignored in practice
         with_privileges_keyword: bool,
+        /// Column list restricting every column-level privilege in the
+        /// expansion to these columns, as in
+        /// `GRANT ALL (id, nm) ON TABLE t TO r`.
+        columns: Option<Vec<Ident>>,
     },
     /// Specific privileges (e.g. `SELECT`, `INSERT`)
     Actions(Vec<Action>),
@@ -13421,6 +13425,7 @@ impl fmt::Display for Privileges {
         match self {
             Privileges::All {
                 with_privileges_keyword,
+                columns,
             } => {
                 write!(
                     f,
@@ -13430,7 +13435,11 @@ impl fmt::Display for Privileges {
                     } else {
                         ""
                     }
-                )
+                )?;
+                if let Some(columns) = columns {
+                    write!(f, " ({})", display_comma_separated(columns))?;
+                }
+                Ok(())
             }
             Privileges::Actions(actions) => {
                 write!(f, "{}", display_comma_separated(actions))
