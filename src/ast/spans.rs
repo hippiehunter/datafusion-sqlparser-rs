@@ -311,8 +311,9 @@ impl Spanned for Statement {
                 target: _,
                 options: _,
                 legacy_options: _,
+                selection,
                 values: _,
-            } => source.span(),
+            } => source.span().union(&selection.span()),
             Statement::Open(open) => open.span(),
             Statement::Close { cursor } => match cursor {
                 CloseCursor::All => Span::empty(),

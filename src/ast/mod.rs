@@ -7276,6 +7276,8 @@ pub enum Statement {
         options: Vec<CopyOption>,
         /// WITH options (before PostgreSQL version 9.0)
         legacy_options: Vec<CopyLegacyOption>,
+        /// Predicate applied to input rows by COPY FROM.
+        selection: Option<Expr>,
         /// VALUES a vector of values to be copied
         values: Vec<Option<String>>,
     },
@@ -11465,6 +11467,7 @@ impl fmt::Display for Statement {
                 target,
                 options,
                 legacy_options,
+                selection,
                 values,
             } => {
                 write!(f, "COPY")?;
@@ -11486,6 +11489,9 @@ impl fmt::Display for Statement {
                 }
                 if !legacy_options.is_empty() {
                     write!(f, " {}", display_separated(legacy_options, " "))?;
+                }
+                if let Some(selection) = selection {
+                    write!(f, " WHERE {selection}")?;
                 }
                 if !values.is_empty() {
                     writeln!(f, ";")?;

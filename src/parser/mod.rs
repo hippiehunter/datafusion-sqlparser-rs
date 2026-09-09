@@ -18393,6 +18393,14 @@ impl<'a> Parser<'a> {
         while let Some(opt) = self.maybe_parse(|parser| parser.parse_copy_legacy_option())? {
             legacy_options.push(opt);
         }
+        let selection = if self.parse_keyword(Keyword::WHERE) {
+            if to {
+                return Err(ParserError::ParserError("COPY TO cannot have a WHERE clause".into()));
+            }
+            Some(self.parse_expr()?)
+        } else {
+            None
+        };
         let values = if let CopyTarget::Stdin = target {
             if self.consume_token(&BorrowedToken::SemiColon)
                 && self.peek_token_ref().token != BorrowedToken::EOF
@@ -18417,6 +18425,7 @@ impl<'a> Parser<'a> {
             target,
             options,
             legacy_options,
+            selection,
             values,
         })
     }

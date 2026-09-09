@@ -1358,6 +1358,7 @@ fn test_copy_from() {
     assert_eq!(
         stmt,
         Statement::Copy {
+            selection: None,
             source: CopySource::Table {
                 table_name: ObjectName::from(vec!["users".into()]),
                 columns: vec![],
@@ -1376,6 +1377,7 @@ fn test_copy_from() {
     assert_eq!(
         stmt,
         Statement::Copy {
+            selection: None,
             source: CopySource::Table {
                 table_name: ObjectName::from(vec!["users".into()]),
                 columns: vec![],
@@ -1394,6 +1396,7 @@ fn test_copy_from() {
     assert_eq!(
         stmt,
         Statement::Copy {
+            selection: None,
             source: CopySource::Table {
                 table_name: ObjectName::from(vec!["users".into()]),
                 columns: vec![],
@@ -1413,11 +1416,27 @@ fn test_copy_from() {
 }
 
 #[test]
+fn copy_from_where_preserves_predicate_and_options() {
+    for sql in [
+        "COPY users FROM STDIN WHERE id > 1",
+        "COPY users (id) FROM 'data.csv' (FORMAT CSV) WHERE id <> 10",
+        "COPY users FROM PROGRAM 'producer' WHERE id IS NOT NULL",
+    ] {
+        let statement = pg().verified_stmt(sql);
+        let Statement::Copy { selection: Some(_), to: false, .. } = statement else {
+            panic!("expected COPY FROM with a predicate");
+        };
+    }
+    assert!(pg().parse_sql_statements("COPY users TO STDOUT WHERE id > 1").is_err());
+}
+
+#[test]
 fn test_copy_to() {
     let stmt = pg().verified_stmt("COPY users TO 'data.csv'");
     assert_eq!(
         stmt,
         Statement::Copy {
+            selection: None,
             source: CopySource::Table {
                 table_name: ObjectName::from(vec!["users".into()]),
                 columns: vec![],
@@ -1436,6 +1455,7 @@ fn test_copy_to() {
     assert_eq!(
         stmt,
         Statement::Copy {
+            selection: None,
             source: CopySource::Table {
                 table_name: ObjectName::from(vec!["users".into()]),
                 columns: vec![],
@@ -1454,6 +1474,7 @@ fn test_copy_to() {
     assert_eq!(
         stmt,
         Statement::Copy {
+            selection: None,
             source: CopySource::Table {
                 table_name: ObjectName::from(vec!["users".into()]),
                 columns: vec![],
@@ -1503,6 +1524,7 @@ fn parse_copy_from() {
     assert_eq!(
         pg_and_generic().one_statement_parses_to(sql, ""),
         Statement::Copy {
+            selection: None,
             source: CopySource::Table {
                 table_name: ObjectName::from(vec!["table".into()]),
                 columns: vec!["a".into(), "b".into()],
@@ -1557,6 +1579,7 @@ fn parse_copy_to() {
     assert_eq!(
         stmt,
         Statement::Copy {
+            selection: None,
             source: CopySource::Table {
                 table_name: ObjectName::from(vec!["users".into()]),
                 columns: vec![],
@@ -1575,6 +1598,7 @@ fn parse_copy_to() {
     assert_eq!(
         stmt,
         Statement::Copy {
+            selection: None,
             source: CopySource::Table {
                 table_name: ObjectName::from(vec!["country".into()]),
                 columns: vec![],
@@ -1592,6 +1616,7 @@ fn parse_copy_to() {
     assert_eq!(
         stmt,
         Statement::Copy {
+            selection: None,
             source: CopySource::Table {
                 table_name: ObjectName::from(vec!["country".into()]),
                 columns: vec![],
@@ -1610,6 +1635,7 @@ fn parse_copy_to() {
     assert_eq!(
         stmt,
         Statement::Copy {
+            selection: None,
             source: CopySource::Query(Box::new(Query {
                 with: None,
                 body: Box::new(SetExpr::Select(Box::new(Select {
@@ -1670,6 +1696,7 @@ fn parse_copy_from_before_v9_0() {
     assert_eq!(
         stmt,
         Statement::Copy {
+            selection: None,
             source: CopySource::Table {
                 table_name: ObjectName::from(vec!["users".into()]),
                 columns: vec![],
@@ -1699,6 +1726,7 @@ fn parse_copy_from_before_v9_0() {
     assert_eq!(
         pg_and_generic().one_statement_parses_to(sql, ""),
         Statement::Copy {
+            selection: None,
             source: CopySource::Table {
                 table_name: ObjectName::from(vec!["users".into()]),
                 columns: vec![],
@@ -1727,6 +1755,7 @@ fn parse_copy_to_before_v9_0() {
     assert_eq!(
         stmt,
         Statement::Copy {
+            selection: None,
             source: CopySource::Table {
                 table_name: ObjectName::from(vec!["users".into()]),
                 columns: vec![],
