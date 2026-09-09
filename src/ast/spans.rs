@@ -313,7 +313,9 @@ impl Spanned for Statement {
                 legacy_options: _,
                 selection,
                 values: _,
-            } => source.span().union(&selection.span()),
+            } => source
+                .span()
+                .union(&selection.as_ref().map_or_else(Span::empty, Spanned::span)),
             Statement::Open(open) => open.span(),
             Statement::Close { cursor } => match cursor {
                 CloseCursor::All => Span::empty(),
