@@ -7120,6 +7120,24 @@ pub enum EncryptionKeyOperation {
     Validate,
 }
 
+/// PostgreSQL database-creation options, retained for execution and round trips.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum CreateDatabaseOption {
+    ConnectionLimit(Expr),
+    Named { name: Ident, value: Expr },
+}
+
+impl fmt::Display for CreateDatabaseOption {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::ConnectionLimit(value) => write!(f, "CONNECTION LIMIT {value}"),
+            Self::Named { name, value } => write!(f, "{name} {value}"),
+        }
+    }
+}
+
 /// A top-level statement (SELECT, INSERT, CREATE, etc.)
 #[allow(clippy::large_enum_variant)]
 #[derive(PartialOrd, Eq, Ord, Hash)]
@@ -8215,6 +8233,8 @@ pub enum Statement {
         /// Gantry `COMPATIBILITY '<dialect>'` — the SQL dialect the new
         /// database is permanently bound to.
         compatibility: Option<String>,
+        /// PostgreSQL options such as TEMPLATE, ENCODING and ALLOW_CONNECTIONS.
+        options: Vec<CreateDatabaseOption>,
     },
     /// ```sql
     /// CREATE FUNCTION
@@ -11504,6 +11524,7 @@ impl fmt::Display for Statement {
                 comment,
                 catalog_sync,
                 compatibility,
+                options,
             } => {
                 write!(
                     f,
@@ -11523,6 +11544,12 @@ impl fmt::Display for Statement {
                 if let Some(owner) = owner {
                     write!(f, " OWNER {owner}")?;
                 }
+                if let Some(compatibility) = compatibility {
+                    write!(f, " COMPATIBILITY '{compatibility}'")?;
+                }
+                for option in options {
+                    write!(f, " {option}")?;
+                }
                 if let Some(clone) = clone {
                     write!(f, " CLONE {clone}")?;
                 }
@@ -11535,9 +11562,6 @@ impl fmt::Display for Statement {
                     write!(f, " CATALOG_SYNC = '{sync}'")?;
                 }
 
-                if let Some(compatibility) = compatibility {
-                    write!(f, " COMPATIBILITY '{compatibility}'")?;
-                }
                 Ok(())
             }
             Statement::CreateFunction(create_function) => create_function.fmt(f),

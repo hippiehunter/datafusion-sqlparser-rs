@@ -2051,6 +2051,7 @@ impl<'a> Parser<'a> {
                         comment: None,
                         catalog_sync: None,
                         compatibility,
+                        options: Vec::new(),
                     });
                 }
                 self.expect_oracle_words(&["USER", "SYS", "IDENTIFIED", "BY"])?;
@@ -10013,6 +10014,7 @@ impl<'a> Parser<'a> {
         let mut managed_location = None;
         let mut owner = None;
         let mut compatibility = None;
+        let mut options = Vec::new();
         let with_options = self.parse_keyword(Keyword::WITH);
         loop {
             match self.parse_one_of_keywords(&[
@@ -10029,17 +10031,24 @@ impl<'a> Parser<'a> {
                     // PostgreSQL accepts:
                     //   CREATE DATABASE db OWNER role
                     //   CREATE DATABASE db WITH OWNER = role
+                    if owner.is_some() {
+                        return Err(ParserError::ParserError("OWNER specified more than once".into()));
+                    }
                     let _ = self.consume_token(&BorrowedToken::Eq);
                     owner = Some(self.parse_object_name(false)?);
                 }
                 Some(Keyword::COMPATIBILITY) => {
                     // Gantry: CREATE DATABASE db COMPATIBILITY 'oracle'
+                    if compatibility.is_some() {
+                        return Err(ParserError::ParserError("COMPATIBILITY specified more than once".into()));
+                    }
                     let _ = self.consume_token(&BorrowedToken::Eq);
                     compatibility = Some(self.parse_literal_string()?);
                 }
                 _ => {
-                    if !self.parse_create_database_option()? {
-                        break;
+                    match self.parse_create_database_option()? {
+                        Some(option) => options.push(option),
+                        None => break,
                     }
                 }
             }
@@ -10066,16 +10075,15 @@ impl<'a> Parser<'a> {
             comment: None,
             catalog_sync: None,
             compatibility,
+            options,
         })
     }
 
-    /// Consume a single PostgreSQL `CREATE DATABASE` option clause
+    /// Parse a single PostgreSQL `CREATE DATABASE` option clause
     /// (`ENCODING [=] value`, `TEMPLATE [=] value`, `CONNECTION LIMIT [=] int`, etc.).
     ///
-    /// The [`Statement::CreateDatabase`] AST has no fields for these options, so they
-    /// are parsed and discarded; this only exists so the statement parses successfully.
-    /// Returns `true` if an option was consumed, `false` if the next token is not an option.
-    fn parse_create_database_option(&self) -> Result<bool, ParserError> {
+    /// Returns `None` when the next token is not a database option.
+    fn parse_create_database_option(&self) -> Result<Option<CreateDatabaseOption>, ParserError> {
         const STRING_OPTIONS: &[&str] = &[
             "ENCODING",
             "TEMPLATE",
@@ -10093,8 +10101,8 @@ impl<'a> Parser<'a> {
         const BOOL_OPTIONS: &[&str] = &["IS_TEMPLATE", "ALLOW_CONNECTIONS"];
 
         let option = match self.peek_token().token {
-            BorrowedToken::Word(w) => w.value.to_ascii_uppercase(),
-            _ => return Ok(false),
+            BorrowedToken::Word(w) if w.quote_style.is_none() => w.value.to_ascii_uppercase(),
+            _ => return Ok(None),
         };
 
         // CONNECTION LIMIT [=] <int>
@@ -10102,41 +10110,44 @@ impl<'a> Parser<'a> {
             self.advance_token();
             self.expect_keyword(Keyword::LIMIT)?;
             let _ = self.consume_token(&BorrowedToken::Eq);
-            let _ = self.parse_signed_integer()?;
-            return Ok(true);
+            return Ok(Some(CreateDatabaseOption::ConnectionLimit(self.parse_number()?)));
         }
 
         if STRING_OPTIONS.contains(&option.as_str()) {
             self.advance_token();
             let _ = self.consume_token(&BorrowedToken::Eq);
             // value may be a quoted string or an identifier (e.g. TEMPLATE template0)
-            if matches!(
+            let value = if matches!(
                 self.peek_token().token,
                 BorrowedToken::SingleQuotedString(_)
             ) {
-                let _ = self.parse_literal_string()?;
+                Expr::Value(self.parse_value()?)
             } else {
-                let _ = self.parse_identifier()?;
-            }
-            return Ok(true);
+                Expr::Identifier(self.parse_identifier()?)
+            };
+            return Ok(Some(CreateDatabaseOption::Named { name: Ident::new(option), value }));
         }
 
         if INT_OPTIONS.contains(&option.as_str()) {
             self.advance_token();
             let _ = self.consume_token(&BorrowedToken::Eq);
-            let _ = self.parse_signed_integer()?;
-            return Ok(true);
+            return Ok(Some(CreateDatabaseOption::Named {
+                name: Ident::new(option), value: self.parse_number()?,
+            }));
         }
 
         if BOOL_OPTIONS.contains(&option.as_str()) {
             self.advance_token();
             let _ = self.consume_token(&BorrowedToken::Eq);
-            // value is true/false (parsed as a keyword/identifier)
-            let _ = self.parse_identifier()?;
-            return Ok(true);
+            let value = match self.peek_token().token {
+                BorrowedToken::SingleQuotedString(_) => Expr::Value(self.parse_value()?),
+                BorrowedToken::Number(_, _) => self.parse_number()?,
+                _ => Expr::Identifier(self.parse_identifier()?),
+            };
+            return Ok(Some(CreateDatabaseOption::Named { name: Ident::new(option), value }));
         }
 
-        Ok(false)
+        Ok(None)
     }
 
     pub fn parse_optional_create_function_using(

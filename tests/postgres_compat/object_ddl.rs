@@ -630,8 +630,10 @@ fn create_operator_procedure_is_a_spelling_of_function() {
 
 #[test]
 fn create_aggregate_old_syntax_has_no_argument_list() {
-    let statement =
-        roundtrip("CREATE AGGREGATE my_agg (basetype = int4, sfunc = int4pl, stype = int4)");
+    let statement = renders_to(
+        "CREATE AGGREGATE my_agg (basetype = int4, sfunc = int4pl, stype = int4)",
+        "CREATE AGGREGATE my_agg (basetype = INT4, sfunc = int4pl, stype = INT4)",
+    );
     match statement {
         Statement::CreateAggregate(aggregate) => {
             assert!(aggregate.signature.is_none());
@@ -652,8 +654,9 @@ fn create_aggregate_old_syntax_has_no_argument_list() {
 
 #[test]
 fn create_aggregate_keeps_type_attributes_typed() {
-    let statement = roundtrip(
+    let statement = renders_to(
         "CREATE AGGREGATE my_agg (numeric(12, 3)[]) (sfunc = step, stype = numeric(20, 4)[], mstype = \"StateType\")",
+        "CREATE AGGREGATE my_agg (NUMERIC(12,3)[]) (sfunc = step, stype = NUMERIC(20,4)[], mstype = \"StateType\")",
     );
     let Statement::CreateAggregate(aggregate) = statement else {
         panic!("expected CREATE AGGREGATE");
@@ -671,7 +674,10 @@ fn create_aggregate_keeps_type_attributes_typed() {
 
 #[test]
 fn create_aggregate_argument_list_forms() {
-    let plain = roundtrip("CREATE AGGREGATE my_agg (INT4) (sfunc = int4pl, stype = int4)");
+    let plain = renders_to(
+        "CREATE AGGREGATE my_agg (INT4) (sfunc = int4pl, stype = int4)",
+        "CREATE AGGREGATE my_agg (INT4) (sfunc = int4pl, stype = INT4)",
+    );
     match plain {
         Statement::CreateAggregate(aggregate) => {
             assert!(
@@ -682,7 +688,10 @@ fn create_aggregate_argument_list_forms() {
         other => panic!("Expected CreateAggregate, got {other:?}"),
     }
 
-    let star = roundtrip("CREATE AGGREGATE my_agg (*) (sfunc = int8inc, stype = int8)");
+    let star = renders_to(
+        "CREATE AGGREGATE my_agg (*) (sfunc = int8inc, stype = int8)",
+        "CREATE AGGREGATE my_agg (*) (sfunc = int8inc, stype = INT8)",
+    );
     match star {
         Statement::CreateAggregate(aggregate) => {
             assert!(matches!(aggregate.signature, Some(AggregateArgs::Star)));
@@ -718,7 +727,10 @@ fn create_aggregate_argument_list_forms() {
 
 #[test]
 fn create_aggregate_accepts_an_operator_property_value() {
-    roundtrip("CREATE AGGREGATE my_agg (INT4) (sfunc = int4smaller, stype = int4, sortop = <)");
+    renders_to(
+        "CREATE AGGREGATE my_agg (INT4) (sfunc = int4smaller, stype = int4, sortop = <)",
+        "CREATE AGGREGATE my_agg (INT4) (sfunc = int4smaller, stype = INT4, sortop = <)",
+    );
 }
 
 // =============================================================================

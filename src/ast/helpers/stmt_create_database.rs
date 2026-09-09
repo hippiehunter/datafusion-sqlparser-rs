@@ -16,7 +16,7 @@
 // under the License.
 
 #[cfg(not(feature = "std"))]
-use alloc::{format, string::String};
+use alloc::{format, string::String, vec::Vec};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "visitor")]
 use sqlparser_derive::{Visit, VisitMut};
 
-use crate::ast::{AttachedToken, ObjectName, Statement};
+use crate::ast::{AttachedToken, CreateDatabaseOption, ObjectName, Statement};
 use crate::parser::ParserError;
 use crate::tokenizer::{Token, TokenWithSpan};
 
@@ -65,6 +65,7 @@ pub struct CreateDatabaseBuilder {
     pub comment: Option<String>,
     pub catalog_sync: Option<String>,
     pub compatibility: Option<String>,
+    pub options: Vec<CreateDatabaseOption>,
 }
 
 impl CreateDatabaseBuilder {
@@ -81,6 +82,7 @@ impl CreateDatabaseBuilder {
             comment: None,
             catalog_sync: None,
             compatibility: None,
+            options: Vec::new(),
         }
     }
 
@@ -134,6 +136,11 @@ impl CreateDatabaseBuilder {
         self
     }
 
+    pub fn options(mut self, options: Vec<CreateDatabaseOption>) -> Self {
+        self.options = options;
+        self
+    }
+
     pub fn build(self) -> Statement {
         Statement::CreateDatabase {
             create_token: AttachedToken::from(TokenWithSpan::wrap(Token::make_word(
@@ -150,6 +157,7 @@ impl CreateDatabaseBuilder {
             comment: self.comment,
             catalog_sync: self.catalog_sync,
             compatibility: self.compatibility,
+            options: self.options,
         }
     }
 }
@@ -172,6 +180,7 @@ impl TryFrom<Statement> for CreateDatabaseBuilder {
                 comment,
                 catalog_sync,
                 compatibility,
+                options,
             } => Ok(Self {
                 db_name,
                 if_not_exists,
@@ -184,6 +193,7 @@ impl TryFrom<Statement> for CreateDatabaseBuilder {
                 comment,
                 catalog_sync,
                 compatibility,
+                options,
             }),
             _ => Err(ParserError::ParserError(format!(
                 "Expected create database statement, but received: {stmt}"

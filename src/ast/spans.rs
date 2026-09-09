@@ -18,7 +18,7 @@
 use crate::ast::{
     ddl::AlterSchema, query::SelectItemQualifiedWildcardKind, AlterSchemaOperation, AlterTable,
     ColumnOptions, CreateAggregate, CreateCast, CreateOperator, CreateOperatorClass,
-    CreateOperatorFamily, CreateStatistics, CreateTypedTable, CreateView, Owner, TypedString,
+    CreateDatabaseOption, CreateOperatorFamily, CreateStatistics, CreateTypedTable, CreateView, Owner, TypedString,
 };
 use core::iter;
 
@@ -476,11 +476,13 @@ impl Spanned for Statement {
                 db_name,
                 owner,
                 clone,
+                options,
                 ..
             } => create_token
                 .0
                 .union(&db_name.span())
                 .union_opt(&owner.as_ref().map(|o| o.span()))
+                .union(&union_spans(options.iter().map(Spanned::span)))
                 .union_opt(&clone.as_ref().map(|c| c.span())),
             Statement::CreateFunction(create_function) => create_function.token.0,
             Statement::CreateDomain(create_domain) => create_domain.token.0,
@@ -1222,6 +1224,15 @@ impl Spanned for ViewColumnDef {
 impl Spanned for ColumnOptions {
     fn span(&self) -> Span {
         union_spans(self.as_slice().iter().map(|i| i.span()))
+    }
+}
+
+impl Spanned for CreateDatabaseOption {
+    fn span(&self) -> Span {
+        match self {
+            Self::ConnectionLimit(value) => value.span(),
+            Self::Named { name, value } => name.span.union(&value.span()),
+        }
     }
 }
 

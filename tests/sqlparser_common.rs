@@ -7949,6 +7949,44 @@ fn parse_create_database_compatibility() {
 }
 
 #[test]
+fn create_database_options_survive_ast_and_builder_round_trips() {
+    let statement = one_statement_parses_to(
+        "CREATE DATABASE target WITH TEMPLATE = \"Source DB\", ENCODING = 'UTF8', \
+         ALLOW_CONNECTIONS = false, IS_TEMPLATE = 'true', CONNECTION LIMIT = -1",
+        "CREATE DATABASE target TEMPLATE \"Source DB\" ENCODING 'UTF8' \
+         ALLOW_CONNECTIONS false IS_TEMPLATE 'true' CONNECTION LIMIT -1",
+    );
+    let Statement::CreateDatabase { options, .. } = &statement else {
+        panic!("expected CREATE DATABASE");
+    };
+    assert_eq!(options.len(), 5);
+    assert!(matches!(&options[0], CreateDatabaseOption::Named { name, value: Expr::Identifier(value) }
+        if name.value == "TEMPLATE" && value.value == "Source DB" && value.quote_style == Some('"')));
+    assert!(matches!(&options[4], CreateDatabaseOption::ConnectionLimit(_)));
+    let builder = sqlparser::ast::helpers::stmt_create_database::CreateDatabaseBuilder::try_from(
+        statement.clone(),
+    ).unwrap();
+    assert_eq!(builder.build(), statement);
+    verified_stmt("CREATE DATABASE target ALLOW_CONNECTIONS 0 IS_TEMPLATE 1");
+    verified_stmt("CREATE DATABASE target COMPATIBILITY 'postgresql' CONNECTION LIMIT 5 CLONE seed");
+    for sql in [
+        "CREATE DATABASE target TEMPLATE \"Source DB\"",
+        "CREATE DATABASE target CONNECTION LIMIT -1",
+    ] {
+        let parser = Parser::new(&PostgreSqlDialect {}).try_with_sql(sql).unwrap();
+        assert_eq!(parser.parse_statement().unwrap().span(),
+            Span::new(Location::new(1, 1), Location::new(1, sql.len() as u64 + 1)));
+    }
+    for sql in [
+        "CREATE DATABASE target OWNER one OWNER two",
+        "CREATE DATABASE target COMPATIBILITY 'postgres' COMPATIBILITY 'derrick'",
+    ] {
+        let parser = Parser::new(&PostgreSqlDialect {}).try_with_sql(sql).unwrap();
+        assert!(parser.parse_statement().unwrap_err().to_string().contains("specified more than once"));
+    }
+}
+
+#[test]
 fn parse_drop_database() {
     let sql = "DROP DATABASE mycatalog.mydb";
     match verified_stmt(sql) {
