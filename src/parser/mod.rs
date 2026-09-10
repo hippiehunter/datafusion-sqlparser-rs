@@ -17582,6 +17582,14 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_alter(&self) -> Result<Statement, ParserError> {
+        if self.parse_keywords(&[Keyword::LARGE, Keyword::OBJECT]) {
+            let token = self.get_alter_token();
+            let value = self.parse_literal_uint()?;
+            let oid = u32::try_from(value).map_err(|_| ParserError::ParserError("large object OID is out of range".into()))?;
+            self.expect_keywords(&[Keyword::OWNER, Keyword::TO])?;
+            let owner = self.parse_identifier()?;
+            return Ok(Statement::AlterLargeObject { token, oid, owner });
+        }
         if self.dialect.is::<OracleDialect>() {
             if self.parse_keyword(Keyword::TYPE) {
                 return self.parse_oracle_alter_type();
@@ -18024,7 +18032,9 @@ impl<'a> Parser<'a> {
             Privileges::Actions(self.parse_actions_list()?)
         };
         self.expect_keyword_is(Keyword::ON)?;
-        let object = match self.expect_one_of_keywords(&[
+        let object = if self.parse_keywords(&[Keyword::LARGE, Keyword::OBJECTS]) {
+            DefaultPrivilegeObject::LargeObjects
+        } else { match self.expect_one_of_keywords(&[
             Keyword::TABLES,
             Keyword::SEQUENCES,
             Keyword::FUNCTIONS,
@@ -18039,7 +18049,7 @@ impl<'a> Parser<'a> {
             Keyword::TYPES => DefaultPrivilegeObject::Types,
             Keyword::SCHEMAS => DefaultPrivilegeObject::Schemas,
             _ => unreachable!(),
-        };
+        }};
         if is_grant {
             self.expect_keyword_is(Keyword::TO)?;
             let grantees = self.parse_grantees()?;
@@ -18400,7 +18410,7 @@ impl<'a> Parser<'a> {
             None
         };
         let values = if let CopyTarget::Stdin = target {
-            if self.consume_token(&BorrowedToken::SemiColon)
+            if !self.in_procedural_body() && self.consume_token(&BorrowedToken::SemiColon)
                 && self.peek_token_ref().token != BorrowedToken::EOF
             {
                 // A COPY statement embedded in a SQL script owns the inline
@@ -18540,7 +18550,11 @@ impl<'a> Parser<'a> {
             Some(Keyword::DELIMITER) => CopyOption::Delimiter(self.parse_literal_char()?),
             Some(Keyword::NULL) => CopyOption::Null(self.parse_literal_string()?),
             Some(Keyword::HEADER) => {
-                CopyOption::Header(self.parse_optional_copy_boolean().unwrap_or(true))
+                if self.parse_keyword(Keyword::MATCH) {
+                    CopyOption::HeaderMatch
+                } else {
+                    CopyOption::Header(self.parse_optional_copy_boolean().unwrap_or(true))
+                }
             }
             Some(Keyword::QUOTE) => CopyOption::Quote(self.parse_literal_char()?),
             Some(Keyword::ESCAPE) => CopyOption::Escape(self.parse_literal_char()?),
@@ -21962,8 +21976,9 @@ impl<'a> Parser<'a> {
     fn parse_set_role(&self, modifier: Option<ContextModifier>) -> Result<Statement, ParserError> {
         let token = self.attached_token_from_current();
         self.expect_keyword_is(Keyword::ROLE)?;
+        let _ = self.parse_keyword(Keyword::TO);
 
-        let role_name = if self.parse_keyword(Keyword::NONE) {
+        let role_name = if self.parse_one_of_keywords(&[Keyword::NONE, Keyword::DEFAULT]).is_some() {
             None
         } else {
             Some(self.parse_identifier()?)
@@ -25442,6 +25457,8 @@ impl<'a> Parser<'a> {
             Ok(Action::Temporary)
         } else if self.parse_keyword(Keyword::TRIGGER) {
             Ok(Action::Trigger)
+        } else if self.parse_keyword(Keyword::MAINTAIN) {
+            Ok(Action::Maintain)
         } else if self.parse_keyword(Keyword::TRUNCATE) {
             Ok(Action::Truncate)
         } else if self.parse_keyword(Keyword::UPDATE) {

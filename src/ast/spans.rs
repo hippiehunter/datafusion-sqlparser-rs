@@ -372,6 +372,7 @@ impl Spanned for Statement {
             Statement::AlterType(alter_type) => alter_type.token.0,
             Statement::AlterRole { token, .. } => token.0,
             Statement::AlterSystem { token, .. } => token.0,
+            Statement::AlterLargeObject { token, .. } => token.0,
             Statement::AlterDatabase { token, .. } => token.0,
             Statement::AlterSequence { token, .. } => token.0,
             Statement::Drop { drop_token, .. } => drop_token.0,

@@ -7508,6 +7508,12 @@ pub enum Statement {
     /// ```sql
     /// ALTER DATABASE
     /// ```
+    AlterLargeObject {
+        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+        token: AttachedToken,
+        oid: u32,
+        owner: Ident,
+    },
     AlterDatabase {
         #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
         token: AttachedToken,
@@ -11822,6 +11828,7 @@ impl fmt::Display for Statement {
             Statement::AlterSystem { operation, .. } => {
                 write!(f, "ALTER SYSTEM {operation}")
             }
+            Statement::AlterLargeObject { oid, owner, .. } => write!(f, "ALTER LARGE OBJECT {oid} OWNER TO {owner}"),
             Statement::AlterDatabase {
                 database_name,
                 operation,
@@ -13581,6 +13588,7 @@ pub enum Action {
     ImportedPrivileges,
     ImportShare,
     Insert { columns: Option<Vec<Ident>> },
+    Maintain,
     Manage,
     ManageReleases,
     ManageVersions,
@@ -13628,6 +13636,7 @@ impl fmt::Display for Action {
             Action::ImportedPrivileges => f.write_str("IMPORTED PRIVILEGES")?,
             Action::ImportShare => f.write_str("IMPORT SHARE")?,
             Action::Insert { .. } => f.write_str("INSERT")?,
+            Action::Maintain => f.write_str("MAINTAIN")?,
             Action::Manage => f.write_str("MANAGE")?,
             Action::ManageReleases => f.write_str("MANAGE RELEASES")?,
             Action::ManageVersions => f.write_str("MANAGE VERSIONS")?,
@@ -16282,6 +16291,8 @@ pub enum CopyOption {
     Null(String),
     /// HEADER \[ boolean \]
     Header(bool),
+    /// Validate the CSV header against the copied column names.
+    HeaderMatch,
     /// QUOTE 'quote_character'
     Quote(char),
     /// ESCAPE 'escape_character'
@@ -16315,6 +16326,7 @@ impl fmt::Display for CopyOption {
             Freeze(false) => write!(f, "FREEZE FALSE"),
             Delimiter(char) => write!(f, "DELIMITER '{char}'"),
             Null(string) => write!(f, "NULL '{}'", value::escape_single_quote_string(string)),
+            HeaderMatch => write!(f, "HEADER MATCH"),
             Header(true) => write!(f, "HEADER"),
             Header(false) => write!(f, "HEADER FALSE"),
             Quote(char) => write!(f, "QUOTE '{char}'"),

@@ -65,6 +65,7 @@ pub enum DefaultPrivilegeObject {
     Procedures,
     Types,
     Schemas,
+    LargeObjects,
 }
 
 impl fmt::Display for DefaultPrivilegeObject {
@@ -76,6 +77,7 @@ impl fmt::Display for DefaultPrivilegeObject {
             Self::Procedures => "PROCEDURES",
             Self::Types => "TYPES",
             Self::Schemas => "SCHEMAS",
+            Self::LargeObjects => "LARGE OBJECTS",
         })
     }
 }

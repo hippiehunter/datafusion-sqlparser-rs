@@ -678,6 +678,7 @@ define_keywords!(
     MACADDR,
     MACADDR8,
     MAIN,
+    MAINTAIN,
     MANAGE,
     MANAGED,
     MANAGEDLOCATION,

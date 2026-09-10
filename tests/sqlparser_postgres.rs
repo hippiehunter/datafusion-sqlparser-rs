@@ -34,6 +34,53 @@ use sqlparser::parser::{
 };
 
 #[test]
+fn postgres_large_object_owner_and_default_privileges_are_typed() {
+    let dialect = PostgreSqlDialect {};
+    let statements = Parser::parse_sql(
+        &dialect,
+        "ALTER LARGE OBJECT 4294967295 OWNER TO \"Object Owner\"; \
+         ALTER DEFAULT PRIVILEGES GRANT SELECT, UPDATE ON LARGE OBJECTS TO reader",
+    ).unwrap();
+    assert!(matches!(&statements[0], Statement::AlterLargeObject { oid: u32::MAX, owner, .. }
+        if owner.value == "Object Owner" && owner.quote_style == Some('"')));
+    for statement in statements {
+        let printed = statement.to_string();
+        assert_eq!(Parser::parse_sql(&dialect, &printed).unwrap()[0].to_string(), printed);
+    }
+    assert!(Parser::parse_sql(&dialect,
+        "ALTER LARGE OBJECT 4294967296 OWNER TO reader").is_err());
+}
+
+#[test]
+fn postgres_header_match_and_maintain_survive_round_trip() {
+    let dialect = PostgreSqlDialect {};
+    let mut statements = Parser::parse_sql(&dialect,
+        "COPY records FROM STDIN WITH (FORMAT CSV, HEADER MATCH)").unwrap();
+    statements.extend(Parser::parse_sql(&dialect,
+        "GRANT MAINTAIN ON records TO reader").unwrap());
+    assert!(matches!(&statements[0], Statement::Copy { options, .. }
+        if options.contains(&CopyOption::HeaderMatch)));
+    assert!(statements[1].to_string().contains("MAINTAIN"));
+    for statement in statements {
+        let printed = statement.to_string();
+        assert_eq!(Parser::parse_sql(&dialect, &printed).unwrap()[0].to_string(), printed);
+    }
+}
+
+#[test]
+fn postgres_set_role_to_default_preserves_quoted_role_names() {
+    let dialect = PostgreSqlDialect {};
+    for sql in ["SET ROLE DEFAULT", "SET ROLE TO DEFAULT", "SET ROLE NONE"] {
+        assert!(matches!(&Parser::parse_sql(&dialect, sql).unwrap()[0],
+            Statement::Set(SetStatement { inner: Set::SetRole { role_name: None, .. }, .. })));
+    }
+    for sql in ["SET ROLE TO reader", "SET ROLE \"default\""] {
+        assert!(matches!(&Parser::parse_sql(&dialect, sql).unwrap()[0],
+            Statement::Set(SetStatement { inner: Set::SetRole { role_name: Some(_), .. }, .. })));
+    }
+}
+
+#[test]
 fn bracket_identifiers_are_parser_owned_and_opt_in() {
     let dialect = PostgreSqlDialect {};
     let sql = "SELECT 1 AS [C1], [GroupBy1].[K1] FROM public.[AUTHORS] AS [Extent1]";
