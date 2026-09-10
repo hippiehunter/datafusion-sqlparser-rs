@@ -10612,6 +10612,59 @@ fn parse_cancel_backup() {
 }
 
 #[test]
+fn parse_cancel_restore_table() {
+    assert_eq!(
+        verified_stmt("CANCEL RESTORE TABLE orders"),
+        Statement::CancelRestoreTable {
+            table_name: ObjectName::from(vec![Ident::new("orders")]),
+            location: None,
+        }
+    );
+    assert_eq!(
+        verified_stmt("CANCEL RESTORE TABLE sales.orders"),
+        Statement::CancelRestoreTable {
+            table_name: ObjectName::from(vec![Ident::new("sales"), Ident::new("orders")]),
+            location: None,
+        }
+    );
+    // The archive is named the same way RESTORE TABLE names it, so a restore
+    // that read an explicit location can be abandoned at that location.
+    assert_eq!(
+        verified_stmt("CANCEL RESTORE TABLE orders FROM 's3://bucket/prefix'"),
+        Statement::CancelRestoreTable {
+            table_name: ObjectName::from(vec![Ident::new("orders")]),
+            location: Some("s3://bucket/prefix".to_string()),
+        }
+    );
+
+    // RESTORE without TABLE names nothing to cancel.
+    let err = parse_sql_statements("CANCEL RESTORE orders").unwrap_err();
+    assert!(err.to_string().contains("Expected: TABLE"), "{err}");
+}
+
+#[test]
+fn parse_recover_page_requires_from_table() {
+    assert_eq!(
+        verified_stmt("RECOVER PAGE 12345 FROM TABLE orders"),
+        Statement::RecoverPage {
+            page_id: "12345".into(),
+            table_name: ObjectName::from(vec![Ident::new("orders")]),
+        }
+    );
+
+    // The two shorter forms an earlier runbook printed. The rejection has to
+    // name the accepted form: it is read while repairing a damaged page.
+    for rejected in ["RECOVER PAGE 12345", "RECOVER PAGE 12345 orders"] {
+        let err = parse_sql_statements(rejected).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("RECOVER PAGE <page_id> FROM TABLE <table>"),
+            "{rejected}: {err}"
+        );
+    }
+}
+
+#[test]
 fn parse_cache_table() {
     let sql = "SELECT a, b, c FROM foo";
     let cache_table_name = "cache_table_name";

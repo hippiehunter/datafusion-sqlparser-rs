@@ -27681,8 +27681,16 @@ impl<'a> Parser<'a> {
     pub fn parse_recover(&self) -> Result<Statement, ParserError> {
         self.expect_keyword(Keyword::PAGE)?;
         let page_id = self.next_token().token.to_string();
-        self.expect_keyword(Keyword::FROM)?;
-        self.expect_keyword(Keyword::TABLE)?;
+        // The table is not optional and never has been. Say which form is
+        // accepted rather than reporting the token that happened to be next:
+        // an operator repairing a damaged page is reading this message under
+        // the worst conditions the product has.
+        if !self.parse_keywords(&[Keyword::FROM, Keyword::TABLE]) {
+            return Err(ParserError::ParserError(format!(
+                "expected FROM TABLE <table> after RECOVER PAGE {page_id}; \
+                 the accepted form is RECOVER PAGE <page_id> FROM TABLE <table>"
+            )));
+        }
         let table_name = self.parse_object_name(false)?;
 
         Ok(Statement::RecoverPage {
@@ -27716,8 +27724,21 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// Parse CANCEL BACKUP <operation_id>
+    /// Parse `CANCEL BACKUP <operation_id>` or `CANCEL RESTORE TABLE <name>`
     pub fn parse_cancel(&self) -> Result<Statement, ParserError> {
+        if self.parse_keyword(Keyword::RESTORE) {
+            self.expect_keyword(Keyword::TABLE)?;
+            let table_name = self.parse_object_name(false)?;
+            let location = if self.parse_keyword(Keyword::FROM) {
+                Some(self.parse_literal_string()?)
+            } else {
+                None
+            };
+            return Ok(Statement::CancelRestoreTable {
+                table_name,
+                location,
+            });
+        }
         self.expect_keyword(Keyword::BACKUP)?;
         let operation_id = self.next_token().token.to_string();
         Ok(Statement::CancelBackup { operation_id })

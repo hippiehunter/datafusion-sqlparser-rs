@@ -8170,6 +8170,19 @@ pub enum Statement {
         operation_id: String,
     },
     /// ```sql
+    /// CANCEL RESTORE TABLE <name> [FROM '<uri>']
+    /// ```
+    ///
+    /// Abandons an unfinished table restore, discarding the interim copy it
+    /// built. Named by target table rather than by operation id: the operation
+    /// it belongs to has already ended, and only the table survives it.
+    /// `FROM` names the archive the restore read, matching `RESTORE TABLE`;
+    /// omitted, it addresses the configured one.
+    CancelRestoreTable {
+        table_name: ObjectName,
+        location: Option<String>,
+    },
+    /// ```sql
     /// CREATE SCHEMA
     /// ```
     CreateSchema {
@@ -12506,6 +12519,16 @@ impl fmt::Display for Statement {
             }
             Statement::CancelBackup { operation_id } => {
                 write!(f, "CANCEL BACKUP {operation_id}")
+            }
+            Statement::CancelRestoreTable {
+                table_name,
+                location,
+            } => {
+                write!(f, "CANCEL RESTORE TABLE {table_name}")?;
+                if let Some(location) = location {
+                    write!(f, " FROM '{location}'")?;
+                }
+                Ok(())
             }
             Statement::SetBackupAuditRetention { value } => {
                 write!(f, "SET BACKUP AUDIT RETENTION TO {value}")

@@ -462,6 +462,7 @@ impl Spanned for Statement {
             | Statement::ShowBackupManifest { .. }
             | Statement::BackupStatusBareVerb
             | Statement::CancelBackup { .. }
+            | Statement::CancelRestoreTable { .. }
             | Statement::SetBackupAuditRetention { .. } => Span::empty(),
             Statement::CreateSchema {
                 create_token,
