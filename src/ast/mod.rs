@@ -9030,9 +9030,37 @@ pub struct OracleIndexOptions {
     pub local: bool,
     pub indextype: Option<ObjectName>,
     pub parameters: Option<Expr>,
+    /// The access structure a vector index is organized as. `None` on every
+    /// non-vector index.
+    pub vector_organization: Option<OracleVectorIndexOrganization>,
     pub vector_distance: Option<Ident>,
     pub target_accuracy: Option<Expr>,
     pub vector_parameters: Vec<OracleIndexParameter>,
+    /// `PARALLEL [<degree>]`. `Some(None)` is the bare keyword.
+    pub parallel: Option<Option<Expr>>,
+}
+
+/// The two vector index access structures Oracle exposes: an in-memory
+/// neighbor graph (HNSW) or on-disk neighbor partitions (IVF).
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OracleVectorIndexOrganization {
+    /// `ORGANIZATION INMEMORY NEIGHBOR GRAPH`
+    InmemoryNeighborGraph,
+    /// `ORGANIZATION NEIGHBOR PARTITIONS`
+    NeighborPartitions,
+}
+
+impl fmt::Display for OracleVectorIndexOrganization {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::InmemoryNeighborGraph => {
+                write!(f, "ORGANIZATION INMEMORY NEIGHBOR GRAPH")
+            }
+            Self::NeighborPartitions => write!(f, "ORGANIZATION NEIGHBOR PARTITIONS"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
@@ -9182,6 +9210,7 @@ pub enum OracleCreateDefinition {
     Index {
         kind: OracleIndexKind,
         unique: bool,
+        if_not_exists: bool,
         name: ObjectName,
         table: ObjectName,
         columns: Vec<IndexColumn>,
@@ -9604,6 +9633,7 @@ impl fmt::Display for OracleCreateStatement {
             OracleCreateDefinition::Index {
                 kind,
                 unique,
+                if_not_exists,
                 name,
                 table,
                 columns,
@@ -9618,9 +9648,13 @@ impl fmt::Display for OracleCreateStatement {
                     OracleIndexKind::Bitmap => write!(f, "BITMAP ")?,
                     OracleIndexKind::Vector => write!(f, "VECTOR ")?,
                 }
+                write!(f, "INDEX ")?;
+                if *if_not_exists {
+                    write!(f, "IF NOT EXISTS ")?;
+                }
                 write!(
                     f,
-                    "INDEX {name} ON {table} ({})",
+                    "{name} ON {table} ({})",
                     display_comma_separated(columns)
                 )?;
                 if let Some(indextype) = &options.indextype {
@@ -9636,7 +9670,9 @@ impl fmt::Display for OracleCreateStatement {
                     write!(f, " ONLINE")?;
                 }
                 if matches!(kind, OracleIndexKind::Vector) {
-                    write!(f, " ORGANIZATION INMEMORY NEIGHBOR GRAPH")?;
+                    if let Some(organization) = &options.vector_organization {
+                        write!(f, " {organization}")?;
+                    }
                     if let Some(distance) = &options.vector_distance {
                         write!(f, " DISTANCE {distance}")?;
                     }
@@ -9654,6 +9690,12 @@ impl fmt::Display for OracleCreateStatement {
                             write!(f, "{} {}", parameter.name, parameter.value)?;
                         }
                         write!(f, ")")?;
+                    }
+                }
+                if let Some(degree) = &options.parallel {
+                    write!(f, " PARALLEL")?;
+                    if let Some(degree) = degree {
+                        write!(f, " {degree}")?;
                     }
                 }
                 Ok(())

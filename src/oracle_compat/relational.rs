@@ -664,6 +664,31 @@ pub const RELATIONAL_CASES: &[OracleCase] = &[
         sql: "CREATE VECTOR INDEX items_embedding_hnsw ON items (embedding) ORGANIZATION INMEMORY NEIGHBOR GRAPH DISTANCE COSINE WITH TARGET ACCURACY 95 PARAMETERS (TYPE HNSW, NEIGHBORS 32)",
     },
     OracleCase {
+        id: "create.vector_index.organization_only",
+        feature: "CREATE VECTOR INDEX",
+        sql: "CREATE VECTOR INDEX items_embedding_hnsw ON items (embedding) ORGANIZATION INMEMORY NEIGHBOR GRAPH DISTANCE COSINE",
+    },
+    OracleCase {
+        id: "create.vector_index.accuracy_before_distance",
+        feature: "CREATE VECTOR INDEX",
+        sql: "CREATE VECTOR INDEX items_embedding_hnsw ON items (embedding) ORGANIZATION INMEMORY NEIGHBOR GRAPH WITH TARGET ACCURACY 90 DISTANCE COSINE PARAMETERS (TYPE HNSW, NEIGHBORS 32, EFCONSTRUCTION 200) PARALLEL 8",
+    },
+    OracleCase {
+        id: "create.vector_index.neighbor_partitions",
+        feature: "CREATE VECTOR INDEX",
+        sql: "CREATE VECTOR INDEX items_embedding_ivf ON items (embedding) ORGANIZATION NEIGHBOR PARTITIONS WITH TARGET ACCURACY 90 DISTANCE COSINE PARAMETERS (TYPE IVF, NEIGHBOR PARTITIONS 32) PARALLEL 8",
+    },
+    OracleCase {
+        id: "create.index.if_not_exists",
+        feature: "CREATE INDEX",
+        sql: "CREATE INDEX IF NOT EXISTS checkpoints_thread_id_idx ON checkpoints (thread_id) ONLINE",
+    },
+    OracleCase {
+        id: "select.fetch_approx_abbreviated",
+        feature: "FETCH APPROX",
+        sql: "SELECT item_id FROM items ORDER BY VECTOR_DISTANCE(embedding, :query_vector, COSINE) FETCH APPROX FIRST 10 ROWS ONLY",
+    },
+    OracleCase {
         id: "alter.index",
         feature: "ALTER INDEX",
         sql: "ALTER INDEX employees_name_ix REBUILD ONLINE",

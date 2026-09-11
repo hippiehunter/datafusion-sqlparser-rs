@@ -109,6 +109,7 @@ define_keywords!(
     APPLICATION,
     APPLY,
     APPLYBUDGET,
+    APPROX,
     APPROXIMATE,
     ARCHIVE,
     ARE,

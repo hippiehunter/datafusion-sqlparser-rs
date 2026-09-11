@@ -1815,6 +1815,50 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// `ORGANIZATION { INMEMORY NEIGHBOR GRAPH | NEIGHBOR PARTITIONS }`, the
+    /// access structure of an Oracle vector index.
+    fn parse_vector_index_organization(
+        &self,
+    ) -> Result<OracleVectorIndexOrganization, ParserError> {
+        self.expect_oracle_words(&["ORGANIZATION"])?;
+        if self.consume_oracle_words(&["INMEMORY", "NEIGHBOR", "GRAPH"]) {
+            Ok(OracleVectorIndexOrganization::InmemoryNeighborGraph)
+        } else if self.consume_oracle_words(&["NEIGHBOR", "PARTITIONS"]) {
+            Ok(OracleVectorIndexOrganization::NeighborPartitions)
+        } else {
+            self.expected(
+                "INMEMORY NEIGHBOR GRAPH or NEIGHBOR PARTITIONS",
+                self.peek_token(),
+            )
+        }
+    }
+
+    /// One `<name> <value>` entry of a vector index `PARAMETERS (...)` list.
+    /// Oracle spells some parameter names with several words — `neighbor
+    /// partitions 32` — so the name runs to the last word before the value.
+    fn parse_oracle_index_parameter(&self) -> Result<OracleIndexParameter, ParserError> {
+        let mut words = vec![self.parse_identifier()?];
+        while matches!(self.peek_token().token, BorrowedToken::Word(_)) {
+            words.push(self.parse_identifier()?);
+        }
+        let value = if matches!(self.peek_token().token, BorrowedToken::Number(_, _)) {
+            self.parse_expr()?
+        } else if words.len() > 1 {
+            Expr::Identifier(words.pop().expect("length checked above"))
+        } else {
+            return self.expected("a vector index parameter value", self.peek_token());
+        };
+        let name = words
+            .iter()
+            .map(|word| word.value.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        Ok(OracleIndexParameter {
+            name: Ident::new(name),
+            value,
+        })
+    }
+
     /// Reads one word token as an identifier without applying the dialect's
     /// identifier canonicalization, for grammar positions that are not
     /// identifiers at all — unit suffixes and the like — and must render back
@@ -2299,6 +2343,8 @@ impl<'a> Parser<'a> {
                     _ => OracleIndexKind::Standard,
                 };
                 let unique = phrase == "UNIQUE INDEX";
+                let if_not_exists =
+                    self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
                 let name = self.parse_object_name(false)?;
                 self.expect_keyword(Keyword::ON)?;
                 let table = self.parse_object_name(false)?;
@@ -2308,30 +2354,41 @@ impl<'a> Parser<'a> {
                     local: false,
                     indextype: None,
                     parameters: None,
+                    vector_organization: None,
                     vector_distance: None,
                     target_accuracy: None,
                     vector_parameters: vec![],
+                    parallel: None,
                 };
                 if matches!(kind, OracleIndexKind::Vector) {
-                    self.expect_oracle_words(&[
-                        "ORGANIZATION",
-                        "INMEMORY",
-                        "NEIGHBOR",
-                        "GRAPH",
-                        "DISTANCE",
-                    ])?;
-                    options.vector_distance = Some(self.parse_identifier()?);
-                    self.expect_oracle_words(&["WITH", "TARGET", "ACCURACY"])?;
-                    options.target_accuracy = Some(self.parse_expr()?);
-                    self.expect_oracle_words(&["PARAMETERS"])?;
-                    self.expect_token(&BorrowedToken::LParen)?;
-                    options.vector_parameters = self.parse_comma_separated(|parser| {
-                        Ok(OracleIndexParameter {
-                            name: parser.parse_identifier()?,
-                            value: parser.parse_expr()?,
-                        })
-                    })?;
-                    self.expect_token(&BorrowedToken::RParen)?;
+                    options.vector_organization = Some(self.parse_vector_index_organization()?);
+                    // Oracle does not fix the order of the clauses that follow
+                    // the access structure, and only the organization itself is
+                    // mandatory. Consume whichever appear, at most once each.
+                    loop {
+                        if options.vector_distance.is_none()
+                            && self.consume_oracle_words(&["DISTANCE"])
+                        {
+                            options.vector_distance = Some(self.parse_identifier()?);
+                            continue;
+                        }
+                        if options.target_accuracy.is_none()
+                            && self.consume_oracle_words(&["WITH", "TARGET", "ACCURACY"])
+                        {
+                            options.target_accuracy = Some(self.parse_expr()?);
+                            continue;
+                        }
+                        if options.vector_parameters.is_empty()
+                            && self.consume_oracle_words(&["PARAMETERS"])
+                        {
+                            self.expect_token(&BorrowedToken::LParen)?;
+                            options.vector_parameters = self
+                                .parse_comma_separated(Parser::parse_oracle_index_parameter)?;
+                            self.expect_token(&BorrowedToken::RParen)?;
+                            continue;
+                        }
+                        break;
+                    }
                 } else {
                     if self.consume_oracle_words(&["INDEXTYPE", "IS"]) {
                         options.indextype = Some(self.parse_object_name(false)?);
@@ -2344,9 +2401,16 @@ impl<'a> Parser<'a> {
                     options.local = self.consume_oracle_words(&["LOCAL"]);
                     options.online = self.consume_oracle_words(&["ONLINE"]);
                 }
+                if self.consume_oracle_words(&["PARALLEL"]) {
+                    options.parallel = Some(match self.peek_token().token {
+                        BorrowedToken::Number(_, _) => Some(self.parse_expr()?),
+                        _ => None,
+                    });
+                }
                 OracleCreateDefinition::Index {
                     kind,
                     unique,
+                    if_not_exists,
                     name,
                     table,
                     columns,
@@ -2717,6 +2781,7 @@ impl<'a> Parser<'a> {
         if let OracleCreateDefinition::Index {
             kind: OracleIndexKind::Standard,
             unique,
+            if_not_exists,
             name,
             table,
             columns,
@@ -2729,9 +2794,11 @@ impl<'a> Parser<'a> {
                 && !options.local
                 && options.indextype.is_none()
                 && options.parameters.is_none()
+                && options.vector_organization.is_none()
                 && options.vector_distance.is_none()
                 && options.target_accuracy.is_none()
                 && options.vector_parameters.is_empty()
+                && options.parallel.is_none()
             {
                 return Ok(Statement::CreateIndex(CreateIndex {
                     name: Some(name.clone()),
@@ -2742,7 +2809,7 @@ impl<'a> Parser<'a> {
                     columns: columns.clone(),
                     unique: *unique,
                     concurrently: false,
-                    if_not_exists: false,
+                    if_not_exists: *if_not_exists,
                     include: vec![],
                     nulls_distinct: None,
                     with: vec![],
@@ -26995,8 +27062,13 @@ impl<'a> Parser<'a> {
 
     /// Parse a FETCH clause
     pub fn parse_fetch(&self) -> Result<Fetch, ParserError> {
-        let approximate =
-            self.dialect.is::<OracleDialect>() && self.parse_keyword(Keyword::APPROXIMATE);
+        // Oracle accepts both the abbreviated and the full spelling; they are
+        // the same clause, and the abbreviation is the one client libraries
+        // emit. The AST keeps a single flag and renders APPROXIMATE.
+        let approximate = self.dialect.is::<OracleDialect>()
+            && self
+                .parse_one_of_keywords(&[Keyword::APPROX, Keyword::APPROXIMATE])
+                .is_some();
         let direction = self.parse_one_of_keywords(&[Keyword::FIRST, Keyword::NEXT]);
         if approximate && direction.is_none() {
             return self.expected("FIRST or NEXT after APPROXIMATE", self.peek_token());

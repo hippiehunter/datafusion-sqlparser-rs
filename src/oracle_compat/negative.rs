@@ -450,8 +450,16 @@ pub const NEGATIVE_CASES: &[NegativeCase] = &[
         sql: "CREATE INDEX documents_text_ix ON documents (body) INDEXTYPE IS",
     },
     NegativeCase {
-        id: "create.index.vector.missing_accuracy",
-        sql: "CREATE VECTOR INDEX items_embedding_hnsw ON items (embedding) ORGANIZATION INMEMORY NEIGHBOR GRAPH DISTANCE COSINE",
+        id: "create.index.vector.incomplete_organization",
+        sql: "CREATE VECTOR INDEX items_embedding_hnsw ON items (embedding) ORGANIZATION NEIGHBOR DISTANCE COSINE",
+    },
+    NegativeCase {
+        id: "create.index.vector.missing_organization",
+        sql: "CREATE VECTOR INDEX items_embedding_hnsw ON items (embedding) DISTANCE COSINE",
+    },
+    NegativeCase {
+        id: "create.index.vector.parameter_without_value",
+        sql: "CREATE VECTOR INDEX items_embedding_hnsw ON items (embedding) ORGANIZATION INMEMORY NEIGHBOR GRAPH PARAMETERS (HNSW)",
     },
     NegativeCase {
         id: "alter.index.invalid_order",
