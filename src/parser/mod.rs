@@ -366,6 +366,10 @@ mod recursion {
     }
 
     impl RecursionCounter {
+        pub fn remaining_depth(&self) -> usize {
+            self.remaining_depth.get()
+        }
+
         /// Creates a [`RecursionCounter`] with the specified maximum
         /// depth
         pub fn new(remaining_depth: usize) -> Self {
@@ -420,6 +424,10 @@ mod recursion {
     pub(crate) struct RecursionCounter {}
 
     impl RecursionCounter {
+        pub fn remaining_depth(&self) -> usize {
+            usize::MAX
+        }
+
         pub fn new(_remaining_depth: usize) -> Self {
             Self {}
         }
@@ -650,6 +658,8 @@ pub struct Parser<'a> {
     /// Nesting depth of a PL/SQL or SQL/PSM body. Some tokens, including
     /// PostgreSQL's procedural `RETURNING ... INTO`, are legal only here.
     procedural_body_depth: Cell<usize>,
+    /// BEGIN/DECLARE procedural blocks, excluding SQL-language BEGIN ATOMIC.
+    plpgsql_block_depth: Cell<usize>,
 }
 
 impl<'a> Parser<'a> {
@@ -682,6 +692,7 @@ impl<'a> Parser<'a> {
             error_tracker: ErrorTracker::new(),
             detailed_errors: Cell::new(true),
             procedural_body_depth: Cell::new(0),
+            plpgsql_block_depth: Cell::new(0),
         }
     }
 
@@ -10132,17 +10143,17 @@ impl<'a> Parser<'a> {
                 Some(Keyword::COMPATIBILITY) => {
                     // Gantry: CREATE DATABASE db COMPATIBILITY 'oracle'
                     if compatibility.is_some() {
-                        return Err(ParserError::ParserError("COMPATIBILITY specified more than once".into()));
+                        return Err(ParserError::ParserError(
+                            "COMPATIBILITY specified more than once".into(),
+                        ));
                     }
                     let _ = self.consume_token(&BorrowedToken::Eq);
                     compatibility = Some(self.parse_literal_string()?);
                 }
-                _ => {
-                    match self.parse_create_database_option()? {
-                        Some(option) => options.push(option),
-                        None => break,
-                    }
-                }
+                _ => match self.parse_create_database_option()? {
+                    Some(option) => options.push(option),
+                    None => break,
+                },
             }
             if with_options {
                 let _ = self.consume_token(&BorrowedToken::Comma);
@@ -11426,6 +11437,9 @@ impl<'a> Parser<'a> {
     /// Parse a full SQL/PSM block structure
     fn parse_sql_psm_block(&self) -> Result<BeginEndStatements, ParserError> {
         let _procedural = self.enter_procedural_body();
+        let previous = self.plpgsql_block_depth.get();
+        self.plpgsql_block_depth.set(previous.saturating_add(1));
+        let _plpgsql = ProceduralBodyGuard { depth: &self.plpgsql_block_depth, previous };
         // Parse optional label
         let label = self.parse_sql_psm_label()?;
 
@@ -29965,15 +29979,21 @@ impl<'a> Parser<'a> {
     /// Parse [Statement::Return]
     fn parse_return(&self) -> Result<Statement, ParserError> {
         let token = self.attached_token_from_current();
+        let plpgsql_expression = self.features.supports_plpgsql && self.plpgsql_block_depth.get() != 0;
 
         // Check for RETURN NEXT, RETURN QUERY, or RETURN QUERY EXECUTE
         let value = if self.parse_keyword(Keyword::NEXT) {
             // RETURN NEXT [expression]
             // If no expression follows (e.g. bare "RETURN NEXT;"), this returns
             // the current values of the OUT columns in a RETURNS TABLE function.
-            match self.maybe_parse(|p| p.parse_expr())? {
-                Some(expr) => Some(ReturnStatementValue::Next(expr)),
-                None => Some(ReturnStatementValue::NextNoExpr),
+            if plpgsql_expression {
+                self.parse_plpgsql_return_expression(true)?
+                    .or(Some(ReturnStatementValue::NextNoExpr))
+            } else {
+                match self.maybe_parse(|parser| parser.parse_expr())? {
+                    Some(expr) => Some(ReturnStatementValue::Next(expr)),
+                    None => Some(ReturnStatementValue::NextNoExpr),
+                }
             }
         } else if self.parse_keyword(Keyword::QUERY) {
             // RETURN QUERY ... or RETURN QUERY EXECUTE ...
@@ -29992,9 +30012,11 @@ impl<'a> Parser<'a> {
             }
         } else {
             // RETURN [expression] or bare RETURN
-            match self.maybe_parse(|p| p.parse_expr())? {
-                Some(expr) => Some(ReturnStatementValue::Expr(expr)),
-                None => None,
+            if plpgsql_expression {
+                self.parse_plpgsql_return_expression(false)?
+            } else {
+                self.maybe_parse(|parser| parser.parse_expr())?
+                    .map(ReturnStatementValue::Expr)
             }
         };
 

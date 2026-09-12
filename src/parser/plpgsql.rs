@@ -32,8 +32,8 @@ use crate::{
         AtomicBlock, AttachedToken, Box, ConditionalStatementBlock, ConditionalStatements,
         CreateFunctionBody, DataType, DiagnosticsItem, ExecuteInto, Expr, ForLoopVariant,
         FunctionBehavior, FunctionCalledOnNull, FunctionParallel, Ident, ObjectName, PlpgsqlAssert,
-        Query, RoutineAttribute, SqlPsmAssignment, SqlPsmDataType, SqlPsmQueryAssignment,
-        Statement,
+        Query, ReturnStatementValue, RoutineAttribute, SqlPsmAssignment, SqlPsmDataType,
+        SqlPsmQueryAssignment, Statement,
     },
     dialect::Precedence,
     keywords::Keyword,
@@ -178,7 +178,7 @@ impl Parser<'_> {
         }
 
         self.index.set(value_start);
-        let query = self.parse_plpgsql_assignment_query()?;
+        let query = self.parse_plpgsql_expression_query()?;
         Ok(Some(Statement::SqlPsmQueryAssignment(
             SqlPsmQueryAssignment { target, query },
         )))
@@ -193,10 +193,42 @@ impl Parser<'_> {
         )
     }
 
-    /// Parse the remainder of a PL/pgSQL assignment as the query PL/pgSQL runs
-    /// for it, by reading the select list and the clauses after it as
-    /// `SELECT <those tokens>`.
-    fn parse_plpgsql_assignment_query(&self) -> Result<Box<Query>, ParserError> {
+    /// An optional expression terminated by a procedural semicolon. PostgreSQL
+    /// runs these as `SELECT expression`, so RETURN and RETURN NEXT admit the
+    /// same query clauses as assignment expressions. Retain the implicit SELECT
+    /// separately from a parenthesized subquery and from RETURN QUERY.
+    pub(super) fn parse_plpgsql_return_expression(
+        &self,
+        next: bool,
+    ) -> Result<Option<ReturnStatementValue>, ParserError> {
+        if self.peek_ends_plpgsql_statement() {
+            return Ok(None);
+        }
+        let start = self.index.get();
+        if let Some(expression) = self.maybe_parse(|parser| parser.parse_expr())? {
+            if self.peek_ends_plpgsql_statement() {
+                return Ok(Some(if next {
+                    ReturnStatementValue::Next(expression)
+                } else {
+                    ReturnStatementValue::Expr(expression)
+                }));
+            }
+        }
+        self.index.set(start);
+        self.parse_plpgsql_expression_query().map(|query| {
+            Some(if next {
+                ReturnStatementValue::NextExprQuery(query)
+            } else {
+                ReturnStatementValue::ExprQuery(query)
+            })
+        })
+    }
+
+    /// Read an implicit SELECT using the original tokens and locations, not a
+    /// rendered/re-tokenized SQL string. Top-level set operations and INTO are
+    /// not legal PL/pgSQL expressions; parenthesized subqueries may contain set
+    /// operations. The entire expression must be consumed.
+    fn parse_plpgsql_expression_query(&self) -> Result<Box<Query>, ParserError> {
         let span = self.peek_token_ref().span;
         let mut tokens = vec![TokenWithSpan::new(
             BorrowedToken::make_keyword("SELECT"),
@@ -213,8 +245,19 @@ impl Parser<'_> {
             }
             tokens.push(self.next_token().to_static());
         }
-        let parser = Parser::new(self.dialect).with_tokens_with_locations(tokens);
-        parser.parse_query()
+        let parser = Parser::new(self.dialect)
+            .with_options(self.options.clone())
+            .with_recursion_limit(self.recursion_counter.remaining_depth())
+            .with_tokens_with_locations(tokens);
+        let query = parser.parse_query()?;
+        parser.expect_token(&BorrowedToken::EOF)?;
+        match query.body.as_ref() {
+            crate::ast::SetExpr::Select(select) if select.into.is_none() => Ok(query),
+            _ => self.expected(
+                "a PL/pgSQL expression without INTO or a top-level set operation",
+                self.peek_token(),
+            ),
+        }
     }
 
     /// Parse the second and later scalar targets of `FOR a, b, c IN query LOOP`.

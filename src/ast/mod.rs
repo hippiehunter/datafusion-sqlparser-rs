@@ -11873,7 +11873,9 @@ impl fmt::Display for Statement {
             Statement::AlterSystem { operation, .. } => {
                 write!(f, "ALTER SYSTEM {operation}")
             }
-            Statement::AlterLargeObject { oid, owner, .. } => write!(f, "ALTER LARGE OBJECT {oid} OWNER TO {owner}"),
+            Statement::AlterLargeObject { oid, owner, .. } => {
+                write!(f, "ALTER LARGE OBJECT {oid} OWNER TO {owner}")
+            }
             Statement::AlterDatabase {
                 database_name,
                 operation,
@@ -18368,6 +18370,18 @@ impl fmt::Display for ReturnStatement {
         let ReturnStatement { token: _, value } = self;
         match value {
             Some(ReturnStatementValue::Expr(expr)) => write!(f, "RETURN {expr}"),
+            Some(ReturnStatementValue::ExprQuery(query))
+            | Some(ReturnStatementValue::NextExprQuery(query)) => {
+                // Like a query assignment, this is an implicit SELECT.
+                let query = query.to_string();
+                let expression = query.strip_prefix("SELECT ").unwrap_or(&query);
+                let next = if matches!(value, Some(ReturnStatementValue::NextExprQuery(_))) {
+                    "NEXT "
+                } else {
+                    ""
+                };
+                write!(f, "RETURN {next}{expression}")
+            }
             Some(ReturnStatementValue::Next(expr)) => write!(f, "RETURN NEXT {expr}"),
             Some(ReturnStatementValue::NextNoExpr) => write!(f, "RETURN NEXT"),
             Some(ReturnStatementValue::Query(query)) => write!(f, "RETURN QUERY {query}"),
@@ -18403,6 +18417,10 @@ pub enum ReturnStatementValue {
         query_expr: Box<Expr>,
         using: Option<Vec<Expr>>,
     },
+    /// RETURN select-list [FROM ...]: a scalar implicit SELECT expression.
+    ExprQuery(Box<Query>),
+    /// RETURN NEXT select-list [FROM ...]: append one scalar query result.
+    NextExprQuery(Box<Query>),
 }
 
 /// Variants of OPEN FOR clause in PL/pgSQL
