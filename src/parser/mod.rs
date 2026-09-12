@@ -21909,8 +21909,7 @@ impl<'a> Parser<'a> {
         }
         let distinct = self.parse_all_or_distinct()?;
         if !self.features.supports_top_before_distinct {
-            if self.parse_keyword(Keyword::SKIP) {
-                let skip = self.parse_top_quantity()?;
+            if let Some(skip) = self.parse_select_skip()? {
                 if self.parse_keyword(Keyword::TOP) {
                     top = Some(Box::new(self.parse_top()?));
                 }
@@ -21919,10 +21918,7 @@ impl<'a> Parser<'a> {
                 top.skip_before_top = true;
             } else if self.parse_keyword(Keyword::TOP) {
                 top = Some(Box::new(self.parse_top()?));
-                if self.parse_keyword(Keyword::SKIP) {
-                    top.as_mut().expect("TOP was just parsed").skip =
-                        Some(self.parse_top_quantity()?);
-                }
+                top.as_mut().expect("TOP was just parsed").skip = self.parse_select_skip()?;
             }
         }
 
@@ -27055,6 +27051,21 @@ impl<'a> Parser<'a> {
             skip: None,
             skip_before_top: false,
         })
+    }
+
+    /// Recognize the unambiguous Synergy `SKIP <integer>` SELECT modifier.
+    /// `SKIP` is also an ordinary projection name: in particular `skip(...)`
+    /// must remain a function call, even after TOP or with a single argument.
+    /// TOP's parenthesized quantity grammar cannot disambiguate those calls.
+    fn parse_select_skip(&self) -> Result<Option<TopQuantity>, ParserError> {
+        if self.peek_keyword(Keyword::SKIP)
+            && matches!(self.peek_nth_token_ref(1).token, BorrowedToken::Number(_, _))
+        {
+            self.advance_token();
+            Ok(Some(self.parse_top_quantity()?))
+        } else {
+            Ok(None)
+        }
     }
 
     fn parse_top_quantity(&self) -> Result<TopQuantity, ParserError> {
