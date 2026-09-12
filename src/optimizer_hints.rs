@@ -94,7 +94,23 @@ fn parse_hint_content(content: &str, span: (usize, usize), hints: &mut Vec<Optim
         let args = if pos < chars.len() && chars[pos] == '(' {
             pos += 1;
             let argument_start = pos;
-            while pos < chars.len() && chars[pos] != ')' {
+            // A directive may group part of its argument list, as Oracle's
+            // `IGNORE_ROW_ON_DUPKEY_INDEX(<table> (<columns>))` names a column
+            // list rather than an index. Closing the directive on the first
+            // `)` would end it inside that group and leave the rest of the
+            // arguments unread, so the depth is tracked.
+            let mut depth = 1usize;
+            while pos < chars.len() {
+                match chars[pos] {
+                    '(' => depth += 1,
+                    ')' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
                 pos += 1;
             }
             let raw = chars[argument_start..pos].iter().collect::<String>();
@@ -103,6 +119,7 @@ fn parse_hint_content(content: &str, span: (usize, usize), hints: &mut Vec<Optim
             }
             raw.split(',')
                 .flat_map(str::split_whitespace)
+                .map(|argument| argument.trim_matches(['(', ')']))
                 .filter(|argument| !argument.is_empty())
                 .map(str::to_owned)
                 .collect()
@@ -182,6 +199,42 @@ fn source_location_to_offset(source: &str, location: Location) -> Option<usize> 
 mod tests {
     use super::*;
     use crate::dialect::PostgreSqlDialect;
+
+    #[test]
+    fn a_grouped_argument_list_is_read_to_the_directive_s_own_close() {
+        // OraDB names either an index or a column list, and the column list
+        // is written as a group inside the directive's arguments.
+        let sql = "INSERT /*+ IGNORE_ROW_ON_DUPKEY_INDEX(t (a, b)) */ INTO t VALUES (1, 2)";
+        let hints = parse_optimizer_hints(&PostgreSqlDialect {}, sql).unwrap();
+        assert_eq!(hints.len(), 1);
+        let OptimizerHintDirective::Unknown { name, args } = &hints[0].directive else {
+            panic!("expected an unknown directive, got {:?}", hints[0].directive);
+        };
+        assert_eq!(name, "IGNORE_ROW_ON_DUPKEY_INDEX");
+        assert_eq!(args, &["t", "a", "b"]);
+        assert_eq!(
+            &sql[hints[0].span.0..hints[0].span.1],
+            "/*+ IGNORE_ROW_ON_DUPKEY_INDEX(t (a, b)) */"
+        );
+
+        // The ungrouped form names an index and still reads as two arguments.
+        let sql = "INSERT /*+ IGNORE_ROW_ON_DUPKEY_INDEX(t t_pk) */ INTO t VALUES (1)";
+        let hints = parse_optimizer_hints(&PostgreSqlDialect {}, sql).unwrap();
+        let OptimizerHintDirective::Unknown { args, .. } = &hints[0].directive else {
+            panic!("expected an unknown directive");
+        };
+        assert_eq!(args, &["t", "t_pk"]);
+
+        // A directive after a grouped one is still found, which the first
+        // `)` ending the scan would have hidden.
+        let sql = "SELECT /*+ IGNORE_ROW_ON_DUPKEY_INDEX(t (a)) NO_PARALLEL */ * FROM t";
+        let hints = parse_optimizer_hints(&PostgreSqlDialect {}, sql).unwrap();
+        assert_eq!(hints.len(), 2);
+        assert!(matches!(
+            &hints[1].directive,
+            OptimizerHintDirective::NoParallel
+        ));
+    }
 
     #[test]
     fn parses_typed_hints_with_exact_source_spans() {
