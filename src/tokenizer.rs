@@ -590,6 +590,15 @@ pub enum Whitespace<'a> {
     MultiLineComment(Cow<'a, str>),
 }
 
+/// Whether this trivia is a `/*+ ... */` optimizer hint.
+///
+/// Oracle gives such a comment meaning, so the tokenizer keeps it even when it
+/// drops the surrounding whitespace: a statement's hints are part of what the
+/// statement says, not commentary on it.
+pub(crate) fn is_optimizer_hint(trivia: &Whitespace<'_>) -> bool {
+    matches!(trivia, Whitespace::MultiLineComment(comment) if comment.starts_with('+'))
+}
+
 impl fmt::Display for Whitespace<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -1068,18 +1077,31 @@ impl<'a> Tokenizer<'a> {
     /// Tokenize for the SQL parser, omitting trivia that the grammar normally
     /// skips. COPY statements retain the full token stream because their
     /// inline payload parser consumes tabs, newlines, and spaces as data.
+    ///
+    /// An optimizer hint is never trivia — it is retained by
+    /// [`Self::tokenize_with_location_into_buf_internal`] even when the rest of
+    /// the whitespace is dropped. The returned flag reports whether the stream
+    /// holds any whitespace token at all, because the parser's token cursor
+    /// takes a no-whitespace fast path when it does not.
     pub(crate) fn tokenize_for_parser(
         &mut self,
     ) -> Result<(Vec<TokenWithSpan<'a>>, bool), TokenizerError> {
         let mut tokens = Vec::new();
         self.tokenize_with_location_into_buf_internal(&mut tokens, true)?;
 
-        let includes_whitespace = tokens.iter().any(
-            |token| matches!(&token.token, BorrowedToken::Word(word) if word.keyword == Keyword::COPY),
-        );
-        if includes_whitespace {
+        let mut has_copy = false;
+        let mut includes_whitespace = false;
+        for token in &tokens {
+            match &token.token {
+                BorrowedToken::Word(word) if word.keyword == Keyword::COPY => has_copy = true,
+                BorrowedToken::Whitespace(_) => includes_whitespace = true,
+                _ => {}
+            }
+        }
+        if has_copy {
             tokens.clear();
             self.tokenize_with_location_into_buf_internal(&mut tokens, false)?;
+            return Ok((tokens, true));
         }
 
         Ok((tokens, includes_whitespace))
@@ -1113,7 +1135,9 @@ impl<'a> Tokenizer<'a> {
             let span = location.span_to(state.location());
             location = state.location();
 
-            if skip_whitespace && matches!(token, BorrowedToken::Whitespace(_)) {
+            if skip_whitespace
+                && matches!(&token, BorrowedToken::Whitespace(trivia) if !is_optimizer_hint(trivia))
+            {
                 skipped_whitespace = true;
                 continue;
             }

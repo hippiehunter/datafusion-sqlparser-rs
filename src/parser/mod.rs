@@ -46,6 +46,7 @@ use crate::ast::Statement::CreatePolicy;
 use crate::ast::*;
 use crate::dialect::*;
 use crate::keywords::Keyword;
+use crate::optimizer_hints::{parse_hint_content, OptimizerHint};
 use crate::tokenizer::*;
 use core::cell::{Cell, RefCell};
 use sqlparser::parser::ParserState::ColumnDefinition;
@@ -8942,6 +8943,30 @@ impl<'a> Parser<'a> {
     pub fn next_token_no_skip(&self) -> Option<&TokenWithSpan<'_>> {
         self.index.set(self.index.get() + 1);
         self.tokens.get(self.index.get() - 1)
+    }
+
+    /// The optimizer hints written immediately after the statement keyword the
+    /// caller just consumed, as in `INSERT /*+ ... */ INTO t`.
+    ///
+    /// Hint comments are kept by the tokenizer, so they sit in the stream
+    /// between that keyword and the next token of the grammar. They are read
+    /// here without being consumed; the token cursor steps over them like any
+    /// other trivia.
+    pub(crate) fn parse_leading_optimizer_hints(&self) -> Vec<OptimizerHint> {
+        let mut hints = Vec::new();
+        let mut index = self.index.get();
+        while let Some(token) = self.tokens.get(index) {
+            let BorrowedToken::Whitespace(trivia) = &token.token else {
+                break;
+            };
+            if let Whitespace::MultiLineComment(comment) = trivia {
+                if let Some(content) = comment.strip_prefix('+') {
+                    parse_hint_content(content, token.span, &mut hints);
+                }
+            }
+            index += 1;
+        }
+        hints
     }
 
     /// Advances the current token to the next non-whitespace token
@@ -20823,6 +20848,7 @@ impl<'a> Parser<'a> {
 
     pub fn parse_delete(&self, delete_token: TokenWithSpan) -> Result<Statement, ParserError> {
         let _guard = self.enter_context(ParseContext::DeleteStatement);
+        let hints = self.parse_leading_optimizer_hints();
         let (tables, with_from_keyword) = if !self.parse_keyword(Keyword::FROM) {
             let tables = self.parse_comma_separated(|p| p.parse_object_name(false))?;
             self.expect_keyword_is(Keyword::FROM)?;
@@ -20874,6 +20900,7 @@ impl<'a> Parser<'a> {
         };
 
         Ok(Statement::Delete(Delete {
+            hints,
             delete_token: delete_token.into(),
             tables,
             from: if with_from_keyword {
@@ -21865,12 +21892,14 @@ impl<'a> Parser<'a> {
                     named_window: vec![],
                     connect_by: None,
                     flavor: SelectFlavor::FromFirstNoSelect,
+                    hints: Vec::new(),
                 });
             }
             from_first = Some(from);
         }
 
         let select_token = self.expect_keyword(Keyword::SELECT)?;
+        let hints = self.parse_leading_optimizer_hints();
 
         let mut top_before_distinct = false;
         let mut top = None;
@@ -21974,6 +22003,7 @@ impl<'a> Parser<'a> {
         }
 
         Ok(Select {
+            hints,
             select_token: AttachedToken::from(select_token),
             distinct,
             top,
@@ -25710,6 +25740,7 @@ impl<'a> Parser<'a> {
     /// Parse an INSERT statement
     pub fn parse_insert(&self, insert_token: TokenWithSpan) -> Result<Statement, ParserError> {
         let _guard = self.enter_context(ParseContext::InsertStatement);
+        let hints = self.parse_leading_optimizer_hints();
         if self.dialect.is::<OracleDialect>()
             && (self.peek_keyword(Keyword::ALL) || self.peek_keyword(Keyword::FIRST))
         {
@@ -25861,6 +25892,7 @@ impl<'a> Parser<'a> {
         let error_logging = self.parse_oracle_error_logging_clause()?;
 
         Ok(Statement::Insert(Insert {
+            hints,
             insert_token: insert_token.into(),
             table: table_object,
             table_alias,
@@ -25994,6 +26026,7 @@ impl<'a> Parser<'a> {
 
     pub fn parse_update(&self, update_token: TokenWithSpan) -> Result<Statement, ParserError> {
         let _guard = self.enter_context(ParseContext::UpdateStatement);
+        let hints = self.parse_leading_optimizer_hints();
         let table = self.parse_table_and_joins()?;
         let for_portion_of = if self.parse_keywords(&[Keyword::FOR, Keyword::PORTION, Keyword::OF])
         {
@@ -26036,6 +26069,7 @@ impl<'a> Parser<'a> {
             None
         };
         Ok(Update {
+            hints,
             update_token: update_token.into(),
             table,
             for_portion_of,
@@ -28296,6 +28330,7 @@ impl<'a> Parser<'a> {
 
     pub fn parse_merge(&self) -> Result<Statement, ParserError> {
         let merge_token = self.attached_token_from_current();
+        let hints = self.parse_leading_optimizer_hints();
         let into = self.parse_keyword(Keyword::INTO);
 
         let table = self.parse_table_factor()?;
@@ -28313,6 +28348,7 @@ impl<'a> Parser<'a> {
         let error_logging = self.parse_oracle_error_logging_clause()?;
 
         Ok(Statement::Merge {
+            hints,
             merge_token,
             into,
             table,

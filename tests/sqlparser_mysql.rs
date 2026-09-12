@@ -1460,7 +1460,7 @@ fn parse_escaped_quote_identifiers_with_escape() {
         TestedDialects::new(vec![std::boxed::Box::new(MySqlDialect {})]).verified_stmt(sql),
         Statement::Query(Box::new(Query {
             with: None,
-            body: Box::new(SetExpr::Select(Box::new(Select {
+            body: Box::new(SetExpr::Select(Box::new(Select { hints: vec![],
                 select_token: AttachedToken::empty(),
                 distinct: None,
                 top: None,
@@ -1513,7 +1513,7 @@ fn parse_escaped_quote_identifiers_with_no_escape() {
         stmt,
         Statement::Query(Box::new(Query {
             with: None,
-            body: Box::new(SetExpr::Select(Box::new(Select {
+            body: Box::new(SetExpr::Select(Box::new(Select { hints: vec![],
                 select_token: AttachedToken::empty(),
                 distinct: None,
                 top: None,
@@ -1549,7 +1549,7 @@ fn parse_escaped_backticks_with_escape() {
         TestedDialects::new(vec![std::boxed::Box::new(MySqlDialect {})]).verified_stmt(sql),
         Statement::Query(Box::new(Query {
             with: None,
-            body: Box::new(SetExpr::Select(Box::new(Select {
+            body: Box::new(SetExpr::Select(Box::new(Select { hints: vec![],
                 select_token: AttachedToken::empty(),
 
                 distinct: None,
@@ -1595,7 +1595,7 @@ fn parse_escaped_backticks_with_no_escape() {
         stmt,
         Statement::Query(Box::new(Query {
             with: None,
-            body: Box::new(SetExpr::Select(Box::new(Select {
+            body: Box::new(SetExpr::Select(Box::new(Select { hints: vec![],
                 select_token: AttachedToken::empty(),
 
                 distinct: None,
@@ -2395,7 +2395,7 @@ fn parse_select_with_numeric_prefix_column_name() {
         Statement::Query(q) => {
             assert_eq!(
                 q.body,
-                Box::new(SetExpr::Select(Box::new(Select {
+                Box::new(SetExpr::Select(Box::new(Select { hints: vec![],
                     select_token: AttachedToken::empty(),
 
                     distinct: None,
@@ -2562,7 +2562,7 @@ fn parse_select_with_concatenation_of_exp_number_and_numeric_prefix_column() {
         Statement::Query(q) => {
             assert_eq!(
                 q.body,
-                Box::new(SetExpr::Select(Box::new(Select {
+                Box::new(SetExpr::Select(Box::new(Select { hints: vec![],
                     select_token: AttachedToken::empty(),
                     distinct: None,
                     top: None,
@@ -2615,7 +2615,7 @@ fn parse_insert_with_numeric_prefix_column_name() {
 fn parse_update_with_joins() {
     let sql = "UPDATE orders AS o JOIN customers AS c ON o.customer_id = c.id SET o.completed = true WHERE c.firstname = 'Peter'";
     match mysql().verified_stmt(sql) {
-        Statement::Update(Update {
+        Statement::Update(Update { hints: _,
             table,
             assignments,
             from: _from,
@@ -3197,7 +3197,7 @@ fn parse_substring_in_select() {
             assert_eq!(
                 Box::new(Query {
                     with: None,
-                    body: Box::new(SetExpr::Select(Box::new(Select {
+                    body: Box::new(SetExpr::Select(Box::new(Select { hints: vec![],
                         select_token: AttachedToken::empty(),
                         distinct: Some(Distinct::Distinct),
                         top: None,
@@ -3532,7 +3532,7 @@ fn parse_hex_string_introducer() {
         mysql().verified_stmt("SELECT _latin1 X'4D7953514C'"),
         Statement::Query(Box::new(Query {
             with: None,
-            body: Box::new(SetExpr::Select(Box::new(Select {
+            body: Box::new(SetExpr::Select(Box::new(Select { hints: vec![],
                 select_token: AttachedToken::empty(),
                 distinct: None,
                 top: None,

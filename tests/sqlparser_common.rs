@@ -407,7 +407,7 @@ fn parse_update_set_from() {
     let stmt = dialects.verified_stmt(sql);
     assert_eq!(
         stmt,
-        Statement::Update(Update {
+        Statement::Update(Update { hints: vec![],
             update_token: AttachedToken::empty(),
             table: TableWithJoins {
                 relation: table_from_name(ObjectName::from(vec![Ident::new("t1")])),
@@ -422,7 +422,7 @@ fn parse_update_set_from() {
                     lateral: false,
                     subquery: Box::new(Query {
                         with: None,
-                        body: Box::new(SetExpr::Select(Box::new(Select {
+                        body: Box::new(SetExpr::Select(Box::new(Select { hints: vec![],
                             select_token: AttachedToken::empty(),
                             distinct: None,
                             top: None,
@@ -490,7 +490,7 @@ fn parse_update_set_from() {
 fn parse_update_with_table_alias() {
     let sql = "UPDATE users AS u SET u.username = 'new_user' WHERE u.username = 'old_user'";
     match verified_stmt(sql) {
-        Statement::Update(Update {
+        Statement::Update(Update { hints: _,
             table,
             assignments,
             from: _from,
@@ -5601,7 +5601,7 @@ fn test_parse_named_window() {
     window2 AS (PARTITION BY C11) \
     ORDER BY C3";
     let actual_select_only = dialects.verified_only_select(sql);
-    let expected = Select {
+    let expected = Select { hints: vec![],
         select_token: AttachedToken::empty(),
         distinct: None,
         top: None,
@@ -6291,7 +6291,7 @@ fn parse_interval_and_or_xor() {
 
     let expected_ast = vec![Statement::Query(Box::new(Query {
         with: None,
-        body: Box::new(SetExpr::Select(Box::new(Select {
+        body: Box::new(SetExpr::Select(Box::new(Select { hints: vec![],
             select_token: AttachedToken::empty(),
             distinct: None,
             top: None,
@@ -8575,7 +8575,7 @@ fn lateral_derived() {
 fn lateral_function() {
     let sql = "SELECT * FROM customer LEFT JOIN LATERAL generate_series(1, customer.id)";
     let actual_select_only = verified_only_select(sql);
-    let expected = Select {
+    let expected = Select { hints: vec![],
         select_token: AttachedToken::empty(),
         distinct: None,
         top: None,
@@ -9598,7 +9598,7 @@ fn parse_merge() {
                     lateral: false,
                     subquery: Box::new(Query {
                         with: None,
-                        body: Box::new(SetExpr::Select(Box::new(Select {
+                        body: Box::new(SetExpr::Select(Box::new(Select { hints: vec![],
                             select_token: AttachedToken::empty(),
                             distinct: None,
                             top: None,
@@ -12105,7 +12105,7 @@ fn parse_unload() {
         Statement::Unload {
             unload_token: AttachedToken::empty(),
             query: Some(Box::new(Query {
-                body: Box::new(SetExpr::Select(Box::new(Select {
+                body: Box::new(SetExpr::Select(Box::new(Select { hints: vec![],
                     select_token: AttachedToken::empty(),
                     distinct: None,
                     top: None,
@@ -12345,7 +12345,7 @@ fn test_buffer_reuse() {
 
 #[test]
 fn parse_connect_by() {
-    let expect_query = Select {
+    let expect_query = Select { hints: vec![],
         select_token: AttachedToken::empty(),
         distinct: None,
         top: None,
@@ -12423,7 +12423,7 @@ fn parse_connect_by() {
     );
     assert_eq!(
         all_dialects_where(|d| d.supports_connect_by()).verified_only_select(connect_by_3),
-        Select {
+        Select { hints: vec![],
             select_token: AttachedToken::empty(),
             distinct: None,
             top: None,
@@ -12758,7 +12758,7 @@ fn test_extract_seconds_ok() {
 
     let expected_ast = vec![Statement::Query(Box::new(Query {
         with: None,
-        body: Box::new(SetExpr::Select(Box::new(Select {
+        body: Box::new(SetExpr::Select(Box::new(Select { hints: vec![],
             select_token: AttachedToken::empty(),
             distinct: None,
             top: None,

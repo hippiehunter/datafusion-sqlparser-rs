@@ -27,6 +27,7 @@ use serde::{Deserialize, Serialize};
 use sqlparser_derive::{Visit, VisitMut};
 
 use crate::display_utils::{indented_list, Indent, SpaceOrNewline};
+use crate::optimizer_hints::{display_hint_block, OptimizerHint};
 
 use super::{
     display_comma_separated, helpers::attached_token::AttachedToken, Assignment, ColumnTarget,
@@ -162,6 +163,8 @@ pub struct Insert {
     pub insert_alias: Option<InsertAliases>,
     /// Oracle DML error logging.
     pub error_logging: Option<OracleErrorLoggingClause>,
+    /// Optimizer hints written after the `INSERT` keyword.
+    pub hints: Vec<OptimizerHint>,
 }
 
 impl Display for Insert {
@@ -181,6 +184,7 @@ impl Display for Insert {
                 "INSERT"
             },
         )?;
+        display_hint_block(f, &self.hints)?;
         if let Some(priority) = self.priority {
             write!(f, " {priority}",)?;
         }
@@ -278,11 +282,14 @@ pub struct Delete {
     pub order_by: Vec<OrderByExpr>,
     /// LIMIT (MySQL)
     pub limit: Option<Expr>,
+    /// Optimizer hints written after the `DELETE` keyword.
+    pub hints: Vec<OptimizerHint>,
 }
 
 impl Display for Delete {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("DELETE")?;
+        display_hint_block(f, &self.hints)?;
         if !self.tables.is_empty() {
             indented_list(f, &self.tables)?;
         }
@@ -352,11 +359,15 @@ pub struct Update {
     pub limit: Option<Expr>,
     /// Oracle DML error logging.
     pub error_logging: Option<OracleErrorLoggingClause>,
+    /// Optimizer hints written after the `UPDATE` keyword.
+    pub hints: Vec<OptimizerHint>,
 }
 
 impl Display for Update {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("UPDATE ")?;
+        f.write_str("UPDATE")?;
+        display_hint_block(f, &self.hints)?;
+        f.write_str(" ")?;
         self.table.fmt(f)?;
         if let Some(for_portion_of) = &self.for_portion_of {
             SpaceOrNewline.fmt(f)?;

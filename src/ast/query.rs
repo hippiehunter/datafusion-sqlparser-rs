@@ -30,6 +30,7 @@ use sqlparser_derive::{Visit, VisitMut};
 use crate::{
     ast::*,
     display_utils::{indented_list, SpaceOrNewline},
+    optimizer_hints::{display_hint_block, OptimizerHint},
     tokenizer::{Token, TokenWithSpan},
 };
 
@@ -714,6 +715,8 @@ pub struct Select {
     pub connect_by: Option<Box<ConnectBy>>,
     /// Was this a FROM-first query?
     pub flavor: SelectFlavor,
+    /// Optimizer hints written after the `SELECT` keyword.
+    pub hints: Vec<OptimizerHint>,
 }
 
 impl fmt::Display for Select {
@@ -729,6 +732,7 @@ impl fmt::Display for Select {
                 write!(f, "FROM {}", display_comma_separated(&self.from))?;
             }
         }
+        display_hint_block(f, &self.hints)?;
 
         if let Some(ref top) = self.top {
             if self.top_before_distinct {

@@ -49,6 +49,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "visitor")]
 use sqlparser_derive::{NoInlineClone, NoInlineDebug, NoInlinePartialEq, Visit, VisitMut};
 
+use crate::optimizer_hints::{display_hint_block, OptimizerHint};
 use crate::{display_utils::SpaceOrNewline, tokenizer::Span};
 use crate::{
     display_utils::{Indent, NewLine},
@@ -8550,6 +8551,8 @@ pub enum Statement {
         output: Option<OutputClause>,
         /// Oracle DML error logging.
         error_logging: Option<OracleErrorLoggingClause>,
+        /// Optimizer hints written after the `MERGE` keyword.
+        hints: Vec<OptimizerHint>,
     },
     /// Oracle conditional or unconditional multitable INSERT.
     OracleMultiTableInsert(OracleMultiTableInsert),
@@ -12860,10 +12863,13 @@ impl fmt::Display for Statement {
                 clauses,
                 output,
                 error_logging,
+                hints,
             } => {
+                f.write_str("MERGE")?;
+                display_hint_block(f, hints)?;
                 write!(
                     f,
-                    "MERGE{int} {table} USING {source}",
+                    "{int} {table} USING {source}",
                     int = if *into { " INTO" } else { "" }
                 )?;
                 for join in source_joins {

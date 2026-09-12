@@ -1131,6 +1131,7 @@ impl Spanned for CopySource {
 impl Spanned for Delete {
     fn span(&self) -> Span {
         let Delete {
+            hints: _,
             delete_token,
             tables,
             from,
@@ -1166,6 +1167,7 @@ impl Spanned for Delete {
 impl Spanned for Update {
     fn span(&self) -> Span {
         let Update {
+            hints: _,
             update_token,
             table,
             for_portion_of,
@@ -1553,6 +1555,7 @@ impl Spanned for AlterIndexOperation {
 impl Spanned for Insert {
     fn span(&self) -> Span {
         let Insert {
+            hints: _,
             insert_token,
             ignore: _, // bool
             into: _,   // bool
@@ -2723,6 +2726,7 @@ impl Spanned for TableWithJoins {
 impl Spanned for Select {
     fn span(&self) -> Span {
         let Select {
+            hints: _,
             select_token,
             distinct: _, // todo
             top: _,      // todo, mysql specific

@@ -1685,7 +1685,7 @@ fn parse_copy_to() {
             selection: None,
             source: CopySource::Query(Box::new(Query {
                 with: None,
-                body: Box::new(SetExpr::Select(Box::new(Select {
+                body: Box::new(SetExpr::Select(Box::new(Select { hints: vec![],
                     select_token: AttachedToken::empty(),
                     distinct: None,
                     top: None,
@@ -3644,7 +3644,7 @@ fn parse_array_subquery_expr() {
                 body: Box::new(SetExpr::SetOperation {
                     op: SetOperator::Union,
                     set_quantifier: SetQuantifier::None,
-                    left: Box::new(SetExpr::Select(Box::new(Select {
+                    left: Box::new(SetExpr::Select(Box::new(Select { hints: vec![],
                         select_token: AttachedToken::empty(),
                         distinct: None,
                         top: None,
@@ -3662,7 +3662,7 @@ fn parse_array_subquery_expr() {
                         connect_by: None,
                         flavor: SelectFlavor::Standard,
                     }))),
-                    right: Box::new(SetExpr::Select(Box::new(Select {
+                    right: Box::new(SetExpr::Select(Box::new(Select { hints: vec![],
                         select_token: AttachedToken::empty(),
                         distinct: None,
                         top: None,
@@ -5694,7 +5694,7 @@ fn test_simple_postgres_insert_with_alias() {
 
     assert_eq!(
         statement,
-        Statement::Insert(Insert {
+        Statement::Insert(Insert { hints: vec![],
             column_targets: None,
             insert_token: AttachedToken::empty(),
             ignore: false,
@@ -5833,7 +5833,7 @@ fn test_simple_insert_with_quoted_alias() {
 
     assert_eq!(
         statement,
-        Statement::Insert(Insert {
+        Statement::Insert(Insert { hints: vec![],
             column_targets: None,
             insert_token: AttachedToken::empty(),
             ignore: false,
