@@ -1818,6 +1818,46 @@ fn parse_is_not_distinct_from() {
 }
 
 #[test]
+fn parse_is_distinct_from_precedence() {
+    use self::Expr::*;
+    // AND and OR bind looser than IS: the predicate ends before them.
+    assert_eq!(
+        BinaryOp {
+            left: Box::new(IsDistinctFrom(
+                Box::new(Identifier(Ident::new("a"))),
+                Box::new(Identifier(Ident::new("b"))),
+            )),
+            op: BinaryOperator::And,
+            right: Box::new(Identifier(Ident::new("c"))),
+        },
+        verified_expr("a IS DISTINCT FROM b AND c")
+    );
+    assert_eq!(
+        BinaryOp {
+            left: Box::new(IsNotDistinctFrom(
+                Box::new(Identifier(Ident::new("a"))),
+                Box::new(Identifier(Ident::new("b"))),
+            )),
+            op: BinaryOperator::Or,
+            right: Box::new(Identifier(Ident::new("c"))),
+        },
+        verified_expr("a IS NOT DISTINCT FROM b OR c")
+    );
+    // Comparison binds tighter than IS: the right operand is `b = c`.
+    assert_eq!(
+        IsDistinctFrom(
+            Box::new(Identifier(Ident::new("a"))),
+            Box::new(BinaryOp {
+                left: Box::new(Identifier(Ident::new("b"))),
+                op: BinaryOperator::Eq,
+                right: Box::new(Identifier(Ident::new("c"))),
+            }),
+        ),
+        verified_expr("a IS DISTINCT FROM b = c")
+    );
+}
+
+#[test]
 fn parse_is_json() {
     // Basic IS JSON
     let sql = "a IS JSON";

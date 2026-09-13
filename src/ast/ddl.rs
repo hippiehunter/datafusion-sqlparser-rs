@@ -64,7 +64,9 @@ use crate::tokenizer::{Span, Token};
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct IndexColumn {
     pub column: OrderByExpr,
-    pub operator_class: Option<Ident>,
+    /// The operator class written after the key, possibly schema-qualified:
+    /// `c pg_catalog."varchar_pattern_ops"`.
+    pub operator_class: Option<ObjectName>,
 }
 
 impl From<Ident> for IndexColumn {
@@ -84,10 +86,19 @@ impl<'a> From<&'a str> for IndexColumn {
 }
 
 impl fmt::Display for IndexColumn {
+    /// Written in the order the parser reads it: the key, its operator class,
+    /// then the ordering (`c text_pattern_ops DESC NULLS LAST`).
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.column)?;
+        write!(f, "{}", self.column.expr)?;
         if let Some(operator_class) = &self.operator_class {
             write!(f, " {operator_class}")?;
+        }
+        if let Some(using) = &self.column.using {
+            write!(f, " USING {using}")?;
+        }
+        write!(f, "{}", self.column.options)?;
+        if let Some(with_fill) = &self.column.with_fill {
+            write!(f, " {with_fill}")?;
         }
         Ok(())
     }

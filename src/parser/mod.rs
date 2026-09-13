@@ -5355,16 +5355,20 @@ impl<'a> Parser<'a> {
             }
             Keyword::CURRENT_CATALOG
             | Keyword::CURRENT_USER
+            | Keyword::CURRENT_ROLE
             | Keyword::CURRENT_SCHEMA
             | Keyword::SESSION_USER
             | Keyword::USER
                 if dialect_of!(self is PostgreSqlDialect) =>
             {
-                // PostgreSQL accepts both the bare keyword (`current_schema`)
-                // and a zero-arg function call spelling (`current_schema()`).
-                // Consume an empty `()` if present so the two spellings
-                // produce the same AST.
-                if self.peek_token_ref().token == BorrowedToken::LParen
+                // These are SQL value functions, written without parentheses.
+                // Only `current_schema` is also an ordinary function name in
+                // PostgreSQL, so only it accepts the `current_schema()`
+                // spelling; the empty `()` is consumed so both spellings
+                // produce the same AST. `current_user()` and its siblings are
+                // syntax errors: the `(` is left for the caller to reject.
+                if w.keyword == Keyword::CURRENT_SCHEMA
+                    && self.peek_token_ref().token == BorrowedToken::LParen
                     && self.peek_nth_token_ref(1).token == BorrowedToken::RParen
                 {
                     self.advance_token();
@@ -8175,11 +8179,14 @@ impl<'a> Parser<'a> {
                             suffix_token,
                         })
                     } else if self.parse_keywords(&[Keyword::DISTINCT, Keyword::FROM]) {
-                        let expr2 = self.parse_expr()?;
+                        // `a IS DISTINCT FROM b AND c` groups as
+                        // `(a IS DISTINCT FROM b) AND c`: the right operand binds
+                        // at IS precedence, below comparison and above NOT/AND/OR.
+                        let expr2 = self.parse_subexpr(self.dialect.prec_value(Precedence::Is))?;
                         Ok(Expr::IsDistinctFrom(Box::new(expr), Box::new(expr2)))
                     } else if self.parse_keywords(&[Keyword::NOT, Keyword::DISTINCT, Keyword::FROM])
                     {
-                        let expr2 = self.parse_expr()?;
+                        let expr2 = self.parse_subexpr(self.dialect.prec_value(Precedence::Is))?;
                         Ok(Expr::IsNotDistinctFrom(Box::new(expr), Box::new(expr2)))
                     } else if self.parse_keyword(Keyword::JSON) {
                         self.parse_is_json(expr, false)
@@ -26905,12 +26912,13 @@ impl<'a> Parser<'a> {
     fn parse_order_by_expr_inner(
         &self,
         with_operator_class: bool,
-    ) -> Result<(OrderByExpr, Option<Ident>), ParserError> {
+    ) -> Result<(OrderByExpr, Option<ObjectName>), ParserError> {
         let expr = self.parse_expr()?;
 
-        let operator_class: Option<Ident> = if with_operator_class {
-            // We check that if non of the following keywords are present, then we parse an
-            // identifier as operator class.
+        let operator_class: Option<ObjectName> = if with_operator_class {
+            // When none of the following keywords follows the expression, a
+            // possibly schema-qualified name is the operator class, e.g.
+            // `pg_catalog."varchar_pattern_ops"`.
             if self
                 .peek_one_of_keywords(&[
                     Keyword::ASC,
@@ -26924,7 +26932,7 @@ impl<'a> Parser<'a> {
             {
                 None
             } else {
-                self.maybe_parse(|parser| parser.parse_identifier())?
+                self.maybe_parse(|parser| parser.parse_object_name(false))?
             }
         } else {
             None

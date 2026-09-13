@@ -67,9 +67,11 @@ impl Dialect for PostgreSqlDialect {
         true
     }
 
+    /// PostgreSQL folds an unquoted identifier by lowering ASCII letters only
+    /// (`downcase_identifier`); every other character is kept as written.
     fn canonicalize_identifier(&self, identifier: &str, quote_style: Option<char>) -> String {
         if quote_style.is_none() {
-            identifier.to_lowercase()
+            identifier.to_ascii_lowercase()
         } else {
             identifier.to_owned()
         }

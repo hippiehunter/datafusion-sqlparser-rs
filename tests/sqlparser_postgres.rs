@@ -3174,11 +3174,11 @@ fn parse_create_indices_with_operator_classes() {
         IndexType::SPGiST,
         IndexType::Custom("customindextype".into()),
     ];
-    let operator_classes: [Option<Ident>; 4] = [
+    let operator_classes: [Option<ObjectName>; 4] = [
         None,
-        Some("gin_trgm_ops".into()),
-        Some("gist_trgm_ops".into()),
-        Some("totally_not_valid".into()),
+        Some(ObjectName::from(vec![Ident::new("gin_trgm_ops")])),
+        Some(ObjectName::from(vec![Ident::new("gist_trgm_ops")])),
+        Some(ObjectName::from(vec![Ident::new("totally_not_valid")])),
     ];
 
     for expected_index_type in indices {
@@ -4391,6 +4391,145 @@ fn parse_current_functions() {
             within_group: vec![],
         }),
         expr_from_projection(&select.projection[3])
+    );
+}
+
+#[test]
+fn parse_current_role_as_sql_value_function() {
+    let select = pg().verified_only_select_with_canonical(
+        "SELECT CURRENT_ROLE",
+        "SELECT current_role",
+    );
+    assert_eq!(
+        &Expr::Function(Function {
+            name: ObjectName::from(vec![Ident::new("current_role")]),
+            uses_odbc_syntax: false,
+            parameters: FunctionArguments::None,
+            args: FunctionArguments::None,
+            null_treatment: None,
+            nth_value_order: None,
+            filter: None,
+            over: None,
+            within_group: vec![],
+        }),
+        expr_from_projection(&select.projection[0])
+    );
+}
+
+#[test]
+fn parse_current_schema_accepts_empty_parentheses() {
+    let select = pg().verified_only_select_with_canonical(
+        "SELECT current_schema()",
+        "SELECT current_schema",
+    );
+    assert_eq!(
+        &Expr::Function(Function {
+            name: ObjectName::from(vec![Ident::new("current_schema")]),
+            uses_odbc_syntax: false,
+            parameters: FunctionArguments::None,
+            args: FunctionArguments::None,
+            null_treatment: None,
+            nth_value_order: None,
+            filter: None,
+            over: None,
+            within_group: vec![],
+        }),
+        expr_from_projection(&select.projection[0])
+    );
+}
+
+#[test]
+fn parse_sql_value_functions_reject_parentheses() {
+    for sql in [
+        "SELECT current_user()",
+        "SELECT session_user()",
+        "SELECT user()",
+        "SELECT current_role()",
+        "SELECT current_catalog()",
+    ] {
+        assert!(
+            pg().parse_sql_statements(sql).is_err(),
+            "{sql} must be a syntax error"
+        );
+    }
+}
+
+#[test]
+fn parse_is_distinct_from_binds_above_not() {
+    assert_eq!(
+        Expr::UnaryOp {
+            op: UnaryOperator::Not,
+            expr: Box::new(Expr::IsDistinctFrom(
+                Box::new(Expr::Identifier(Ident::new("a"))),
+                Box::new(Expr::Identifier(Ident::new("b"))),
+            )),
+        },
+        pg().verified_expr("NOT a IS DISTINCT FROM b")
+    );
+}
+
+#[test]
+fn parse_is_distinct_from_right_operand_stops_at_and() {
+    assert_eq!(
+        Expr::BinaryOp {
+            left: Box::new(Expr::BinaryOp {
+                left: Box::new(Expr::IsDistinctFrom(
+                    Box::new(Expr::Identifier(Ident::new("cur"))),
+                    Box::new(Expr::Identifier(Ident::new("target"))),
+                )),
+                op: BinaryOperator::And,
+                right: Box::new(Expr::IsNotDistinctFrom(
+                    Box::new(Expr::CompoundIdentifier(vec![
+                        Ident::new("x"),
+                        Ident::new("updated_at"),
+                    ])),
+                    Box::new(Expr::CompoundIdentifier(vec![
+                        Ident::new("y"),
+                        Ident::new("updated_at"),
+                    ])),
+                )),
+            }),
+            op: BinaryOperator::And,
+            right: Box::new(Expr::BinaryOp {
+                left: Box::new(Expr::Identifier(Ident::new("steps"))),
+                op: BinaryOperator::Lt,
+                right: Box::new(Expr::value(number("10"))),
+            }),
+        },
+        pg().verified_expr(
+            "new IS DISTINCT FROM old AND new.updated_at IS NOT DISTINCT FROM old.updated_at AND steps < 10"
+        )
+    );
+}
+
+#[test]
+fn parse_create_index_with_qualified_operator_class() {
+    let sql = "CREATE INDEX idx ON t (name pg_catalog.\"varchar_pattern_ops\" DESC, code text_pattern_ops)";
+    match pg().verified_stmt(sql) {
+        Statement::CreateIndex(CreateIndex { columns, .. }) => {
+            assert_eq!(
+                Some(ObjectName::from(vec![
+                    Ident::new("pg_catalog"),
+                    Ident::with_quote('"', "varchar_pattern_ops"),
+                ])),
+                columns[0].operator_class
+            );
+            assert_eq!(Some(false), columns[0].column.options.asc);
+            assert_eq!(
+                Some(ObjectName::from(vec![Ident::new("text_pattern_ops")])),
+                columns[1].operator_class
+            );
+        }
+        other => panic!("expected CREATE INDEX, got {other:?}"),
+    }
+}
+
+#[test]
+fn postgres_identifier_fold_lowers_ascii_letters_only() {
+    let select = pg().verified_only_select_with_canonical("SELECT ÉtatX", "SELECT Étatx");
+    assert_eq!(
+        &Expr::Identifier(Ident::new("Étatx")),
+        expr_from_projection(&select.projection[0])
     );
 }
 
