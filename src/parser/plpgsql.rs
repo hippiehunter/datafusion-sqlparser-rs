@@ -37,7 +37,7 @@ use crate::{
     },
     dialect::Precedence,
     keywords::Keyword,
-    tokenizer::{BorrowedToken, TokenWithSpan},
+    tokenizer::{BorrowedToken, Span, TokenWithSpan},
 };
 
 /// The `WHEN` arms of a PL/pgSQL `CASE` statement, paired with the per-arm
@@ -229,7 +229,24 @@ impl Parser<'_> {
     /// not legal PL/pgSQL expressions; parenthesized subqueries may contain set
     /// operations. The entire expression must be consumed.
     fn parse_plpgsql_expression_query(&self) -> Result<Box<Query>, ParserError> {
-        let span = self.peek_token_ref().span;
+        let query = self.parse_query_with_implicit_select(self.peek_token_ref().span)?;
+        match query.body.as_ref() {
+            crate::ast::SetExpr::Select(select) if select.into.is_none() => Ok(query),
+            _ => self.expected(
+                "a PL/pgSQL expression without INTO or a top-level set operation",
+                self.peek_token(),
+            ),
+        }
+    }
+
+    /// Preserve the original query tokens and recursion budget when a
+    /// procedural construct supplies SELECT implicitly. PERFORM can use its
+    /// keyword's span for the prefix and permits full query set operations;
+    /// scalar RETURN/assignment callers validate their narrower shape above.
+    pub(super) fn parse_query_with_implicit_select(
+        &self,
+        span: Span,
+    ) -> Result<Box<Query>, ParserError> {
         let mut tokens = vec![TokenWithSpan::new(
             BorrowedToken::make_keyword("SELECT"),
             span,
@@ -251,13 +268,7 @@ impl Parser<'_> {
             .with_tokens_with_locations(tokens);
         let query = parser.parse_query()?;
         parser.expect_token(&BorrowedToken::EOF)?;
-        match query.body.as_ref() {
-            crate::ast::SetExpr::Select(select) if select.into.is_none() => Ok(query),
-            _ => self.expected(
-                "a PL/pgSQL expression without INTO or a top-level set operation",
-                self.peek_token(),
-            ),
-        }
+        Ok(query)
     }
 
     /// Parse the second and later scalar targets of `FOR a, b, c IN query LOOP`.

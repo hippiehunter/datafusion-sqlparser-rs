@@ -4664,9 +4664,11 @@ impl<'a> Parser<'a> {
     /// See [Statement::Perform]
     pub fn parse_perform(&self) -> Result<Statement, ParserError> {
         self.expect_keyword_is(Keyword::PERFORM)?;
+        let perform_span = self.get_current_token().span;
 
         // PL/pgSQL PERFORM is equivalent to SELECT but discards results.
-        // We always synthesize a SELECT query from the tokens after PERFORM.
+        // Supply SELECT implicitly without rendering/re-tokenizing the body:
+        // coverage and diagnostics must retain the original token locations.
         // `PERFORM expr` => `SELECT expr`
         // `PERFORM expr FROM t WHERE ...` => `SELECT expr FROM t WHERE ...`
         // `PERFORM SELECT ...` => pass through
@@ -4677,37 +4679,7 @@ impl<'a> Parser<'a> {
         {
             self.parse_query()?
         } else {
-            // Collect the expression(s), then check for FROM/WHERE/etc.
-            // We synthesize "SELECT <tokens...>" and re-parse as a query.
-            let mut tokens = Vec::new();
-            let mut depth = 0i32;
-            loop {
-                let tok = &self.peek_token_ref().token;
-                if *tok == BorrowedToken::EOF {
-                    break;
-                }
-                if *tok == BorrowedToken::SemiColon && depth == 0 {
-                    break;
-                }
-                if *tok == BorrowedToken::LParen {
-                    depth += 1;
-                }
-                if *tok == BorrowedToken::RParen {
-                    if depth == 0 {
-                        break;
-                    }
-                    depth -= 1;
-                }
-                tokens.push(self.next_token().token.to_static());
-            }
-            let body: String = tokens
-                .iter()
-                .map(|t| t.to_string())
-                .collect::<Vec<_>>()
-                .join(" ");
-            let sql = format!("SELECT {body}");
-            let inner_parser = Parser::new(self.dialect).try_with_sql(&sql)?;
-            inner_parser.parse_query()?
+            self.parse_query_with_implicit_select(perform_span)?
         };
 
         Ok(Statement::Perform(PerformStatement {

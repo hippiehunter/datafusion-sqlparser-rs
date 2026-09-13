@@ -1211,3 +1211,83 @@ fn test_do_block_with_language_before_the_body() {
     );
     assert_eq!(block.declarations.len(), 1);
 }
+
+#[test]
+fn test_perform_preserves_original_keyword_and_query_locations() {
+    use sqlparser::ast::Spanned;
+    use sqlparser::dialect::PostgreSqlDialect;
+    use sqlparser::keywords::Keyword;
+    use sqlparser::tokenizer::{Span, Token, Tokenizer};
+
+    let body = "\nBEGIN\n    PERFORM 1;\n    /* naïve */ PERFORM 'é; PERFORM' || v::TEXT\n        FROM items WHERE id = v;\n    PERFORM 1 UNION SELECT 2;\n    RETURN v;\nEND";
+    let block = function_block(&format!(
+        "CREATE FUNCTION f(v INT) RETURNS INT LANGUAGE plpgsql AS $body${body}$body$"
+    ));
+    let tokens = Tokenizer::new(&PostgreSqlDialect {}, body)
+        .tokenize_with_location()
+        .unwrap()
+        .into_iter()
+        .filter(|token| !matches!(token.token, Token::Whitespace(_)))
+        .collect::<Vec<_>>();
+    let expected = tokens
+        .iter()
+        .enumerate()
+        .filter(|(_, token)| matches!(&token.token, Token::Word(word) if word.keyword == Keyword::PERFORM))
+        .map(|(index, token)| Span {
+            start: token.span.start,
+            end: tokens[index + 1..]
+                .iter()
+                .take_while(|token| token.token != Token::SemiColon)
+                .last()
+                .unwrap()
+                .span
+                .end,
+        })
+        .collect::<Vec<_>>();
+    let actual = block
+        .statements
+        .iter()
+        .filter(|statement| matches!(statement, Statement::Perform(_)))
+        .map(Spanned::span)
+        .collect::<Vec<_>>();
+    assert_eq!(actual.len(), 3);
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn test_perform_query_forms_keep_structured_round_trips() {
+    for query in [
+        "1",
+        "helper(v) FROM items WHERE id = v",
+        "ARRAY[1, 2, 3]",
+        "1 UNION SELECT 2",
+        "(SELECT 1)",
+    ] {
+        let block = function_block(&format!(
+            "CREATE FUNCTION f(v INT) RETURNS VOID LANGUAGE plpgsql AS $$ BEGIN PERFORM {query}; END $$"
+        ));
+        assert!(matches!(
+            block.statements.as_slice(),
+            [Statement::Perform(_)]
+        ));
+    }
+}
+
+#[test]
+fn test_perform_rejects_unconsumed_query_tokens() {
+    use sqlparser::dialect::PostgreSqlDialect;
+    use sqlparser::parser::Parser;
+    for query in [
+        "1 FROM",
+        "1 FROM items WHERE",
+        "1 FROM items WHERE TRUE unexpected",
+    ] {
+        let sql = format!(
+            "CREATE FUNCTION f() RETURNS VOID LANGUAGE plpgsql AS $$ BEGIN PERFORM {query}; END $$"
+        );
+        assert!(
+            Parser::parse_sql(&PostgreSqlDialect {}, &sql).is_err(),
+            "accepted: {sql}"
+        );
+    }
+}
