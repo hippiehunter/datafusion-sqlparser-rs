@@ -11948,10 +11948,10 @@ impl<'a> Parser<'a> {
         };
         if trailing_mode.is_some() {
             let token = self.token_at(data_type_idx).clone();
-            if !matches!(token.token, BorrowedToken::Word(_)) {
+            let BorrowedToken::Word(word) = &token.token else {
                 return self.expected("a parameter name", token);
-            }
-            name = Some(Ident::new(token.to_string()));
+            };
+            name = Some(self.word_to_ident(word.clone(), token.span));
             data_type = self.parse_data_type()?;
         }
 
@@ -11974,11 +11974,11 @@ impl<'a> Parser<'a> {
                 let token = self.token_at(data_type_idx);
 
                 // We ensure that the token is a `Word` token, and not other special tokens.
-                if !matches!(token.token, BorrowedToken::Word(_)) {
+                let BorrowedToken::Word(word) = &token.token else {
                     return self.expected("a name or type", token.clone());
-                }
+                };
 
-                name = Some(Ident::new(token.to_string()));
+                name = Some(self.word_to_ident(word.clone(), token.span));
                 data_type = next_data_type;
             }
         }
@@ -16079,18 +16079,18 @@ impl<'a> Parser<'a> {
         if took_trailing_mode {
             // `name <mode> type`: the already-parsed `data_type` is the name.
             let token = self.token_at(data_type_idx).clone();
-            if !matches!(token.token, BorrowedToken::Word(_)) {
+            let BorrowedToken::Word(word) = &token.token else {
                 return self.expected("a parameter name", token);
-            }
-            name = Some(Ident::new(token.to_string()));
+            };
+            name = Some(self.word_to_ident(word.clone(), token.span));
             data_type = self.parse_data_type()?;
         } else if let Some(next_data_type) = self.maybe_parse(parse_data_type_no_default)? {
             // `name type`: the first token was the name, the second is the type.
             let token = self.token_at(data_type_idx);
-            if !matches!(token.token, BorrowedToken::Word(_)) {
+            let BorrowedToken::Word(word) = &token.token else {
                 return self.expected("a name or type", token.clone());
-            }
-            name = Some(Ident::new(token.to_string()));
+            };
+            name = Some(self.word_to_ident(word.clone(), token.span));
             data_type = next_data_type;
         }
 
