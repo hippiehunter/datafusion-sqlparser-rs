@@ -5061,12 +5061,21 @@ impl<'a> Parser<'a> {
     pub fn parse_subexpr(&self, precedence: u8) -> Result<Expr, ParserError> {
         let _guard = self.recursion_counter.try_decrease()?;
         debug!("parsing expr");
-        let mut expr = self.parse_prefix()?;
+        let prefix = self.parse_prefix()?;
+        self.parse_subexpr_after_prefix(prefix, precedence)
+    }
 
+    /// The rest of an expression whose prefix has been parsed: its compound
+    /// access and every infix operator binding tighter than `precedence`.
+    fn parse_subexpr_after_prefix(
+        &self,
+        prefix: Expr,
+        precedence: u8,
+    ) -> Result<Expr, ParserError> {
         // Most expressions do not contain compound field or subscript access.
         // Let the vector allocate on the first actual access instead of paying
         // for an unused allocation on every expression.
-        expr = self.parse_compound_expr(expr, Vec::new())?;
+        let mut expr = self.parse_compound_expr(prefix, Vec::new())?;
 
         debug!("prefix: {expr:?}");
         loop {
@@ -11900,6 +11909,17 @@ impl<'a> Parser<'a> {
         Ok((name, args))
     }
 
+    /// The parameter name a word token at `index` spells, quoting kept: a
+    /// routine parameter list reads `name type` by parsing the name as a type
+    /// first.
+    fn parameter_name_at(&self, index: usize, expected: &str) -> Result<Ident, ParserError> {
+        let token = self.token_at(index).clone();
+        match token.token {
+            BorrowedToken::Word(word) => Ok(word.into_ident(token.span)),
+            _ => self.expected(expected, token),
+        }
+    }
+
     fn parse_function_arg(&self) -> Result<OperateFunctionArg, ParserError> {
         let mode = if self.parse_keyword(Keyword::IN) {
             Some(ArgMode::In)
@@ -11940,11 +11960,7 @@ impl<'a> Parser<'a> {
             None
         };
         if trailing_mode.is_some() {
-            let token = self.token_at(data_type_idx).clone();
-            if !matches!(token.token, BorrowedToken::Word(_)) {
-                return self.expected("a parameter name", token);
-            }
-            name = Some(Ident::new(token.to_string()));
+            name = Some(self.parameter_name_at(data_type_idx, "a parameter name")?);
             data_type = self.parse_data_type()?;
         }
 
@@ -11964,14 +11980,7 @@ impl<'a> Parser<'a> {
 
         if trailing_mode.is_none() {
             if let Some(next_data_type) = self.maybe_parse(parse_data_type_no_default)? {
-                let token = self.token_at(data_type_idx);
-
-                // We ensure that the token is a `Word` token, and not other special tokens.
-                if !matches!(token.token, BorrowedToken::Word(_)) {
-                    return self.expected("a name or type", token.clone());
-                }
-
-                name = Some(Ident::new(token.to_string()));
+                name = Some(self.parameter_name_at(data_type_idx, "a name or type")?);
                 data_type = next_data_type;
             }
         }
@@ -16071,19 +16080,11 @@ impl<'a> Parser<'a> {
 
         if took_trailing_mode {
             // `name <mode> type`: the already-parsed `data_type` is the name.
-            let token = self.token_at(data_type_idx).clone();
-            if !matches!(token.token, BorrowedToken::Word(_)) {
-                return self.expected("a parameter name", token);
-            }
-            name = Some(Ident::new(token.to_string()));
+            name = Some(self.parameter_name_at(data_type_idx, "a parameter name")?);
             data_type = self.parse_data_type()?;
         } else if let Some(next_data_type) = self.maybe_parse(parse_data_type_no_default)? {
             // `name type`: the first token was the name, the second is the type.
-            let token = self.token_at(data_type_idx);
-            if !matches!(token.token, BorrowedToken::Word(_)) {
-                return self.expected("a name or type", token.clone());
-            }
-            name = Some(Ident::new(token.to_string()));
+            name = Some(self.parameter_name_at(data_type_idx, "a name or type")?);
             data_type = next_data_type;
         }
 
@@ -16349,12 +16350,16 @@ impl<'a> Parser<'a> {
     /// In the first we should parse the inner portion of `(42 NOT NULL)` as [Expr::IsNotNull],
     /// whereas is both statements that trailing `NOT NULL` should only be parsed as a
     /// [ColumnOption::NotNull].
+    ///
+    /// The operators after a parenthesized operand are parsed in the column-definition
+    /// state too, so `DEFAULT (a)::int + 1 NOT NULL` is a default expression followed by
+    /// the `NOT NULL` column option.
     fn parse_column_option_expr(&self) -> Result<Expr, ParserError> {
         if self.peek_token_ref().token == BorrowedToken::LParen {
-            let expr: Expr = self.with_state(ParserState::Normal, |p| p.parse_prefix())?;
-            Ok(expr)
+            let prefix = self.with_state(ParserState::Normal, |p| p.parse_prefix())?;
+            self.parse_subexpr_after_prefix(prefix, self.dialect.prec_unknown())
         } else {
-            Ok(self.parse_expr()?)
+            self.parse_expr()
         }
     }
 

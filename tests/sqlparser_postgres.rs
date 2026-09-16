@@ -4474,17 +4474,17 @@ fn parse_is_distinct_from_right_operand_stops_at_and() {
         Expr::BinaryOp {
             left: Box::new(Expr::BinaryOp {
                 left: Box::new(Expr::IsDistinctFrom(
-                    Box::new(Expr::Identifier(Ident::new("cur"))),
-                    Box::new(Expr::Identifier(Ident::new("target"))),
+                    Box::new(Expr::Identifier(Ident::new("new"))),
+                    Box::new(Expr::Identifier(Ident::new("old"))),
                 )),
                 op: BinaryOperator::And,
                 right: Box::new(Expr::IsNotDistinctFrom(
                     Box::new(Expr::CompoundIdentifier(vec![
-                        Ident::new("x"),
+                        Ident::new("new"),
                         Ident::new("updated_at"),
                     ])),
                     Box::new(Expr::CompoundIdentifier(vec![
-                        Ident::new("y"),
+                        Ident::new("old"),
                         Ident::new("updated_at"),
                     ])),
                 )),
@@ -8604,4 +8604,20 @@ fn parse_at_and_before_as_table_aliases() {
         "SELECT at.oid FROM pg_type at, pg_class before WHERE at.oid = before.reltype",
         "SELECT at.oid FROM pg_type AS at, pg_class AS before WHERE at.oid = before.reltype",
     );
+}
+
+#[test]
+fn parse_parenthesized_default_followed_by_operators() {
+    let sql = "CREATE TABLE foo (a INT DEFAULT (random() * 10)::INT + 1 NOT NULL, b INT DEFAULT (1) NOT NULL)";
+    match pg().verified_stmt(sql) {
+        Statement::CreateTable(CreateTable { columns, .. }) => {
+            assert_eq!(
+                columns[0].options[0].option,
+                ColumnOption::Default(pg().verified_expr("(random() * 10)::INT + 1"))
+            );
+            assert_eq!(columns[0].options[1].option, ColumnOption::NotNull);
+            assert_eq!(columns[1].options[1].option, ColumnOption::NotNull);
+        }
+        _ => unreachable!(),
+    }
 }
