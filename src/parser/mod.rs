@@ -71,6 +71,18 @@ pub enum ParserError {
     TokenizerError(String),
     ParserError(String),
     RecursionLimitExceeded,
+    /// Input the PostgreSQL grammar recognizes and then refuses with a
+    /// diagnostic of its own, rather than as an unexpected token.
+    GrammarRejection(GrammarRejection),
+}
+
+/// A refusal the PostgreSQL grammar raises itself, in PostgreSQL's words:
+/// its message and hint, and the location of the token it points at.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GrammarRejection {
+    pub message: String,
+    pub hint: String,
+    pub location: Location,
 }
 
 /// Diagnostic emitted when `CREATE TABLE` specifies both supported table
@@ -464,15 +476,19 @@ impl From<TokenizerError> for ParserError {
 
 impl fmt::Display for ParserError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "sql parser error: {}",
-            match self {
-                ParserError::TokenizerError(s) => s,
-                ParserError::ParserError(s) => s,
-                ParserError::RecursionLimitExceeded => "recursion limit exceeded",
+        match self {
+            ParserError::TokenizerError(s) | ParserError::ParserError(s) => {
+                write!(f, "sql parser error: {s}")
             }
-        )
+            ParserError::RecursionLimitExceeded => {
+                write!(f, "sql parser error: recursion limit exceeded")
+            }
+            ParserError::GrammarRejection(rejection) => write!(
+                f,
+                "sql parser error: {}{}",
+                rejection.message, rejection.location
+            ),
+        }
     }
 }
 
@@ -521,6 +537,10 @@ pub struct ParserOptions {
     /// the base dialect's grammar. This is deliberately opt-in so PostgreSQL
     /// array subscripts keep their normal meaning.
     pub bracket_quoted_identifiers: bool,
+    /// Accept `USER()` as a spelling of the `USER` value function. PostgreSQL
+    /// rejects it; clients written against databases where `USER` is an
+    /// ordinary function send it. Opt-in, like the bracket identifiers.
+    pub user_call_parentheses: bool,
     /// Controls how literal values are unescaped. See
     /// [`Tokenizer::with_unescape`] for more details.
     pub unescape: bool,
@@ -534,6 +554,7 @@ impl Default for ParserOptions {
         Self {
             trailing_commas: false,
             bracket_quoted_identifiers: false,
+            user_call_parentheses: false,
             unescape: true,
             require_semicolon_stmt_delimiter: true,
         }
@@ -566,6 +587,12 @@ impl ParserOptions {
     /// accepted in addition to identifiers supported by the base dialect.
     pub fn with_bracket_quoted_identifiers(mut self, enabled: bool) -> Self {
         self.bracket_quoted_identifiers = enabled;
+        self
+    }
+
+    /// Set whether `USER()` is accepted as the `USER` value function.
+    pub fn with_user_call_parentheses(mut self, enabled: bool) -> Self {
+        self.user_call_parentheses = enabled;
         self
     }
 
@@ -946,7 +973,10 @@ impl<'a> Parser<'a> {
 
         if result.is_ok()
             || !previous_detailed_errors
-            || matches!(&result, Err(ParserError::RecursionLimitExceeded))
+            || matches!(
+                &result,
+                Err(ParserError::RecursionLimitExceeded | ParserError::GrammarRejection(_))
+            )
         {
             return result;
         }
@@ -5375,8 +5405,11 @@ impl<'a> Parser<'a> {
                 // PostgreSQL, so only it accepts the `current_schema()`
                 // spelling; the empty `()` is consumed so both spellings
                 // produce the same AST. `current_user()` and its siblings are
-                // syntax errors: the `(` is left for the caller to reject.
-                if w.keyword == Keyword::CURRENT_SCHEMA
+                // syntax errors: the `(` is left for the caller to reject,
+                // except `user()` when the options admit that spelling.
+                let accepts_empty_call = w.keyword == Keyword::CURRENT_SCHEMA
+                    || (w.keyword == Keyword::USER && self.options.user_call_parentheses);
+                if accepts_empty_call
                     && self.peek_token_ref().token == BorrowedToken::LParen
                     && self.peek_nth_token_ref(1).token == BorrowedToken::RParen
                 {
@@ -13239,13 +13272,7 @@ impl<'a> Parser<'a> {
         let table_name = self.parse_object_name(false)?;
 
         let policy_type = if self.parse_keyword(Keyword::AS) {
-            let keyword =
-                self.expect_one_of_keywords(&[Keyword::PERMISSIVE, Keyword::RESTRICTIVE])?;
-            Some(match keyword {
-                Keyword::PERMISSIVE => CreatePolicyType::Permissive,
-                Keyword::RESTRICTIVE => CreatePolicyType::Restrictive,
-                _ => unreachable!(),
-            })
+            Some(self.parse_create_policy_type()?)
         } else {
             None
         };
@@ -13304,6 +13331,39 @@ impl<'a> Parser<'a> {
             using,
             with_check,
         })
+    }
+
+    /// The option after `CREATE POLICY ... AS`. PostgreSQL's grammar reads any
+    /// identifier there and compares its folded spelling, so a quoted
+    /// `"permissive"` names the option too, and every other identifier is
+    /// refused as an unrecognized option. A keyword or any other token is an
+    /// ordinary syntax error.
+    fn parse_create_policy_type(&self) -> Result<CreatePolicyType, ParserError> {
+        let token = self.peek_token_ref();
+        let option = match &token.token {
+            BorrowedToken::Word(word) => match (word.quote_style, word.keyword) {
+                (Some(_), _) => word.value.to_string(),
+                (None, Keyword::PERMISSIVE | Keyword::RESTRICTIVE | Keyword::NoKeyword) => {
+                    word.value.to_ascii_lowercase()
+                }
+                (None, _) => return self.expected_ref("one of PERMISSIVE or RESTRICTIVE", token),
+            },
+            _ => return self.expected_ref("one of PERMISSIVE or RESTRICTIVE", token),
+        };
+        let policy_type = match option.as_str() {
+            "permissive" => CreatePolicyType::Permissive,
+            "restrictive" => CreatePolicyType::Restrictive,
+            _ => {
+                return Err(ParserError::GrammarRejection(GrammarRejection {
+                    message: format!("unrecognized row security option \"{option}\""),
+                    hint: "Only PERMISSIVE or RESTRICTIVE policies are supported currently."
+                        .to_string(),
+                    location: token.span.start,
+                }));
+            }
+        };
+        self.advance_token();
+        Ok(policy_type)
     }
 
     /// Parse an operator name, which can contain special characters like +, -, <, >, =
@@ -21049,17 +21109,11 @@ impl<'a> Parser<'a> {
                 self.parse_comma_separated(Parser::parse_cte)?
             };
 
-            // SQL:2016 T133: Parse optional SEARCH and CYCLE clauses for recursive CTEs
-            let search = self.parse_cte_search_clause()?;
-            let cycle = self.parse_cte_cycle_clause()?;
-
             Some(Box::new(With {
                 with_token: with_token.into(),
                 recursive,
                 oracle_declarations,
                 cte_tables,
-                search,
-                cycle,
             }))
         } else {
             None
@@ -21249,69 +21303,49 @@ impl<'a> Parser<'a> {
     /// Parse a CTE (`alias [( col1, col2, ... )] AS (subquery)`)
     pub fn parse_cte(&self) -> Result<Cte, ParserError> {
         let name = self.parse_identifier()?;
-
-        let mut cte = if self.parse_keyword(Keyword::AS) {
-            let mut is_materialized = None;
-            if dialect_of!(self is PostgreSqlDialect) {
-                if self.parse_keyword(Keyword::MATERIALIZED) {
-                    is_materialized = Some(CteAsMaterialized::Materialized);
-                } else if self.parse_keywords(&[Keyword::NOT, Keyword::MATERIALIZED]) {
-                    is_materialized = Some(CteAsMaterialized::NotMaterialized);
-                }
-            }
-            self.expect_token(&BorrowedToken::LParen)?;
-
-            let query = self.parse_query()?;
-            let closing_paren_token = self.expect_token(&BorrowedToken::RParen)?;
-
-            let alias = TableAlias {
-                name,
-                columns: vec![],
-                implicit: false,
-            };
-            Cte {
-                alias,
-                query,
-                from: None,
-                materialized: is_materialized,
-                closing_paren_token: closing_paren_token.into(),
-            }
+        let columns = if self.parse_keyword(Keyword::AS) {
+            vec![]
         } else {
             let columns = self.parse_table_alias_column_defs()?;
             self.expect_keyword_is(Keyword::AS)?;
-            let mut is_materialized = None;
-            if dialect_of!(self is PostgreSqlDialect) {
-                if self.parse_keyword(Keyword::MATERIALIZED) {
-                    is_materialized = Some(CteAsMaterialized::Materialized);
-                } else if self.parse_keywords(&[Keyword::NOT, Keyword::MATERIALIZED]) {
-                    is_materialized = Some(CteAsMaterialized::NotMaterialized);
-                }
+            columns
+        };
+        let mut materialized = None;
+        if dialect_of!(self is PostgreSqlDialect) {
+            if self.parse_keyword(Keyword::MATERIALIZED) {
+                materialized = Some(CteAsMaterialized::Materialized);
+            } else if self.parse_keywords(&[Keyword::NOT, Keyword::MATERIALIZED]) {
+                materialized = Some(CteAsMaterialized::NotMaterialized);
             }
-            self.expect_token(&BorrowedToken::LParen)?;
-
-            let query = self.parse_query()?;
-            let closing_paren_token = self.expect_token(&BorrowedToken::RParen)?;
-
-            let alias = TableAlias {
+        }
+        self.expect_token(&BorrowedToken::LParen)?;
+        let query = self.parse_query()?;
+        let closing_paren_token = self.expect_token(&BorrowedToken::RParen)?;
+        // SEARCH and CYCLE belong to the item they follow, as in PostgreSQL's
+        // `common_table_expr` and Oracle's subquery factoring clause.
+        let search = self.parse_cte_search_clause()?;
+        let cycle = self.parse_cte_cycle_clause()?;
+        let from = if self.parse_keyword(Keyword::FROM) {
+            Some(self.parse_identifier()?)
+        } else {
+            None
+        };
+        Ok(Cte {
+            alias: TableAlias {
                 name,
                 columns,
                 implicit: false,
-            };
-            Cte {
-                alias,
-                query,
-                from: None,
-                materialized: is_materialized,
-                closing_paren_token: closing_paren_token.into(),
-            }
-        };
-        if self.parse_keyword(Keyword::FROM) {
-            cte.from = Some(self.parse_identifier()?);
-        }
-        Ok(cte)
+            },
+            query,
+            from,
+            materialized,
+            closing_paren_token: closing_paren_token.into(),
+            search,
+            cycle,
+        })
     }
 
-    /// Parse optional SEARCH clause for recursive CTEs (SQL:2016 T133)
+    /// Parse the optional SEARCH clause of a WITH item (SQL:2016 T133)
     /// ```sql
     /// SEARCH DEPTH FIRST BY col1, col2 SET ordering_col
     /// SEARCH BREADTH FIRST BY col1, col2 SET ordering_col
@@ -21341,10 +21375,10 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    /// Parse an optional CYCLE clause for recursive CTEs.
+    /// Parse the optional CYCLE clause of a WITH item.
     /// ```sql
-    /// CYCLE col1, col2 SET is_cycle USING path
-    /// CYCLE col1, col2 SET is_cycle TO 'Y' DEFAULT 'N'
+    /// CYCLE col1, col2 SET is_cycle [TO 'Y' DEFAULT 'N'] USING path
+    /// CYCLE col1, col2 SET is_cycle TO 'Y' DEFAULT 'N' -- Oracle
     /// ```
     pub fn parse_cte_cycle_clause(&self) -> Result<Option<CycleClause>, ParserError> {
         if !self.parse_keyword(Keyword::CYCLE) {
@@ -21355,36 +21389,54 @@ impl<'a> Parser<'a> {
         self.expect_keyword(Keyword::SET)?;
         let set_column = self.parse_identifier()?;
 
-        let (cycle_value, non_cycle_value, using_column) = if self.dialect.is::<OracleDialect>() {
-            self.expect_keyword(Keyword::TO)?;
-            let cycle_value = self.parse_expr()?;
-            self.expect_keyword(Keyword::DEFAULT)?;
-            let non_cycle_value = self.parse_expr()?;
-            (Some(cycle_value), Some(non_cycle_value), None)
+        let (mark_values, using_column) = if self.dialect.is::<OracleDialect>() {
+            (Some(self.parse_cte_cycle_mark_values()?), None)
         } else {
-            // SQL:2023: TO <cycle_value> DEFAULT <non_cycle_value>
-            let cycle_value = if self.parse_keyword(Keyword::TO) {
-                Some(self.parse_expr()?)
-            } else {
-                None
-            };
-            let non_cycle_value = if self.parse_keyword(Keyword::DEFAULT) {
-                Some(self.parse_expr()?)
+            let mark_values = if self.peek_keyword(Keyword::TO) {
+                Some(self.parse_cte_cycle_mark_values()?)
             } else {
                 None
             };
             self.expect_keyword(Keyword::USING)?;
-            let using_column = self.parse_identifier()?;
-            (cycle_value, non_cycle_value, Some(using_column))
+            (mark_values, Some(self.parse_identifier()?))
         };
 
         Ok(Some(CycleClause {
             columns,
             set_column,
-            cycle_value,
-            non_cycle_value,
+            mark_values,
             using_column,
         }))
+    }
+
+    /// `TO <constant> DEFAULT <constant>` of a CYCLE clause.
+    fn parse_cte_cycle_mark_values(&self) -> Result<CycleMarkValues, ParserError> {
+        self.expect_keyword(Keyword::TO)?;
+        let cycle_value = self.parse_cte_cycle_mark_constant()?;
+        self.expect_keyword(Keyword::DEFAULT)?;
+        let non_cycle_value = self.parse_cte_cycle_mark_constant()?;
+        Ok(CycleMarkValues {
+            cycle_value,
+            non_cycle_value,
+        })
+    }
+
+    /// A cycle mark is a constant: a literal, or a string literal prefixed
+    /// by its type name (PostgreSQL's `AexprConst`). An expression such as
+    /// `1 + 1`, `-1` or `'x'::text` is a syntax error there.
+    fn parse_cte_cycle_mark_constant(&self) -> Result<Expr, ParserError> {
+        let typed = self.maybe_parse(|parser| {
+            let data_type = parser.parse_data_type()?;
+            Ok(Expr::TypedString(TypedString {
+                data_type,
+                value: parser.parse_value()?,
+                uses_odbc_syntax: false,
+            }))
+        })?;
+        match typed {
+            Some(typed) => Ok(typed),
+            None => Ok(Expr::Value(self.parse_value()?)),
+        }
     }
 
     /// Parse a "query body", which is an expression with roughly the

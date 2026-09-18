@@ -1894,8 +1894,11 @@ fn oracle_recursive_search_and_cycle_are_typed() {
         panic!("expected query");
     };
     let with = query.with.as_ref().expect("WITH clause");
+    let [cte] = with.cte_tables.as_slice() else {
+        panic!("expected one WITH item");
+    };
     assert!(matches!(
-        &with.search,
+        &cte.search,
         Some(sqlparser::ast::SearchClause {
             order: sqlparser::ast::SearchOrder::DepthFirst,
             by_columns,
@@ -1903,12 +1906,11 @@ fn oracle_recursive_search_and_cycle_are_typed() {
         }) if by_columns.len() == 1 && set_column.value == "ORDER_COL"
     ));
     assert!(matches!(
-        &with.cycle,
+        &cte.cycle,
         Some(sqlparser::ast::CycleClause {
             columns,
             set_column,
-            cycle_value: Some(_),
-            non_cycle_value: Some(_),
+            mark_values: Some(_),
             using_column: None,
         }) if columns.len() == 1 && set_column.value == "IS_CYCLE"
     ));

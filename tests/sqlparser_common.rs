@@ -35,7 +35,7 @@ use sqlparser::ast::TableFactor::{Pivot, Unpivot};
 use sqlparser::ast::*;
 use sqlparser::dialect::{Dialect, MsSqlDialect, MySqlDialect, PostgreSqlDialect};
 use sqlparser::keywords::{Keyword, ALL_KEYWORDS};
-use sqlparser::parser::{Parser, ParserError, ParserOptions};
+use sqlparser::parser::{GrammarRejection, Parser, ParserError, ParserOptions};
 use sqlparser::tokenizer::Tokenizer;
 use sqlparser::tokenizer::{BorrowedToken, Location, Span};
 use test_utils::{
@@ -7515,6 +7515,8 @@ fn parse_recursive_cte() {
         from: None,
         materialized: None,
         closing_paren_token: AttachedToken::empty(),
+        search: None,
+        cycle: None,
     };
     assert_eq!(with.cte_tables.first().unwrap(), &expected);
 }
@@ -13097,6 +13099,40 @@ fn test_create_policy() {
             .unwrap_err()
             .to_string(),
         "sql parser error: Expected: one of PERMISSIVE or RESTRICTIVE, found: EOF"
+    );
+    // The option is an identifier compared by its folded spelling, so a quoted
+    // lowercase name selects it and every other identifier is PostgreSQL's
+    // own refusal at the option token.
+    pg_and_generic().one_statement_parses_to(
+        "CREATE POLICY p ON t AS \"permissive\"",
+        "CREATE POLICY p ON t AS PERMISSIVE",
+    );
+    pg_and_generic().one_statement_parses_to(
+        "CREATE POLICY p ON t AS Restrictive",
+        "CREATE POLICY p ON t AS RESTRICTIVE",
+    );
+    for (sql, option) in [
+        ("CREATE POLICY p ON t AS UGLY", "ugly"),
+        ("CREATE POLICY p ON t AS \"Ugly\"", "Ugly"),
+        ("CREATE POLICY p ON t AS \"PERMISSIVE\"", "PERMISSIVE"),
+    ] {
+        assert_eq!(
+            pg_and_generic().parse_sql_statements(sql).unwrap_err(),
+            ParserError::GrammarRejection(GrammarRejection {
+                message: format!("unrecognized row security option \"{option}\""),
+                hint: "Only PERMISSIVE or RESTRICTIVE policies are supported currently."
+                    .to_string(),
+                location: Location::new(1, 25),
+            })
+        );
+    }
+    // a keyword is not an option name
+    assert_eq!(
+        pg_and_generic()
+            .parse_sql_statements("CREATE POLICY p ON t AS select")
+            .unwrap_err()
+            .to_string(),
+        "sql parser error: Expected: one of PERMISSIVE or RESTRICTIVE, found: select at Line: 1, Column: 25"
     );
     // missing FOR command
     assert_eq!(

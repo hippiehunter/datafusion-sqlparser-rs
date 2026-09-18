@@ -174,8 +174,6 @@ impl Spanned for With {
             recursive: _, // bool
             oracle_declarations: _,
             cte_tables,
-            search: _,
-            cycle: _,
         } = self;
 
         union_spans(core::iter::once(with_token.0).chain(cte_tables.iter().map(|item| item.span())))
@@ -190,13 +188,20 @@ impl Spanned for Cte {
             from,
             materialized: _, // enum
             closing_paren_token,
+            search,
+            cycle,
         } = self;
 
         union_spans(
             core::iter::once(alias.span())
                 .chain(core::iter::once(query.span()))
                 .chain(from.iter().map(|item| item.span))
-                .chain(core::iter::once(closing_paren_token.0)),
+                .chain(core::iter::once(closing_paren_token.0))
+                .chain(search.iter().map(|search| search.set_column.span))
+                .chain(cycle.iter().flat_map(|cycle| {
+                    core::iter::once(cycle.set_column.span)
+                        .chain(cycle.using_column.iter().map(|using| using.span))
+                })),
         )
     }
 }

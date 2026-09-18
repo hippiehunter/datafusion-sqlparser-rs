@@ -101,7 +101,8 @@ pub use self::pg_query::{
     XmlRootVersion,
 };
 pub use self::query::{
-    AfterMatchSkip, ConnectBy, Cte, CteAsMaterialized, CycleClause, Distinct, EdgeDirection,
+    AfterMatchSkip, ConnectBy, Cte, CteAsMaterialized, CycleClause, CycleMarkValues, Distinct,
+    EdgeDirection,
     EdgePattern, EmptyMatchesMode, ExceptSelectItem, ExprWithAlias, ExprWithAliasAndOrderBy, Fetch,
     ForClause, ForJson, ForXml, GraphColumn, GraphColumnsClause, GraphMatchClause, GraphPattern,
     GraphPatternElement, GraphPatternExpr, GraphSubquery, GroupByExpr, GroupByWithModifier,
@@ -836,7 +837,7 @@ impl fmt::Display for CaseWhen {
 ///
 /// # Equality and Hashing Does not Include Source Locations
 /// SQL:2016 T461: BETWEEN SYMMETRIC/ASYMMETRIC modifier
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub enum BetweenSymmetric {

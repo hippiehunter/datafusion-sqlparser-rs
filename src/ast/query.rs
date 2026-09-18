@@ -872,13 +872,9 @@ pub struct With {
     /// Oracle PL/SQL declarations preceding CTEs or the query body.
     pub oracle_declarations: Vec<OraclePlSqlRoutine>,
     pub cte_tables: Vec<Cte>,
-    /// SQL:2016 T133: SEARCH clause for recursive CTEs
-    pub search: Option<SearchClause>,
-    /// SQL:2016 T133: CYCLE clause for recursive CTEs
-    pub cycle: Option<CycleClause>,
 }
 
-/// SQL:2016 T133: SEARCH clause for recursive CTEs
+/// SQL:2016 T133: SEARCH clause of one recursive WITH item
 /// ```sql
 /// SEARCH DEPTH FIRST BY col1, col2 SET ordering_col
 /// SEARCH BREADTH FIRST BY col1, col2 SET ordering_col
@@ -921,10 +917,11 @@ impl fmt::Display for SearchOrder {
     }
 }
 
-/// Recursive CTE CYCLE clause.
+/// CYCLE clause of one recursive WITH item.
 /// ```sql
 /// CYCLE col1, col2 SET is_cycle USING path
-/// CYCLE col1, col2 SET is_cycle TO 'Y' DEFAULT 'N'
+/// CYCLE col1, col2 SET is_cycle TO 'Y' DEFAULT 'N' USING path
+/// CYCLE col1, col2 SET is_cycle TO 'Y' DEFAULT 'N' -- Oracle
 /// ```
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -934,12 +931,23 @@ pub struct CycleClause {
     pub columns: Vec<Ident>,
     /// Column name to mark cycles
     pub set_column: Ident,
-    /// SQL:2023: Value when cycle detected (TO value)
-    pub cycle_value: Option<Expr>,
-    /// SQL:2023: Value when no cycle (DEFAULT value)
-    pub non_cycle_value: Option<Expr>,
-    /// Column name for the path array in the SQL-standard form.
+    /// `TO <value> DEFAULT <default>`. The two are written together or not at
+    /// all; without them PostgreSQL marks with `TRUE` and `FALSE`.
+    pub mark_values: Option<CycleMarkValues>,
+    /// `USING <path column>`: required by PostgreSQL and SQL:2016, absent
+    /// from Oracle's form.
     pub using_column: Option<Ident>,
+}
+
+/// The constants a CYCLE clause stores in its mark column.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct CycleMarkValues {
+    /// `TO`: the mark of a row that closes a cycle
+    pub cycle_value: Expr,
+    /// `DEFAULT`: the mark of every other row
+    pub non_cycle_value: Expr,
 }
 
 impl fmt::Display for CycleClause {
@@ -947,11 +955,12 @@ impl fmt::Display for CycleClause {
         write!(f, "CYCLE ")?;
         display_comma_separated(&self.columns).fmt(f)?;
         write!(f, " SET {}", self.set_column)?;
-        if let Some(ref cycle_val) = self.cycle_value {
-            write!(f, " TO {}", cycle_val)?;
-        }
-        if let Some(ref non_cycle_val) = self.non_cycle_value {
-            write!(f, " DEFAULT {}", non_cycle_val)?;
+        if let Some(ref mark_values) = self.mark_values {
+            write!(
+                f,
+                " TO {} DEFAULT {}",
+                mark_values.cycle_value, mark_values.non_cycle_value
+            )?;
         }
         if let Some(ref using_column) = self.using_column {
             write!(f, " USING {using_column}")?;
@@ -971,12 +980,6 @@ impl fmt::Display for With {
         }
         if !self.cte_tables.is_empty() {
             display_comma_separated(&self.cte_tables).fmt(f)?;
-        }
-        if let Some(ref search) = self.search {
-            write!(f, " {}", search)?;
-        }
-        if let Some(ref cycle) = self.cycle {
-            write!(f, " {}", cycle)?;
         }
         Ok(())
     }
@@ -1020,6 +1023,10 @@ pub struct Cte {
     pub materialized: Option<CteAsMaterialized>,
     /// Token for the closing parenthesis
     pub closing_paren_token: AttachedToken,
+    /// `SEARCH` clause following the item's query
+    pub search: Option<SearchClause>,
+    /// `CYCLE` clause following the item's query and its `SEARCH` clause
+    pub cycle: Option<CycleClause>,
 }
 
 impl fmt::Display for Cte {
@@ -1044,6 +1051,12 @@ impl fmt::Display for Cte {
                 f.write_str(")")?;
             }
         };
+        if let Some(ref search) = self.search {
+            write!(f, " {search}")?;
+        }
+        if let Some(ref cycle) = self.cycle {
+            write!(f, " {cycle}")?;
+        }
         if let Some(ref fr) = self.from {
             write!(f, " FROM {fr}")?;
         }

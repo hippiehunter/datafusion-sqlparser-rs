@@ -4455,6 +4455,31 @@ fn parse_sql_value_functions_reject_parentheses() {
 }
 
 #[test]
+fn user_call_parentheses_are_opt_in_and_parse_as_the_value_function() {
+    let dialect = PostgreSqlDialect {};
+    let options = ParserOptions::new().with_user_call_parentheses(true);
+    let statements = Parser::new(&dialect)
+        .with_options(options.clone())
+        .try_with_sql("SELECT user(), user")
+        .unwrap()
+        .parse_statements()
+        .unwrap();
+    assert_eq!(statements[0].to_string(), "SELECT user, user");
+
+    for sql in ["SELECT current_user()", "SELECT session_user()"] {
+        assert!(
+            Parser::new(&dialect)
+                .with_options(options.clone())
+                .try_with_sql(sql)
+                .unwrap()
+                .parse_statements()
+                .is_err(),
+            "{sql} stays a syntax error"
+        );
+    }
+}
+
+#[test]
 fn parse_is_distinct_from_binds_above_not() {
     assert_eq!(
         Expr::UnaryOp {
@@ -8619,5 +8644,90 @@ fn parse_parenthesized_default_followed_by_operators() {
             assert_eq!(columns[1].options[1].option, ColumnOption::NotNull);
         }
         _ => unreachable!(),
+    }
+}
+
+#[test]
+fn parse_search_and_cycle_belong_to_their_with_item() {
+    let query = pg().verified_query(
+        "WITH RECURSIVE t(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM t) SEARCH BREADTH FIRST BY x SET seq, \
+         u(a, b) AS (SELECT 1, 2 UNION ALL SELECT a, b FROM u) SEARCH DEPTH FIRST BY b, a SET ord \
+         CYCLE a, b SET is_cycle TO 'Y' DEFAULT 'N' USING path, \
+         v AS (SELECT 1 AS y UNION ALL SELECT y FROM v) CYCLE y SET marked USING trail \
+         SELECT * FROM t, u, v",
+    );
+    let with = query.with.as_ref().expect("WITH clause");
+    let [t, u, v] = with.cte_tables.as_slice() else {
+        panic!("expected three WITH items");
+    };
+    assert_eq!(
+        t.search,
+        Some(SearchClause {
+            order: SearchOrder::BreadthFirst,
+            by_columns: vec![Ident::new("x")],
+            set_column: Ident::new("seq"),
+        })
+    );
+    assert_eq!(t.cycle, None);
+    assert_eq!(
+        u.search,
+        Some(SearchClause {
+            order: SearchOrder::DepthFirst,
+            by_columns: vec![Ident::new("b"), Ident::new("a")],
+            set_column: Ident::new("ord"),
+        })
+    );
+    assert_eq!(
+        u.cycle,
+        Some(CycleClause {
+            columns: vec![Ident::new("a"), Ident::new("b")],
+            set_column: Ident::new("is_cycle"),
+            mark_values: Some(CycleMarkValues {
+                cycle_value: Expr::Value(
+                    Value::SingleQuotedString("Y".to_string()).with_empty_span()
+                ),
+                non_cycle_value: Expr::Value(
+                    Value::SingleQuotedString("N".to_string()).with_empty_span()
+                ),
+            }),
+            using_column: Some(Ident::new("path")),
+        })
+    );
+    assert_eq!(v.search, None);
+    assert_eq!(
+        v.cycle,
+        Some(CycleClause {
+            columns: vec![Ident::new("y")],
+            set_column: Ident::new("marked"),
+            mark_values: None,
+            using_column: Some(Ident::new("trail")),
+        })
+    );
+}
+
+#[test]
+fn parse_cycle_marks_are_a_constant_pair() {
+    pg().verified_query(
+        "WITH RECURSIVE t(x) AS (SELECT 1 UNION ALL SELECT x FROM t) \
+         CYCLE x SET c TO DATE '2020-01-01' DEFAULT DATE '2020-01-02' USING p SELECT * FROM t",
+    );
+    pg().verified_query(
+        "WITH RECURSIVE t(x) AS (SELECT 1 UNION ALL SELECT x FROM t) \
+         CYCLE x SET c TO NULL DEFAULT 0 USING p SELECT * FROM t",
+    );
+    for clause in [
+        "CYCLE x SET c TO 1 USING p",
+        "CYCLE x SET c DEFAULT 0 USING p",
+        "CYCLE x SET c TO 1 + 1 DEFAULT 0 USING p",
+        "CYCLE x SET c TO -1 DEFAULT 0 USING p",
+        "CYCLE x SET c TO '{}'::JSON DEFAULT '[]'::JSON USING p",
+        "CYCLE x SET c TO 1 DEFAULT 0",
+    ] {
+        let sql =
+            format!("WITH RECURSIVE t(x) AS (SELECT 1 UNION ALL SELECT x FROM t) {clause} SELECT 1");
+        assert!(
+            pg().parse_sql_statements(&sql).is_err(),
+            "{clause} must be a syntax error"
+        );
     }
 }
