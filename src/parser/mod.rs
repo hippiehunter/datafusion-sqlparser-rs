@@ -11942,13 +11942,13 @@ impl<'a> Parser<'a> {
         Ok((name, args))
     }
 
-    /// The parameter name a word token at `index` spells, quoting kept: a
-    /// routine parameter list reads `name type` by parsing the name as a type
-    /// first.
+    /// The parameter name a word token at `index` spells, quoting kept and
+    /// folded by the dialect like every other identifier: a routine parameter
+    /// list reads `name type` by parsing the name as a type first.
     fn parameter_name_at(&self, index: usize, expected: &str) -> Result<Ident, ParserError> {
         let token = self.token_at(index).clone();
         match token.token {
-            BorrowedToken::Word(word) => Ok(word.into_ident(token.span)),
+            BorrowedToken::Word(word) => Ok(self.word_to_ident(word, token.span)),
             _ => self.expected(expected, token),
         }
     }
