@@ -2371,6 +2371,7 @@ fn tsql() -> TestedDialects {
         ParserOptions {
             trailing_commas: false,
             bracket_quoted_identifiers: false,
+            user_call_parentheses: false,
             unescape: true,
             require_semicolon_stmt_delimiter: false,
         },

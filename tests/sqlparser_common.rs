@@ -15013,6 +15013,7 @@ SELECT * FROM tbl2
     let dialects = all_dialects_with_options(ParserOptions {
         trailing_commas: false,
         bracket_quoted_identifiers: false,
+        user_call_parentheses: false,
         unescape: true,
         require_semicolon_stmt_delimiter: false,
     });
