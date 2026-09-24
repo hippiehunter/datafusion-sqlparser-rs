@@ -486,6 +486,9 @@ fn reserved_keywords_never_introduce_a_typed_string_literal() {
     assert!(matches!(only_projection(&stmt), Expr::UnaryOp { .. }));
 }
 
+// A BigDecimal number holds a value, not its spelling, so the radix and
+// underscore forms round-trip only as strings.
+#[cfg(not(feature = "bigdecimal"))]
 #[test]
 fn parse_non_decimal_integer_literals() {
     // https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-SYNTAX-CONSTANTS-NUMERIC

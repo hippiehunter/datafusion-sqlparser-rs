@@ -1382,7 +1382,7 @@ mod f131_grouped_operations {
                         // Verify all 5 aggregate functions in projection
                         assert_eq!(select.projection.len(), 5, "Expected 5 projection items");
 
-                        let expected_funcs = vec!["sum", "avg", "max", "min", "count"];
+                        let expected_funcs = ["sum", "avg", "max", "min", "count"];
                         for (i, expected_name) in expected_funcs.iter().enumerate() {
                             if let SelectItem::UnnamedExpr(Expr::Function(func)) =
                                 &select.projection[i]
@@ -2262,7 +2262,7 @@ mod f401_extended_joined_table {
                         // Verify three joins for four-way join
                         assert_eq!(select.from[0].joins.len(), 3);
                         // Verify each joined table
-                        let expected_tables = vec!["t2", "t3", "t4"];
+                        let expected_tables = ["t2", "t3", "t4"];
                         for (i, expected_name) in expected_tables.iter().enumerate() {
                             if let TableFactor::Table { name, .. } =
                                 &select.from[0].joins[i].relation
@@ -2823,10 +2823,10 @@ mod f850_f869_order_fetch_offset {
         // F861: OFFSET n ROWS
         verified_with_ast!("SELECT * FROM t OFFSET 10 ROWS", |stmt: Statement| {
             if let Statement::Query(q) = stmt {
-                if let Some(limit_clause) = q.limit_clause.as_deref() {
-                    if let sqlparser::ast::LimitClause::LimitOffset { offset, .. } = limit_clause {
-                        assert!(offset.is_some(), "Expected OFFSET clause");
-                    }
+                if let Some(sqlparser::ast::LimitClause::LimitOffset { offset, .. }) =
+                    q.limit_clause.as_deref()
+                {
+                    assert!(offset.is_some(), "Expected OFFSET clause");
                 }
             }
         });
@@ -2841,12 +2841,10 @@ mod f850_f869_order_fetch_offset {
             |stmt: Statement| {
                 if let Statement::Query(q) = stmt {
                     // Check OFFSET
-                    if let Some(limit_clause) = q.limit_clause.as_deref() {
-                        if let sqlparser::ast::LimitClause::LimitOffset { offset, .. } =
-                            limit_clause
-                        {
-                            assert!(offset.is_some());
-                        }
+                    if let Some(sqlparser::ast::LimitClause::LimitOffset { offset, .. }) =
+                        q.limit_clause.as_deref()
+                    {
+                        assert!(offset.is_some());
                     }
                     // Check FETCH
                     assert!(q.fetch.is_some(), "Expected FETCH clause");
@@ -2942,10 +2940,8 @@ mod f_series_integration_tests {
 
                         // Verify FETCH FIRST clause
                         assert!(q.fetch.is_some());
-                        if let Some(Fetch { quantity: Some(quantity), .. }) = q.fetch.as_deref() {
-                            if let Expr::Value(ValueWithSpan { value: Value::Number(n, _), .. }) = quantity {
-                                assert_eq!(n.to_string(), "10");
-                            }
+                        if let Some(Fetch { quantity: Some(Expr::Value(ValueWithSpan { value: Value::Number(n, _), .. })), .. }) = q.fetch.as_deref() {
+                            assert_eq!(n.to_string(), "10");
                         }
                     }
                 }
@@ -3012,12 +3008,20 @@ mod f_series_integration_tests {
                     assert!(q.order_by.is_some());
 
                     // Verify OFFSET in limit_clause
-                    if let Some(sqlparser::ast::LimitClause::LimitOffset { offset: Some(offset), .. }) =
-                        q.limit_clause.as_deref()
+                    if let Some(sqlparser::ast::LimitClause::LimitOffset {
+                        offset:
+                            Some(Offset {
+                                value:
+                                    Expr::Value(ValueWithSpan {
+                                        value: Value::Number(n, _),
+                                        ..
+                                    }),
+                                rows: OffsetRows::Rows,
+                            }),
+                        ..
+                    }) = q.limit_clause.as_deref()
                     {
-                        if let Offset { value: Expr::Value(ValueWithSpan { value: Value::Number(n, _), .. }), rows: OffsetRows::Rows } = offset {
-                            assert_eq!(n.to_string(), "10");
-                        }
+                        assert_eq!(n.to_string(), "10");
                     }
 
                     // Verify FETCH

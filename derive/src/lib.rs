@@ -41,6 +41,7 @@ pub fn derive_no_inline_clone(input: proc_macro::TokenStream) -> proc_macro::Tok
     let body = clone_body(&input.data);
 
     proc_macro::TokenStream::from(quote! {
+        #[automatically_derived]
         impl #impl_generics ::core::clone::Clone for #name #ty_generics #where_clause {
             #[inline(never)]
             fn clone(&self) -> Self {
@@ -127,6 +128,7 @@ pub fn derive_no_inline_debug(input: proc_macro::TokenStream) -> proc_macro::Tok
     let body = debug_body(name, &input.data);
 
     proc_macro::TokenStream::from(quote! {
+        #[automatically_derived]
         impl #impl_generics ::core::fmt::Debug for #name #ty_generics #where_clause {
             #[inline(never)]
             fn fmt(
@@ -230,6 +232,7 @@ pub fn derive_no_inline_partial_eq(input: proc_macro::TokenStream) -> proc_macro
     let body = partial_eq_body(&input.data);
 
     proc_macro::TokenStream::from(quote! {
+        #[automatically_derived]
         impl #impl_generics ::core::cmp::PartialEq for #name #ty_generics #where_clause {
             #[inline(never)]
             fn eq(&self, other: &Self) -> bool {

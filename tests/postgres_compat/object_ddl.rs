@@ -35,7 +35,7 @@ use crate::postgres_compat::common::*;
 use sqlparser::ast::{
     AggregateArgs, CollationDefinition, CommentObject, CommentObjectDetail,
     CreateAggregateOptionValue, CreateRoleKind, DataType, DropBehavior, GrantObjects, ObjectType,
-    RoleGrantOptionValue, SqlOption, Statement, TriggerExecBodyType, Value,
+    RoleGrantOptionValue, SqlOption, Statement, TriggerExecBodyType,
 };
 
 /// Parse `sql`, assert it renders back to exactly `sql`, and assert that the
@@ -382,7 +382,7 @@ fn comment_on_large_object_names_an_oid() {
     assert_eq!(name, "");
     match detail {
         Some(CommentObjectDetail::LargeObject(oid)) => {
-            assert_eq!(oid.value, Value::Number("47270".to_string(), false))
+            assert_eq!(oid.value, sqlparser::test_utils::number("47270"))
         }
         other => panic!("Expected a large object oid, got {other:?}"),
     }

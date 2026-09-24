@@ -1007,11 +1007,10 @@ impl<'a> Parser<'a> {
                 BorrowedToken::EOF => break,
 
                 // end of statement
-                BorrowedToken::Word(word) => {
-                    if expecting_statement_delimiter && word.keyword == Keyword::END {
+                BorrowedToken::Word(word)
+                    if expecting_statement_delimiter && word.keyword == Keyword::END => {
                         break;
                     }
-                }
                 _ => {}
             }
 
@@ -9248,7 +9247,7 @@ impl<'a> Parser<'a> {
             self.error_tracker
                 .record(self.index.get(), ExpectedItem::Keyword(expected));
             self.check_typo_hint(expected);
-            self.expected_ref(format!("{:?}", &expected).as_str(), self.peek_token_ref())
+            self.expected_ref(format!("{:?}", expected).as_str(), self.peek_token_ref())
         }
     }
 
@@ -9266,7 +9265,7 @@ impl<'a> Parser<'a> {
             self.error_tracker
                 .record(self.index.get(), ExpectedItem::Keyword(expected));
             self.check_typo_hint(expected);
-            self.expected_ref(format!("{:?}", &expected).as_str(), self.peek_token_ref())
+            self.expected_ref(format!("{:?}", expected).as_str(), self.peek_token_ref())
         }
     }
 
@@ -9545,11 +9544,10 @@ impl<'a> Parser<'a> {
         loop {
             match &self.peek_nth_token_ref(0).token {
                 BorrowedToken::EOF => break,
-                BorrowedToken::Word(w) => {
-                    if w.quote_style.is_none() && terminal_keywords.contains(&w.keyword) {
+                BorrowedToken::Word(w)
+                    if w.quote_style.is_none() && terminal_keywords.contains(&w.keyword) => {
                         break;
                     }
-                }
                 _ => {}
             }
 
@@ -11646,16 +11644,9 @@ impl<'a> Parser<'a> {
                 } else {
                     return self.expected("one of UNSAFE | RESTRICTED | SAFE", self.peek_token());
                 }
-            } else if self.parse_keywords(&[Keyword::EXTERNAL, Keyword::SECURITY]) {
-                ensure_not_set(&body.security, "SECURITY")?;
-                body.security = if self.parse_keyword(Keyword::INVOKER) {
-                    Some(ProcedureSecurity::Invoker)
-                } else if self.parse_keyword(Keyword::DEFINER) {
-                    Some(ProcedureSecurity::Definer)
-                } else {
-                    return self.expected("INVOKER or DEFINER after SECURITY", self.peek_token());
-                };
-            } else if self.parse_keyword(Keyword::SECURITY) {
+            } else if self.parse_keywords(&[Keyword::EXTERNAL, Keyword::SECURITY])
+                || self.parse_keyword(Keyword::SECURITY)
+            {
                 ensure_not_set(&body.security, "SECURITY")?;
                 body.security = if self.parse_keyword(Keyword::INVOKER) {
                     Some(ProcedureSecurity::Invoker)
@@ -20316,12 +20307,12 @@ impl<'a> Parser<'a> {
         match next_token.token {
             BorrowedToken::Word(w) => idents.push(self.word_to_ident(w, next_token.span)),
             BorrowedToken::EOF => {
-                return Err(ParserError::ParserError(
+                Err(ParserError::ParserError(
                     "Empty input when parsing identifier".to_string(),
                 ))?;
             }
             token => {
-                return Err(ParserError::ParserError(format!(
+                Err(ParserError::ParserError(format!(
                     "Unexpected token in identifier: {token}"
                 )))?;
             }
@@ -20338,12 +20329,12 @@ impl<'a> Parser<'a> {
                             idents.push(self.word_to_ident(w, next_token.span))
                         }
                         BorrowedToken::EOF => {
-                            return Err(ParserError::ParserError(
+                            Err(ParserError::ParserError(
                                 "Trailing period in identifier".to_string(),
                             ))?;
                         }
                         token => {
-                            return Err(ParserError::ParserError(format!(
+                            Err(ParserError::ParserError(format!(
                                 "Unexpected token following period in identifier: {token}"
                             )))?;
                         }
@@ -20351,7 +20342,7 @@ impl<'a> Parser<'a> {
                 }
                 BorrowedToken::EOF => break,
                 token => {
-                    return Err(ParserError::ParserError(format!(
+                    Err(ParserError::ParserError(format!(
                         "Unexpected token in identifier: {token}"
                     )))?;
                 }

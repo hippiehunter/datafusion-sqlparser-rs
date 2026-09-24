@@ -930,10 +930,7 @@ fn parse_create_user_mapping_current_user() {
     let sql = "CREATE USER MAPPING FOR CURRENT_USER SERVER myserver";
     let stmt = pg_and_generic().verified_stmt(sql);
     match stmt {
-        Statement::CreateUserMapping(CreateUserMappingStatement { user, .. }) => match user {
-            UserMappingUser::CurrentUser => {}
-            _ => unreachable!(),
-        },
+        Statement::CreateUserMapping(CreateUserMappingStatement { user: UserMappingUser::CurrentUser, .. }) => {},
         _ => unreachable!(),
     }
 }
@@ -943,10 +940,7 @@ fn parse_create_user_mapping_current_role() {
     let sql = "CREATE USER MAPPING FOR CURRENT_ROLE SERVER myserver";
     let stmt = pg_and_generic().verified_stmt(sql);
     match stmt {
-        Statement::CreateUserMapping(CreateUserMappingStatement { user, .. }) => match user {
-            UserMappingUser::CurrentRole => {}
-            _ => unreachable!(),
-        },
+        Statement::CreateUserMapping(CreateUserMappingStatement { user: UserMappingUser::CurrentRole, .. }) => {},
         _ => unreachable!(),
     }
 }
@@ -956,10 +950,7 @@ fn parse_create_user_mapping_user_keyword() {
     let sql = "CREATE USER MAPPING FOR USER SERVER myserver";
     let stmt = pg_and_generic().verified_stmt(sql);
     match stmt {
-        Statement::CreateUserMapping(CreateUserMappingStatement { user, .. }) => match user {
-            UserMappingUser::UserKeyword => {}
-            _ => unreachable!(),
-        },
+        Statement::CreateUserMapping(CreateUserMappingStatement { user: UserMappingUser::UserKeyword, .. }) => {},
         _ => unreachable!(),
     }
 }
@@ -969,10 +960,7 @@ fn parse_create_user_mapping_public() {
     let sql = "CREATE USER MAPPING FOR PUBLIC SERVER myserver";
     let stmt = pg_and_generic().verified_stmt(sql);
     match stmt {
-        Statement::CreateUserMapping(CreateUserMappingStatement { user, .. }) => match user {
-            UserMappingUser::Public => {}
-            _ => unreachable!(),
-        },
+        Statement::CreateUserMapping(CreateUserMappingStatement { user: UserMappingUser::Public, .. }) => {},
         _ => unreachable!(),
     }
 }
@@ -1042,10 +1030,7 @@ fn parse_alter_user_mapping_current_user() {
     let sql = "ALTER USER MAPPING FOR CURRENT_USER SERVER myserver OPTIONS (SET password 'new')";
     let stmt = pg_and_generic().verified_stmt(sql);
     match stmt {
-        Statement::AlterUserMapping(AlterUserMappingStatement { user, .. }) => match user {
-            UserMappingUser::CurrentUser => {}
-            _ => unreachable!(),
-        },
+        Statement::AlterUserMapping(AlterUserMappingStatement { user: UserMappingUser::CurrentUser, .. }) => {},
         _ => unreachable!(),
     }
 }
@@ -1089,10 +1074,7 @@ fn parse_drop_user_mapping_public() {
     let sql = "DROP USER MAPPING FOR PUBLIC SERVER myserver";
     let stmt = pg_and_generic().verified_stmt(sql);
     match stmt {
-        Statement::DropUserMapping(DropUserMappingStatement { user, .. }) => match user {
-            UserMappingUser::Public => {}
-            _ => unreachable!(),
-        },
+        Statement::DropUserMapping(DropUserMappingStatement { user: UserMappingUser::Public, .. }) => {},
         _ => unreachable!(),
     }
 }
@@ -1242,10 +1224,7 @@ fn parse_user_mapping_quoted_username() {
     let sql = r#"CREATE USER MAPPING FOR "special-user" SERVER myserver"#;
     let stmt = pg_and_generic().verified_stmt(sql);
     match stmt {
-        Statement::CreateUserMapping(CreateUserMappingStatement { user, .. }) => match user {
-            UserMappingUser::User(u) => assert_eq!(u.to_string(), "\"special-user\""),
-            _ => unreachable!(),
-        },
+        Statement::CreateUserMapping(CreateUserMappingStatement { user: UserMappingUser::User(u), .. }) => assert_eq!(u.to_string(), "\"special-user\""),
         _ => unreachable!(),
     }
 }

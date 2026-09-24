@@ -2724,7 +2724,7 @@ fn parse_pg_unary_ops() {
         ("@", UnaryOperator::PGAbs),
     ];
     for (str_op, op) in pg_unary_ops {
-        let select = pg().verified_only_select(&format!("SELECT {}a", &str_op));
+        let select = pg().verified_only_select(&format!("SELECT {}a", str_op));
         assert_eq!(
             SelectItem::UnnamedExpr(Expr::UnaryOp {
                 op: *op,
@@ -2740,7 +2740,7 @@ fn parse_pg_postfix_factorial() {
     let postfix_factorial = &[("!", UnaryOperator::PGPostfixFactorial)];
 
     for (str_op, op) in postfix_factorial {
-        let select = pg().verified_only_select(&format!("SELECT a{}", &str_op));
+        let select = pg().verified_only_select(&format!("SELECT a{}", str_op));
         assert_eq!(
             SelectItem::UnnamedExpr(Expr::UnaryOp {
                 op: *op,
@@ -4611,11 +4611,11 @@ fn parse_custom_operator() {
         expr_from_projection(&select.projection[0]),
         &Expr::BinaryOp {
             left: Box::new(Expr::Value(
-                Value::Number("2".into(), false).with_empty_span()
+                number("2").with_empty_span()
             )),
             op: BinaryOperator::Custom("===".into()),
             right: Box::new(Expr::Value(
-                Value::Number("2".into(), false).with_empty_span()
+                number("2").with_empty_span()
             )),
         }
     );
@@ -5848,7 +5848,6 @@ fn test_complex_postgres_insert_with_alias() {
     pg().one_statement_parses_to(sql1, canonical);
 }
 
-#[cfg(not(feature = "bigdecimal"))]
 #[test]
 fn test_simple_postgres_insert_with_alias() {
     let sql2 = "INSERT INTO test_tables AS test_table (id, a) VALUES (DEFAULT, 123)";
@@ -5894,78 +5893,7 @@ fn test_simple_postgres_insert_with_alias() {
                     explicit_row: false,
                     rows: vec![vec![
                         Expr::Identifier(Ident::new("default")),
-                        Expr::Value((Value::Number("123".to_string(), false)).with_empty_span())
-                    ]]
-                })),
-                order_by: None,
-                limit_clause: None,
-                fetch: None,
-                locks: vec![],
-                for_clause: None,
-            })),
-            assignments: vec![],
-            partitioned: None,
-            after_columns: vec![],
-            has_table_keyword: false,
-            on: None,
-            returning: None,
-            replace_into: false,
-            priority: None,
-            insert_alias: None,
-            error_logging: None,
-        })
-    )
-}
-
-#[cfg(feature = "bigdecimal")]
-#[test]
-fn test_simple_postgres_insert_with_alias() {
-    let sql2 = "INSERT INTO test_tables AS test_table (id, a) VALUES (DEFAULT, 123)";
-    let canonical = "INSERT INTO test_tables AS test_table (id, a) VALUES (default, 123)";
-
-    let statement = pg().one_statement_parses_to(sql2, canonical);
-
-    assert_eq!(
-        statement,
-        Statement::Insert(Insert {
-            insert_token: AttachedToken::empty(),
-            ignore: false,
-            into: true,
-            table: TableObject::TableName(ObjectName::from(vec![Ident {
-                value: "test_tables".to_string(),
-                quote_style: None,
-                span: Span::empty(),
-            }])),
-            table_alias: Some(Ident {
-                value: "test_table".to_string(),
-                quote_style: None,
-                span: Span::empty(),
-            }),
-            columns: vec![
-                Ident {
-                    value: "id".to_string(),
-                    quote_style: None,
-                    span: Span::empty(),
-                },
-                Ident {
-                    value: "a".to_string(),
-                    quote_style: None,
-                    span: Span::empty(),
-                }
-            ],
-            overriding: None,
-            overwrite: false,
-            source: Some(Box::new(Query {
-                with: None,
-                body: Box::new(SetExpr::Values(Values {
-                    value_keyword: false,
-                    explicit_row: false,
-                    rows: vec![vec![
-                        Expr::Identifier(Ident::new("default")),
-                        Expr::Value(
-                            (Value::Number(bigdecimal::BigDecimal::new(123.into(), 0), false))
-                                .with_empty_span()
-                        )
+                        Expr::Value(number("123").with_empty_span())
                     ]]
                 })),
                 order_by: None,
@@ -8592,7 +8520,7 @@ fn parse_named_arguments_with_assignment_operator() {
     let expected = |name: &str, value: &str| FunctionArg::ExprNamed {
         name: Expr::Identifier(Ident::new(name)),
         arg: FunctionArgExpr::Expr(Expr::Value(
-            Value::Number(value.to_string(), false).with_empty_span(),
+            number(value).with_empty_span(),
         )),
         operator: FunctionArgOperator::Assignment,
     };

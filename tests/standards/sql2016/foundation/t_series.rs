@@ -45,8 +45,9 @@
 //! - T661-T662: Non-decimal literals, underscores in numeric literals
 //! - T670: Schema and data statement mixing
 
-use crate::standards::common::verified_standard_stmt;
+use crate::standards::common::{standard_dialect, verified_standard_stmt};
 use sqlparser::ast::*;
+use sqlparser::test_utils::{expr_from_projection, number};
 
 // ==================== T031: BOOLEAN Data Type ====================
 
@@ -704,27 +705,26 @@ fn t661_02_binary_literals() {
     verified_standard_stmt("SELECT B'10101010'");
 }
 
+// A BigDecimal number holds a value, not its spelling, so an octal literal
+// is a number only when numbers are kept as written.
+#[cfg(not(feature = "bigdecimal"))]
 #[test]
 fn t661_03_octal_literals() {
-    // SQL:2016 T661: Octal literals - Parsing succeeds but parsed as 0 with alias o777
-    // True octal support not yet implemented
-    // This test documents current behavior - octal literals parse incorrectly
-    let result = crate::standards::common::try_parse("SELECT 0o777");
-    assert!(
-        result.is_ok(),
-        "Octal literal should parse (even if incorrectly)"
+    // SQL:2016 T661: an octal literal is one number
+    let select = standard_dialect().verified_only_select("SELECT 0o777");
+    assert_eq!(
+        expr_from_projection(&select.projection[0]),
+        &Expr::Value(number("0o777").with_empty_span())
     );
 }
 
 #[test]
 fn t662_01_underscores_in_numbers() {
-    // SQL:2016 T662: Underscores in numeric literals - Parsing succeeds but parsed incorrectly
-    // Underscores are treated as part of identifier, resulting in "1 AS _000_000"
-    // This test documents current behavior - underscore support not yet implemented correctly
-    let result = crate::standards::common::try_parse("SELECT 1_000_000");
-    assert!(
-        result.is_ok(),
-        "Underscored number should parse (even if incorrectly)"
+    // SQL:2016 T662: underscores separate the digits of one number
+    let select = standard_dialect().verified_only_select("SELECT 1_000_000");
+    assert_eq!(
+        expr_from_projection(&select.projection[0]),
+        &Expr::Value(number("1_000_000").with_empty_span())
     );
 }
 

@@ -215,7 +215,7 @@ fn t054_05_greatest_least_in_where() {
                     if let Some(Expr::BinaryOp { left, .. }) = sel.selection.as_deref() {
                         if let Expr::Function(func) = left.as_ref() {
                             assert_eq!(func.name.to_string(), "greatest");
-                            let args = get_function_args(&func);
+                            let args = get_function_args(func);
                             assert_eq!(args.len(), 3);
                         } else {
                             panic!("Expected GREATEST function in WHERE");
@@ -234,7 +234,7 @@ fn t054_05_greatest_least_in_where() {
                     if let Some(Expr::BinaryOp { left, .. }) = sel.selection.as_deref() {
                         if let Expr::Function(func) = left.as_ref() {
                             assert_eq!(func.name.to_string(), "least");
-                            let args = get_function_args(&func);
+                            let args = get_function_args(func);
                             assert_eq!(args.len(), 2);
                         }
                     }

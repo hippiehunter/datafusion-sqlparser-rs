@@ -1269,7 +1269,7 @@ fn parse_alter_materialized_view_column_actions() {
             actions,
             vec![AlterMaterializedViewAction::AlterColumnSetStatistics {
                 column_name: "a".into(),
-                statistics: Expr::Value(sqlparser::ast::Value::Number("100".into(), false).into())
+                statistics: Expr::Value(sqlparser::test_utils::number("100").into())
             }]
         ),
         other => panic!("Expected Actions, got {other:?}"),
@@ -1655,7 +1655,7 @@ fn parse_alter_database_options() {
                 options,
                 vec![AlterDatabaseOption::ConnectionLimit(
                     DatabaseOptionValue::Value(Expr::Value(
-                        sqlparser::ast::Value::Number("5".into(), false).into()
+                        sqlparser::test_utils::number("5").into()
                     ))
                 )]
             );

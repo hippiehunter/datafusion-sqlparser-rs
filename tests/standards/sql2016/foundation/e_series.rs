@@ -922,10 +922,11 @@ mod e051_basic_query_specification {
                 if let Statement::Query(query) = stmt {
                     if let SetExpr::Select(select) = query.body.as_ref() {
                         assert_eq!(select.from.len(), 1);
-                        if let TableFactor::Table { alias, .. } = &select.from[0].relation {
-                            if let Some(ref alias) = alias {
-                                assert_eq!(alias.name.value, "u");
-                            }
+                        if let TableFactor::Table {
+                            alias: Some(alias), ..
+                        } = &select.from[0].relation
+                        {
+                            assert_eq!(alias.name.value, "u");
                         }
                     }
                 }
@@ -938,15 +939,17 @@ mod e051_basic_query_specification {
                 if let Statement::Query(query) = stmt {
                     if let SetExpr::Select(select) = query.body.as_ref() {
                         assert_eq!(select.from.len(), 2);
-                        if let TableFactor::Table { alias, .. } = &select.from[0].relation {
-                            if let Some(ref alias) = alias {
-                                assert_eq!(alias.name.value, "a");
-                            }
+                        if let TableFactor::Table {
+                            alias: Some(alias), ..
+                        } = &select.from[0].relation
+                        {
+                            assert_eq!(alias.name.value, "a");
                         }
-                        if let TableFactor::Table { alias, .. } = &select.from[1].relation {
-                            if let Some(ref alias) = alias {
-                                assert_eq!(alias.name.value, "b");
-                            }
+                        if let TableFactor::Table {
+                            alias: Some(alias), ..
+                        } = &select.from[1].relation
+                        {
+                            assert_eq!(alias.name.value, "b");
                         }
                     }
                 }
@@ -957,10 +960,11 @@ mod e051_basic_query_specification {
         verified_with_ast!("SELECT e.name FROM employees AS e", |stmt: Statement| {
             if let Statement::Query(query) = stmt {
                 if let SetExpr::Select(select) = query.body.as_ref() {
-                    if let TableFactor::Table { alias, .. } = &select.from[0].relation {
-                        if let Some(ref alias) = alias {
-                            assert_eq!(alias.name.value, "e");
-                        }
+                    if let TableFactor::Table {
+                        alias: Some(alias), ..
+                    } = &select.from[0].relation
+                    {
+                        assert_eq!(alias.name.value, "e");
                     }
                 }
             }
@@ -972,10 +976,11 @@ mod e051_basic_query_specification {
                 if let Statement::Query(query) = stmt {
                     if let SetExpr::Select(select) = query.body.as_ref() {
                         // Verify both table aliases exist
-                        if let TableFactor::Table { alias, .. } = &select.from[0].relation {
-                            if let Some(ref alias) = alias {
-                                assert_eq!(alias.name.value, "t1");
-                            }
+                        if let TableFactor::Table {
+                            alias: Some(alias), ..
+                        } = &select.from[0].relation
+                        {
+                            assert_eq!(alias.name.value, "t1");
                         }
                         assert_eq!(select.from[0].joins.len(), 1);
                     }
@@ -1009,13 +1014,14 @@ mod e051_basic_query_specification {
             |stmt: Statement| {
                 if let Statement::Query(query) = stmt {
                     if let SetExpr::Select(select) = query.body.as_ref() {
-                        if let TableFactor::Derived { alias, .. } = &select.from[0].relation {
-                            if let Some(ref alias) = alias {
-                                assert_eq!(alias.name.value, "derived");
-                                assert_eq!(alias.columns.len(), 2);
-                                assert_eq!(alias.columns[0].name.value, "col1");
-                                assert_eq!(alias.columns[1].name.value, "col2");
-                            }
+                        if let TableFactor::Derived {
+                            alias: Some(alias), ..
+                        } = &select.from[0].relation
+                        {
+                            assert_eq!(alias.name.value, "derived");
+                            assert_eq!(alias.columns.len(), 2);
+                            assert_eq!(alias.columns[0].name.value, "col1");
+                            assert_eq!(alias.columns[1].name.value, "col2");
                         }
                     }
                 }
@@ -1027,13 +1033,14 @@ mod e051_basic_query_specification {
             |stmt: Statement| {
                 if let Statement::Query(query) = stmt {
                     if let SetExpr::Select(select) = query.body.as_ref() {
-                        if let TableFactor::Table { alias, .. } = &select.from[0].relation {
-                            if let Some(ref alias) = alias {
-                                assert_eq!(alias.name.value, "u");
-                                assert_eq!(alias.columns.len(), 2);
-                                assert_eq!(alias.columns[0].name.value, "first");
-                                assert_eq!(alias.columns[1].name.value, "last");
-                            }
+                        if let TableFactor::Table {
+                            alias: Some(alias), ..
+                        } = &select.from[0].relation
+                        {
+                            assert_eq!(alias.name.value, "u");
+                            assert_eq!(alias.columns.len(), 2);
+                            assert_eq!(alias.columns[0].name.value, "first");
+                            assert_eq!(alias.columns[1].name.value, "last");
                         }
                     }
                 }
@@ -1903,18 +1910,20 @@ mod e081_basic_privileges {
         verified_with_ast!(
             "GRANT UPDATE (status, updated_at) ON orders TO system_user",
             |stmt: Statement| {
-                if let Statement::Grant { privileges, .. } = stmt {
-                    if let Privileges::Actions(actions) = privileges {
-                        if let Action::Update {
-                            columns: Some(cols),
-                        } = &actions[0]
-                        {
-                            assert_eq!(cols.len(), 2);
-                            assert_eq!(cols[0].to_string(), "status");
-                            assert_eq!(cols[1].to_string(), "updated_at");
-                        } else {
-                            panic!("Expected Update action with columns");
-                        }
+                if let Statement::Grant {
+                    privileges: Privileges::Actions(actions),
+                    ..
+                } = stmt
+                {
+                    if let Action::Update {
+                        columns: Some(cols),
+                    } = &actions[0]
+                    {
+                        assert_eq!(cols.len(), 2);
+                        assert_eq!(cols[0].to_string(), "status");
+                        assert_eq!(cols[1].to_string(), "updated_at");
+                    } else {
+                        panic!("Expected Update action with columns");
                     }
                 }
             }
@@ -1970,18 +1979,20 @@ mod e081_basic_privileges {
         verified_with_ast!(
             "GRANT REFERENCES (dept_id, manager_id) ON departments TO user1",
             |stmt: Statement| {
-                if let Statement::Grant { privileges, .. } = stmt {
-                    if let Privileges::Actions(actions) = privileges {
-                        if let Action::References {
-                            columns: Some(cols),
-                        } = &actions[0]
-                        {
-                            assert_eq!(cols.len(), 2);
-                            assert_eq!(cols[0].to_string(), "dept_id");
-                            assert_eq!(cols[1].to_string(), "manager_id");
-                        } else {
-                            panic!("Expected References action with columns");
-                        }
+                if let Statement::Grant {
+                    privileges: Privileges::Actions(actions),
+                    ..
+                } = stmt
+                {
+                    if let Action::References {
+                        columns: Some(cols),
+                    } = &actions[0]
+                    {
+                        assert_eq!(cols.len(), 2);
+                        assert_eq!(cols[0].to_string(), "dept_id");
+                        assert_eq!(cols[1].to_string(), "manager_id");
+                    } else {
+                        panic!("Expected References action with columns");
                     }
                 }
             }
@@ -2114,7 +2125,7 @@ mod e081_basic_privileges {
                 {
                     if let Privileges::Actions(actions) = privileges {
                         assert_eq!(actions.len(), 1);
-                        assert!(matches!(actions[0], Action::Execute { .. }));
+                        assert!(matches!(actions[0], Action::Execute));
                     } else {
                         panic!("Expected Actions privileges");
                     }
@@ -2139,7 +2150,7 @@ mod e081_basic_privileges {
                 } = stmt
                 {
                     if let Privileges::Actions(actions) = privileges {
-                        assert!(matches!(actions[0], Action::Execute { .. }));
+                        assert!(matches!(actions[0], Action::Execute));
                     }
                     if let Some(GrantObjects::Procedure { name, .. }) = objects {
                         assert_eq!(name.to_string(), "process_order");
@@ -2190,12 +2201,14 @@ mod e081_basic_privileges {
         verified_with_ast!(
             "REVOKE INSERT, UPDATE ON customers FROM temp_user",
             |stmt: Statement| {
-                if let Statement::Revoke { privileges, .. } = stmt {
-                    if let Privileges::Actions(actions) = privileges {
-                        assert_eq!(actions.len(), 2);
-                        assert!(matches!(actions[0], Action::Insert { .. }));
-                        assert!(matches!(actions[1], Action::Update { .. }));
-                    }
+                if let Statement::Revoke {
+                    privileges: Privileges::Actions(actions),
+                    ..
+                } = stmt
+                {
+                    assert_eq!(actions.len(), 2);
+                    assert!(matches!(actions[0], Action::Insert { .. }));
+                    assert!(matches!(actions[1], Action::Update { .. }));
                 }
             }
         );

@@ -1441,26 +1441,27 @@ impl<'a> Tokenizer<'a> {
                     // PostgreSQL non-decimal integer literals: `0x`/`0o`/`0b`
                     // followed by digits of the matching radix, optionally
                     // separated by single underscores.
-                    if s == "0" && self.features.supports_radix_numeric_literals {
-                        if matches!(chars.peek(), Some('x' | 'X' | 'o' | 'O' | 'b' | 'B')) {
-                            let Some(literal) = tokenize_radix_integer(chars) else {
-                                return self.tokenizer_error(
-                                    chars.location(),
-                                    "Invalid radix numeric literal",
-                                );
-                            };
-                            s += literal.as_str();
-                            let invalid_suffix = chars.peek().copied().is_some_and(|next| {
-                                self.dialect.is_identifier_part(next) || next == '.'
-                            });
-                            if self.features.requires_numeric_literal_delimiter && invalid_suffix {
-                                return self.tokenizer_error(
-                                    chars.location(),
-                                    "Invalid character after radix numeric literal",
-                                );
-                            }
-                            return Ok(Some(Token::Number(s, false)));
+                    if s == "0"
+                        && self.features.supports_radix_numeric_literals
+                        && matches!(chars.peek(), Some('x' | 'X' | 'o' | 'O' | 'b' | 'B'))
+                    {
+                        let Some(literal) = tokenize_radix_integer(chars) else {
+                            return self.tokenizer_error(
+                                chars.location(),
+                                "Invalid radix numeric literal",
+                            );
+                        };
+                        s += literal.as_str();
+                        let invalid_suffix = chars.peek().copied().is_some_and(|next| {
+                            self.dialect.is_identifier_part(next) || next == '.'
+                        });
+                        if self.features.requires_numeric_literal_delimiter && invalid_suffix {
+                            return self.tokenizer_error(
+                                chars.location(),
+                                "Invalid character after radix numeric literal",
+                            );
                         }
+                        return Ok(Some(Token::Number(s, false)));
                     }
 
                     // match binary literal that starts with 0x

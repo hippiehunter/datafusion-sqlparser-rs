@@ -197,7 +197,6 @@ impl<T> Drop for AstBox<T> {
                 }
                 drop(restore);
             });
-            return;
         }
 
         #[cfg(not(feature = "std"))]

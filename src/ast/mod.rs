@@ -14747,7 +14747,7 @@ impl Function {
             (&remaining[..remaining.len() - 1], remaining.last().copied())
         };
         let pairs = pair_expressions
-            .chunks_exact(2)
+            .as_chunks::<2>().0.iter()
             .map(|pair| (pair[0], pair[1]))
             .collect();
         Ok(Some(OracleDecodeArguments {
@@ -17992,8 +17992,8 @@ impl fmt::Display for ShowCharset {
         } else {
             write!(f, " CHARACTER SET")?;
         }
-        if self.filter.is_some() {
-            write!(f, " {}", self.filter.as_ref().unwrap())?;
+        if let Some(filter) = &self.filter {
+            write!(f, " {filter}")?;
         }
         Ok(())
     }
@@ -18714,7 +18714,7 @@ impl fmt::Display for AlterUser {
         let has_props = !self.set_props.options.is_empty();
         if has_props {
             write!(f, " SET")?;
-            write!(f, " {}", &self.set_props)?;
+            write!(f, " {}", self.set_props)?;
         }
         if !self.unset_props.is_empty() {
             write!(f, " UNSET {}", display_comma_separated(&self.unset_props))?;

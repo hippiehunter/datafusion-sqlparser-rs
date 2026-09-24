@@ -473,7 +473,6 @@ fn parse_update_set_from() {
                         Ident::new("id")
                     ])),
                 }
-                .into()
             ),
             returning: None,
             limit: None,
@@ -1566,7 +1565,7 @@ fn parse_json_ops_without_colon() {
     ];
 
     for (str_op, op, dialects) in binary_ops {
-        let select = dialects.verified_only_select(&format!("SELECT a {} b", &str_op));
+        let select = dialects.verified_only_select(&format!("SELECT a {} b", str_op));
         assert_eq!(
             SelectItem::UnnamedExpr(Expr::BinaryOp {
                 left: Box::new(Expr::Identifier(Ident::new("a"))),
@@ -2395,7 +2394,7 @@ fn parse_bitwise_ops() {
     ];
 
     for (str_op, op, dialects) in bitwise_ops {
-        let select = dialects.verified_only_select(&format!("SELECT a {} b", &str_op));
+        let select = dialects.verified_only_select(&format!("SELECT a {} b", str_op));
         assert_eq!(
             SelectItem::UnnamedExpr(Expr::BinaryOp {
                 left: Box::new(Expr::Identifier(Ident::new("a"))),
@@ -8448,7 +8447,6 @@ fn parse_fetch() {
                 percent: false,
                 quantity: None,
             }
-            .into()
         )
     );
     let ast = verified_query("SELECT foo FROM bar WHERE foo = 4 FETCH FIRST 2 ROWS ONLY");
@@ -13117,7 +13115,7 @@ fn test_create_policy() {
         ("CREATE POLICY p ON t AS \"PERMISSIVE\"", "PERMISSIVE"),
     ] {
         assert_eq!(
-            pg_and_generic().parse_sql_statements(sql).unwrap_err(),
+            Parser::parse_sql(&PostgreSqlDialect {}, sql).unwrap_err(),
             ParserError::GrammarRejection(GrammarRejection {
                 message: format!("unrecognized row security option \"{option}\""),
                 hint: "Only PERMISSIVE or RESTRICTIVE policies are supported currently."
@@ -13128,8 +13126,7 @@ fn test_create_policy() {
     }
     // a keyword is not an option name
     assert_eq!(
-        pg_and_generic()
-            .parse_sql_statements("CREATE POLICY p ON t AS select")
+        Parser::parse_sql(&PostgreSqlDialect {}, "CREATE POLICY p ON t AS select")
             .unwrap_err()
             .to_string(),
         "sql parser error: Expected: one of PERMISSIVE or RESTRICTIVE, found: select at Line: 1, Column: 25"
@@ -15542,7 +15539,7 @@ fn parse_generic_unary_ops() {
         ("+", UnaryOperator::Plus),
     ];
     for (str_op, op) in unary_ops {
-        let select = verified_only_select(&format!("SELECT {}expr", &str_op));
+        let select = verified_only_select(&format!("SELECT {}expr", str_op));
         assert_eq!(
             UnnamedExpr(UnaryOp {
                 op: *op,

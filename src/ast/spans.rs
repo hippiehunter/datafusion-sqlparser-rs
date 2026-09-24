@@ -2811,9 +2811,7 @@ impl Spanned for SelectInto {
 
 impl Spanned for UpdateTableFromKind {
     fn span(&self) -> Span {
-        let from = match self {
-            UpdateTableFromKind::AfterSet(from) => from,
-        };
+        let UpdateTableFromKind::AfterSet(from) = self;
         union_spans(from.iter().map(|t| t.span()))
     }
 }

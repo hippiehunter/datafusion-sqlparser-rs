@@ -157,7 +157,7 @@ fn t861_01_json_array_subscript_basic() {
                     }
                     _ => panic!(
                         "Expected CompoundFieldAccess, got {:?}",
-                        &select.projection[0]
+                        select.projection[0]
                     ),
                 }
             }
