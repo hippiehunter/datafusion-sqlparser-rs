@@ -5807,8 +5807,6 @@ impl<'a> Parser<'a> {
                     }
                 }
             } // End of BorrowedToken::Word
-            // array `[1, 2, 3]`
-            BorrowedToken::LBracket => self.parse_array_expr(false),
             tok @ BorrowedToken::Minus | tok @ BorrowedToken::Plus => {
                 let op = if *tok == BorrowedToken::Plus {
                     UnaryOperator::Plus
@@ -7312,10 +7310,21 @@ impl<'a> Parser<'a> {
 
     /// Parses an array expression `[ex1, ex2, ..]`
     /// if `named` is `true`, came from an expression like  `ARRAY[ex1, ex2]`
+    /// Parse the bracketed body of an `ARRAY[...]` constructor, the opening
+    /// `[` already consumed. As in PostgreSQL's `array_expr`, the elements are
+    /// either expressions or nested bracket lists (`ARRAY[[1, 2], [3, 4]]`),
+    /// and a bracket list is a value only there.
     pub fn parse_array_expr(&self, named: bool) -> Result<Expr, ParserError> {
-        let exprs = self.parse_comma_separated0(Parser::parse_expr, BorrowedToken::RBracket)?;
+        let elem = if self.peek_token_ref().token == BorrowedToken::LBracket {
+            self.parse_comma_separated(|parser| {
+                parser.expect_token(&BorrowedToken::LBracket)?;
+                parser.parse_array_expr(false)
+            })?
+        } else {
+            self.parse_comma_separated0(Parser::parse_expr, BorrowedToken::RBracket)?
+        };
         self.expect_token(&BorrowedToken::RBracket)?;
-        Ok(Expr::Array(Array { elem: exprs, named }))
+        Ok(Expr::Array(Array { elem, named }))
     }
 
     /// Parses an SQL/MDA MDARRAY expression (ISO/IEC 9075-15)

@@ -6182,7 +6182,7 @@ fn test_table_function_with_ordinality() {
 #[test]
 fn test_table_unnest_with_ordinality() {
     let from = pg_and_generic()
-        .verified_only_select("SELECT * FROM UNNEST([10, 20, 30]) WITH ORDINALITY AS t")
+        .verified_only_select("SELECT * FROM UNNEST(ARRAY[10, 20, 30]) WITH ORDINALITY AS t")
         .from;
     assert_eq!(1, from.len());
     match from[0].relation {
@@ -8657,5 +8657,15 @@ fn parse_cycle_marks_are_a_constant_pair() {
             pg().parse_sql_statements(&sql).is_err(),
             "{clause} must be a syntax error"
         );
+    }
+}
+
+#[test]
+fn a_bracket_list_is_a_value_only_inside_array() {
+    pg().verified_expr("ARRAY[[1, 2], [3, 4]]");
+    pg().verified_expr("ARRAY[[[1]], [[2]]]");
+    pg().verified_expr("ARRAY[]");
+    for sql in ["SELECT [1, 2]", "SELECT [a] FROM t", "SELECT ARRAY[[1, 2], 3]"] {
+        assert!(pg().parse_sql_statements(sql).is_err(), "{sql} is not PostgreSQL");
     }
 }

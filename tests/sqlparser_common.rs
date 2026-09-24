@@ -8594,7 +8594,7 @@ fn lateral_derived() {
     chk(false);
     chk(true);
 
-    let sql = "SELECT * FROM LATERAL UNNEST ([10,20,30]) as numbers WITH OFFSET;";
+    let sql = "SELECT * FROM LATERAL UNNEST (ARRAY[10,20,30]) as numbers WITH OFFSET;";
     let res = parse_sql_statements(sql);
     assert_eq!(
         ParserError::ParserError("Expected: end of statement, found: WITH".to_string()),
