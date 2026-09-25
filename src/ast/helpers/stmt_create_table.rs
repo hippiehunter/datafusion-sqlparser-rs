@@ -89,6 +89,7 @@ pub struct CreateTableBuilder {
     pub table_options: CreateTableOptions,
     pub system_versioning: Option<CreateTableSystemVersioning>,
     pub partition_by: Option<PartitionByClause>,
+    pub access_method: Option<Ident>,
     pub partition_of: Option<ObjectName>,
     pub partition_bound: Option<PartitionBoundSpec>,
     pub clustering_by: Option<Vec<OrderByExpr>>,
@@ -126,6 +127,7 @@ impl CreateTableBuilder {
             table_options: CreateTableOptions::None,
             system_versioning: None,
             partition_by: None,
+            access_method: None,
             partition_of: None,
             partition_bound: None,
             clustering_by: None,
@@ -246,6 +248,11 @@ impl CreateTableBuilder {
         self
     }
 
+    pub fn access_method(mut self, access_method: Option<Ident>) -> Self {
+        self.access_method = access_method;
+        self
+    }
+
     pub fn partition_of(mut self, partition_of: Option<ObjectName>) -> Self {
         self.partition_of = partition_of;
         self
@@ -320,6 +327,7 @@ impl CreateTableBuilder {
             table_options: self.table_options,
             system_versioning: self.system_versioning,
             partition_by: self.partition_by,
+            access_method: self.access_method,
             partition_of: self.partition_of,
             partition_bound: self.partition_bound,
             clustering_by: self.clustering_by,
@@ -365,6 +373,7 @@ impl TryFrom<Statement> for CreateTableBuilder {
                 table_options,
                 system_versioning,
                 partition_by,
+                access_method,
                 partition_of,
                 partition_bound,
                 clustering_by,
@@ -398,6 +407,7 @@ impl TryFrom<Statement> for CreateTableBuilder {
                 table_options,
                 system_versioning,
                 partition_by,
+                access_method,
                 partition_of,
                 partition_bound,
                 clustering_by,

@@ -704,6 +704,7 @@ impl Spanned for CreateTable {
             version: _,
             system_versioning: _,
             partition_by: _,
+            access_method: _,
             partition_of: _,
             partition_bound: _,
             clustering_by,

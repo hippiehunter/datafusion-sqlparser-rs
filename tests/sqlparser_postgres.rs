@@ -113,6 +113,24 @@ fn bracket_identifiers_are_parser_owned_and_opt_in() {
 }
 
 #[test]
+fn parse_table_access_method() {
+    let Statement::CreateTable(create) =
+        pg().verified_stmt("CREATE TABLE events (id INT) PARTITION BY RANGE (id) USING heap2 WITH (fillfactor = 70)")
+    else {
+        panic!("expected CREATE TABLE");
+    };
+    assert_eq!(create.access_method, Some(Ident::new("heap2")));
+    pg().verified_stmt("CREATE TABLE events (id INT) USING heap");
+
+    let Statement::CreateView(create) =
+        pg().verified_stmt("CREATE MATERIALIZED VIEW summary USING heap2 AS SELECT 1")
+    else {
+        panic!("expected CREATE MATERIALIZED VIEW");
+    };
+    assert_eq!(create.access_method, Some(Ident::new("heap2")));
+}
+
+#[test]
 fn parse_cluster() {
     let Statement::Cluster(statement) = pg().verified_stmt("CLUSTER public.events USING events_by_time")
     else {

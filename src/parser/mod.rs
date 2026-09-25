@@ -12482,6 +12482,14 @@ impl<'a> Parser<'a> {
         // Many dialects support `OR ALTER` right after `CREATE`, but we don't (yet).
         // The SQL standard and Postgres support RECURSIVE here, but we don't support it either.
         let columns = self.parse_view_columns()?;
+        let access_method = if materialized
+            && dialect_of!(self is PostgreSqlDialect)
+            && self.parse_keyword(Keyword::USING)
+        {
+            Some(self.parse_identifier()?)
+        } else {
+            None
+        };
         let mut options = CreateTableOptions::None;
         let with_options = self.parse_options(Keyword::WITH)?;
         if !with_options.is_empty() {
@@ -12654,6 +12662,7 @@ impl<'a> Parser<'a> {
             name,
             columns,
             query,
+            access_method,
             materialized,
             or_replace,
             if_not_exists,
@@ -15511,6 +15520,15 @@ impl<'a> Parser<'a> {
             None
         };
 
+        // PostgreSQL `USING method`, the table access method.
+        let access_method = if dialect_of!(self is PostgreSqlDialect)
+            && self.parse_keyword(Keyword::USING)
+        {
+            Some(self.parse_identifier()?)
+        } else {
+            None
+        };
+
         let clustering_by = if self.parse_keywords(&[Keyword::CLUSTERING, Keyword::BY]) {
             self.expect_token(&BorrowedToken::LParen)?;
             let columns = self.parse_comma_separated(Parser::parse_order_by_expr)?;
@@ -15603,6 +15621,7 @@ impl<'a> Parser<'a> {
             .without_oids(create_table_config.without_oids)
             .system_versioning(system_versioning)
             .partition_by(partition_by)
+            .access_method(access_method)
             .partition_of(partition_of)
             .partition_bound(partition_bound)
             .clustering_by(clustering_by)

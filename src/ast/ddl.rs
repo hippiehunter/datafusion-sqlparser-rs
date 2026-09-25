@@ -2843,6 +2843,8 @@ pub struct CreateTable {
     pub system_versioning: Option<CreateTableSystemVersioning>,
     /// PostgreSQL `PARTITION BY { RANGE | LIST | HASH } ( ... )`
     pub partition_by: Option<PartitionByClause>,
+    /// PostgreSQL `USING method`: the table access method.
+    pub access_method: Option<Ident>,
     /// PostgreSQL `PARTITION OF parent_table`
     pub partition_of: Option<ObjectName>,
     /// PostgreSQL partition bound spec (`FOR VALUES ...` or `DEFAULT`)
@@ -3004,6 +3006,10 @@ impl fmt::Display for CreateTable {
         // PARTITION BY clause
         if let Some(partition_by) = &self.partition_by {
             write!(f, " {partition_by}")?;
+        }
+
+        if let Some(access_method) = &self.access_method {
+            write!(f, " USING {access_method}")?;
         }
 
         if let Some(columns) = &self.clustering_by {
@@ -3848,6 +3854,9 @@ pub struct CreateView {
     pub name: ObjectName,
     pub columns: Vec<ViewColumnDef>,
     pub query: Box<Query>,
+    /// PostgreSQL `USING method` of a materialized view: its table access
+    /// method.
+    pub access_method: Option<Ident>,
     pub options: CreateTableOptions,
     /// MySQL: Optional parameters for the view algorithm, definer, and security context
     pub params: Option<CreateViewParams>,
@@ -3997,6 +4006,9 @@ impl fmt::Display for CreateView {
         }
         if !self.columns.is_empty() {
             write!(f, " ({})", display_comma_separated(&self.columns))?;
+        }
+        if let Some(access_method) = &self.access_method {
+            write!(f, " USING {access_method}")?;
         }
         if matches!(self.options, CreateTableOptions::With(_)) {
             write!(f, " {}", self.options)?;
