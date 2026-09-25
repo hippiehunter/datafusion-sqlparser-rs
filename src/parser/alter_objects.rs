@@ -27,12 +27,12 @@ use crate::ast::{
     AlterDatabaseOption, AlterDomainAction, AlterEventTriggerAction, AlterGroupAction,
     AlterIndexOperation, AlterMaterializedViewAction, AlterMaterializedViewOperation, AlterObject,
     AlterObjectAction, AlterObjectTarget, AlterOperatorAction, AlterOperatorArgs,
-    AlterRoutineAction, AlterSequenceOperation, AlterStatisticsAction,
+    AlterOperatorFamilyAction, AlterRoutineAction, AlterSequenceOperation, AlterStatisticsAction,
     AlterTextSearchConfigurationAction, AlterTextSearchDictionaryAction, AlterTriggerAction,
     AlterTypeAction, AlterTypeOperation, AlterViewOperation, DataType, DatabaseOptionValue,
     DefinitionElement, DefinitionValue, EventTriggerEnableMode, Expr, FunctionBehavior,
-    FunctionCalledOnNull, FunctionParallel, Ident, ObjectName, ProcedureSecurity,
-    ProcedureSetConfig, ResetConfig, RoutineKind, RoutineOption, SetConfigValue,
+    FunctionCalledOnNull, FunctionParallel, Ident, ObjectName, OperatorFamilyDropItem,
+    ProcedureSecurity, ProcedureSetConfig, ResetConfig, RoutineKind, RoutineOption, SetConfigValue,
     SetStatisticsValue, SqlOption, Statement,
 };
 use crate::keywords::Keyword;
@@ -151,6 +151,42 @@ impl Parser<'_> {
     /// Parse `ALTER OPERATOR name ( left_type, right_type ) action`.
     pub(super) fn parse_alter_operator(&self) -> Result<Statement, ParserError> {
         let alter_token = self.get_alter_token();
+        if self.parse_keyword(Keyword::CLASS) {
+            let name = self.parse_object_name(false)?;
+            self.expect_keyword_is(Keyword::USING)?;
+            let using = self.parse_identifier()?;
+            let action = self.parse_alter_object_action(true, true)?;
+            return self.build_alter_object(
+                alter_token,
+                AlterObjectTarget::OperatorClass {
+                    name,
+                    using,
+                    action,
+                },
+            );
+        }
+        if self.parse_keyword(Keyword::FAMILY) {
+            let name = self.parse_object_name(false)?;
+            self.expect_keyword_is(Keyword::USING)?;
+            let using = self.parse_identifier()?;
+            let action = if self.parse_keyword(Keyword::ADD) {
+                AlterOperatorFamilyAction::Add(self.parse_operator_class_items()?)
+            } else if self.parse_keyword(Keyword::DROP) {
+                AlterOperatorFamilyAction::Drop(
+                    self.parse_comma_separated(Parser::parse_operator_family_drop_item)?,
+                )
+            } else {
+                AlterOperatorFamilyAction::Object(self.parse_alter_object_action(true, true)?)
+            };
+            return self.build_alter_object(
+                alter_token,
+                AlterObjectTarget::OperatorFamily {
+                    name,
+                    using,
+                    action,
+                },
+            );
+        }
         let name = self.parse_operator_name()?;
         let args = self.parse_alter_operator_args()?;
         let action = if self.parse_keywords(&[Keyword::SET, Keyword::SCHEMA]) {
@@ -172,6 +208,52 @@ impl Parser<'_> {
         self.build_alter_object(
             alter_token,
             AlterObjectTarget::Operator { name, args, action },
+        )
+    }
+
+    /// Parse one member of `ALTER OPERATOR FAMILY ... DROP`.
+    fn parse_operator_family_drop_item(&self) -> Result<OperatorFamilyDropItem, ParserError> {
+        let is_operator = if self.parse_keyword(Keyword::OPERATOR) {
+            true
+        } else {
+            self.expect_keyword_is(Keyword::FUNCTION)?;
+            false
+        };
+        let number = u32::try_from(self.parse_literal_uint()?).map_err(|_| {
+            ParserError::ParserError("operator family member number is out of range".into())
+        })?;
+        self.expect_token(&BorrowedToken::LParen)?;
+        let op_types = self.parse_comma_separated(Parser::parse_data_type)?;
+        self.expect_token(&BorrowedToken::RParen)?;
+        Ok(if is_operator {
+            OperatorFamilyDropItem::Operator {
+                strategy_number: number,
+                op_types,
+            }
+        } else {
+            OperatorFamilyDropItem::Function {
+                support_number: number,
+                op_types,
+            }
+        })
+    }
+
+    /// Parse `ALTER RULE name ON table_name RENAME TO new_name`, after
+    /// `ALTER RULE`.
+    pub(super) fn parse_alter_rule(&self) -> Result<Statement, ParserError> {
+        let alter_token = self.get_alter_token();
+        let name = self.parse_identifier()?;
+        self.expect_keyword_is(Keyword::ON)?;
+        let table_name = self.parse_object_name(false)?;
+        self.expect_keywords(&[Keyword::RENAME, Keyword::TO])?;
+        let new_name = self.parse_identifier()?;
+        self.build_alter_object(
+            alter_token,
+            AlterObjectTarget::Rule {
+                name,
+                table_name,
+                new_name,
+            },
         )
     }
 

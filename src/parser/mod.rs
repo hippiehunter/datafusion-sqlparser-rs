@@ -1404,6 +1404,12 @@ impl<'a> Parser<'a> {
                     Keyword::REINDEX if dialect_of!(self is PostgreSqlDialect) => {
                         self.parse_reindex()
                     }
+                    Keyword::CLUSTER if dialect_of!(self is PostgreSqlDialect) => {
+                        self.parse_cluster()
+                    }
+                    Keyword::SECURITY if dialect_of!(self is PostgreSqlDialect) => {
+                        self.parse_security_label()
+                    }
                     Keyword::RESET => self.parse_reset(),
                     // SQL/PSM NULL statement (no-op)
                     Keyword::NULL => Ok(Statement::Null),
@@ -9823,6 +9829,8 @@ impl<'a> Parser<'a> {
             } else {
                 self.parse_create_operator()
             }
+        } else if self.parse_keywords(&[Keyword::ACCESS, Keyword::METHOD]) {
+            self.parse_create_access_method()
         } else if self.parse_keyword(Keyword::CAST) {
             self.parse_create_cast()
         } else if self.parse_keyword(Keyword::STATISTICS) {
@@ -13639,7 +13647,21 @@ impl<'a> Parser<'a> {
         };
 
         self.expect_keyword(Keyword::AS)?;
+        let items = self.parse_operator_class_items()?;
 
+        Ok(Statement::CreateOperatorClass(CreateOperatorClass {
+            name,
+            default,
+            for_type,
+            using,
+            family,
+            items,
+        }))
+    }
+
+    /// Parse the comma-separated `OPERATOR`, `FUNCTION` and `STORAGE` items of
+    /// `CREATE OPERATOR CLASS` and `ALTER OPERATOR FAMILY ... ADD`.
+    fn parse_operator_class_items(&self) -> Result<Vec<OperatorClassItem>, ParserError> {
         let mut items = vec![];
         loop {
             if self.parse_keyword(Keyword::OPERATOR) {
@@ -13769,14 +13791,26 @@ impl<'a> Parser<'a> {
             }
             break;
         }
+        Ok(items)
+    }
 
-        Ok(Statement::CreateOperatorClass(CreateOperatorClass {
+    /// Parse a [Statement::CreateAccessMethod], after `CREATE ACCESS METHOD`.
+    ///
+    /// [PostgreSQL Documentation](https://www.postgresql.org/docs/current/sql-create-access-method.html)
+    pub fn parse_create_access_method(&self) -> Result<Statement, ParserError> {
+        let name = self.parse_identifier()?;
+        self.expect_keyword(Keyword::TYPE)?;
+        let method_type = match self.parse_one_of_keywords(&[Keyword::TABLE, Keyword::INDEX]) {
+            Some(Keyword::TABLE) => AccessMethodType::Table,
+            Some(Keyword::INDEX) => AccessMethodType::Index,
+            _ => return self.expected("TABLE or INDEX", self.peek_token()),
+        };
+        self.expect_keyword(Keyword::HANDLER)?;
+        let handler = self.parse_object_name(false)?;
+        Ok(Statement::CreateAccessMethod(CreateAccessMethod {
             name,
-            default,
-            for_type,
-            using,
-            family,
-            items,
+            method_type,
+            handler,
         }))
     }
 
@@ -17816,6 +17850,7 @@ impl<'a> Parser<'a> {
             Keyword::STATISTICS,
             Keyword::TEXT,
             Keyword::TRIGGER,
+            Keyword::RULE,
         ])?;
         match object_type {
             Keyword::SCHEMA => {
@@ -17845,6 +17880,7 @@ impl<'a> Parser<'a> {
             Keyword::STATISTICS => self.parse_alter_statistics(),
             Keyword::TEXT => self.parse_alter_text_search(),
             Keyword::TRIGGER => self.parse_alter_trigger(),
+            Keyword::RULE => self.parse_alter_rule(),
             Keyword::DATABASE => self.parse_alter_database(),
             Keyword::ROLE => self.parse_alter_role(),
             Keyword::POLICY => self.parse_alter_policy(),
@@ -30094,6 +30130,67 @@ impl<'a> Parser<'a> {
             target,
             concurrently,
             name,
+        }))
+    }
+
+    /// Parse a PostgreSQL `CLUSTER` statement, after `CLUSTER`.
+    fn parse_cluster(&self) -> Result<Statement, ParserError> {
+        let token = self.attached_token_from_current();
+        let options = if self.peek_token().token == BorrowedToken::LParen {
+            self.parse_utility_options()?
+        } else {
+            Vec::new()
+        };
+        let verbose = options.is_empty() && self.parse_keyword(Keyword::VERBOSE);
+        let table = match self.peek_token().token {
+            BorrowedToken::EOF | BorrowedToken::SemiColon => None,
+            _ => Some(self.parse_object_name(false)?),
+        };
+        let index = if table.is_some() && self.parse_keyword(Keyword::USING) {
+            Some(self.parse_identifier()?)
+        } else {
+            None
+        };
+        Ok(Statement::Cluster(ClusterStatement {
+            token,
+            options,
+            verbose,
+            table,
+            index,
+        }))
+    }
+
+    /// Parse a PostgreSQL `SECURITY LABEL` statement, after `SECURITY`.
+    fn parse_security_label(&self) -> Result<Statement, ParserError> {
+        let token = self.attached_token_from_current();
+        self.expect_keyword(Keyword::LABEL)?;
+        let provider = if self.parse_keyword(Keyword::FOR) {
+            let next = self.next_token();
+            Some(match &next.token {
+                BorrowedToken::SingleQuotedString(value) => Ident::new(value.as_ref()),
+                _ => {
+                    self.prev_token();
+                    self.parse_identifier()?
+                }
+            })
+        } else {
+            None
+        };
+        self.expect_keyword(Keyword::ON)?;
+        let (object_type, object_name, object_detail) = self.parse_comment_target()?;
+        self.expect_keyword(Keyword::IS)?;
+        let label = if self.parse_keyword(Keyword::NULL) {
+            None
+        } else {
+            Some(self.parse_literal_string()?)
+        };
+        Ok(Statement::SecurityLabel(SecurityLabelStatement {
+            token,
+            provider,
+            object_type,
+            object_name,
+            object_detail,
+            label,
         }))
     }
 

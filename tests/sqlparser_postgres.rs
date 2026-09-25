@@ -113,6 +113,141 @@ fn bracket_identifiers_are_parser_owned_and_opt_in() {
 }
 
 #[test]
+fn parse_cluster() {
+    let Statement::Cluster(statement) = pg().verified_stmt("CLUSTER public.events USING events_by_time")
+    else {
+        panic!("expected CLUSTER statement");
+    };
+    assert_eq!(statement.table.map(|table| table.to_string()), Some("public.events".to_string()));
+    assert_eq!(statement.index, Some(Ident::new("events_by_time")));
+    assert!(!statement.verbose);
+
+    let Statement::Cluster(statement) = pg().verified_stmt("CLUSTER (verbose) events") else {
+        panic!("expected CLUSTER statement");
+    };
+    assert_eq!(statement.options.len(), 1);
+    assert_eq!(statement.index, None);
+
+    let Statement::Cluster(statement) = pg().verified_stmt("CLUSTER VERBOSE") else {
+        panic!("expected CLUSTER statement");
+    };
+    assert!(statement.verbose);
+    assert!(statement.table.is_none());
+    pg().verified_stmt("CLUSTER");
+}
+
+#[test]
+fn parse_security_label() {
+    let Statement::SecurityLabel(statement) =
+        pg().verified_stmt("SECURITY LABEL FOR selinux ON TABLE public.secrets IS 'system_u:object_r:sepgsql_table_t:s0'")
+    else {
+        panic!("expected SECURITY LABEL statement");
+    };
+    assert_eq!(statement.provider, Some(Ident::new("selinux")));
+    assert_eq!(statement.object_type, CommentObject::Table);
+    assert_eq!(statement.object_name.to_string(), "public.secrets");
+    assert_eq!(
+        statement.label.as_deref(),
+        Some("system_u:object_r:sepgsql_table_t:s0")
+    );
+
+    let Statement::SecurityLabel(statement) =
+        pg().verified_stmt("SECURITY LABEL ON COLUMN public.secrets.value IS NULL")
+    else {
+        panic!("expected SECURITY LABEL statement");
+    };
+    assert_eq!(statement.provider, None);
+    assert_eq!(statement.object_type, CommentObject::Column);
+    assert_eq!(statement.label, None);
+}
+
+#[test]
+fn parse_create_access_method() {
+    let Statement::CreateAccessMethod(statement) =
+        pg().verified_stmt("CREATE ACCESS METHOD heap2 TYPE TABLE HANDLER heap_tableam_handler")
+    else {
+        panic!("expected CREATE ACCESS METHOD statement");
+    };
+    assert_eq!(statement.name, Ident::new("heap2"));
+    assert_eq!(statement.method_type, AccessMethodType::Table);
+    assert_eq!(statement.handler.to_string(), "heap_tableam_handler");
+    pg().verified_stmt("CREATE ACCESS METHOD bloom2 TYPE INDEX HANDLER public.blhandler");
+}
+
+#[test]
+fn parse_alter_rule_rename() {
+    let Statement::AlterObject(AlterObject {
+        target:
+            AlterObjectTarget::Rule {
+                name,
+                table_name,
+                new_name,
+            },
+        ..
+    }) = pg().verified_stmt("ALTER RULE notify_me ON public.emp RENAME TO notify_all")
+    else {
+        panic!("expected ALTER RULE statement");
+    };
+    assert_eq!(name, Ident::new("notify_me"));
+    assert_eq!(table_name.to_string(), "public.emp");
+    assert_eq!(new_name, Ident::new("notify_all"));
+}
+
+#[test]
+fn parse_alter_operator_class_and_family() {
+    for sql in [
+        "ALTER OPERATOR CLASS int4_abs_ops USING btree RENAME TO int4_abs_ordering",
+        "ALTER OPERATOR CLASS public.int4_abs_ops USING btree OWNER TO alice",
+        "ALTER OPERATOR CLASS int4_abs_ops USING btree SET SCHEMA archive",
+        "ALTER OPERATOR FAMILY integer_ops USING btree RENAME TO integer_ordering",
+        "ALTER OPERATOR FAMILY integer_ops USING btree OWNER TO alice",
+        "ALTER OPERATOR FAMILY integer_ops USING btree SET SCHEMA archive",
+    ] {
+        pg().verified_stmt(sql);
+    }
+
+    let Statement::AlterObject(AlterObject {
+        target: AlterObjectTarget::OperatorFamily { action, .. },
+        ..
+    }) = pg().verified_stmt(
+        "ALTER OPERATOR FAMILY integer_ops USING btree ADD OPERATOR 1 < (INT4, INT8), FUNCTION 1 btint48cmp(INT4, INT8)",
+    )
+    else {
+        panic!("expected ALTER OPERATOR FAMILY statement");
+    };
+    let AlterOperatorFamilyAction::Add(items) = action else {
+        panic!("expected ADD");
+    };
+    assert_eq!(items.len(), 2);
+
+    let Statement::AlterObject(AlterObject {
+        target: AlterObjectTarget::OperatorFamily { action, .. },
+        ..
+    }) = pg().verified_stmt(
+        "ALTER OPERATOR FAMILY integer_ops USING btree DROP OPERATOR 1 (INT4, INT8), FUNCTION 1 (INT4, INT8)",
+    )
+    else {
+        panic!("expected ALTER OPERATOR FAMILY statement");
+    };
+    let AlterOperatorFamilyAction::Drop(items) = action else {
+        panic!("expected DROP");
+    };
+    assert_eq!(
+        items,
+        vec![
+            OperatorFamilyDropItem::Operator {
+                strategy_number: 1,
+                op_types: vec![DataType::Int4(None), DataType::Int8(None)],
+            },
+            OperatorFamilyDropItem::Function {
+                support_number: 1,
+                op_types: vec![DataType::Int4(None), DataType::Int8(None)],
+            },
+        ]
+    );
+}
+
+#[test]
 fn parse_reindex() {
     let sql = "REINDEX (VERBOSE, TABLESPACE fast_space) INDEX CONCURRENTLY public.events_by_time";
     let Statement::Reindex(statement) = pg().verified_stmt(sql) else {

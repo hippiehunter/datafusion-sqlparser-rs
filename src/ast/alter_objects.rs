@@ -37,8 +37,8 @@ use sqlparser_derive::{Visit, VisitMut};
 use crate::ast::helpers::attached_token::AttachedToken;
 use crate::ast::{
     display_comma_separated, AggregateArgs, DataType, DropBehavior, Expr, FunctionBehavior,
-    FunctionCalledOnNull, FunctionDesc, FunctionParallel, Ident, ObjectName, Owner,
-    ProcedureSecurity, ProcedureSetConfig, ResetConfig, SetStatisticsValue, SqlOption,
+    FunctionCalledOnNull, FunctionDesc, FunctionParallel, Ident, ObjectName, OperatorClassItem,
+    Owner, ProcedureSecurity, ProcedureSetConfig, ResetConfig, SetStatisticsValue, SqlOption,
     TableConstraint,
 };
 
@@ -117,6 +117,24 @@ pub enum AlterObjectTarget {
         name: ObjectName,
         args: AlterOperatorArgs,
         action: AlterOperatorAction,
+    },
+    /// `ALTER OPERATOR CLASS name USING index_method ...`
+    OperatorClass {
+        name: ObjectName,
+        using: Ident,
+        action: AlterObjectAction,
+    },
+    /// `ALTER OPERATOR FAMILY name USING index_method ...`
+    OperatorFamily {
+        name: ObjectName,
+        using: Ident,
+        action: AlterOperatorFamilyAction,
+    },
+    /// `ALTER RULE name ON table_name RENAME TO new_name`
+    Rule {
+        name: Ident,
+        table_name: ObjectName,
+        new_name: Ident,
     },
     /// `ALTER { FUNCTION | PROCEDURE | ROUTINE } name [ ( args ) ] ...`
     Routine {
@@ -201,6 +219,21 @@ impl fmt::Display for AlterObjectTarget {
             Self::Operator { name, args, action } => {
                 write!(f, "OPERATOR {name} {args} {action}")
             }
+            Self::OperatorClass {
+                name,
+                using,
+                action,
+            } => write!(f, "OPERATOR CLASS {name} USING {using} {action}"),
+            Self::OperatorFamily {
+                name,
+                using,
+                action,
+            } => write!(f, "OPERATOR FAMILY {name} USING {using} {action}"),
+            Self::Rule {
+                name,
+                table_name,
+                new_name,
+            } => write!(f, "RULE {name} ON {table_name} RENAME TO {new_name}"),
             Self::Routine { kind, desc, action } => write!(f, "{kind} {desc} {action}"),
             Self::Statistics {
                 if_exists,
@@ -230,6 +263,70 @@ impl fmt::Display for AlterObjectTarget {
                 table_name,
                 action,
             } => write!(f, "TRIGGER {name} ON {table_name} {action}"),
+        }
+    }
+}
+
+/// What `ALTER OPERATOR FAMILY` does.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum AlterOperatorFamilyAction {
+    /// `ADD { OPERATOR ... | FUNCTION ... } [, ...]`
+    Add(Vec<OperatorClassItem>),
+    /// `DROP { OPERATOR ... | FUNCTION ... } [, ...]`
+    Drop(Vec<OperatorFamilyDropItem>),
+    /// `RENAME TO`, `OWNER TO` or `SET SCHEMA`.
+    Object(AlterObjectAction),
+}
+
+impl fmt::Display for AlterOperatorFamilyAction {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Add(items) => write!(f, "ADD {}", display_comma_separated(items)),
+            Self::Drop(items) => write!(f, "DROP {}", display_comma_separated(items)),
+            Self::Object(action) => write!(f, "{action}"),
+        }
+    }
+}
+
+/// A member `ALTER OPERATOR FAMILY ... DROP` removes, named by its strategy
+/// or support number and its operand types.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum OperatorFamilyDropItem {
+    /// `OPERATOR strategy_number ( op_type [ , op_type ] )`
+    Operator {
+        strategy_number: u32,
+        op_types: Vec<DataType>,
+    },
+    /// `FUNCTION support_number ( op_type [ , op_type ] )`
+    Function {
+        support_number: u32,
+        op_types: Vec<DataType>,
+    },
+}
+
+impl fmt::Display for OperatorFamilyDropItem {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Operator {
+                strategy_number,
+                op_types,
+            } => write!(
+                f,
+                "OPERATOR {strategy_number} ({})",
+                display_comma_separated(op_types)
+            ),
+            Self::Function {
+                support_number,
+                op_types,
+            } => write!(
+                f,
+                "FUNCTION {support_number} ({})",
+                display_comma_separated(op_types)
+            ),
         }
     }
 }

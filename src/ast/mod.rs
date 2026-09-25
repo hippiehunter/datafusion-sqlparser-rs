@@ -20,10 +20,10 @@ pub use self::alter_objects::{
     AllInTablespaceObjectType, AlterCollationAction, AlterDatabaseOption, AlterDomainAction,
     AlterEventTriggerAction, AlterGroupAction, AlterMaterializedViewAction, AlterObject,
     AlterObjectAction, AlterObjectTarget, AlterOperatorAction, AlterOperatorArgs,
-    AlterRoutineAction, AlterSequenceOperation, AlterStatisticsAction,
+    AlterOperatorFamilyAction, AlterRoutineAction, AlterSequenceOperation, AlterStatisticsAction,
     AlterTextSearchConfigurationAction, AlterTextSearchDictionaryAction, AlterTriggerAction,
     AlterTypeAction, DatabaseOptionValue, DefinitionElement, DefinitionValue,
-    EventTriggerEnableMode, RoutineKind, RoutineOption,
+    EventTriggerEnableMode, OperatorFamilyDropItem, RoutineKind, RoutineOption,
 };
 pub use crate::arena::AstBox;
 pub(crate) use crate::arena::AstBox as Box;
@@ -8863,6 +8863,25 @@ pub enum Statement {
     ///     [ CONCURRENTLY ] name
     /// ```
     Reindex(ReindexStatement),
+    /// PostgreSQL `CLUSTER`.
+    ///
+    /// ```sql
+    /// CLUSTER [ ( option [, ...] ) ] [ table_name [ USING index_name ] ]
+    /// CLUSTER [ VERBOSE ] [ table_name [ USING index_name ] ]
+    /// ```
+    Cluster(ClusterStatement),
+    /// PostgreSQL `SECURITY LABEL`.
+    ///
+    /// ```sql
+    /// SECURITY LABEL [ FOR provider ] ON object IS { 'label' | NULL }
+    /// ```
+    SecurityLabel(SecurityLabelStatement),
+    /// PostgreSQL `CREATE ACCESS METHOD`.
+    ///
+    /// ```sql
+    /// CREATE ACCESS METHOD name TYPE { TABLE | INDEX } HANDLER handler_function
+    /// ```
+    CreateAccessMethod(CreateAccessMethod),
     /// Restore the value of a run-time parameter to the default value.
     ///
     /// ```sql
@@ -13151,6 +13170,9 @@ impl fmt::Display for Statement {
             Statement::Vacuum(s) => write!(f, "{s}"),
             Statement::PreparedTransaction(s) => write!(f, "{s}"),
             Statement::Reindex(s) => write!(f, "{s}"),
+            Statement::Cluster(s) => write!(f, "{s}"),
+            Statement::SecurityLabel(s) => write!(f, "{s}"),
+            Statement::CreateAccessMethod(s) => write!(f, "{s}"),
             Statement::AlterUser(s) => write!(f, "{s}"),
             Statement::Reset(s) => write!(f, "{s}"),
         }
@@ -18872,6 +18894,119 @@ impl fmt::Display for ReindexTarget {
             Self::Database => "DATABASE",
             Self::System => "SYSTEM",
         })
+    }
+}
+
+/// A PostgreSQL `CLUSTER` statement.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct ClusterStatement {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
+    /// The parenthesized option list.
+    pub options: Vec<UtilityOption>,
+    /// `CLUSTER VERBOSE`, the older spelling of the `VERBOSE` option.
+    pub verbose: bool,
+    /// The table to cluster; `None` reclusters every previously clustered
+    /// table the user owns.
+    pub table: Option<ObjectName>,
+    /// `USING index_name`.
+    pub index: Option<Ident>,
+}
+
+impl fmt::Display for ClusterStatement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "CLUSTER")?;
+        if !self.options.is_empty() {
+            write!(f, " ({})", display_comma_separated(&self.options))?;
+        }
+        if self.verbose {
+            write!(f, " VERBOSE")?;
+        }
+        if let Some(table) = &self.table {
+            write!(f, " {table}")?;
+        }
+        if let Some(index) = &self.index {
+            write!(f, " USING {index}")?;
+        }
+        Ok(())
+    }
+}
+
+/// A PostgreSQL `SECURITY LABEL` statement.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct SecurityLabelStatement {
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
+    /// `FOR provider`.
+    pub provider: Option<Ident>,
+    pub object_type: CommentObject,
+    /// The labeled object's name; empty for the forms that name no object,
+    /// as in `COMMENT ON`.
+    pub object_name: ObjectName,
+    pub object_detail: Option<CommentObjectDetail>,
+    /// The label; `None` for `IS NULL`, which removes it.
+    pub label: Option<String>,
+}
+
+impl fmt::Display for SecurityLabelStatement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "SECURITY LABEL")?;
+        if let Some(provider) = &self.provider {
+            write!(f, " FOR {provider}")?;
+        }
+        write!(f, " ON {}", self.object_type)?;
+        if !self.object_name.0.is_empty() {
+            write!(f, " {}", self.object_name)?;
+        }
+        if let Some(detail) = &self.object_detail {
+            write!(f, "{detail}")?;
+        }
+        match &self.label {
+            Some(label) => write!(f, " IS '{}'", value::escape_single_quote_string(label)),
+            None => write!(f, " IS NULL"),
+        }
+    }
+}
+
+/// The kind of relation an access method serves.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum AccessMethodType {
+    Table,
+    Index,
+}
+
+impl fmt::Display for AccessMethodType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            Self::Table => "TABLE",
+            Self::Index => "INDEX",
+        })
+    }
+}
+
+/// A PostgreSQL `CREATE ACCESS METHOD` statement.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct CreateAccessMethod {
+    pub name: Ident,
+    pub method_type: AccessMethodType,
+    pub handler: ObjectName,
+}
+
+impl fmt::Display for CreateAccessMethod {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "CREATE ACCESS METHOD {} TYPE {} HANDLER {}",
+            self.name, self.method_type, self.handler
+        )
     }
 }
 
