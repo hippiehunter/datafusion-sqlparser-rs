@@ -26820,6 +26820,18 @@ impl<'a> Parser<'a> {
             .map(|keyword| Ident::new(format!("{keyword:?}")));
 
         match self.parse_wildcard_expr()? {
+            // An operator after `relation.*` continues an expression over the
+            // relation's whole-row value, as in `SELECT t.* IS NULL`; only a
+            // `relation.*` the item ends with is the select-list wildcard.
+            Expr::QualifiedWildcard(name, token)
+                if self.get_next_precedence()? > self.dialect.prec_unknown() =>
+            {
+                let expr = self.parse_subexpr_after_prefix(
+                    Expr::QualifiedWildcard(name, token),
+                    self.dialect.prec_unknown(),
+                )?;
+                self.select_item_with_optional_alias(expr, prefix)
+            }
             Expr::QualifiedWildcard(prefix, token) => Ok(SelectItem::QualifiedWildcard(
                 SelectItemQualifiedWildcardKind::ObjectName(prefix),
                 self.parse_wildcard_additional_options_attached(token)?,
@@ -26860,16 +26872,25 @@ impl<'a> Parser<'a> {
                     self.parse_wildcard_additional_options(wildcard_token)?,
                 ))
             }
-            expr => self
-                .maybe_parse_select_item_alias()
-                .map(|alias| match alias {
-                    Some(alias) => SelectItem::ExprWithAlias {
-                        expr: maybe_prefixed_expr(expr, prefix),
-                        alias,
-                    },
-                    None => SelectItem::UnnamedExpr(maybe_prefixed_expr(expr, prefix)),
-                }),
+            expr => self.select_item_with_optional_alias(expr, prefix),
         }
+    }
+
+    /// The select item `expr`, under the select-item operator `prefix` when
+    /// one was written, with the alias that follows it if any.
+    fn select_item_with_optional_alias(
+        &self,
+        expr: Expr,
+        prefix: Option<Ident>,
+    ) -> Result<SelectItem, ParserError> {
+        self.maybe_parse_select_item_alias()
+            .map(|alias| match alias {
+                Some(alias) => SelectItem::ExprWithAlias {
+                    expr: maybe_prefixed_expr(expr, prefix),
+                    alias,
+                },
+                None => SelectItem::UnnamedExpr(maybe_prefixed_expr(expr, prefix)),
+            })
     }
 
     /// Parse an [`WildcardAdditionalOptions`] information for wildcard select items.

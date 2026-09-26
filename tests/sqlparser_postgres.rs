@@ -7168,6 +7168,27 @@ fn parse_function_call_expr_star_projection() {
     // The identifier-chain forms must keep their existing parse shapes.
     pg().verified_stmt("SELECT array_agg(t.*) FROM t");
     pg().verified_stmt("SELECT t.* FROM t");
+
+    // An operator after `t.*` makes the item an expression over the whole
+    // row, which may take an alias like any other.
+    match pg().verified_stmt("SELECT t.* IS NULL FROM t") {
+        Statement::Query(query) => match query.body.as_ref() {
+            SetExpr::Select(select) => match select.projection.as_slice() {
+                [SelectItem::UnnamedExpr(Expr::IsNull { expr: operand, .. })] => assert!(
+                    matches!(
+                        operand.as_ref(),
+                        Expr::QualifiedWildcard(name, _) if name.to_string() == "t"
+                    ),
+                    "expected t.* under IS NULL, got {operand:?}"
+                ),
+                other => panic!("expected one IS NULL item, got {other:?}"),
+            },
+            other => panic!("expected SELECT, got {other:?}"),
+        },
+        other => panic!("expected query, got {other:?}"),
+    }
+    pg().verified_stmt("SELECT t.* IS DISTINCT FROM u.* AS changed FROM t, u");
+    pg().verified_stmt("SELECT t.*::TEXT FROM t");
 }
 
 #[test]
