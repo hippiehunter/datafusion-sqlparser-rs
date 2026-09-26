@@ -25432,6 +25432,18 @@ impl<'a> Parser<'a> {
                 Some(GrantObjects::ForeignServers(
                     self.parse_comma_separated(|p| p.parse_object_name(false))?,
                 ))
+            } else if self.parse_keyword(Keyword::LANGUAGE) {
+                Some(GrantObjects::Languages(
+                    self.parse_comma_separated(|p| p.parse_object_name(false))?,
+                ))
+            } else if self.parse_keyword(Keyword::TABLESPACE) {
+                Some(GrantObjects::Tablespaces(
+                    self.parse_comma_separated(|p| p.parse_object_name(false))?,
+                ))
+            } else if self.parse_keyword(Keyword::PARAMETER) {
+                Some(GrantObjects::Parameters(
+                    self.parse_comma_separated(|p| p.parse_object_name(false))?,
+                ))
             } else if self.parse_keywords(&[
                 Keyword::FUTURE,
                 Keyword::SEQUENCES,
@@ -25602,6 +25614,8 @@ impl<'a> Parser<'a> {
             Ok(Action::ResolveAll)
         } else if self.parse_keywords(&[Keyword::READ, Keyword::SESSION]) {
             Ok(Action::ReadSession)
+        } else if self.parse_keywords(&[Keyword::ALTER, Keyword::SYSTEM]) {
+            Ok(Action::AlterSystem)
 
         // Single-word privileges
         } else if self.parse_keyword(Keyword::ALTER) {
@@ -25651,6 +25665,8 @@ impl<'a> Parser<'a> {
             Ok(Action::Select {
                 columns: self.parse_privilege_columns()?,
             })
+        } else if self.parse_keyword(Keyword::SET) {
+            Ok(Action::Set)
         } else if self.parse_keyword(Keyword::TEMPORARY) {
             Ok(Action::Temporary)
         } else if self.parse_keyword(Keyword::TRIGGER) {

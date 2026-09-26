@@ -13644,6 +13644,8 @@ impl fmt::Display for FetchPosition {
 pub enum Action {
     AddSearchOptimization,
     Alter,
+    /// `ALTER SYSTEM`, a configuration parameter's privilege
+    AlterSystem,
     ApplyBudget,
     AttachListing,
     AttachPolicy,
@@ -13679,6 +13681,8 @@ pub enum Action {
     ResolveAll,
     Role { role: ObjectName },
     Select { columns: Option<Vec<Ident>> },
+    /// `SET`, a configuration parameter's privilege
+    Set,
     Temporary,
     Trigger,
     Truncate,
@@ -13692,6 +13696,7 @@ impl fmt::Display for Action {
         match self {
             Action::AddSearchOptimization => f.write_str("ADD SEARCH OPTIMIZATION")?,
             Action::Alter => f.write_str("ALTER")?,
+            Action::AlterSystem => f.write_str("ALTER SYSTEM")?,
             Action::ApplyBudget => f.write_str("APPLYBUDGET")?,
             Action::AttachListing => f.write_str("ATTACH LISTING")?,
             Action::AttachPolicy => f.write_str("ATTACH POLICY")?,
@@ -13727,6 +13732,7 @@ impl fmt::Display for Action {
             Action::ResolveAll => f.write_str("RESOLVE ALL")?,
             Action::Role { role } => write!(f, "ROLE {role}")?,
             Action::Select { .. } => f.write_str("SELECT")?,
+            Action::Set => f.write_str("SET")?,
             Action::Temporary => f.write_str("TEMPORARY")?,
             Action::Trigger => f.write_str("TRIGGER")?,
             Action::Truncate => f.write_str("TRUNCATE")?,
@@ -13939,6 +13945,13 @@ pub enum GrantObjects {
     Collations(Vec<ObjectName>),
     /// Grant privileges on `LARGE OBJECT <oid> [, ...]`
     LargeObjects(Vec<ValueWithSpan>),
+    /// Grant privileges on `LANGUAGE <name> [, ...]`
+    Languages(Vec<ObjectName>),
+    /// Grant privileges on `TABLESPACE <name> [, ...]`
+    Tablespaces(Vec<ObjectName>),
+    /// Grant privileges on `PARAMETER <name> [, ...]`, a configuration
+    /// parameter
+    Parameters(Vec<ObjectName>),
 }
 
 impl fmt::Display for GrantObjects {
@@ -14129,6 +14142,15 @@ impl fmt::Display for GrantObjects {
             }
             GrantObjects::LargeObjects(oids) => {
                 write!(f, "LARGE OBJECT {}", display_comma_separated(oids))
+            }
+            GrantObjects::Languages(languages) => {
+                write!(f, "LANGUAGE {}", display_comma_separated(languages))
+            }
+            GrantObjects::Tablespaces(tablespaces) => {
+                write!(f, "TABLESPACE {}", display_comma_separated(tablespaces))
+            }
+            GrantObjects::Parameters(parameters) => {
+                write!(f, "PARAMETER {}", display_comma_separated(parameters))
             }
         }
     }

@@ -52,6 +52,32 @@ fn postgres_large_object_owner_and_default_privileges_are_typed() {
 }
 
 #[test]
+fn postgres_grants_on_languages_tablespaces_and_parameters_are_typed() {
+    let dialect = PostgreSqlDialect {};
+    let statements = Parser::parse_sql(
+        &dialect,
+        "GRANT USAGE ON LANGUAGE plpgsql, sql TO alice; \
+         REVOKE USAGE ON LANGUAGE plpgsql FROM PUBLIC; \
+         GRANT CREATE ON TABLESPACE fast TO bob WITH GRANT OPTION; \
+         GRANT SET, ALTER SYSTEM ON PARAMETER work_mem, plpgsql.extra_warnings TO carol; \
+         REVOKE ALL ON PARAMETER log_min_messages FROM carol",
+    )
+    .unwrap();
+    assert!(matches!(&statements[0], Statement::Grant { objects: Some(GrantObjects::Languages(names)), .. }
+        if names.len() == 2));
+    assert!(matches!(&statements[2], Statement::Grant { objects: Some(GrantObjects::Tablespaces(_)), .. }));
+    assert!(matches!(&statements[3], Statement::Grant {
+        objects: Some(GrantObjects::Parameters(names)),
+        privileges: Privileges::Actions(actions),
+        ..
+    } if names[1].0.len() == 2 && actions == &[Action::Set, Action::AlterSystem]));
+    for statement in statements {
+        let printed = statement.to_string();
+        assert_eq!(Parser::parse_sql(&dialect, &printed).unwrap()[0].to_string(), printed);
+    }
+}
+
+#[test]
 fn postgres_header_match_and_maintain_survive_round_trip() {
     let dialect = PostgreSqlDialect {};
     let mut statements = Parser::parse_sql(&dialect,
