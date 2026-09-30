@@ -2131,6 +2131,12 @@ impl<'a> Tokenizer<'a> {
             }
             let parameter =
                 self.safe_slice(chars.source, parameter_start, chars.byte_pos, starting_loc)?;
+            // PostgreSQL numbers parameters with a 32-bit signed integer and
+            // rejects a larger number while scanning, before any consumer can
+            // size storage by it.
+            if parameter.parse::<i32>().is_err() {
+                return self.tokenizer_error(starting_loc, "parameter number too large");
+            }
             return Ok(Token::Placeholder(format!("${parameter}")));
         }
 
@@ -3785,6 +3791,32 @@ mod tests {
                 }
             })
         );
+    }
+
+    #[test]
+    fn tokenize_positional_parameter_number_is_bounded_by_i32() {
+        let dialect = PostgreSqlDialect {};
+        let tokens = Tokenizer::new(&dialect, "SELECT $2147483647")
+            .tokenize()
+            .unwrap();
+        assert_eq!(
+            tokens.last(),
+            Some(&Token::Placeholder("$2147483647".to_string()))
+        );
+        for sql in [
+            "SELECT $2147483648",
+            "SELECT $9223372036854775808",
+            "SELECT $99999999999999999999999",
+        ] {
+            assert_eq!(
+                Tokenizer::new(&dialect, sql).tokenize(),
+                Err(TokenizerError {
+                    message: "parameter number too large".into(),
+                    location: Location { line: 1, column: 8 }
+                }),
+                "{sql}"
+            );
+        }
     }
 
     #[test]
