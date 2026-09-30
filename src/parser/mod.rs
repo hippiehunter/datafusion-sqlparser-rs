@@ -14013,8 +14013,11 @@ impl<'a> Parser<'a> {
                 loc
             );
         }
+        // Bare CASCADE drops a table's dependent non-constraint objects, or a
+        // non-empty schema: the Oracle surface admits PostgreSQL-style schemas
+        // through CREATE SCHEMA and needs the one way to drop a populated one.
         if self.dialect.is::<OracleDialect>()
-            && ((cascade && object_type != ObjectType::Table)
+            && ((cascade && !matches!(object_type, ObjectType::Table | ObjectType::Schema))
                 || restrict
                 || (purge && object_type != ObjectType::Table))
         {

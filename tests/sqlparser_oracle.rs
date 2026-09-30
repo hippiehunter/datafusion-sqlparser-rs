@@ -1657,6 +1657,24 @@ fn oracle_drop_and_truncate_modifiers_are_typed() {
         "DROP TABLE GRAPH_A.VERTEX CASCADE"
     );
 
+    let drop_schema_cascade = parse_one("DROP SCHEMA pipeline_a CASCADE");
+    assert!(matches!(
+        &drop_schema_cascade,
+        Statement::Drop {
+            object_type: sqlparser::ast::ObjectType::Schema,
+            cascade: true,
+            ..
+        }
+    ));
+    assert_eq!(
+        drop_schema_cascade.to_string(),
+        "DROP SCHEMA PIPELINE_A CASCADE"
+    );
+    assert!(
+        Parser::parse_sql(&OracleDialect {}, "DROP VIEW active_employees CASCADE").is_err(),
+        "bare CASCADE stays limited to tables and schemas"
+    );
+
     let drop_view = parse_one("DROP VIEW active_employees CASCADE CONSTRAINTS");
     assert!(matches!(
         &drop_view,
