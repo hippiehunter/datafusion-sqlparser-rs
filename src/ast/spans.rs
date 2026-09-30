@@ -638,7 +638,10 @@ impl Spanned for Statement {
             Statement::AlterSchema(s) => s.span(),
             Statement::Vacuum(stmt) => stmt.token.0,
             Statement::PreparedTransaction(stmt) => stmt.token.0,
-            Statement::Reindex(stmt) => stmt.token.0.union(&stmt.name.span()),
+            Statement::Reindex(stmt) => stmt
+                .name
+                .as_ref()
+                .map_or(stmt.token.0, |name| stmt.token.0.union(&name.span())),
             Statement::Cluster(stmt) => stmt.token.0,
             Statement::SecurityLabel(stmt) => stmt.token.0.union(&stmt.object_name.span()),
             Statement::CreateAccessMethod(stmt) => stmt.name.span.union(&stmt.handler.span()),

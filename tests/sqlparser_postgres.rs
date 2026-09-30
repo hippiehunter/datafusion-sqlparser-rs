@@ -299,7 +299,10 @@ fn parse_reindex() {
     };
     assert_eq!(statement.target, ReindexTarget::Index);
     assert!(statement.concurrently);
-    assert_eq!(statement.name.to_string(), "public.events_by_time");
+    assert_eq!(
+        statement.name.as_ref().map(ToString::to_string),
+        Some("public.events_by_time".to_string())
+    );
     assert_eq!(statement.options.len(), 2);
     assert_eq!(statement.options[0].to_string(), "verbose");
     assert_eq!(statement.options[1].to_string(), "tablespace fast_space");
@@ -320,7 +323,24 @@ fn parse_reindex() {
         assert_eq!(statement.target, target);
         assert!(!statement.concurrently);
         assert!(statement.options.is_empty());
+        assert!(statement.name.is_some());
     }
+
+    // A database or the system catalogs may omit the name, the current
+    // database; every other target requires one.
+    for (sql, target) in [
+        ("REINDEX DATABASE", ReindexTarget::Database),
+        ("REINDEX SYSTEM", ReindexTarget::System),
+        ("REINDEX DATABASE CONCURRENTLY", ReindexTarget::Database),
+    ] {
+        let Statement::Reindex(statement) = pg().verified_stmt(sql) else {
+            panic!("expected REINDEX statement");
+        };
+        assert_eq!(statement.target, target);
+        assert_eq!(statement.name, None);
+    }
+    Parser::parse_sql(&PostgreSqlDialect {}, "REINDEX TABLE")
+        .expect_err("REINDEX TABLE requires a name");
 
     let error = Parser::parse_sql(&PostgreSqlDialect {}, "REINDEX events_by_time")
         .expect_err("REINDEX requires an object kind");

@@ -8859,8 +8859,10 @@ pub enum Statement {
     /// Rebuilds an index or the indexes owned by a PostgreSQL catalog object.
     ///
     /// ```sql
-    /// REINDEX [ ( option [, ...] ) ] { INDEX | TABLE | SCHEMA | DATABASE | SYSTEM }
+    /// REINDEX [ ( option [, ...] ) ] { INDEX | TABLE | SCHEMA }
     ///     [ CONCURRENTLY ] name
+    /// REINDEX [ ( option [, ...] ) ] { DATABASE | SYSTEM }
+    ///     [ CONCURRENTLY ] [ name ]
     /// ```
     Reindex(ReindexStatement),
     /// PostgreSQL `CLUSTER`.
@@ -19042,7 +19044,9 @@ pub struct ReindexStatement {
     pub options: Vec<UtilityOption>,
     pub target: ReindexTarget,
     pub concurrently: bool,
-    pub name: ObjectName,
+    /// The object to rebuild. `DATABASE` and `SYSTEM` may omit it to name the
+    /// current database; every other target requires it.
+    pub name: Option<ObjectName>,
 }
 
 impl fmt::Display for ReindexStatement {
@@ -19055,7 +19059,10 @@ impl fmt::Display for ReindexStatement {
         if self.concurrently {
             write!(f, " CONCURRENTLY")?;
         }
-        write!(f, " {}", self.name)
+        if let Some(name) = &self.name {
+            write!(f, " {name}")?;
+        }
+        Ok(())
     }
 }
 

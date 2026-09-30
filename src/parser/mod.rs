@@ -30179,7 +30179,13 @@ impl<'a> Parser<'a> {
             }
         };
         let concurrently = self.parse_keyword(Keyword::CONCURRENTLY);
-        let name = self.parse_object_name(false)?;
+        let name = match (&target, self.peek_token().token) {
+            (
+                ReindexTarget::Database | ReindexTarget::System,
+                BorrowedToken::EOF | BorrowedToken::SemiColon,
+            ) => None,
+            _ => Some(self.parse_object_name(false)?),
+        };
         Ok(Statement::Reindex(ReindexStatement {
             token,
             options,
