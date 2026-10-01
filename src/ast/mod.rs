@@ -102,34 +102,33 @@ pub use self::pg_query::{
 };
 pub use self::query::{
     AfterMatchSkip, ConnectBy, Cte, CteAsMaterialized, CycleClause, CycleMarkValues, Distinct,
-    EdgeDirection,
-    EdgePattern, EmptyMatchesMode, ExceptSelectItem, ExprWithAlias, ExprWithAliasAndOrderBy, Fetch,
-    ForClause, ForJson, ForXml, GraphColumn, GraphColumnsClause, GraphMatchClause, GraphPattern,
-    GraphPatternElement, GraphPatternExpr, GraphSubquery, GroupByExpr, GroupByWithModifier,
-    IdentWithAlias, IlikeSelectItem, Interpolate, InterpolateExpr, Join, JoinConstraint,
-    JoinOperator, JsonTableColumn, JsonTableColumnErrorHandling, JsonTableNamedColumn,
-    JsonTableNestedColumn, KeepClause, LabelExpression, LimitClause, LockClause, LockType,
-    MatchRecognizePattern, MatchRecognizeSymbol, Measure, NamedWindowDefinition, NamedWindowExpr,
-    NodePattern, NonBlock, Offset, OffsetRows, OpenJsonTableColumn, OracleFlashbackBoundary,
-    OracleFlashbackVersionKind, OracleModelCellReferenceOptions, OracleModelCellSelector,
-    OracleModelClause, OracleModelForLoopAssignment, OracleModelForLoopDirection,
-    OracleModelForLoopSelectors, OracleModelIterate, OracleModelMultiColumnForLoop,
-    OracleModelMultiColumnForLoopValues, OracleModelNav, OracleModelReturnRows, OracleModelRule,
-    OracleModelRuleMode, OracleModelRuleOrder, OracleModelRuleTarget,
-    OracleModelSingleColumnForLoop, OracleModelSingleColumnForLoopValues, OracleModelUnique,
-    OraclePartitionedJoinKind, OracleReferenceModel, OrderBy, OrderByExpr, OrderByKind,
-    OrderByOptions, PathFinding, PathMode, PathVariant, PivotValueSource, PropertyKeyValue, Query,
-    RenameSelectItem, RepetitionQuantifier, ReplaceSelectElement, ReplaceSelectItem, RowLimiting,
-    RowsPerMatch, SearchClause, SearchOrder, Select, SelectFlavor, SelectInto, SelectItem,
-    SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, SubsetDefinition,
-    SymbolDefinition, Table, TableAlias, TableAliasColumnDef, TableFactor, TableFunctionArgs,
-    TableIndexHintForClause, TableIndexHintType, TableIndexHints, TableIndexType, TableSample,
-    TableSampleBucket, TableSampleKind, TableSampleMethod, TableSampleModifier,
-    TableSampleQuantity, TableSampleSeed, TableSampleSeedModifier, TableSampleUnit, TableVersion,
-    TableWithJoins, Top, TopQuantity, UpdateTableFromKind, Values, WildcardAdditionalOptions, With,
-    WithFill, XmlAttribute, XmlDocumentOrContent, XmlForestElement, XmlNamespaceDefinition,
-    XmlPassingArgument, XmlPassingClause, XmlTableColumn, XmlTableColumnOption, XmlTableOnError,
-    XmlWhitespace,
+    EdgeDirection, EdgePattern, EmptyMatchesMode, ExceptSelectItem, ExprWithAlias,
+    ExprWithAliasAndOrderBy, Fetch, ForClause, ForJson, ForXml, GraphColumn, GraphColumnsClause,
+    GraphMatchClause, GraphPattern, GraphPatternElement, GraphPatternExpr, GraphSubquery,
+    GroupByExpr, GroupByWithModifier, IdentWithAlias, IlikeSelectItem, Interpolate,
+    InterpolateExpr, Join, JoinConstraint, JoinOperator, JsonTableColumn,
+    JsonTableColumnErrorHandling, JsonTableNamedColumn, JsonTableNestedColumn, KeepClause,
+    LabelExpression, LimitClause, LockClause, LockType, MatchRecognizePattern,
+    MatchRecognizeSymbol, Measure, NamedWindowDefinition, NamedWindowExpr, NodePattern, NonBlock,
+    Offset, OffsetRows, OpenJsonTableColumn, OracleFlashbackBoundary, OracleFlashbackVersionKind,
+    OracleModelCellReferenceOptions, OracleModelCellSelector, OracleModelClause,
+    OracleModelForLoopAssignment, OracleModelForLoopDirection, OracleModelForLoopSelectors,
+    OracleModelIterate, OracleModelMultiColumnForLoop, OracleModelMultiColumnForLoopValues,
+    OracleModelNav, OracleModelReturnRows, OracleModelRule, OracleModelRuleMode,
+    OracleModelRuleOrder, OracleModelRuleTarget, OracleModelSingleColumnForLoop,
+    OracleModelSingleColumnForLoopValues, OracleModelUnique, OraclePartitionedJoinKind,
+    OracleReferenceModel, OrderBy, OrderByExpr, OrderByKind, OrderByOptions, PathFinding, PathMode,
+    PathVariant, PivotValueSource, PropertyKeyValue, Query, RenameSelectItem, RepetitionQuantifier,
+    ReplaceSelectElement, ReplaceSelectItem, RowLimiting, RowsPerMatch, SearchClause, SearchOrder,
+    Select, SelectFlavor, SelectInto, SelectItem, SelectItemQualifiedWildcardKind, SetExpr,
+    SetOperator, SetQuantifier, SubsetDefinition, SymbolDefinition, Table, TableAlias,
+    TableAliasColumnDef, TableFactor, TableFunctionArgs, TableIndexHintForClause,
+    TableIndexHintType, TableIndexHints, TableIndexType, TableSample, TableSampleBucket,
+    TableSampleKind, TableSampleMethod, TableSampleModifier, TableSampleQuantity, TableSampleSeed,
+    TableSampleSeedModifier, TableSampleUnit, TableVersion, TableWithJoins, Top, TopQuantity,
+    UpdateTableFromKind, Values, WildcardAdditionalOptions, With, WithFill, XmlAttribute,
+    XmlDocumentOrContent, XmlForestElement, XmlNamespaceDefinition, XmlPassingArgument,
+    XmlPassingClause, XmlTableColumn, XmlTableColumnOption, XmlTableOnError, XmlWhitespace,
 };
 
 pub use self::object_ddl::{
@@ -3720,6 +3719,9 @@ impl fmt::Display for ForeachStatement {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct ExitStatement {
+    /// The `EXIT` keyword.
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
     /// Optional label of the loop/block to exit
     pub label: Option<Ident>,
     /// Optional condition (WHEN clause)
@@ -3751,6 +3753,9 @@ impl fmt::Display for ExitStatement {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct ContinueStatement {
+    /// The `CONTINUE` keyword.
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
     /// Optional label of the loop to continue
     pub label: Option<Ident>,
     /// Optional condition (WHEN clause)
@@ -5753,6 +5758,9 @@ impl fmt::Display for RaiseMessage {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct RaiseStatement {
+    /// The `RAISE` keyword.
+    #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+    pub token: AttachedToken,
     pub level: Option<RaiseLevel>,
     pub message: Option<RaiseMessage>,
     pub format_args: Vec<Expr>,
@@ -5762,6 +5770,7 @@ pub struct RaiseStatement {
 impl fmt::Display for RaiseStatement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let RaiseStatement {
+            token: _,
             level,
             message,
             format_args,
@@ -13655,7 +13664,9 @@ pub enum Action {
     BindServiceEndpoint,
     Connect,
     Create,
-    DatabaseRole { role: ObjectName },
+    DatabaseRole {
+        role: ObjectName,
+    },
     Delete,
     Drop,
     EvolveSchema,
@@ -13664,7 +13675,9 @@ pub enum Action {
     Failover,
     ImportedPrivileges,
     ImportShare,
-    Insert { columns: Option<Vec<Ident>> },
+    Insert {
+        columns: Option<Vec<Ident>>,
+    },
     Maintain,
     Manage,
     ManageReleases,
@@ -13678,17 +13691,25 @@ pub enum Action {
     Read,
     ReadSession,
     Refresh,
-    References { columns: Option<Vec<Ident>> },
+    References {
+        columns: Option<Vec<Ident>>,
+    },
     Replicate,
     ResolveAll,
-    Role { role: ObjectName },
-    Select { columns: Option<Vec<Ident>> },
+    Role {
+        role: ObjectName,
+    },
+    Select {
+        columns: Option<Vec<Ident>>,
+    },
     /// `SET`, a configuration parameter's privilege
     Set,
     Temporary,
     Trigger,
     Truncate,
-    Update { columns: Option<Vec<Ident>> },
+    Update {
+        columns: Option<Vec<Ident>>,
+    },
     UseForRewrite,
     Usage,
 }
@@ -14793,7 +14814,9 @@ impl Function {
             (&remaining[..remaining.len() - 1], remaining.last().copied())
         };
         let pairs = pair_expressions
-            .as_chunks::<2>().0.iter()
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|pair| (pair[0], pair[1]))
             .collect();
         Ok(Some(OracleDecodeArguments {

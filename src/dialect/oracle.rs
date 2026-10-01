@@ -101,6 +101,10 @@ impl Dialect for OracleDialect {
         true
     }
 
+    fn supports_quantified_comparison_list(&self) -> bool {
+        true
+    }
+
     fn get_next_precedence(&self, parser: &Parser) -> Option<Result<u8, ParserError>> {
         match (
             &parser.peek_token_ref().token,

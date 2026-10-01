@@ -77,6 +77,41 @@ fn postgres_decode_does_not_acquire_oracle_argument_semantics() {
 }
 
 #[test]
+fn oracle_quantified_comparison_accepts_a_value_list() {
+    for (sql, all) in [
+        ("SELECT 1 FROM t WHERE v = ANY (1, 0)", false),
+        ("SELECT 1 FROM t WHERE v <> ALL (2, 3, 4)", true),
+    ] {
+        let Statement::Query(query) = parse_one(sql) else {
+            panic!("expected query");
+        };
+        let SetExpr::Select(select) = query.body.as_ref() else {
+            panic!("expected SELECT");
+        };
+        let right = match select.selection.as_deref() {
+            Some(Expr::AnyOp { right, .. }) if !all => right,
+            Some(Expr::AllOp { right, .. }) if all => right,
+            other => panic!("expected a quantified comparison, found {other:?}"),
+        };
+        let Expr::Tuple(values) = right.as_ref() else {
+            panic!("expected the value list as a tuple, found {right:?}");
+        };
+        assert_eq!(values.len(), if all { 3 } else { 2 });
+        let rendered = query.to_string();
+        assert_eq!(parse_one(&rendered).to_string(), rendered);
+    }
+}
+
+#[test]
+fn postgres_quantified_comparison_takes_one_array_expression() {
+    assert!(Parser::parse_sql(
+        &PostgreSqlDialect {},
+        "SELECT 1 FROM t WHERE v = ANY (1, 0)"
+    )
+    .is_err());
+}
+
+#[test]
 fn oracle_unquoted_identifiers_fold_to_uppercase() {
     let statement = parse_one("SELECT employee_id, \"MixedCase\" FROM hr.employees");
     let Statement::Query(ref query) = statement else {

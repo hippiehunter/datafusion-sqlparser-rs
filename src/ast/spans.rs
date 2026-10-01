@@ -17,8 +17,9 @@
 
 use crate::ast::{
     ddl::AlterSchema, query::SelectItemQualifiedWildcardKind, AlterSchemaOperation, AlterTable,
-    ColumnOptions, CreateAggregate, CreateCast, CreateOperator, CreateOperatorClass,
-    CreateDatabaseOption, CreateOperatorFamily, CreateStatistics, CreateTypedTable, CreateView, Owner, TypedString,
+    ColumnOptions, CreateAggregate, CreateCast, CreateDatabaseOption, CreateOperator,
+    CreateOperatorClass, CreateOperatorFamily, CreateStatistics, CreateTypedTable, CreateView,
+    Owner, TypedString,
 };
 use core::iter;
 
@@ -652,8 +653,8 @@ impl Spanned for Statement {
             Statement::LabeledBlock(stmt) => stmt.token.0,
             Statement::For(stmt) => stmt.token.0,
             Statement::Foreach(stmt) => stmt.token.0,
-            Statement::Exit(_) => Span::empty(),
-            Statement::Continue(_) => Span::empty(),
+            Statement::Exit(stmt) => stmt.token.0,
+            Statement::Continue(stmt) => stmt.token.0,
             Statement::CreatePublication { .. } => Span::empty(),
             Statement::AlterPublication { .. } => Span::empty(),
             Statement::DropPublication { .. } => Span::empty(),
@@ -933,6 +934,7 @@ impl Spanned for ConditionalStatementBlock {
 impl Spanned for RaiseStatement {
     fn span(&self) -> Span {
         let RaiseStatement {
+            token,
             level: _,
             message,
             format_args,
@@ -940,9 +942,8 @@ impl Spanned for RaiseStatement {
         } = self;
 
         union_spans(
-            message
-                .iter()
-                .map(|m| m.span())
+            core::iter::once(token.0)
+                .chain(message.iter().map(|m| m.span()))
                 .chain(format_args.iter().map(|e| e.span()))
                 .chain(using.iter().map(|u| u.span())),
         )
@@ -3374,6 +3375,17 @@ ALTER TABLE users
 
         assert_eq!(stmt_span.start, (2, 13).into());
         assert_eq!(stmt_span.end, (4, 11).into());
+    }
+
+    #[test]
+    fn test_procedural_keyword_statement_spans() {
+        let sql = "RAISE NOTICE 'n';\n  EXIT WHEN done;\n    CONTINUE;";
+        let r = Parser::parse_sql(&crate::dialect::PostgreSqlDialect {}, sql).unwrap();
+        assert_eq!(3, r.len());
+
+        assert_eq!(r[0].span().start, (1, 1).into());
+        assert_eq!(r[1].span().start, (2, 3).into());
+        assert_eq!(r[2].span().start, (3, 5).into());
     }
 
     #[test]

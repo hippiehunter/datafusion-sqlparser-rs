@@ -1008,9 +1008,10 @@ impl<'a> Parser<'a> {
 
                 // end of statement
                 BorrowedToken::Word(word)
-                    if expecting_statement_delimiter && word.keyword == Keyword::END => {
-                        break;
-                    }
+                    if expecting_statement_delimiter && word.keyword == Keyword::END =>
+                {
+                    break;
+                }
                 _ => {}
             }
 
@@ -2429,8 +2430,8 @@ impl<'a> Parser<'a> {
                             && self.consume_oracle_words(&["PARAMETERS"])
                         {
                             self.expect_token(&BorrowedToken::LParen)?;
-                            options.vector_parameters = self
-                                .parse_comma_separated(Parser::parse_oracle_index_parameter)?;
+                            options.vector_parameters =
+                                self.parse_comma_separated(Parser::parse_oracle_index_parameter)?;
                             self.expect_token(&BorrowedToken::RParen)?;
                             continue;
                         }
@@ -4321,6 +4322,7 @@ impl<'a> Parser<'a> {
     /// See [Statement::Exit]
     fn parse_exit(&self) -> Result<Statement, ParserError> {
         self.expect_keyword_is(Keyword::EXIT)?;
+        let token = self.attached_token_from_current();
 
         // Parse optional label
         let label = if !self.peek_keyword(Keyword::WHEN)
@@ -4343,7 +4345,11 @@ impl<'a> Parser<'a> {
             None
         };
 
-        Ok(Statement::Exit(ExitStatement { label, condition }))
+        Ok(Statement::Exit(ExitStatement {
+            token,
+            label,
+            condition,
+        }))
     }
 
     /// Parse a `CONTINUE` statement.
@@ -4353,6 +4359,7 @@ impl<'a> Parser<'a> {
     /// See [Statement::Continue]
     fn parse_continue(&self) -> Result<Statement, ParserError> {
         self.expect_keyword_is(Keyword::CONTINUE)?;
+        let token = self.attached_token_from_current();
 
         // Parse optional label
         let label = if !self.peek_keyword(Keyword::WHEN)
@@ -4375,7 +4382,11 @@ impl<'a> Parser<'a> {
             None
         };
 
-        Ok(Statement::Continue(ContinueStatement { label, condition }))
+        Ok(Statement::Continue(ContinueStatement {
+            token,
+            label,
+            condition,
+        }))
     }
 
     fn parse_get_diagnostics(&self) -> Result<Statement, ParserError> {
@@ -4602,6 +4613,7 @@ impl<'a> Parser<'a> {
     /// See [Statement::Raise]
     pub fn parse_raise_stmt(&self) -> Result<Statement, ParserError> {
         self.expect_keyword_is(Keyword::RAISE)?;
+        let token = self.attached_token_from_current();
 
         // Parse optional level
         let level = if self.parse_keyword(Keyword::DEBUG) {
@@ -4685,6 +4697,7 @@ impl<'a> Parser<'a> {
         }
 
         Ok(Statement::Raise(RaiseStatement {
+            token,
             level,
             message,
             format_args,
@@ -8086,6 +8099,15 @@ impl<'a> Parser<'a> {
                 } else {
                     // Non-subquery expression
                     let right = self.parse_subexpr(precedence)?;
+                    let right = if self.dialect.supports_quantified_comparison_list()
+                        && self.consume_token(&BorrowedToken::Comma)
+                    {
+                        let mut values = vec![right];
+                        values.extend(self.parse_comma_separated(Parser::parse_expr)?);
+                        Expr::Tuple(values)
+                    } else {
+                        right
+                    };
                     self.expect_token(&BorrowedToken::RParen)?;
                     right
                 };
@@ -9560,9 +9582,10 @@ impl<'a> Parser<'a> {
             match &self.peek_nth_token_ref(0).token {
                 BorrowedToken::EOF => break,
                 BorrowedToken::Word(w)
-                    if w.quote_style.is_none() && terminal_keywords.contains(&w.keyword) => {
-                        break;
-                    }
+                    if w.quote_style.is_none() && terminal_keywords.contains(&w.keyword) =>
+                {
+                    break;
+                }
                 _ => {}
             }
 
@@ -10171,7 +10194,9 @@ impl<'a> Parser<'a> {
                     //   CREATE DATABASE db OWNER role
                     //   CREATE DATABASE db WITH OWNER = role
                     if owner.is_some() {
-                        return Err(ParserError::ParserError("OWNER specified more than once".into()));
+                        return Err(ParserError::ParserError(
+                            "OWNER specified more than once".into(),
+                        ));
                     }
                     let _ = self.consume_token(&BorrowedToken::Eq);
                     owner = Some(self.parse_object_name(false)?);
@@ -10249,7 +10274,9 @@ impl<'a> Parser<'a> {
             self.advance_token();
             self.expect_keyword(Keyword::LIMIT)?;
             let _ = self.consume_token(&BorrowedToken::Eq);
-            return Ok(Some(CreateDatabaseOption::ConnectionLimit(self.parse_number()?)));
+            return Ok(Some(CreateDatabaseOption::ConnectionLimit(
+                self.parse_number()?,
+            )));
         }
 
         if STRING_OPTIONS.contains(&option.as_str()) {
@@ -10264,14 +10291,18 @@ impl<'a> Parser<'a> {
             } else {
                 Expr::Identifier(self.parse_identifier()?)
             };
-            return Ok(Some(CreateDatabaseOption::Named { name: Ident::new(option), value }));
+            return Ok(Some(CreateDatabaseOption::Named {
+                name: Ident::new(option),
+                value,
+            }));
         }
 
         if INT_OPTIONS.contains(&option.as_str()) {
             self.advance_token();
             let _ = self.consume_token(&BorrowedToken::Eq);
             return Ok(Some(CreateDatabaseOption::Named {
-                name: Ident::new(option), value: self.parse_number()?,
+                name: Ident::new(option),
+                value: self.parse_number()?,
             }));
         }
 
@@ -10283,7 +10314,10 @@ impl<'a> Parser<'a> {
                 BorrowedToken::Number(_, _) => self.parse_number()?,
                 _ => Expr::Identifier(self.parse_identifier()?),
             };
-            return Ok(Some(CreateDatabaseOption::Named { name: Ident::new(option), value }));
+            return Ok(Some(CreateDatabaseOption::Named {
+                name: Ident::new(option),
+                value,
+            }));
         }
 
         Ok(None)
@@ -11475,7 +11509,10 @@ impl<'a> Parser<'a> {
         let _procedural = self.enter_procedural_body();
         let previous = self.plpgsql_block_depth.get();
         self.plpgsql_block_depth.set(previous.saturating_add(1));
-        let _plpgsql = ProceduralBodyGuard { depth: &self.plpgsql_block_depth, previous };
+        let _plpgsql = ProceduralBodyGuard {
+            depth: &self.plpgsql_block_depth,
+            previous,
+        };
         // Parse optional label
         let label = self.parse_sql_psm_label()?;
 
@@ -15524,13 +15561,12 @@ impl<'a> Parser<'a> {
         };
 
         // PostgreSQL `USING method`, the table access method.
-        let access_method = if dialect_of!(self is PostgreSqlDialect)
-            && self.parse_keyword(Keyword::USING)
-        {
-            Some(self.parse_identifier()?)
-        } else {
-            None
-        };
+        let access_method =
+            if dialect_of!(self is PostgreSqlDialect) && self.parse_keyword(Keyword::USING) {
+                Some(self.parse_identifier()?)
+            } else {
+                None
+            };
 
         let clustering_by = if self.parse_keywords(&[Keyword::CLUSTERING, Keyword::BY]) {
             self.expect_token(&BorrowedToken::LParen)?;
@@ -17791,7 +17827,8 @@ impl<'a> Parser<'a> {
         if self.parse_keywords(&[Keyword::LARGE, Keyword::OBJECT]) {
             let token = self.get_alter_token();
             let value = self.parse_literal_uint()?;
-            let oid = u32::try_from(value).map_err(|_| ParserError::ParserError("large object OID is out of range".into()))?;
+            let oid = u32::try_from(value)
+                .map_err(|_| ParserError::ParserError("large object OID is out of range".into()))?;
             self.expect_keywords(&[Keyword::OWNER, Keyword::TO])?;
             let owner = self.parse_identifier()?;
             return Ok(Statement::AlterLargeObject { token, oid, owner });
@@ -18242,22 +18279,24 @@ impl<'a> Parser<'a> {
         self.expect_keyword_is(Keyword::ON)?;
         let object = if self.parse_keywords(&[Keyword::LARGE, Keyword::OBJECTS]) {
             DefaultPrivilegeObject::LargeObjects
-        } else { match self.expect_one_of_keywords(&[
-            Keyword::TABLES,
-            Keyword::SEQUENCES,
-            Keyword::FUNCTIONS,
-            Keyword::PROCEDURES,
-            Keyword::TYPES,
-            Keyword::SCHEMAS,
-        ])? {
-            Keyword::TABLES => DefaultPrivilegeObject::Tables,
-            Keyword::SEQUENCES => DefaultPrivilegeObject::Sequences,
-            Keyword::FUNCTIONS => DefaultPrivilegeObject::Functions,
-            Keyword::PROCEDURES => DefaultPrivilegeObject::Procedures,
-            Keyword::TYPES => DefaultPrivilegeObject::Types,
-            Keyword::SCHEMAS => DefaultPrivilegeObject::Schemas,
-            _ => unreachable!(),
-        }};
+        } else {
+            match self.expect_one_of_keywords(&[
+                Keyword::TABLES,
+                Keyword::SEQUENCES,
+                Keyword::FUNCTIONS,
+                Keyword::PROCEDURES,
+                Keyword::TYPES,
+                Keyword::SCHEMAS,
+            ])? {
+                Keyword::TABLES => DefaultPrivilegeObject::Tables,
+                Keyword::SEQUENCES => DefaultPrivilegeObject::Sequences,
+                Keyword::FUNCTIONS => DefaultPrivilegeObject::Functions,
+                Keyword::PROCEDURES => DefaultPrivilegeObject::Procedures,
+                Keyword::TYPES => DefaultPrivilegeObject::Types,
+                Keyword::SCHEMAS => DefaultPrivilegeObject::Schemas,
+                _ => unreachable!(),
+            }
+        };
         if is_grant {
             self.expect_keyword_is(Keyword::TO)?;
             let grantees = self.parse_grantees()?;
@@ -18611,14 +18650,17 @@ impl<'a> Parser<'a> {
         }
         let selection = if self.parse_keyword(Keyword::WHERE) {
             if to {
-                return Err(ParserError::ParserError("COPY TO cannot have a WHERE clause".into()));
+                return Err(ParserError::ParserError(
+                    "COPY TO cannot have a WHERE clause".into(),
+                ));
             }
             Some(self.parse_expr()?)
         } else {
             None
         };
         let values = if let CopyTarget::Stdin = target {
-            if !self.in_procedural_body() && self.consume_token(&BorrowedToken::SemiColon)
+            if !self.in_procedural_body()
+                && self.consume_token(&BorrowedToken::SemiColon)
                 && self.peek_token_ref().token != BorrowedToken::EOF
             {
                 // A COPY statement embedded in a SQL script owns the inline
@@ -22179,7 +22221,10 @@ impl<'a> Parser<'a> {
         self.expect_keyword_is(Keyword::ROLE)?;
         let _ = self.parse_keyword(Keyword::TO);
 
-        let role_name = if self.parse_one_of_keywords(&[Keyword::NONE, Keyword::DEFAULT]).is_some() {
+        let role_name = if self
+            .parse_one_of_keywords(&[Keyword::NONE, Keyword::DEFAULT])
+            .is_some()
+        {
             None
         } else {
             Some(self.parse_identifier()?)
@@ -27205,7 +27250,10 @@ impl<'a> Parser<'a> {
     /// TOP's parenthesized quantity grammar cannot disambiguate those calls.
     fn parse_select_skip(&self) -> Result<Option<TopQuantity>, ParserError> {
         if self.peek_keyword(Keyword::SKIP)
-            && matches!(self.peek_nth_token_ref(1).token, BorrowedToken::Number(_, _))
+            && matches!(
+                self.peek_nth_token_ref(1).token,
+                BorrowedToken::Number(_, _)
+            )
         {
             self.advance_token();
             Ok(Some(self.parse_top_quantity()?))
@@ -30111,7 +30159,8 @@ impl<'a> Parser<'a> {
     /// Parse [Statement::Return]
     fn parse_return(&self) -> Result<Statement, ParserError> {
         let token = self.attached_token_from_current();
-        let plpgsql_expression = self.features.supports_plpgsql && self.plpgsql_block_depth.get() != 0;
+        let plpgsql_expression =
+            self.features.supports_plpgsql && self.plpgsql_block_depth.get() != 0;
 
         // Check for RETURN NEXT, RETURN QUERY, or RETURN QUERY EXECUTE
         let value = if self.parse_keyword(Keyword::NEXT) {
