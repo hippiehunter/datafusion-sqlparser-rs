@@ -1099,7 +1099,7 @@ pub enum AlterMaterializedViewAction {
     /// `ALTER [ COLUMN ] column_name RESET ( attribute_option [, ...] )`
     AlterColumnResetOptions {
         column_name: Ident,
-        options: Vec<Ident>,
+        options: Vec<SqlOption>,
     },
     /// `ALTER [ COLUMN ] column_name SET STORAGE { PLAIN | EXTERNAL | EXTENDED | MAIN | DEFAULT }`
     AlterColumnSetStorage { column_name: Ident, storage: Ident },
@@ -1118,8 +1118,9 @@ pub enum AlterMaterializedViewAction {
     SetTablespace { tablespace_name: Ident },
     /// `SET ( storage_parameter [= value] [, ...] )`
     SetOptions { options: Vec<SqlOption> },
-    /// `RESET ( storage_parameter [, ...] )`
-    ResetOptions { options: Vec<Ident> },
+    /// `RESET ( storage_parameter [, ...] )`; a value is parsed, for the
+    /// consumer to refuse as PostgreSQL does.
+    ResetOptions { options: Vec<SqlOption> },
     /// `OWNER TO new_owner`
     OwnerTo { new_owner: Owner },
 }

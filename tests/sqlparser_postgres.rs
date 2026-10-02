@@ -8889,3 +8889,42 @@ fn a_bracket_list_is_a_value_only_inside_array() {
         assert!(pg().parse_sql_statements(sql).is_err(), "{sql} is not PostgreSQL");
     }
 }
+
+/// A quoted frame offset is an untyped string literal, which the planner
+/// reads as the frame key's offset type; only a literal written `INTERVAL`
+/// is an interval, so `RANGE '5' PRECEDING` and `RANGE INTERVAL '5'
+/// PRECEDING` stay distinct and each prints as written.
+#[test]
+fn parse_quoted_window_frame_offsets_as_string_literals() {
+    let offset = |sql: &str| -> Expr {
+        let select = pg().verified_only_select(sql);
+        let Expr::Function(Function {
+            over: Some(WindowType::WindowSpec(spec)),
+            ..
+        }) = expr_from_projection(only(&select.projection))
+        else {
+            panic!("{sql} has no window");
+        };
+        let frame = spec.window_frame.as_ref().expect("a frame");
+        match &frame.start_bound {
+            WindowFrameBound::Preceding(Some(offset)) => offset.as_ref().clone(),
+            other => panic!("{sql} starts at {other}"),
+        }
+    };
+    assert_eq!(
+        offset("SELECT sum(x) OVER (ORDER BY n RANGE '5' PRECEDING) FROM t"),
+        Expr::value(Value::SingleQuotedString("5".to_string()))
+    );
+    assert_eq!(
+        offset("SELECT sum(x) OVER (ORDER BY ts ROWS '-1 30:00:00' PRECEDING) FROM t"),
+        Expr::value(Value::SingleQuotedString("-1 30:00:00".to_string()))
+    );
+    assert!(matches!(
+        offset("SELECT sum(x) OVER (ORDER BY ts RANGE INTERVAL '1 day' PRECEDING) FROM t"),
+        Expr::Interval(_)
+    ));
+    assert!(matches!(
+        offset("SELECT sum(x) OVER (ORDER BY ts RANGE '1 day'::INTERVAL PRECEDING) FROM t"),
+        Expr::Cast { .. }
+    ));
+}

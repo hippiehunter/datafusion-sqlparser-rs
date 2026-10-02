@@ -392,7 +392,7 @@ impl Parser<'_> {
             }
         } else if self.parse_keyword(Keyword::RESET) {
             AlterIndexOperation::ResetOptions {
-                options: self.parse_parenthesized_identifiers()?,
+                options: self.parse_parenthesized_relation_options()?,
             }
         } else if self.parse_keyword(Keyword::ALTER) {
             let _ = self.parse_keyword(Keyword::COLUMN);
@@ -1118,7 +1118,7 @@ impl Parser<'_> {
             self.expect_keyword_is(Keyword::RESET)?;
             return Ok(AlterMaterializedViewAction::AlterColumnResetOptions {
                 column_name,
-                options: self.parse_parenthesized_identifiers()?,
+                options: self.parse_parenthesized_relation_options()?,
             });
         }
         if self.parse_keywords(&[Keyword::CLUSTER, Keyword::ON]) {
@@ -1151,7 +1151,7 @@ impl Parser<'_> {
         }
         self.expect_keyword_is(Keyword::RESET)?;
         Ok(AlterMaterializedViewAction::ResetOptions {
-            options: self.parse_parenthesized_identifiers()?,
+            options: self.parse_parenthesized_relation_options()?,
         })
     }
 

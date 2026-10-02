@@ -4791,7 +4791,10 @@ fn parse_alter_view_with_options() {
             operation: AlterViewOperation::ResetOptions { options },
             ..
         } => {
-            assert_eq!(vec![Ident::new("foo"), Ident::new("a")], options);
+            assert_eq!(
+                vec!["foo".to_string(), "a".to_string()],
+                options.iter().map(ToString::to_string).collect::<Vec<_>>()
+            );
         }
         _ => unreachable!(),
     }

@@ -6542,28 +6542,14 @@ impl<'a> Parser<'a> {
         if self.parse_keywords(&[Keyword::CURRENT, Keyword::ROW]) {
             Ok(WindowFrameBound::CurrentRow)
         } else {
+            // An offset is an ordinary expression: a quoted offset such as
+            // `'1 day' PRECEDING` is an untyped string literal, which the
+            // planner reads as the frame key's offset type, and only a
+            // literal written `INTERVAL '...'` is an interval.
             let rows = if self.parse_keyword(Keyword::UNBOUNDED) {
                 None
             } else {
-                let bound = match self.peek_token().token {
-                    // `'1 day' PRECEDING` is an interval literal; anything else
-                    // that starts with a string is an ordinary expression, e.g.
-                    // `'1 year'::interval PRECEDING`.
-                    BorrowedToken::SingleQuotedString(_)
-                        if matches!(
-                            self.peek_nth_token(1).token,
-                            BorrowedToken::Word(ref word)
-                                if matches!(
-                                    word.keyword,
-                                    Keyword::PRECEDING | Keyword::FOLLOWING
-                                )
-                        ) =>
-                    {
-                        self.parse_interval()?
-                    }
-                    _ => self.parse_expr()?,
-                };
-                Some(Box::new(bound))
+                Some(Box::new(self.parse_expr()?))
             };
             if self.parse_keyword(Keyword::PRECEDING) {
                 Ok(WindowFrameBound::Preceding(rows))
@@ -12543,24 +12529,30 @@ impl<'a> Parser<'a> {
             };
             let (refresh_method, refresh_mode) = if self.parse_keyword(Keyword::REFRESH) {
                 let method = if self.parse_keyword(Keyword::FAST) {
-                    OracleMaterializedViewRefreshMethod::Fast
+                    Some(OracleMaterializedViewRefreshMethod::Fast)
                 } else if self.parse_keyword(Keyword::COMPLETE) {
-                    OracleMaterializedViewRefreshMethod::Complete
+                    Some(OracleMaterializedViewRefreshMethod::Complete)
                 } else if self.parse_keyword(Keyword::FORCE) {
-                    OracleMaterializedViewRefreshMethod::Force
+                    Some(OracleMaterializedViewRefreshMethod::Force)
                 } else {
-                    return self
-                        .expected("FAST, COMPLETE, or FORCE after REFRESH", self.peek_token());
+                    None
                 };
-                self.expect_keyword(Keyword::ON)?;
-                let mode = if self.parse_keyword(Keyword::COMMIT) {
-                    OracleMaterializedViewRefreshMode::Commit
-                } else if self.parse_keyword(Keyword::DEMAND) {
-                    OracleMaterializedViewRefreshMode::Demand
+                let mode = if self.parse_keyword(Keyword::ON) {
+                    if self.parse_keyword(Keyword::COMMIT) {
+                        Some(OracleMaterializedViewRefreshMode::Commit)
+                    } else if self.parse_keyword(Keyword::DEMAND) {
+                        Some(OracleMaterializedViewRefreshMode::Demand)
+                    } else {
+                        return self.expected("COMMIT or DEMAND after ON", self.peek_token());
+                    }
                 } else {
-                    return self.expected("COMMIT or DEMAND after ON", self.peek_token());
+                    None
                 };
-                (Some(method), Some(mode))
+                // A bare `REFRESH` is `REFRESH FORCE ON DEMAND`.
+                (
+                    Some(method.unwrap_or(OracleMaterializedViewRefreshMethod::Force)),
+                    Some(mode.unwrap_or(OracleMaterializedViewRefreshMode::Demand)),
+                )
             } else {
                 (None, None)
             };
@@ -18219,9 +18211,7 @@ impl<'a> Parser<'a> {
             self.expect_token(&BorrowedToken::RParen)?;
             AlterViewOperation::SetOptions { options }
         } else if self.parse_keyword(Keyword::RESET) {
-            self.expect_token(&BorrowedToken::LParen)?;
-            let options = self.parse_comma_separated(Parser::parse_identifier)?;
-            self.expect_token(&BorrowedToken::RParen)?;
+            let options = self.parse_parenthesized_relation_options()?;
             AlterViewOperation::ResetOptions { options }
         } else {
             return self.expected(

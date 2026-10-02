@@ -562,9 +562,10 @@ pub enum AlterIndexOperation {
     SetOptions {
         options: Vec<SqlOption>,
     },
-    /// `RESET ( storage_parameter [, ...] )`
+    /// `RESET ( storage_parameter [, ...] )`; a value is parsed, for the
+    /// consumer to refuse as PostgreSQL does.
     ResetOptions {
-        options: Vec<Ident>,
+        options: Vec<SqlOption>,
     },
     /// `ALTER [ COLUMN ] column_number SET STATISTICS integer`
     AlterColumnSetStatistics {
@@ -1008,8 +1009,10 @@ pub enum AlterViewOperation {
     SetOptions {
         options: Vec<SqlOption>,
     },
+    /// `RESET ( view_option [, ...] )`; a value is parsed, for the consumer to
+    /// refuse as PostgreSQL does.
     ResetOptions {
-        options: Vec<Ident>,
+        options: Vec<SqlOption>,
     },
     /// `ALTER [ COLUMN ] column_name SET DEFAULT expression`
     AlterColumnSetDefault {

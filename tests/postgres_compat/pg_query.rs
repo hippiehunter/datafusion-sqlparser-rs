@@ -278,10 +278,12 @@ fn parse_window_frame_bounds_with_arbitrary_expressions() {
 }
 
 #[test]
-fn parse_window_frame_interval_literal_bound_keeps_interval_shape() {
+fn parse_window_frame_quoted_bound_is_a_string_literal() {
     let stmt =
         pg().verified_stmt("SELECT sum(v) OVER (ORDER BY d RANGE '1 year' PRECEDING) FROM t");
-    assert!(format!("{stmt:?}").contains("Interval"));
+    let debug = format!("{stmt:?}");
+    assert!(debug.contains("SingleQuotedString(\"1 year\")"), "{debug}");
+    assert!(!debug.contains("Interval"), "{debug}");
 }
 
 // =============================================================================

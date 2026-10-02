@@ -1148,12 +1148,15 @@ fn parse_alter_index_set_and_reset_storage_parameters() {
         }
         other => panic!("Expected SetOptions, got {other:?}"),
     }
-    assert_eq!(
-        alter_index_operation("ALTER INDEX i RESET (fillfactor)"),
-        AlterIndexOperation::ResetOptions {
-            options: vec!["fillfactor".into()]
+    match alter_index_operation("ALTER INDEX i RESET (fillfactor, toast.autovacuum_enabled, bad = 1)") {
+        AlterIndexOperation::ResetOptions { options } => {
+            assert_eq!(options.len(), 3);
+            assert!(matches!(&options[0], SqlOption::Reloption(option) if option.name.to_string() == "fillfactor" && option.value.is_none()));
+            assert!(matches!(&options[1], SqlOption::Reloption(option) if option.name.to_string() == "toast.autovacuum_enabled"));
+            assert!(matches!(options[2], SqlOption::KeyValue { .. }));
         }
-    );
+        other => panic!("Expected ResetOptions, got {other:?}"),
+    }
 }
 
 #[test]
