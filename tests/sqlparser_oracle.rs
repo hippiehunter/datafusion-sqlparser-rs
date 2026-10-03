@@ -1429,6 +1429,27 @@ fn oracle_mode_accepts_gantry_named_schema_extension() {
 }
 
 #[test]
+fn oracle_mode_accepts_drop_schema_cascade_and_round_trips() {
+    let statement = parse_one("DROP SCHEMA graph_a CASCADE");
+    assert!(matches!(
+        &statement,
+        Statement::Drop {
+            object_type: sqlparser::ast::ObjectType::Schema,
+            cascade: true,
+            ..
+        }
+    ));
+    assert_eq!(statement.to_string(), "DROP SCHEMA GRAPH_A CASCADE");
+    assert_eq!(parse_one(&statement.to_string()), statement);
+}
+
+#[test]
+fn oracle_mode_rejects_drop_sequence_cascade() {
+    let error = Parser::parse_sql(&OracleDialect {}, "DROP SEQUENCE s CASCADE").unwrap_err();
+    assert!(error.to_string().contains("invalid Oracle DROP modifier"));
+}
+
+#[test]
 fn oracle_interval_and_character_data_types_are_typed() {
     let statement = parse_one(
         "CREATE TABLE typed_values (\
