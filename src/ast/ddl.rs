@@ -269,8 +269,16 @@ pub enum AlterTableOperation {
         /// MySQL `ALTER TABLE` only  [FIRST | AFTER column_name]
         column_position: Option<MySQLColumnPosition>,
     },
-    /// Oracle parenthesized multi-column MODIFY.
-    OracleModifyColumns { columns: Vec<ColumnDef> },
+    /// Oracle `MODIFY <column> [<data type>] [<options>]`, or the
+    /// parenthesized `MODIFY (<column> ..., ...)` for several columns. A
+    /// column's data type is optional: `MODIFY c NOT NULL` leaves it alone.
+    OracleModifyColumns {
+        columns: Vec<OracleModifyColumn>,
+        parenthesized: bool,
+    },
+    /// Oracle `DEFAULT COLLATION <name>`: the collation the table's character
+    /// columns added from now on take.
+    OracleDefaultCollation { collation: Ident },
     /// `RENAME CONSTRAINT <old_constraint_name> TO <new_constraint_name>`
     ///
     /// Note: this is a PostgreSQL-specific operation.
@@ -777,8 +785,18 @@ impl fmt::Display for AlterTableOperation {
 
                 Ok(())
             }
-            AlterTableOperation::OracleModifyColumns { columns } => {
-                write!(f, "MODIFY ({})", display_comma_separated(columns))
+            AlterTableOperation::OracleModifyColumns {
+                columns,
+                parenthesized,
+            } => {
+                if *parenthesized {
+                    write!(f, "MODIFY ({})", display_comma_separated(columns))
+                } else {
+                    write!(f, "MODIFY {}", display_comma_separated(columns))
+                }
+            }
+            AlterTableOperation::OracleDefaultCollation { collation } => {
+                write!(f, "DEFAULT COLLATION {collation}")
             }
             AlterTableOperation::RenameConstraint { old_name, new_name } => {
                 write!(f, "RENAME CONSTRAINT {old_name} TO {new_name}")
@@ -1210,6 +1228,9 @@ pub enum AlterColumnOperation {
         /// Set to true if the statement includes the `SET DATA TYPE` keywords
         had_set: bool,
     },
+    /// `COLLATE <collation>`: the collation of a column that keeps its type,
+    /// as Oracle's `MODIFY <column> COLLATE <collation>` states it.
+    SetCollation { collation: ObjectName },
 }
 
 impl fmt::Display for AlterColumnOperation {
@@ -1313,6 +1334,7 @@ impl fmt::Display for AlterColumnOperation {
                 }
                 Ok(())
             }
+            AlterColumnOperation::SetCollation { collation } => write!(f, "COLLATE {collation}"),
         }
     }
 }
@@ -1493,6 +1515,34 @@ pub struct ColumnDef {
 impl fmt::Display for ColumnDef {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{} {}", self.name, self.data_type)?;
+        for option in &self.options {
+            write!(f, " {option}")?;
+        }
+        Ok(())
+    }
+}
+
+/// A column of an Oracle `ALTER TABLE ... MODIFY`: what the column is changed
+/// to, where each part is optional.
+///
+/// ```sql
+/// MODIFY (name VARCHAR2(40) COLLATE BINARY_CI, id NOT NULL)
+/// ```
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleModifyColumn {
+    pub name: Ident,
+    pub data_type: Option<DataType>,
+    pub options: Vec<ColumnOptionDef>,
+}
+
+impl fmt::Display for OracleModifyColumn {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.name)?;
+        if let Some(data_type) = &self.data_type {
+            write!(f, " {data_type}")?;
+        }
         for option in &self.options {
             write!(f, " {option}")?;
         }
@@ -3891,6 +3941,9 @@ pub struct OracleCreateViewOptions {
     pub object: Option<OracleObjectView>,
     pub constraint: Option<OracleViewConstraint>,
     pub materialized: Option<OracleCreateMaterializedViewOptions>,
+    /// `DEFAULT COLLATION <name>`: the collation of a view column whose
+    /// expression derives none.
+    pub default_collation: Option<Ident>,
 }
 
 impl OracleCreateViewOptions {
@@ -3904,6 +3957,7 @@ impl OracleCreateViewOptions {
             && self.editioning.is_none()
             && self.object.is_none()
             && self.constraint.is_none()
+            && self.default_collation.is_none()
             && match &self.materialized {
                 Some(materialized) => materialized.is_empty(),
                 None => true,
@@ -4018,6 +4072,13 @@ impl fmt::Display for CreateView {
         }
         if matches!(self.options, CreateTableOptions::Options(_)) {
             write!(f, " {}", self.options)?;
+        }
+        if let Some(collation) = self
+            .oracle
+            .as_ref()
+            .and_then(|oracle| oracle.default_collation.as_ref())
+        {
+            write!(f, " DEFAULT COLLATION {collation}")?;
         }
         if let Some(options) = self
             .oracle

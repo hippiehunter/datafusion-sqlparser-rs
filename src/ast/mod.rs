@@ -81,7 +81,8 @@ pub use self::ddl::{
     IdentityPropertyOrder, IndexColumn, IndexOption, IndexType, KeyOrIndexDisplay,
     NullsDistinctOption, OperatorArgTypes, OperatorClassItem, OperatorPurpose,
     OracleCreateMaterializedViewOptions, OracleCreateViewOptions, OracleMaterializedViewBuild,
-    OracleObjectView, OraclePartitionDefinition, OracleViewConstraint, Owner, Partition,
+    OracleModifyColumn, OracleObjectView, OraclePartitionDefinition, OracleViewConstraint, Owner,
+    Partition,
     PartitionByClause, PartitionKeyDef, PartitionKeyExpr, PartitionStrategy, ProcedureParam,
     ReferentialAction, RenameTableNameKind, ReplicaIdentity, SplitPartitionTarget,
     TableDistribution, TriggerGroup, TriggerObjectKind, Truncate,
@@ -10360,9 +10361,11 @@ pub enum OracleAlterOperation {
     Limit(Vec<OracleResourceValue>),
     NotIdentified,
     Online,
+    /// `SET <parameter> = <value> [ <parameter> = <value> ... ] [ SCOPE = <scope> ]`.
+    /// `ALTER SESSION` takes any number of assignments, separated by white
+    /// space only.
     SetParameter {
-        parameter: ObjectName,
-        value: Expr,
+        assignments: Vec<OracleParameterAssignment>,
         scope: Option<Ident>,
     },
     ReadOnly,
@@ -10372,6 +10375,22 @@ pub enum OracleAlterOperation {
         tablespace: ObjectName,
         account_unlock: bool,
     },
+}
+
+/// One `<parameter> = <value>` of an Oracle `ALTER SESSION` or `ALTER SYSTEM`
+/// `SET`.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct OracleParameterAssignment {
+    pub parameter: ObjectName,
+    pub value: Expr,
+}
+
+impl fmt::Display for OracleParameterAssignment {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} = {}", self.parameter, self.value)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
@@ -10651,12 +10670,8 @@ impl fmt::Display for OracleAlterStatement {
             }
             OracleAlterOperation::NotIdentified => write!(f, " NOT IDENTIFIED"),
             OracleAlterOperation::Online => write!(f, " ONLINE"),
-            OracleAlterOperation::SetParameter {
-                parameter,
-                value,
-                scope,
-            } => {
-                write!(f, " SET {parameter} = {value}")?;
+            OracleAlterOperation::SetParameter { assignments, scope } => {
+                write!(f, " SET {}", display_separated(assignments, " "))?;
                 if let Some(scope) = scope {
                     write!(f, " SCOPE = {scope}")?;
                 }
@@ -15345,11 +15360,15 @@ pub enum SqlOption {
     ///   WITH (oids)
     ///   SET (toast.autovacuum_enabled = off)
     Reloption(table_ddl::RelationOption),
+    /// Oracle's table default collation, `DEFAULT COLLATION <name>`, which a
+    /// character column without a collation of its own takes.
+    DefaultCollation(Ident),
 }
 
 impl fmt::Display for SqlOption {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            SqlOption::DefaultCollation(name) => write!(f, "DEFAULT COLLATION {name}"),
             SqlOption::Reloption(option) => write!(f, "{option}"),
             SqlOption::Clustered(c) => write!(f, "{c}"),
             SqlOption::Ident(ident) => {

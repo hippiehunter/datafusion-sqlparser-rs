@@ -18,7 +18,7 @@ use crate::dialect::Dialect;
 use crate::dialect::Precedence;
 use crate::keywords::{self, Keyword};
 use crate::parser::{Parser, ParserError};
-use crate::tokenizer::BorrowedToken;
+use crate::tokenizer::{BorrowedToken, Word};
 
 #[cfg(not(feature = "std"))]
 use alloc::{borrow::ToOwned, string::String};
@@ -53,8 +53,22 @@ impl Dialect for OracleDialect {
         ch.is_alphanumeric() || matches!(ch, '_' | '$' | '#')
     }
 
-    fn is_table_alias(&self, keyword: &Keyword, _parser: &Parser) -> bool {
-        *keyword != Keyword::LOG && !keywords::RESERVED_FOR_TABLE_ALIAS.contains(keyword)
+    fn is_table_alias(&self, keyword: &Keyword, parser: &Parser) -> bool {
+        match keyword {
+            Keyword::LOG => false,
+            // SAMPLE is not reserved. It opens the sampling clause only in
+            // `SAMPLE (n)` and `SAMPLE BLOCK (n)`; anywhere else it is the
+            // name a table is given.
+            Keyword::SAMPLE => !matches!(
+                &parser.peek_token_ref().token,
+                BorrowedToken::LParen
+                    | BorrowedToken::Word(Word {
+                        keyword: Keyword::BLOCK,
+                        ..
+                    })
+            ),
+            _ => !keywords::RESERVED_FOR_TABLE_ALIAS.contains(keyword),
+        }
     }
 
     fn supports_group_by_expr(&self) -> bool {

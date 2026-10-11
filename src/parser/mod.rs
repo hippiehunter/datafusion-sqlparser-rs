@@ -3307,20 +3307,31 @@ impl<'a> Parser<'a> {
             }
             OracleAlterObjectType::Session | OracleAlterObjectType::System => {
                 self.expect_keyword(Keyword::SET)?;
-                let parameter = self.parse_object_name(false)?;
-                self.expect_token(&BorrowedToken::Eq)?;
-                let value = self.parse_expr()?;
+                let mut assignments = Vec::new();
+                loop {
+                    let parameter = self.parse_object_name(false)?;
+                    self.expect_token(&BorrowedToken::Eq)?;
+                    let value = self.parse_expr()?;
+                    assignments.push(OracleParameterAssignment { parameter, value });
+                    // `ALTER SESSION SET a = x b = y` separates its assignments
+                    // by white space alone; `SCOPE` ends the list.
+                    if object_type != OracleAlterObjectType::Session
+                        || matches!(
+                            self.peek_token().token,
+                            BorrowedToken::EOF | BorrowedToken::SemiColon
+                        )
+                        || self.peek_keyword(Keyword::SCOPE)
+                    {
+                        break;
+                    }
+                }
                 let scope = if self.parse_keyword(Keyword::SCOPE) {
                     self.expect_token(&BorrowedToken::Eq)?;
                     Some(self.parse_identifier()?)
                 } else {
                     None
                 };
-                OracleAlterOperation::SetParameter {
-                    parameter,
-                    value,
-                    scope,
-                }
+                OracleAlterOperation::SetParameter { assignments, scope }
             }
             OracleAlterObjectType::Tablespace | OracleAlterObjectType::TablespaceSet => {
                 self.expect_oracle_words(&["READ", "ONLY"])?;
@@ -12418,6 +12429,7 @@ impl<'a> Parser<'a> {
                 object: None,
                 constraint: None,
                 materialized: None,
+                default_collation: None,
             })
         } else {
             None
@@ -12517,6 +12529,15 @@ impl<'a> Parser<'a> {
         let with_options = self.parse_options(Keyword::WITH)?;
         if !with_options.is_empty() {
             options = CreateTableOptions::With(with_options);
+        }
+
+        // Oracle `DEFAULT COLLATION <name>`, the collation of a view column
+        // whose expression derives none.
+        if self.dialect.is::<OracleDialect>()
+            && self.parse_keywords(&[Keyword::DEFAULT, Keyword::COLLATION])
+        {
+            oracle.as_mut().expect("Oracle view options").default_collation =
+                Some(self.parse_identifier()?);
         }
 
         if self.dialect.is::<OracleDialect>() && materialized {
@@ -15852,6 +15873,14 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_plain_option(&self) -> Result<Option<SqlOption>, ParserError> {
+        // Oracle `DEFAULT COLLATION <name>`
+        // <https://docs.oracle.com/en/database/oracle/oracle-database/23/sqlrf/CREATE-TABLE.html>
+        if self.dialect.is::<OracleDialect>()
+            && self.parse_keywords(&[Keyword::DEFAULT, Keyword::COLLATION])
+        {
+            return Ok(Some(SqlOption::DefaultCollation(self.parse_identifier()?)));
+        }
+
         // Single parameter option
         // <https://dev.mysql.com/doc/refman/8.4/en/create-table.html>
         if self.parse_keywords(&[Keyword::START, Keyword::TRANSACTION]) {
@@ -17261,6 +17290,56 @@ impl<'a> Parser<'a> {
         Ok(Partition::Partitions(partitions))
     }
 
+    /// One column of an Oracle `MODIFY`: `<name> [<data type>] [<options>]`.
+    /// The data type is absent when an option follows the name directly, as
+    /// in `MODIFY c DEFAULT 0`, `MODIFY c NOT NULL` and `MODIFY c COLLATE x`.
+    fn parse_oracle_modify_column(&self) -> Result<OracleModifyColumn, ParserError> {
+        let _ = self.parse_keyword(Keyword::COLUMN); // [ COLUMN ]
+        let name = self.parse_identifier()?;
+        let data_type = if self
+            .peek_one_of_keywords(&[
+                Keyword::DEFAULT,
+                Keyword::NOT,
+                Keyword::NULL,
+                Keyword::COLLATE,
+                Keyword::CONSTRAINT,
+                Keyword::CHECK,
+                Keyword::UNIQUE,
+                Keyword::PRIMARY,
+                Keyword::REFERENCES,
+                Keyword::GENERATED,
+            ])
+            .is_some()
+        {
+            None
+        } else {
+            Some(self.parse_data_type()?)
+        };
+        let mut options = Vec::with_capacity(4);
+        loop {
+            if self.parse_keyword(Keyword::CONSTRAINT) {
+                let name = Some(self.parse_identifier()?);
+                if let Some(option) = self.parse_optional_column_option()? {
+                    options.push(ColumnOptionDef { name, option });
+                } else {
+                    return self.expected(
+                        "constraint details after CONSTRAINT <name>",
+                        self.peek_token(),
+                    );
+                }
+            } else if let Some(option) = self.parse_optional_column_option()? {
+                options.push(ColumnOptionDef { name: None, option });
+            } else {
+                break;
+            };
+        }
+        Ok(OracleModifyColumn {
+            name,
+            data_type,
+            options,
+        })
+    }
+
     pub fn parse_alter_table_operation(&self) -> Result<AlterTableOperation, ParserError> {
         if dialect_of!(self is PostgreSqlDialect) {
             if let Some(operation) = self.parse_pg_alter_table_action()? {
@@ -17535,28 +17614,29 @@ impl<'a> Parser<'a> {
                 options,
                 column_position,
             }
+        } else if self.dialect.is::<OracleDialect>()
+            && self.parse_keywords(&[Keyword::DEFAULT, Keyword::COLLATION])
+        {
+            AlterTableOperation::OracleDefaultCollation {
+                collation: self.parse_identifier()?,
+            }
         } else if self.parse_keyword(Keyword::MODIFY) {
-            if self.dialect.is::<OracleDialect>() && self.consume_token(&BorrowedToken::LParen) {
-                let columns = self.parse_comma_separated(Parser::parse_column_def)?;
-                self.expect_token(&BorrowedToken::RParen)?;
-                AlterTableOperation::OracleModifyColumns { columns }
+            if self.dialect.is::<OracleDialect>() {
+                let parenthesized = self.consume_token(&BorrowedToken::LParen);
+                let columns = if parenthesized {
+                    let columns = self.parse_comma_separated(Parser::parse_oracle_modify_column)?;
+                    self.expect_token(&BorrowedToken::RParen)?;
+                    columns
+                } else {
+                    vec![self.parse_oracle_modify_column()?]
+                };
+                AlterTableOperation::OracleModifyColumns {
+                    columns,
+                    parenthesized,
+                }
             } else {
                 let _ = self.parse_keyword(Keyword::COLUMN); // [ COLUMN ]
                 let col_name = self.parse_identifier()?;
-                // Oracle's `MODIFY <col> DEFAULT <expr>` changes the default
-                // and leaves the type alone, so there is no data type to read.
-                // It means what `ALTER COLUMN ... SET DEFAULT` means; without
-                // this, DEFAULT parses as a custom type name and the value
-                // after it has nowhere to go.
-                if self.peek_keyword(Keyword::DEFAULT) {
-                    self.expect_keyword(Keyword::DEFAULT)?;
-                    return Ok(AlterTableOperation::AlterColumn {
-                        column_name: col_name,
-                        op: AlterColumnOperation::SetDefault {
-                            value: self.parse_expr()?,
-                        },
-                    });
-                }
                 let data_type = self.parse_data_type()?;
                 let mut options = vec![];
                 while let Some(option) = self.parse_optional_column_option()? {
@@ -23472,10 +23552,26 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Whether the `SAMPLE` word the parser is at opens a sampling clause. Oracle
+    /// does not reserve it: the clause is `SAMPLE (n)` or `SAMPLE BLOCK (n)`, and
+    /// any other `SAMPLE` after a table is the name the table is given.
+    fn sample_keyword_opens_clause(&self) -> bool {
+        !self.dialect.is::<OracleDialect>()
+            || matches!(
+                &self.peek_nth_token_ref(1).token,
+                BorrowedToken::LParen
+                    | BorrowedToken::Word(Word {
+                        keyword: Keyword::BLOCK,
+                        ..
+                    })
+            )
+    }
+
     fn maybe_parse_table_sample(&self) -> Result<Option<Box<TableSample>>, ParserError> {
         let modifier = if self.parse_keyword(Keyword::TABLESAMPLE) {
             TableSampleModifier::TableSample
-        } else if self.parse_keyword(Keyword::SAMPLE) {
+        } else if self.peek_keyword(Keyword::SAMPLE) && self.sample_keyword_opens_clause() {
+            self.next_token();
             TableSampleModifier::Sample
         } else {
             return Ok(None);

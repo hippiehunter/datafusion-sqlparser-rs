@@ -19,7 +19,7 @@ use crate::ast::{
     ddl::AlterSchema, query::SelectItemQualifiedWildcardKind, AlterSchemaOperation, AlterTable,
     ColumnOptions, CreateAggregate, CreateCast, CreateDatabaseOption, CreateOperator,
     CreateOperatorClass, CreateOperatorFamily, CreateStatistics, CreateTypedTable, CreateView,
-    Owner, TypedString,
+    OracleModifyColumn, Owner, TypedString,
 };
 use core::iter;
 
@@ -745,6 +745,18 @@ impl Spanned for ColumnDef {
     }
 }
 
+impl Spanned for OracleModifyColumn {
+    fn span(&self) -> Span {
+        let OracleModifyColumn {
+            name,
+            data_type: _, // enum
+            options,
+        } = self;
+
+        union_spans(core::iter::once(name.span).chain(options.iter().map(|i| i.span())))
+    }
+}
+
 impl Spanned for ColumnOptionDef {
     fn span(&self) -> Span {
         let ColumnOptionDef { name, option } = self;
@@ -1123,6 +1135,7 @@ impl Spanned for AlterColumnOperation {
             } => collation
                 .span()
                 .union_opt(&using.as_ref().map(|u| u.span())),
+            AlterColumnOperation::SetCollation { collation } => collation.span(),
         }
     }
 }
@@ -1261,6 +1274,7 @@ impl Spanned for SqlOption {
         match self {
             SqlOption::Clustered(table_options_clustered) => table_options_clustered.span(),
             SqlOption::Ident(ident) => ident.span,
+            SqlOption::DefaultCollation(name) => name.span,
             SqlOption::Reloption(option) => option
                 .name
                 .span()
@@ -1343,10 +1357,14 @@ impl Spanned for AlterTableOperation {
                 column_def,
                 column_position: _,
             } => column_def.span(),
-            AlterTableOperation::OracleAddColumns { columns }
-            | AlterTableOperation::OracleModifyColumns { columns } => {
+            AlterTableOperation::OracleAddColumns { columns } => {
                 union_spans(columns.iter().map(Spanned::span))
             }
+            AlterTableOperation::OracleModifyColumns {
+                columns,
+                parenthesized: _,
+            } => union_spans(columns.iter().map(Spanned::span)),
+            AlterTableOperation::OracleDefaultCollation { collation } => collation.span,
             AlterTableOperation::DisableRowLevelSecurity => Span::empty(),
             AlterTableOperation::DisableRule { name } => name.span,
             AlterTableOperation::DisableTrigger { name } => name.span,

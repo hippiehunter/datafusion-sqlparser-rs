@@ -16,5 +16,7 @@
 
 mod common;
 mod corpus;
+mod default_collation;
 mod grammar;
 mod inventory;
+mod table_alias;
