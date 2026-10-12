@@ -3028,6 +3028,44 @@ fn oracle_dynamic_open_collection_calls_and_trigger_aliases_are_typed() {
 }
 
 #[test]
+fn oracle_compound_trigger_end_takes_the_trigger_name() {
+    let named = parse_one(
+        "CREATE TRIGGER audit_comp FOR INSERT ON employees COMPOUND TRIGGER \
+         AFTER EACH ROW IS BEGIN NULL; END AFTER EACH ROW; END audit_comp;",
+    );
+    assert!(matches!(
+        &named,
+        Statement::OracleCreateTrigger(sqlparser::ast::OracleCreateTrigger {
+            body: sqlparser::ast::OracleTriggerBody::Compound {
+                end_name: Some(end_name),
+                ..
+            },
+            ..
+        }) if end_name.value.eq_ignore_ascii_case("audit_comp")
+    ));
+    assert!(named
+        .to_string()
+        .to_ascii_lowercase()
+        .ends_with("end after each row; end audit_comp"));
+
+    let bare = parse_one(
+        "CREATE TRIGGER audit_comp FOR INSERT ON employees COMPOUND TRIGGER \
+         AFTER EACH ROW IS BEGIN NULL; END AFTER EACH ROW; END",
+    );
+    assert!(matches!(
+        &bare,
+        Statement::OracleCreateTrigger(sqlparser::ast::OracleCreateTrigger {
+            body: sqlparser::ast::OracleTriggerBody::Compound { end_name: None, .. },
+            ..
+        })
+    ));
+
+    for statement in [named, bare] {
+        assert_eq!(parse_one(&statement.to_string()), statement);
+    }
+}
+
+#[test]
 fn oracle_trigger_event_families_and_targets_are_typed() {
     let ddl = parse_one(
         "CREATE TRIGGER schema_ddl_events AFTER ANALYZE OR ASSOCIATE STATISTICS \

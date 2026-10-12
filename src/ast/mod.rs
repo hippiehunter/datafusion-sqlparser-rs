@@ -4440,6 +4440,8 @@ pub enum OracleTriggerBody {
     Compound {
         declarations: Vec<PlSqlDeclaration>,
         sections: Vec<OracleCompoundTriggerSection>,
+        /// The trigger name repeated after the closing `END`, if written.
+        end_name: Option<Ident>,
     },
 }
 
@@ -5154,6 +5156,7 @@ impl fmt::Display for OracleTriggerBody {
             Self::Compound {
                 declarations,
                 sections,
+                end_name,
             } => {
                 write!(f, "COMPOUND TRIGGER")?;
                 for declaration in declarations {
@@ -5162,7 +5165,11 @@ impl fmt::Display for OracleTriggerBody {
                 for section in sections {
                     write!(f, " {section};")?;
                 }
-                write!(f, " END")
+                write!(f, " END")?;
+                if let Some(end_name) = end_name {
+                    write!(f, " {end_name}")?;
+                }
+                Ok(())
             }
         }
     }

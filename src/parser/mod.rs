@@ -11079,9 +11079,17 @@ impl<'a> Parser<'a> {
             self.expect_token(&BorrowedToken::SemiColon)?;
         }
         self.expect_keyword(Keyword::END)?;
+        let end_name = if self.peek_token() == BorrowedToken::SemiColon
+            || self.peek_token() == BorrowedToken::EOF
+        {
+            None
+        } else {
+            Some(self.parse_identifier()?)
+        };
         Ok(OracleTriggerBody::Compound {
             declarations,
             sections,
+            end_name,
         })
     }
 
