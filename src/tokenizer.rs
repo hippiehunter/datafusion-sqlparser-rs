@@ -1224,7 +1224,11 @@ impl<'a> Tokenizer<'a> {
                             let s = if backslash_escape && dialect_of!(self is PostgreSqlDialect) {
                                 self.tokenize_postgres_escaped_string(chars.location(), chars)?
                             } else {
-                                self.tokenize_single_quoted_string(chars, '\'', backslash_escape)?
+                                self.tokenize_single_quoted_string_continuations(
+                                    chars,
+                                    backslash_escape,
+                                )?
+                                .into_owned()
                             };
                             Ok(Some(Token::NationalStringLiteral(s)))
                         }
@@ -1331,25 +1335,10 @@ impl<'a> Tokenizer<'a> {
                         // when an AST is rendered and parsed again.
                         return Ok(Some(Token::EscapedStringLiteral(s)));
                     }
-                    let mut s = self.tokenize_single_quoted_string_borrowed(
+                    let s = self.tokenize_single_quoted_string_continuations(
                         chars,
-                        '\'',
                         self.features.supports_string_literal_backslash_escape,
                     )?;
-                    if self.features.supports_newline_string_literal_continuation {
-                        while let Some(gap) = newline_string_continuation_len(chars) {
-                            for _ in 0..gap {
-                                chars.next();
-                            }
-                            let continued = self.tokenize_single_quoted_string_borrowed(
-                                chars,
-                                '\'',
-                                self.features.supports_string_literal_backslash_escape,
-                            )?;
-                            s.to_mut().push_str(&continued);
-                        }
-                    }
-
                     Ok(Some(BorrowedToken::SingleQuotedString(s)))
                 }
                 // double quoted string
@@ -2422,22 +2411,66 @@ impl<'a> Tokenizer<'a> {
         self.tokenizer_error(starting_loc, "Unterminated encoded string literal")
     }
 
-    /// Decode each PostgreSQL continuation independently so a byte escape
-    /// cannot consume digits from the next quoted fragment.
+    /// Decode escapes within each quoted fragment, then validate the complete
+    /// byte sequence. PostgreSQL permits a UTF-8 character's escaped bytes to
+    /// cross newline continuations, but escape digits never cross quotes.
     fn tokenize_postgres_escaped_string(
         &self,
         starting_loc: Location,
         chars: &mut State,
     ) -> Result<String, TokenizerError> {
-        let mut value = self.tokenize_escaped_single_quoted_string(starting_loc, chars)?;
+        let mut value = Vec::new();
+        let mut fragment_loc = starting_loc;
+        loop {
+            if self.unescape {
+                if let Err(error) = Unescape::new(chars).unescape_into(&mut value) {
+                    return self.tokenizer_error(fragment_loc, error.message());
+                }
+            } else {
+                // Raw tokenization still follows escaped quote boundaries;
+                // it must not decode or validate a fragment's escaped bytes.
+                let Some(raw) = borrow_or_unescape_single_quoted_string(chars, false) else {
+                    return self
+                        .tokenizer_error(fragment_loc, "Unterminated encoded string literal");
+                };
+                value.extend_from_slice(raw.as_bytes());
+            }
+
+            let gap = if self.features.supports_newline_string_literal_continuation {
+                newline_string_continuation_len(chars)
+            } else {
+                None
+            };
+            let Some(gap) = gap else {
+                break;
+            };
+            for _ in 0..gap {
+                chars.next();
+            }
+            fragment_loc = chars.location();
+        }
+        String::from_utf8(value).map_err(|_| TokenizerError {
+            message: "invalid byte sequence for encoding \"UTF8\"".to_owned(),
+            location: starting_loc,
+        })
+    }
+
+    /// Reads a string literal quoted by a single quote character.
+    fn tokenize_single_quoted_string_continuations(
+        &self,
+        chars: &mut State<'a>,
+        backslash_escape: bool,
+    ) -> Result<Cow<'a, str>, TokenizerError> {
+        let mut value =
+            self.tokenize_single_quoted_string_borrowed(chars, '\'', backslash_escape)?;
         if self.features.supports_newline_string_literal_continuation {
             while let Some(gap) = newline_string_continuation_len(chars) {
                 for _ in 0..gap {
                     chars.next();
                 }
                 let continued =
-                    self.tokenize_escaped_single_quoted_string(chars.location(), chars)?;
-                value.push_str(&continued);
+                    self.tokenize_single_quoted_string_borrowed(chars, '\'', backslash_escape)?;
+                value.to_mut().push_str(&continued);
             }
         }
         Ok(value)
@@ -2966,6 +2999,26 @@ fn borrow_or_unescape_single_quoted_string<'a>(
     }
 }
 
+enum EscapedStringError {
+    Unterminated,
+    InvalidUnicodeEscape,
+    InvalidUnicodeValue,
+    InvalidUnicodeSurrogatePair,
+    NullByte,
+}
+
+impl EscapedStringError {
+    fn message(&self) -> &'static str {
+        match self {
+            Self::Unterminated => "Unterminated encoded string literal",
+            Self::InvalidUnicodeEscape => "invalid Unicode escape in string literal",
+            Self::InvalidUnicodeValue => "invalid Unicode escape value",
+            Self::InvalidUnicodeSurrogatePair => "invalid Unicode surrogate pair",
+            Self::NullByte => "invalid byte sequence for encoding \"UTF8\": 0x00",
+        }
+    }
+}
+
 struct Unescape<'a: 'b, 'b> {
     chars: &'b mut State<'a>,
 }
@@ -2974,87 +3027,99 @@ impl<'a: 'b, 'b> Unescape<'a, 'b> {
     fn new(chars: &'b mut State<'a>) -> Self {
         Self { chars }
     }
-    fn unescape(mut self) -> Option<String> {
-        let mut unescaped = String::new();
+    fn unescape(self) -> Option<String> {
+        let mut unescaped = Vec::new();
+        self.unescape_into(&mut unescaped).ok()?;
+        String::from_utf8(unescaped).ok()
+    }
 
-        self.chars.next();
+    fn unescape_into(mut self, unescaped: &mut Vec<u8>) -> Result<(), EscapedStringError> {
+        if self.chars.next() != Some('\'') {
+            return Err(EscapedStringError::Unterminated);
+        }
 
         while let Some(c) = self.chars.next() {
             if c == '\'' {
                 // case: ''''
                 if self.chars.peek().map(|c| *c == '\'').unwrap_or(false) {
                     self.chars.next();
-                    unescaped.push('\'');
+                    unescaped.push(b'\'');
                     continue;
                 }
-                return Some(unescaped);
+                return Ok(());
             }
 
             if c != '\\' {
-                unescaped.push(c);
+                Self::push_char(unescaped, c)?;
                 continue;
             }
 
-            let c = match self.chars.next()? {
+            let c = match self.chars.next().ok_or(EscapedStringError::Unterminated)? {
                 'b' => '\u{0008}',
                 'f' => '\u{000C}',
                 'n' => '\n',
                 'r' => '\r',
                 't' => '\t',
+                'v' => '\u{000B}',
                 'u' => self.unescape_unicode_16()?,
                 'U' => self.unescape_unicode_32()?,
-                'x' => self.unescape_hex()?,
-                c if c.is_digit(8) => self.unescape_octal(c)?,
+                'x' => {
+                    Self::push_byte(unescaped, self.unescape_hex())?;
+                    continue;
+                }
+                c if c.is_digit(8) => {
+                    Self::push_byte(unescaped, self.unescape_octal(c))?;
+                    continue;
+                }
                 c => c,
             };
 
-            unescaped.push(Self::check_null(c)?);
+            Self::push_char(unescaped, c)?;
         }
 
-        None
+        Err(EscapedStringError::Unterminated)
     }
 
     #[inline]
-    fn check_null(c: char) -> Option<char> {
+    fn push_char(output: &mut Vec<u8>, c: char) -> Result<(), EscapedStringError> {
         if c == '\0' {
-            None
+            Err(EscapedStringError::NullByte)
         } else {
-            Some(c)
+            let mut bytes = [0; 4];
+            output.extend_from_slice(c.encode_utf8(&mut bytes).as_bytes());
+            Ok(())
         }
     }
 
     #[inline]
-    fn byte_to_char<const RADIX: u32>(s: &str) -> Option<char> {
-        // u32 is used here because Pg has an overflow operation rather than throwing an exception directly.
-        match u32::from_str_radix(s, RADIX) {
-            Err(_) => None,
-            Ok(n) => {
-                let n = n & 0xFF;
-                if n <= 127 {
-                    char::from_u32(n)
-                } else {
-                    None
-                }
-            }
+    fn push_byte(output: &mut Vec<u8>, byte: u8) -> Result<(), EscapedStringError> {
+        if byte == 0 {
+            Err(EscapedStringError::NullByte)
+        } else {
+            output.push(byte);
+            Ok(())
         }
     }
 
     // Hexadecimal byte value. \xh, \xhh (h = 0–9, A–F)
-    fn unescape_hex(&mut self) -> Option<char> {
-        let mut s = String::new();
-
+    fn unescape_hex(&mut self) -> u8 {
+        let mut byte = 0;
+        let mut seen_digit = false;
         for _ in 0..2 {
             match self.next_hex_digit() {
-                Some(c) => s.push(c),
+                Some(c) => {
+                    byte = byte * 16 + c.to_digit(16).unwrap() as u8;
+                    seen_digit = true;
+                }
                 None => break,
             }
         }
 
-        if s.is_empty() {
-            return Some('x');
+        if seen_digit {
+            byte
+        } else {
+            b'x'
         }
-
-        Self::byte_to_char::<16>(&s)
     }
 
     #[inline]
@@ -3066,18 +3131,20 @@ impl<'a: 'b, 'b> Unescape<'a, 'b> {
     }
 
     // Octal byte value. \o, \oo, \ooo (o = 0–7)
-    fn unescape_octal(&mut self, c: char) -> Option<char> {
-        let mut s = String::new();
-
-        s.push(c);
+    fn unescape_octal(&mut self, c: char) -> u8 {
+        let mut byte = c.to_digit(8).unwrap() as u8;
         for _ in 0..2 {
             match self.next_octal_digest() {
-                Some(c) => s.push(c),
+                Some(c) => {
+                    byte = byte
+                        .wrapping_mul(8)
+                        .wrapping_add(c.to_digit(8).unwrap() as u8)
+                }
                 None => break,
             }
         }
 
-        Self::byte_to_char::<8>(&s)
+        byte
     }
 
     #[inline]
@@ -3089,24 +3156,54 @@ impl<'a: 'b, 'b> Unescape<'a, 'b> {
     }
 
     // 16-bit hexadecimal Unicode character value. \uxxxx (x = 0–9, A–F)
-    fn unescape_unicode_16(&mut self) -> Option<char> {
+    fn unescape_unicode_16(&mut self) -> Result<char, EscapedStringError> {
         self.unescape_unicode::<4>()
     }
 
     // 32-bit hexadecimal Unicode character value. \Uxxxxxxxx (x = 0–9, A–F)
-    fn unescape_unicode_32(&mut self) -> Option<char> {
+    fn unescape_unicode_32(&mut self) -> Result<char, EscapedStringError> {
         self.unescape_unicode::<8>()
     }
 
-    fn unescape_unicode<const NUM: usize>(&mut self) -> Option<char> {
-        let mut s = String::new();
+    fn unescape_unicode<const NUM: usize>(&mut self) -> Result<char, EscapedStringError> {
+        let first = self
+            .read_unicode_digits::<NUM>()
+            .ok_or(EscapedStringError::InvalidUnicodeEscape)?;
+        let scalar = if (0xD800..=0xDBFF).contains(&first) {
+            if self.chars.next() != Some('\\') {
+                return Err(EscapedStringError::InvalidUnicodeSurrogatePair);
+            }
+            let second = match self.chars.next() {
+                Some('u') => self
+                    .read_unicode_digits::<4>()
+                    .ok_or(EscapedStringError::InvalidUnicodeEscape)?,
+                Some('U') => self
+                    .read_unicode_digits::<8>()
+                    .ok_or(EscapedStringError::InvalidUnicodeEscape)?,
+                _ => return Err(EscapedStringError::InvalidUnicodeSurrogatePair),
+            };
+            if !(0xDC00..=0xDFFF).contains(&second) {
+                return Err(EscapedStringError::InvalidUnicodeSurrogatePair);
+            }
+            0x10000 + ((first - 0xD800) << 10) + second - 0xDC00
+        } else if (0xDC00..=0xDFFF).contains(&first) {
+            return Err(EscapedStringError::InvalidUnicodeSurrogatePair);
+        } else {
+            first
+        };
+        if scalar == 0 {
+            return Err(EscapedStringError::InvalidUnicodeValue);
+        }
+        char::from_u32(scalar).ok_or(EscapedStringError::InvalidUnicodeValue)
+    }
+
+    fn read_unicode_digits<const NUM: usize>(&mut self) -> Option<u32> {
+        let mut value = 0u32;
         for _ in 0..NUM {
-            s.push(self.chars.next()?);
+            let digit = self.chars.next()?.to_digit(16)?;
+            value = value * 16 + digit;
         }
-        match u32::from_str_radix(&s, 16) {
-            Err(_) => None,
-            Ok(n) => char::from_u32(n),
-        }
+        Some(value)
     }
 }
 
@@ -3393,6 +3490,190 @@ mod tests {
     }
 
     #[test]
+    fn postgres_escaped_utf8_bytes_join_before_validation() {
+        let dialect = PostgreSqlDialect {};
+        for (source, expected) in [
+            (r"E'\xC3\xA9'", "é"),
+            (r"E'\303\251'", "é"),
+            ("E'\\xC3'\n'\\xA9'", "é"),
+            ("E'\\303'\r-- continuation\r'\\251'", "é"),
+            ("E'\\xF0\\x9F'\n'\\230\\200'", "😀"),
+            (r"E'é\xC3\251\u4c91'", "éé䲑"),
+            (r"E'\uD83D\uDE00'", "😀"),
+            (r"E'\uD83D\U0000DE00'", "😀"),
+            (r"E'\U0000D83D\uDE00'", "😀"),
+            (r"E'\U0000D83D\U0000DE00'", "😀"),
+            ("E'\\x4'\n'1'", "\u{4}1"),
+            ("E'\\1'\n'23'", "\u{1}23"),
+            (r"E'\450'", "("),
+            (r"E'\v'", "\u{000B}"),
+        ] {
+            assert_eq!(
+                Tokenizer::new(&dialect, source).tokenize().unwrap(),
+                vec![Token::EscapedStringLiteral(expected.to_owned())],
+                "{source}",
+            );
+        }
+    }
+
+    #[test]
+    fn postgres_nonstandard_national_and_ordinary_utf8_bytes() {
+        let dialect = NonstandardPostgresDialect;
+        for (source, expected) in [
+            (r"'\xC3\xA9'", Token::EscapedStringLiteral("é".to_owned())),
+            (
+                "'\\303'\n'\\251'",
+                Token::EscapedStringLiteral("é".to_owned()),
+            ),
+            (r"N'\xC3\xA9'", Token::NationalStringLiteral("é".to_owned())),
+            (
+                "n'\\303'\n'\\251'",
+                Token::NationalStringLiteral("é".to_owned()),
+            ),
+            (
+                "E'\\xC3'\n'\\xA9'",
+                Token::EscapedStringLiteral("é".to_owned()),
+            ),
+        ] {
+            assert_eq!(
+                Tokenizer::new(&dialect, source).tokenize().unwrap(),
+                vec![expected]
+            );
+        }
+        let standard = PostgreSqlDialect {};
+        assert_eq!(
+            Tokenizer::new(&standard, r"'\xC3\xA9'").tokenize().unwrap(),
+            vec![Token::SingleQuotedString(r"\xC3\xA9".into())],
+        );
+        assert_eq!(
+            Tokenizer::new(&standard, r"N'\xC3\xA9'")
+                .tokenize()
+                .unwrap(),
+            vec![Token::NationalStringLiteral(r"\xC3\xA9".to_owned())],
+        );
+    }
+
+    #[test]
+    fn postgres_escaped_bytes_reject_invalid_utf8_and_null() {
+        let dialect = PostgreSqlDialect {};
+        for source in [
+            r"E'\xC3'",
+            r"E'\xA9'",
+            r"E'\xC3a\xA9'",
+            "E'\\xC3'\n'a\\xA9'",
+            r"E'\xC0\xAF'",
+            r"E'\xED\xA0\x80'",
+            r"E'\xF4\x90\x80\x80'",
+        ] {
+            let error = Tokenizer::new(&dialect, source).tokenize().unwrap_err();
+            assert_eq!(
+                error.message, "invalid byte sequence for encoding \"UTF8\"",
+                "{source}"
+            );
+            assert_eq!(error.location, Location::new(1, 1));
+        }
+        for source in [r"E'\0'", r"E'\x00'", r"E'\400'", "E'\0'"] {
+            let error = Tokenizer::new(&dialect, source).tokenize().unwrap_err();
+            assert_eq!(
+                error.message, "invalid byte sequence for encoding \"UTF8\": 0x00",
+                "{source}"
+            );
+        }
+        for source in [r"E'\u12'", r"E'\u+001'", r"E'\U+0000001'"] {
+            let error = Tokenizer::new(&dialect, source).tokenize().unwrap_err();
+            assert_eq!(
+                error.message, "invalid Unicode escape in string literal",
+                "{source}"
+            );
+        }
+        for source in [r"E'\u0000'", r"E'\U00000000'", r"E'\U00110000'"] {
+            let error = Tokenizer::new(&dialect, source).tokenize().unwrap_err();
+            assert_eq!(error.message, "invalid Unicode escape value", "{source}");
+        }
+        for source in [
+            r"E'\uD800'",
+            r"E'\uDE00'",
+            r"E'\uD83D\uD83D'",
+            r"E'\uD83D\n\uDE00'",
+            "E'\\uD83D'\n'\\uDE00'",
+        ] {
+            let error = Tokenizer::new(&dialect, source).tokenize().unwrap_err();
+            assert_eq!(error.message, "invalid Unicode surrogate pair", "{source}");
+        }
+    }
+
+    #[test]
+    fn postgres_standard_national_strings_join_newline_continuations() {
+        let dialect = PostgreSqlDialect {};
+        for (source, expected) in [
+            ("N'a'\n'b'", "ab"),
+            ("n'a'''\r-- continuation\r'b'", "a'b"),
+            ("N'\\xC3'\n'\\xA9'", r"\xC3\xA9"),
+            ("N'\\uD83D'\n'\\uDE00'", r"\uD83D\uDE00"),
+        ] {
+            assert_eq!(
+                Tokenizer::new(&dialect, source).tokenize().unwrap(),
+                vec![Token::NationalStringLiteral(expected.to_owned())],
+            );
+        }
+        let source = "N'a''b'\n'c'";
+        assert_eq!(
+            Tokenizer::new(&dialect, source)
+                .with_unescape(false)
+                .tokenize()
+                .unwrap(),
+            vec![Token::NationalStringLiteral("a''bc".to_owned())],
+        );
+    }
+
+    #[test]
+    fn postgres_raw_escaped_tokens_keep_boundaries_and_source_spans() {
+        let dialect = PostgreSqlDialect {};
+        let source = "E'\\xC3'\n'\\xA9' AS suffix";
+        let tokens = Tokenizer::new(&dialect, source)
+            .with_unescape(false)
+            .tokenize_with_location()
+            .unwrap();
+        assert_eq!(
+            tokens[0],
+            TokenWithSpan::at(
+                Token::EscapedStringLiteral(r"\xC3\xA9".to_owned()),
+                (1, 1).into(),
+                (2, 7).into()
+            ),
+        );
+        assert_eq!(
+            tokens[2],
+            TokenWithSpan::at(Token::make_keyword("AS"), (2, 8).into(), (2, 10).into())
+        );
+        for source in [r"E'\xC3'", r"E'\x00'", r"E'\uD800'", r"E'\xC3\'a''b'"] {
+            let tokens = Tokenizer::new(&dialect, source)
+                .with_unescape(false)
+                .tokenize()
+                .unwrap();
+            assert_eq!(
+                tokens,
+                vec![Token::EscapedStringLiteral(
+                    source[2..source.len() - 1].to_owned()
+                )]
+            );
+        }
+        let nonstandard = NonstandardPostgresDialect;
+        for (source, expected) in [
+            (r"'\xC3'", Token::EscapedStringLiteral(r"\xC3".to_owned())),
+            (r"N'\xC3'", Token::NationalStringLiteral(r"\xC3".to_owned())),
+        ] {
+            assert_eq!(
+                Tokenizer::new(&nonstandard, source)
+                    .with_unescape(false)
+                    .tokenize()
+                    .unwrap(),
+                vec![expected],
+            );
+        }
+    }
+
+    #[test]
     fn nested_postgres_routine_body_retains_literal_policy() {
         let statements = crate::parser::Parser::parse_sql(
             &NonstandardPostgresDialect,
@@ -3419,6 +3700,36 @@ mod tests {
             value.value,
             crate::ast::Value::EscapedStringLiteral("aA".to_owned())
         );
+    }
+
+    #[test]
+    fn nested_postgres_routine_body_joins_escaped_utf8_bytes() {
+        for literal in ["'\\xC3'\n'\\xA9'", "E'\\303'\n'\\251'"] {
+            let source = format!(
+                "CREATE FUNCTION f() RETURNS text LANGUAGE plpgsql AS $$BEGIN RETURN {literal}; END$$"
+            );
+            let statements =
+                crate::parser::Parser::parse_sql(&NonstandardPostgresDialect, &source).unwrap();
+            let crate::ast::Statement::CreateFunction(function) = &statements[0] else {
+                panic!("expected function");
+            };
+            let Some(crate::ast::CreateFunctionBody::AsBeginEnd(body)) = &function.function_body
+            else {
+                panic!("expected parsed routine body");
+            };
+            let crate::ast::Statement::Return(statement) = &body.statements[0] else {
+                panic!("expected return");
+            };
+            let Some(crate::ast::ReturnStatementValue::Expr(crate::ast::Expr::Value(value))) =
+                &statement.value
+            else {
+                panic!("expected literal return");
+            };
+            assert_eq!(
+                value.value,
+                crate::ast::Value::EscapedStringLiteral("é".to_owned())
+            );
+        }
     }
 
     #[test]

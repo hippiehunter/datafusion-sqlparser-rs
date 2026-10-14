@@ -4443,6 +4443,37 @@ fn pg_and_generic() -> TestedDialects {
 }
 
 #[test]
+fn parse_escaped_utf8_literal_string_continuations() {
+    let sql = "SELECT E'\\xC3'\n'\\xA9', E'\\303\\251', E'\\xF0\\x9F'\n'\\230\\200'";
+    let select =
+        pg_and_generic().verified_only_select_with_canonical(sql, "SELECT E'é', E'é', E'😀'");
+    assert_eq!(select.projection.len(), 3);
+    for (projection, expected) in select.projection.iter().zip(["é", "é", "😀"]) {
+        assert_eq!(
+            expr_from_projection(projection),
+            &Expr::Value(Value::EscapedStringLiteral(expected.to_owned()).with_empty_span()),
+        );
+    }
+}
+
+#[test]
+fn parse_national_literal_string_continuations() {
+    let select = pg_and_generic().verified_only_select_with_canonical(
+        "SELECT N'a'\n'b', E'\\uD83D\\uDE00'",
+        "SELECT N'ab', E'😀'",
+    );
+    assert_eq!(select.projection.len(), 2);
+    assert_eq!(
+        expr_from_projection(&select.projection[0]),
+        &Expr::Value(Value::NationalStringLiteral("ab".to_owned()).with_empty_span()),
+    );
+    assert_eq!(
+        expr_from_projection(&select.projection[1]),
+        &Expr::Value(Value::EscapedStringLiteral("😀".to_owned()).with_empty_span()),
+    );
+}
+
+#[test]
 fn parse_escaped_literal_string() {
     let sql = r"SELECT E's1 \n s1', E's2 \\n s2', E's3 \\\n s3', E's4 \\\\n s4', E'\'', E'foo \\'";
     let select = pg_and_generic().verified_only_select(sql);
@@ -4514,24 +4545,39 @@ fn parse_escaped_literal_string() {
         expr_from_projection(&select.projection[6])
     );
 
-    fn negative_cast(sqls: &[&str]) {
-        for sql in sqls {
+    fn negative_cast(sqls: &[(&str, &str)]) {
+        for (sql, expected) in sqls {
             assert_eq!(
                 pg_and_generic()
                     .parse_sql_statements(sql)
                     .unwrap_err()
                     .to_string(),
-                "sql parser error: Unterminated encoded string literal at Line: 1, Column: 8"
+                format!("sql parser error: {expected} at Line: 1, Column: 8")
             );
         }
     }
 
     negative_cast(&[
-        r"SELECT E'\u0000'",
-        r"SELECT E'\U00110000'",
-        r"SELECT E'\u{0001}'",
-        r"SELECT E'\xCAD'",
-        r"SELECT E'\080'",
+        (
+            r"SELECT E'\u0000'",
+            "invalid Unicode escape value",
+        ),
+        (
+            r"SELECT E'\U00110000'",
+            "invalid Unicode escape value",
+        ),
+        (
+            r"SELECT E'\u{0001}'",
+            "invalid Unicode escape in string literal",
+        ),
+        (
+            r"SELECT E'\xCAD'",
+            "invalid byte sequence for encoding \"UTF8\"",
+        ),
+        (
+            r"SELECT E'\080'",
+            "invalid byte sequence for encoding \"UTF8\": 0x00",
+        ),
     ]);
 }
 
