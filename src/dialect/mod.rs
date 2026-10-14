@@ -186,6 +186,14 @@ pub trait Dialect: Debug + Any {
         false
     }
 
+    /// PostgreSQL SQL_ASCII source represents each original byte as one
+    /// Unicode scalar in U+0001..U+00FF at the parser boundary. Escape
+    /// decoding preserves that representation instead of validating UTF-8.
+    /// Embeddings must recover the bytes before execution or storage.
+    fn supports_postgres_sql_ascii_literals(&self) -> bool {
+        false
+    }
+
     /// Returns true if two string constants separated only by whitespace that
     /// contains at least one newline are one literal, as in PostgreSQL:
     /// ```sql
@@ -1379,6 +1387,7 @@ pub trait Dialect: Debug + Any {
                 .supports_window_clause_named_window_reference(),
             supports_string_literal_backslash_escape: self
                 .supports_string_literal_backslash_escape(),
+            supports_postgres_sql_ascii_literals: self.supports_postgres_sql_ascii_literals(),
             supports_newline_string_literal_continuation: self
                 .supports_newline_string_literal_continuation(),
             ignores_wildcard_escapes: self.ignores_wildcard_escapes(),
@@ -1493,6 +1502,7 @@ pub struct DialectFeatures {
     pub supports_create_table_like_parenthesized: bool,
     pub supports_window_clause_named_window_reference: bool,
     pub supports_string_literal_backslash_escape: bool,
+    pub supports_postgres_sql_ascii_literals: bool,
     pub supports_newline_string_literal_continuation: bool,
     pub ignores_wildcard_escapes: bool,
     pub supports_unicode_string_literal: bool,
@@ -1604,6 +1614,7 @@ impl<D: Dialect> Dialect for DelegatingDialect<D> {
 
     delegate_boolean_dialect_methods!(
         supports_string_literal_backslash_escape,
+        supports_postgres_sql_ascii_literals,
         supports_newline_string_literal_continuation,
         ignores_wildcard_escapes,
         supports_unicode_string_literal,

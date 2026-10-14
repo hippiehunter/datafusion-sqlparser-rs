@@ -1291,12 +1291,20 @@ impl<'a> Tokenizer<'a> {
                                     );
                                 }
                                 chars.next(); // consume the '&'
-                                let s = tokenize_unicode_escaped(chars, '\'')?;
+                                let s = tokenize_unicode_escaped(
+                                    chars,
+                                    '\'',
+                                    self.features.supports_postgres_sql_ascii_literals,
+                                )?;
                                 return Ok(Some(Token::UnicodeStringLiteral(s)));
                             }
                             Some('"') => {
                                 chars.next(); // consume the '&'
-                                let s = tokenize_unicode_escaped(chars, '"')?;
+                                let s = tokenize_unicode_escaped(
+                                    chars,
+                                    '"',
+                                    self.features.supports_postgres_sql_ascii_literals,
+                                )?;
                                 return Ok(Some(Token::make_word(&s, Some('"'))));
                             }
                             _ => {}
@@ -2423,8 +2431,12 @@ impl<'a> Tokenizer<'a> {
         let mut fragment_loc = starting_loc;
         loop {
             if self.unescape {
-                if let Err(error) = Unescape::new(chars).unescape_into(&mut value) {
-                    return self.tokenizer_error(fragment_loc, error.message());
+                let sql_ascii = self.features.supports_postgres_sql_ascii_literals;
+                if let Err(error) = Unescape::new(chars)
+                    .with_sql_ascii(sql_ascii)
+                    .unescape_into(&mut value)
+                {
+                    return self.tokenizer_error(fragment_loc, error.message(sql_ascii));
                 }
             } else {
                 // Raw tokenization still follows escaped quote boundaries;
@@ -2448,6 +2460,9 @@ impl<'a> Tokenizer<'a> {
                 chars.next();
             }
             fragment_loc = chars.location();
+        }
+        if self.unescape && self.features.supports_postgres_sql_ascii_literals {
+            return Ok(value.into_iter().map(char::from).collect());
         }
         String::from_utf8(value).map_err(|_| TokenizerError {
             message: "invalid byte sequence for encoding \"UTF8\"".to_owned(),
@@ -3005,27 +3020,43 @@ enum EscapedStringError {
     InvalidUnicodeValue,
     InvalidUnicodeSurrogatePair,
     NullByte,
+    UnrepresentableSourceCharacter,
+    UnsupportedUnicodeConversion,
 }
 
 impl EscapedStringError {
-    fn message(&self) -> &'static str {
+    fn message(&self, sql_ascii: bool) -> &'static str {
         match self {
             Self::Unterminated => "Unterminated encoded string literal",
             Self::InvalidUnicodeEscape => "invalid Unicode escape in string literal",
             Self::InvalidUnicodeValue => "invalid Unicode escape value",
             Self::InvalidUnicodeSurrogatePair => "invalid Unicode surrogate pair",
+            Self::NullByte if sql_ascii => "invalid byte sequence for encoding \"SQL_ASCII\": 0x00",
             Self::NullByte => "invalid byte sequence for encoding \"UTF8\": 0x00",
+            Self::UnrepresentableSourceCharacter => "invalid SQL_ASCII source character",
+            Self::UnsupportedUnicodeConversion => {
+                "conversion between UTF8 and SQL_ASCII is not supported"
+            }
         }
     }
 }
 
 struct Unescape<'a: 'b, 'b> {
     chars: &'b mut State<'a>,
+    sql_ascii: bool,
 }
 
 impl<'a: 'b, 'b> Unescape<'a, 'b> {
     fn new(chars: &'b mut State<'a>) -> Self {
-        Self { chars }
+        Self {
+            chars,
+            sql_ascii: false,
+        }
+    }
+
+    fn with_sql_ascii(mut self, sql_ascii: bool) -> Self {
+        self.sql_ascii = sql_ascii;
+        self
     }
     fn unescape(self) -> Option<String> {
         let mut unescaped = Vec::new();
@@ -3050,7 +3081,7 @@ impl<'a: 'b, 'b> Unescape<'a, 'b> {
             }
 
             if c != '\\' {
-                Self::push_char(unescaped, c)?;
+                self.push_char(unescaped, c)?;
                 continue;
             }
 
@@ -3074,16 +3105,21 @@ impl<'a: 'b, 'b> Unescape<'a, 'b> {
                 c => c,
             };
 
-            Self::push_char(unescaped, c)?;
+            self.push_char(unescaped, c)?;
         }
 
         Err(EscapedStringError::Unterminated)
     }
 
     #[inline]
-    fn push_char(output: &mut Vec<u8>, c: char) -> Result<(), EscapedStringError> {
+    fn push_char(&self, output: &mut Vec<u8>, c: char) -> Result<(), EscapedStringError> {
         if c == '\0' {
             Err(EscapedStringError::NullByte)
+        } else if self.sql_ascii {
+            let byte = u8::try_from(u32::from(c))
+                .map_err(|_| EscapedStringError::UnrepresentableSourceCharacter)?;
+            output.push(byte);
+            Ok(())
         } else {
             let mut bytes = [0; 4];
             output.extend_from_slice(c.encode_utf8(&mut bytes).as_bytes());
@@ -3194,6 +3230,9 @@ impl<'a: 'b, 'b> Unescape<'a, 'b> {
         if scalar == 0 {
             return Err(EscapedStringError::InvalidUnicodeValue);
         }
+        if self.sql_ascii && scalar > 0x7F {
+            return Err(EscapedStringError::UnsupportedUnicodeConversion);
+        }
         char::from_u32(scalar).ok_or(EscapedStringError::InvalidUnicodeValue)
     }
 
@@ -3286,6 +3325,7 @@ fn numeric_literal_underscores_are_valid(literal: &str) -> bool {
 fn tokenize_unicode_escaped<'a>(
     chars: &mut State<'a>,
     quote: char,
+    sql_ascii: bool,
 ) -> Result<String, TokenizerError> {
     let error_loc = chars.location();
     let source: &'a str = chars.source;
@@ -3328,7 +3368,7 @@ fn tokenize_unicode_escaped<'a>(
         Some(c) => c,
         None => '\\',
     };
-    unescape_unicode_content(raw, quote, escape, error_loc)
+    unescape_unicode_content(raw, quote, escape, error_loc, sql_ascii)
 }
 
 /// Consume a `UESCAPE 'c'` clause if one immediately follows, returning the
@@ -3374,6 +3414,7 @@ fn unescape_unicode_content(
     quote: char,
     escape: char,
     error_loc: Location,
+    sql_ascii: bool,
 ) -> Result<String, TokenizerError> {
     let mut state = State {
         peekable: raw.chars().peekable(),
@@ -3396,9 +3437,27 @@ fn unescape_unicode_content(
                 }
                 Some('+') => {
                     state.next();
-                    unescaped.push(take_char_from_hex_digits(&mut state, 6)?);
+                    let value = take_char_from_hex_digits(&mut state, 6)?;
+                    if sql_ascii && !value.is_ascii() {
+                        return Err(TokenizerError {
+                            message: "conversion between UTF8 and SQL_ASCII is not supported"
+                                .to_owned(),
+                            location: error_loc,
+                        });
+                    }
+                    unescaped.push(value);
                 }
-                _ => unescaped.push(take_char_from_hex_digits(&mut state, 4)?),
+                _ => {
+                    let value = take_char_from_hex_digits(&mut state, 4)?;
+                    if sql_ascii && !value.is_ascii() {
+                        return Err(TokenizerError {
+                            message: "conversion between UTF8 and SQL_ASCII is not supported"
+                                .to_owned(),
+                            location: error_loc,
+                        });
+                    }
+                    unescaped.push(value);
+                }
             }
         } else {
             unescaped.push(c);
@@ -3433,7 +3492,9 @@ fn take_char_from_hex_digits(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ast::{CreateFunctionBody, Expr, ReturnStatementValue, Statement, Value};
     use crate::dialect::{MsSqlDialect, MySqlDialect};
+    use crate::parser::Parser;
     use crate::test_utils::{all_dialects_except, all_dialects_where};
 
     #[derive(Debug)]
@@ -3464,6 +3525,136 @@ mod tests {
         fn supports_plpgsql(&self) -> bool {
             true
         }
+    }
+
+    #[derive(Debug)]
+    struct SqlAsciiPostgresDialect {
+        standard: bool,
+    }
+
+    impl Dialect for SqlAsciiPostgresDialect {
+        fn dialect(&self) -> core::any::TypeId {
+            PostgreSqlDialect {}.dialect()
+        }
+        fn is_identifier_start(&self, ch: char) -> bool {
+            PostgreSqlDialect {}.is_identifier_start(ch)
+        }
+        fn is_identifier_part(&self, ch: char) -> bool {
+            PostgreSqlDialect {}.is_identifier_part(ch)
+        }
+        fn supports_postgres_sql_ascii_literals(&self) -> bool {
+            true
+        }
+        fn supports_string_literal_backslash_escape(&self) -> bool {
+            !self.standard
+        }
+        fn supports_string_escape_constant(&self) -> bool {
+            true
+        }
+        fn supports_unicode_string_literal(&self) -> bool {
+            true
+        }
+        fn supports_newline_string_literal_continuation(&self) -> bool {
+            true
+        }
+        fn supports_plpgsql(&self) -> bool {
+            true
+        }
+    }
+
+    #[test]
+    fn postgres_sql_ascii_literals_preserve_escaped_bytes() {
+        let expected = "\u{c3}\u{a9}";
+        for standard in [true, false] {
+            let dialect = SqlAsciiPostgresDialect { standard };
+            for (source, expected) in [
+                (r"E'\xFF'", "ÿ"),
+                ("E'\\xC3'\n'\\xA9'", expected),
+                (r"E'\303\251'", expected),
+                ("E'é'", "é"),
+                (r"E'\u0041'", "A"),
+            ] {
+                assert_eq!(
+                    Tokenizer::new(&dialect, source).tokenize().unwrap(),
+                    vec![Token::EscapedStringLiteral(expected.to_owned())]
+                );
+            }
+            assert_eq!(
+                Tokenizer::new(&dialect, "E'é\\xFF'")
+                    .with_unescape(false)
+                    .tokenize()
+                    .unwrap(),
+                vec![Token::EscapedStringLiteral("é\\xFF".to_owned())]
+            );
+            for source in [
+                r"E'\u00E9'",
+                r"E'\uD83D\uDE00'",
+                r"U&'\00E9'",
+                r#"U&"\00E9""#,
+            ] {
+                let error = Tokenizer::new(&dialect, source).tokenize().unwrap_err();
+                if !standard && source.starts_with("U&'") {
+                    assert_eq!(
+                        error.message,
+                        "unsafe use of string constant with Unicode escapes"
+                    );
+                } else {
+                    assert_eq!(
+                        error.message,
+                        "conversion between UTF8 and SQL_ASCII is not supported"
+                    );
+                }
+            }
+            assert_eq!(
+                Tokenizer::new(&dialect, r"E'\000'")
+                    .tokenize()
+                    .unwrap_err()
+                    .message,
+                "invalid byte sequence for encoding \"SQL_ASCII\": 0x00"
+            );
+        }
+        let dialect = SqlAsciiPostgresDialect { standard: false };
+        assert_eq!(
+            Tokenizer::new(&dialect, "'\\xC3'\n'\\xA9'")
+                .tokenize()
+                .unwrap(),
+            vec![Token::EscapedStringLiteral(expected.to_owned())]
+        );
+        assert_eq!(
+            Tokenizer::new(&dialect, "N'\\xC3'\n'\\xA9'")
+                .tokenize()
+                .unwrap(),
+            vec![Token::NationalStringLiteral(expected.to_owned())]
+        );
+        assert_eq!(
+            Tokenizer::new(&SqlAsciiPostgresDialect { standard: true }, "'é'")
+                .tokenize()
+                .unwrap(),
+            vec![Token::SingleQuotedString("é".to_owned().into())]
+        );
+    }
+
+    #[test]
+    fn nested_postgres_sql_ascii_body_keeps_its_byte_policy() {
+        let dialect = SqlAsciiPostgresDialect { standard: false };
+        let statements = Parser::parse_sql(
+            &dialect,
+            r"CREATE FUNCTION f() RETURNS text LANGUAGE plpgsql AS $$BEGIN RETURN '\xFF'; END$$",
+        )
+        .unwrap();
+        let Statement::CreateFunction(function) = &statements[0] else {
+            panic!("expected function")
+        };
+        let Some(CreateFunctionBody::AsBeginEnd(body)) = &function.function_body else {
+            panic!("expected parsed body")
+        };
+        let Statement::Return(statement) = &body.statements[0] else {
+            panic!("expected return")
+        };
+        let Some(ReturnStatementValue::Expr(Expr::Value(value))) = &statement.value else {
+            panic!("expected literal")
+        };
+        assert_eq!(value.value, Value::EscapedStringLiteral("ÿ".to_owned()));
     }
 
     #[test]
