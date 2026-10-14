@@ -8109,24 +8109,38 @@ impl<'a> Parser<'a> {
                     right
                 };
 
-                if !matches!(
-                    op,
-                    BinaryOperator::Gt
-                        | BinaryOperator::Lt
-                        | BinaryOperator::GtEq
-                        | BinaryOperator::LtEq
-                        | BinaryOperator::Eq
-                        | BinaryOperator::NotEq
-                        | BinaryOperator::PGRegexMatch
-                        | BinaryOperator::PGRegexIMatch
-                        | BinaryOperator::PGRegexNotMatch
-                        | BinaryOperator::PGRegexNotIMatch
-                        | BinaryOperator::PGLikeMatch
-                        | BinaryOperator::PGILikeMatch
-                        | BinaryOperator::PGNotLikeMatch
-                        | BinaryOperator::PGNotILikeMatch
-                        | BinaryOperator::PGCustomBinaryOperator(_)
-                ) {
+                // PostgreSQL accepts any symbolic operator before ANY/ALL (`<@`, `@>`, `&&`,
+                // custom operators, ...) and checks only that it returns boolean when the
+                // expression is analyzed. The keyword operators cannot appear there.
+                let quantifiable = if dialect_is!(dialect is PostgreSqlDialect) {
+                    !matches!(
+                        op,
+                        BinaryOperator::And
+                            | BinaryOperator::Or
+                            | BinaryOperator::Xor
+                            | BinaryOperator::Overlaps
+                    )
+                } else {
+                    matches!(
+                        op,
+                        BinaryOperator::Gt
+                            | BinaryOperator::Lt
+                            | BinaryOperator::GtEq
+                            | BinaryOperator::LtEq
+                            | BinaryOperator::Eq
+                            | BinaryOperator::NotEq
+                            | BinaryOperator::PGRegexMatch
+                            | BinaryOperator::PGRegexIMatch
+                            | BinaryOperator::PGRegexNotMatch
+                            | BinaryOperator::PGRegexNotIMatch
+                            | BinaryOperator::PGLikeMatch
+                            | BinaryOperator::PGILikeMatch
+                            | BinaryOperator::PGNotLikeMatch
+                            | BinaryOperator::PGNotILikeMatch
+                            | BinaryOperator::PGCustomBinaryOperator(_)
+                    )
+                };
+                if !quantifiable {
                     return parser_err!(
                         format!(
                             "Expected one of [=, >, <, =>, =<, !=, ~, ~*, !~, !~*, ~~, ~~*, !~~, !~~*] as comparison operator, found: {op}"
@@ -16921,8 +16935,11 @@ impl<'a> Parser<'a> {
                     .into(),
                 ))
             }
-            BorrowedToken::Word(w) if w.keyword == Keyword::PERIOD => {
-                // SQL:2016 Temporal: PERIOD FOR period_name (start_col, end_col)
+            BorrowedToken::Word(w)
+                if w.keyword == Keyword::PERIOD && self.peek_keyword(Keyword::FOR) =>
+            {
+                // SQL:2016 Temporal: PERIOD FOR period_name (start_col, end_col). Without
+                // FOR, `period` is an ordinary column name.
                 self.expect_keyword_is(Keyword::FOR)?;
                 let period_name = if self.parse_keyword(Keyword::SYSTEM_TIME) {
                     PeriodForName::SystemTime
@@ -20747,7 +20764,13 @@ impl<'a> Parser<'a> {
     ) -> Result<Vec<ForeignKeyColumnOrPeriod>, ParserError> {
         self.expect_token(&BorrowedToken::LParen)?;
         let items = self.parse_comma_separated(|p| {
-            if p.parse_keyword(Keyword::PERIOD) {
+            // `PERIOD name` references a period; a bare `period` is a column of that name.
+            let period_reference = matches!(
+                &p.peek_token_ref().token,
+                BorrowedToken::Word(w) if w.keyword == Keyword::PERIOD
+            ) && matches!(p.peek_nth_token_ref(1).token, BorrowedToken::Word(_));
+            if period_reference {
+                p.advance_token();
                 let period_name = p.parse_identifier()?;
                 Ok(ForeignKeyColumnOrPeriod::Period(period_name))
             } else {

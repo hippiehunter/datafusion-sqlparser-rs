@@ -2995,6 +2995,38 @@ fn parse_pg_regex_match_ops() {
 }
 
 #[test]
+fn parse_pg_quantified_containment_ops() {
+    let ops = &[
+        ("<@", BinaryOperator::ArrowAt),
+        ("@>", BinaryOperator::AtArrow),
+        ("&&", BinaryOperator::PGOverlap),
+    ];
+    for (str_op, op) in ops {
+        let select = pg().verified_only_select(&format!("SELECT d {str_op} ANY(ranges)"));
+        assert_eq!(
+            SelectItem::UnnamedExpr(Expr::AnyOp {
+                left: Box::new(Expr::Identifier(Ident::new("d"))),
+                compare_op: op.clone(),
+                right: Box::new(Expr::Identifier(Ident::new("ranges"))),
+                is_some: false,
+            }),
+            select.projection[0]
+        );
+        let select = pg().verified_only_select(&format!("SELECT d {str_op} ALL(ranges)"));
+        assert_eq!(
+            SelectItem::UnnamedExpr(Expr::AllOp {
+                left: Box::new(Expr::Identifier(Ident::new("d"))),
+                compare_op: op.clone(),
+                right: Box::new(Expr::Identifier(Ident::new("ranges"))),
+            }),
+            select.projection[0]
+        );
+    }
+    pg().verified_only_select("SELECT * FROM t WHERE d::DATE <@ ANY(to_ranges(intervals($4)))");
+    assert!(pg().parse_sql_statements("SELECT a AND ANY(b)").is_err());
+}
+
+#[test]
 fn parse_pg_like_match_ops() {
     let pg_like_match_ops = &[
         ("~~", BinaryOperator::PGLikeMatch),

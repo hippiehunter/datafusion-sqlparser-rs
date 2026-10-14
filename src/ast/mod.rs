@@ -1191,7 +1191,7 @@ pub enum Expr {
         // true for REGEXP, false for RLIKE (no difference in semantics)
         regexp: bool,
     },
-    /// `ANY` operation e.g. `foo > ANY(bar)`, comparison operator is one of `[=, >, <, =>, =<, !=]`
+    /// `ANY` operation e.g. `foo > ANY(bar)`; PostgreSQL also allows any symbolic operator such as `<@`
     AnyOp {
         left: Box<Expr>,
         compare_op: BinaryOperator,
@@ -1199,7 +1199,7 @@ pub enum Expr {
         // ANY and SOME are synonymous in SQL standard
         is_some: bool,
     },
-    /// `ALL` operation e.g. `foo > ALL(bar)`, comparison operator is one of `[=, >, <, =>, =<, !=]`
+    /// `ALL` operation e.g. `foo > ALL(bar)`; PostgreSQL also allows any symbolic operator such as `<@`
     AllOp {
         left: Box<Expr>,
         compare_op: BinaryOperator,

@@ -846,6 +846,18 @@ fn create_table_unique_without_overlaps() {
 }
 
 #[test]
+fn create_table_column_named_period() {
+    let create =
+        create_table("CREATE TABLE t (year INT, period INT NOT NULL, PRIMARY KEY (year, period))");
+    assert_eq!(create.columns[1].name.value, "period");
+    assert_eq!(create.constraints.len(), 1);
+    alter_table_operations("ALTER TABLE t ADD COLUMN period INT");
+    verified(
+        "CREATE TABLE c (period INT, year INT, FOREIGN KEY (period, year) REFERENCES p(period, year))",
+    );
+}
+
+#[test]
 fn create_table_exclude_constraint_characteristics() {
     let create = create_table(
         "CREATE TABLE t (f1 INT, f2 INT, CONSTRAINT c EXCLUDE (f1 WITH =) INITIALLY DEFERRED)",
