@@ -360,7 +360,7 @@ mod document {
     use crate::ast::Statement;
     use crate::dialect::Dialect;
     use crate::parser::{Parser, ParserError, ParserOptions};
-    use crate::tokenizer::{Location, Span};
+    use crate::tokenizer::{Location, Span, TokenWithSpan};
     use std::alloc::{alloc, dealloc, handle_alloc_error, Layout};
     use std::cell::{Cell, RefCell};
     use std::sync::Arc;
@@ -684,6 +684,44 @@ mod document {
             let (statements, statement_spans, edit_result) = with_arena(&arena, || {
                 let (mut statements, statement_spans) =
                     Parser::parse_sql_with_spans_and_options(dialect, &source, options)?;
+                let edit_result = edit(&mut statements);
+                Ok::<_, ParserError>((statements, statement_spans, edit_result))
+            })?;
+            let document = Arc::new(Self {
+                statements,
+                statement_spans,
+                source,
+                arena: arena.freeze(),
+            });
+            Ok((document, edit_result))
+        }
+
+        /// Parse source-indexed tokens with explicit parser options, then edit
+        /// the statements before freezing their arena. Token locations must
+        /// refer to the exact retained source; callers may customize literal
+        /// values without changing those locations.
+        ///
+        /// Top-level spans come from parser consumption rather than AST spans,
+        /// which may omit statement keywords, casts, or closing delimiters.
+        ///
+        /// # Safety
+        ///
+        /// `edit` must obey the same ownership contract as
+        /// [`Self::parse_and_edit`].
+        pub unsafe fn parse_tokens_and_edit_with_options<R>(
+            dialect: &dyn Dialect,
+            source: impl Into<Arc<str>>,
+            tokens: Vec<TokenWithSpan<'_>>,
+            options: ParserOptions,
+            edit: impl FnOnce(&mut [Statement]) -> R,
+        ) -> Result<(Arc<Self>, R), ParserError> {
+            let source = source.into();
+            let arena = BuildingAstArena::new();
+            let (statements, statement_spans, edit_result) = with_arena(&arena, || {
+                let (mut statements, statement_spans) = Parser::new(dialect)
+                    .with_options(options)
+                    .with_tokens_with_locations(tokens)
+                    .parse_statements_with_spans()?;
                 let edit_result = edit(&mut statements);
                 Ok::<_, ParserError>((statements, statement_spans, edit_result))
             })?;
@@ -1140,6 +1178,47 @@ mod document {
                 assert_eq!(document.statements().len(), 1);
                 assert_eq!(document.statement(0).unwrap().source(), Some(sql));
             }
+        }
+
+        #[test]
+        fn source_indexed_tokens_preserve_complete_statement_spans_and_arena_ownership() {
+            let dialect = PostgreSqlDialect {};
+            let sql: Arc<str> = Arc::from(
+                "-- é\nSELECT 'é'::text; EXPLAIN SELECT 1; CREATE TABLE t (name text DEFAULT 'x')",
+            );
+            let expected = ParsedSql::parse(&dialect, Arc::clone(&sql)).unwrap();
+            let tokens = crate::tokenizer::Tokenizer::new(&dialect, &sql)
+                .tokenize_with_location()
+                .unwrap();
+            // SAFETY: Only an integer leaves the edit callback.
+            let (document, count) = unsafe {
+                ParsedSql::parse_tokens_and_edit_with_options(
+                    &dialect,
+                    Arc::clone(&sql),
+                    tokens,
+                    ParserOptions::new(),
+                    |statements| statements.len(),
+                )
+            }
+            .unwrap();
+            drop(sql);
+            assert_eq!(count, 3);
+            assert_eq!(document.statements(), expected.statements());
+            for index in 0..count {
+                assert_eq!(
+                    document.statement_span(index),
+                    expected.statement_span(index)
+                );
+                assert_eq!(
+                    document.statement_source(index),
+                    expected.statement_source(index)
+                );
+            }
+            let Statement::Query(query) = &document.statements()[0] else {
+                panic!("expected query")
+            };
+            assert!(query.is_arena_allocated());
+            assert!(document.arena_stats().node_allocations > 0);
         }
 
         #[test]
