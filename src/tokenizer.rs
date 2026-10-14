@@ -1221,8 +1221,11 @@ impl<'a> Tokenizer<'a> {
                             // N'...' - a <national character string literal>
                             let backslash_escape =
                                 self.features.supports_string_literal_backslash_escape;
-                            let s =
-                                self.tokenize_single_quoted_string(chars, '\'', backslash_escape)?;
+                            let s = if backslash_escape && dialect_of!(self is PostgreSqlDialect) {
+                                self.tokenize_postgres_escaped_string(chars.location(), chars)?
+                            } else {
+                                self.tokenize_single_quoted_string(chars, '\'', backslash_escape)?
+                            };
                             Ok(Some(Token::NationalStringLiteral(s)))
                         }
                         _ => {
@@ -1253,8 +1256,11 @@ impl<'a> Tokenizer<'a> {
                     chars.next(); // consume, to check the next char
                     match chars.peek() {
                         Some('\'') => {
-                            let s =
-                                self.tokenize_escaped_single_quoted_string(starting_loc, chars)?;
+                            let s = if dialect_of!(self is PostgreSqlDialect) {
+                                self.tokenize_postgres_escaped_string(starting_loc, chars)?
+                            } else {
+                                self.tokenize_escaped_single_quoted_string(starting_loc, chars)?
+                            };
                             Ok(Some(Token::EscapedStringLiteral(s)))
                         }
                         _ => {
@@ -1272,6 +1278,14 @@ impl<'a> Tokenizer<'a> {
                         // Check for U&'...' / U&"..." without cloning the iterator
                         match chars.peek_nth(1) {
                             Some('\'') => {
+                                if self.features.supports_string_literal_backslash_escape
+                                    && dialect_of!(self is PostgreSqlDialect)
+                                {
+                                    return self.tokenizer_error(
+                                        chars.location(),
+                                        "unsafe use of string constant with Unicode escapes",
+                                    );
+                                }
                                 chars.next(); // consume the '&'
                                 let s = tokenize_unicode_escaped(chars, '\'')?;
                                 return Ok(Some(Token::UnicodeStringLiteral(s)));
@@ -1309,6 +1323,14 @@ impl<'a> Tokenizer<'a> {
                 }
                 // single quoted string
                 '\'' => {
+                    if self.features.supports_string_literal_backslash_escape
+                        && dialect_of!(self is PostgreSqlDialect)
+                    {
+                        let s = self.tokenize_postgres_escaped_string(chars.location(), chars)?;
+                        // Explicit escape syntax preserves decoded backslashes
+                        // when an AST is rendered and parsed again.
+                        return Ok(Some(Token::EscapedStringLiteral(s)));
+                    }
                     let mut s = self.tokenize_single_quoted_string_borrowed(
                         chars,
                         '\'',
@@ -2400,6 +2422,27 @@ impl<'a> Tokenizer<'a> {
         self.tokenizer_error(starting_loc, "Unterminated encoded string literal")
     }
 
+    /// Decode each PostgreSQL continuation independently so a byte escape
+    /// cannot consume digits from the next quoted fragment.
+    fn tokenize_postgres_escaped_string(
+        &self,
+        starting_loc: Location,
+        chars: &mut State,
+    ) -> Result<String, TokenizerError> {
+        let mut value = self.tokenize_escaped_single_quoted_string(starting_loc, chars)?;
+        if self.features.supports_newline_string_literal_continuation {
+            while let Some(gap) = newline_string_continuation_len(chars) {
+                for _ in 0..gap {
+                    chars.next();
+                }
+                let continued =
+                    self.tokenize_escaped_single_quoted_string(chars.location(), chars)?;
+                value.push_str(&continued);
+            }
+        }
+        Ok(value)
+    }
+
     /// Reads a string literal quoted by a single quote character.
     fn tokenize_single_quoted_string(
         &self,
@@ -2754,13 +2797,13 @@ fn newline_string_continuation_len(chars: &State) -> Option<usize> {
         let tail = &rest[offset..];
         let ch = tail.chars().next()?;
         match ch {
-            '\n' => {
+            '\n' | '\r' => {
                 seen_newline = true;
                 offset += 1;
             }
-            ' ' | '\t' | '\r' | '\x0c' => offset += 1,
+            ' ' | '\t' | '\x0c' => offset += 1,
             '-' if tail.starts_with("--") => {
-                let newline = tail.find('\n')?;
+                let newline = tail.find(['\n', '\r'])?;
                 seen_newline = true;
                 offset += newline + 1;
             }
@@ -3295,6 +3338,88 @@ mod tests {
     use super::*;
     use crate::dialect::{MsSqlDialect, MySqlDialect};
     use crate::test_utils::{all_dialects_except, all_dialects_where};
+
+    #[derive(Debug)]
+    struct NonstandardPostgresDialect;
+
+    impl Dialect for NonstandardPostgresDialect {
+        fn dialect(&self) -> core::any::TypeId {
+            PostgreSqlDialect {}.dialect()
+        }
+        fn is_identifier_start(&self, ch: char) -> bool {
+            PostgreSqlDialect {}.is_identifier_start(ch)
+        }
+        fn is_identifier_part(&self, ch: char) -> bool {
+            PostgreSqlDialect {}.is_identifier_part(ch)
+        }
+        fn supports_string_literal_backslash_escape(&self) -> bool {
+            true
+        }
+        fn supports_string_escape_constant(&self) -> bool {
+            true
+        }
+        fn supports_unicode_string_literal(&self) -> bool {
+            true
+        }
+        fn supports_newline_string_literal_continuation(&self) -> bool {
+            true
+        }
+        fn supports_plpgsql(&self) -> bool {
+            true
+        }
+    }
+
+    #[test]
+    fn postgres_nonstandard_strings_use_postgres_escape_rules() {
+        let dialect = NonstandardPostgresDialect;
+        for (source, expected) in [
+            (r"'\a\x41\101\n'", "aAA\n"),
+            ("'\\x4'\n'1'", "\u{4}1"),
+            ("'\\1'\r-- continuation\r'2'", "\u{1}2"),
+            ("E'\\x4'\n'1'", "\u{4}1"),
+        ] {
+            let tokens = Tokenizer::new(&dialect, source).tokenize().unwrap();
+            assert_eq!(
+                tokens,
+                vec![Token::EscapedStringLiteral(expected.to_owned())]
+            );
+        }
+        assert_eq!(
+            Tokenizer::new(&dialect, r"N'\a\x41'").tokenize().unwrap(),
+            vec![Token::NationalStringLiteral("aA".to_owned())],
+        );
+        assert!(Tokenizer::new(&dialect, r"U&'\0041'").tokenize().is_err());
+        assert!(Tokenizer::new(&dialect, r#"U&"\0041""#).tokenize().is_ok());
+    }
+
+    #[test]
+    fn nested_postgres_routine_body_retains_literal_policy() {
+        let statements = crate::parser::Parser::parse_sql(
+            &NonstandardPostgresDialect,
+            r"CREATE FUNCTION f() RETURNS text LANGUAGE plpgsql AS $$BEGIN RETURN '\a\x41'; END$$",
+        )
+        .unwrap();
+        let crate::ast::Statement::CreateFunction(function) = &statements[0] else {
+            panic!("expected function");
+        };
+        let crate::ast::CreateFunctionBody::AsBeginEnd(body) =
+            function.function_body.as_ref().unwrap()
+        else {
+            panic!("expected parsed routine body");
+        };
+        let crate::ast::Statement::Return(statement) = &body.statements[0] else {
+            panic!("expected return");
+        };
+        let Some(crate::ast::ReturnStatementValue::Expr(crate::ast::Expr::Value(value))) =
+            &statement.value
+        else {
+            panic!("expected literal return");
+        };
+        assert_eq!(
+            value.value,
+            crate::ast::Value::EscapedStringLiteral("aA".to_owned())
+        );
+    }
 
     #[test]
     fn tokenize_numeric_literal_underscore() {
