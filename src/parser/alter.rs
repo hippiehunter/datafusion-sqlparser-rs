@@ -20,7 +20,7 @@ use crate::{
     ast::{
         helpers::key_value_options::{KeyValueOptions, KeyValueOptionsDelimiter},
         AlterConfigurationOperation, AlterPolicyOperation, AlterRoleOperation, AlterUser, Expr,
-        ObjectName, Password, ResetConfig, RoleOption, Statement,
+        ObjectName, Password, ResetConfig, RoleOption, SetConfigValue, Statement,
     },
     dialect::{MsSqlDialect, PostgreSqlDialect},
     keywords::Keyword,
@@ -49,7 +49,7 @@ impl Parser<'_> {
             t
         };
 
-        let operation = self.parse_pg_alter_configuration_operation()?;
+        let operation = self.parse_pg_alter_configuration_operation(Self::parse_generic_set_value)?;
 
         Ok(Statement::AlterSystem { token, operation })
     }
@@ -78,7 +78,7 @@ impl Parser<'_> {
         let database_name = self.parse_object_name(false)?;
         let operation = match self.parse_alter_database_operation()? {
             Some(operation) => operation,
-            None => self.parse_pg_alter_configuration_operation()?,
+            None => self.parse_pg_alter_configuration_operation(Self::parse_set_config_value)?,
         };
 
         Ok(Statement::AlterDatabase {
@@ -345,14 +345,18 @@ impl Parser<'_> {
         }
     }
 
+    /// `SET name ... | RESET { name | ALL }`, the `SET` value read by
+    /// `parse_value`: `ALTER DATABASE` takes `FROM CURRENT`, `ALTER SYSTEM`
+    /// does not.
     fn parse_pg_alter_configuration_operation(
         &self,
+        parse_value: impl Fn(&Self) -> Result<SetConfigValue, ParserError>,
     ) -> Result<AlterConfigurationOperation, ParserError> {
         if self.parse_keyword(Keyword::SET) {
             let config_name = self.parse_object_name(false)?;
             Ok(AlterConfigurationOperation::Set {
                 config_name,
-                config_value: self.parse_set_config_value()?,
+                config_value: parse_value(self)?,
             })
         } else if self.parse_keyword(Keyword::RESET) {
             if self.parse_keyword(Keyword::ALL) {

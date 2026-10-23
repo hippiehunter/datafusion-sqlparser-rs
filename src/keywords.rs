@@ -216,7 +216,6 @@ define_keywords!(
     CHARACTER_LENGTH,
     CHARSET,
     CHAR_LENGTH,
-    CHEAPEST,
     CHECK,
     CHECKPOINT,
     CHECKSUM,

@@ -10188,6 +10188,117 @@ fn parse_graph_table_rejects_duplicate_edge_quantifier() {
     );
 }
 
+fn single_graph_match(sql: &str) -> GraphMatchClause {
+    let mut statements = Parser::parse_sql(&PostgreSqlDialect {}, sql).unwrap();
+    assert_eq!(statements.len(), 1);
+    let rendered = statements[0].to_string();
+    assert_eq!(
+        Parser::parse_sql(&PostgreSqlDialect {}, &rendered).unwrap()[0].to_string(),
+        rendered,
+        "a graph query renders to SQL that parses to itself"
+    );
+    let Statement::Query(query) = statements.pop().unwrap() else {
+        panic!("expected query statement");
+    };
+    let select = query.body.as_select().expect("expected SELECT body");
+    let TableFactor::GraphTable { match_clause, .. } = &select.from[0].relation else {
+        panic!("expected GRAPH_TABLE relation");
+    };
+    match_clause.as_ref().clone()
+}
+
+#[test]
+fn parse_graph_table_path_pattern_prefixes_belong_to_each_pattern() {
+    let clause = single_graph_match(
+        "SELECT * FROM GRAPH_TABLE (g MATCH ANY SHORTEST TRAIL (a IS person)-[e IS knows]->+(b), \
+         p = SHORTEST 2 GROUPS (b)-[f]->{1,3}(c), ANY 3 ACYCLIC (c)-[x]->*(d), (d) \
+         WHERE a.id = 1 ONE ROW PER STEP (v1, ed, v2) COLUMNS (v1.id AS s))",
+    );
+    let prefixes: Vec<_> = clause
+        .patterns
+        .iter()
+        .map(|pattern| (pattern.path_finding.clone(), pattern.path_mode.clone()))
+        .collect();
+    assert_eq!(
+        prefixes,
+        vec![
+            (Some(PathFinding::AnyShortest), Some(PathMode::Trail)),
+            (Some(PathFinding::ShortestGroups { k: Some(2) }), None),
+            (Some(PathFinding::Any { k: Some(3) }), Some(PathMode::Acyclic)),
+            (None, None),
+        ]
+    );
+    assert_eq!(
+        clause.row_limiting,
+        Some(RowLimiting::OneRowPerStep {
+            source: Ident::new("v1"),
+            edge: Ident::new("ed"),
+            destination: Ident::new("v2"),
+        })
+    );
+}
+
+#[test]
+fn parse_create_property_graph_endpoint_without_a_key() {
+    let sql = "CREATE PROPERTY GRAPH g VERTEX TABLES (accounts KEY (id)) \
+               EDGE TABLES (transfers KEY (id) SOURCE accounts DESTINATION accounts (id))";
+    let parsed = Parser::parse_sql(&PostgreSqlDialect {}, sql).unwrap();
+    let Statement::CreatePropertyGraph(create) = &parsed[0] else {
+        panic!("expected CREATE PROPERTY GRAPH");
+    };
+    let edge = &create.edge_tables[0];
+    assert!(edge.source.key.is_none());
+    assert_eq!(edge.source.references.to_string(), "accounts");
+    assert!(edge.source.referenced_columns.is_none());
+    assert!(edge.destination.key.is_none());
+    assert_eq!(edge.destination.referenced_columns.as_ref().unwrap()[0].value, "id");
+    let rendered = parsed[0].to_string();
+    assert_eq!(Parser::parse_sql(&PostgreSqlDialect {}, &rendered).unwrap(), parsed);
+    assert!(
+        Parser::parse_sql(
+            &PostgreSqlDialect {},
+            "CREATE PROPERTY GRAPH g VERTEX TABLES (accounts KEY (id)) \
+             EDGE TABLES (transfers KEY (id) SOURCE KEY (src) accounts DESTINATION accounts)",
+        )
+        .is_err(),
+        "a source key names the table it references with REFERENCES"
+    );
+}
+
+#[test]
+fn parse_graph_table_noise_words_and_group_counts() {
+    for (sql, expected) in [
+        ("ALL SHORTEST WALK PATHS", PathFinding::AllShortest),
+        ("SHORTEST 4 PATH", PathFinding::Shortest { k: 4 }),
+        ("SHORTEST GROUP", PathFinding::ShortestGroups { k: None }),
+        ("SHORTEST 2 SIMPLE PATHS GROUPS", PathFinding::ShortestGroups { k: Some(2) }),
+        ("ANY", PathFinding::Any { k: None }),
+        ("ALL", PathFinding::All),
+    ] {
+        let statement =
+            format!("SELECT * FROM GRAPH_TABLE (g MATCH {sql} (a)-[e]->*(b) COLUMNS (b.id AS b))");
+        let parsed = Parser::parse_sql(&PostgreSqlDialect {}, &statement).unwrap();
+        let Statement::Query(query) = &parsed[0] else {
+            panic!("expected query statement");
+        };
+        let select = query.body.as_select().expect("expected SELECT body");
+        let TableFactor::GraphTable { match_clause, .. } = &select.from[0].relation else {
+            panic!("expected GRAPH_TABLE relation");
+        };
+        assert_eq!(match_clause.patterns[0].path_finding, Some(expected), "{sql}");
+        let rendered = parsed[0].to_string();
+        assert_eq!(
+            Parser::parse_sql(&PostgreSqlDialect {}, &rendered).unwrap()[0].to_string(),
+            rendered
+        );
+    }
+    for sql in ["ANY SHORTEST GROUPS", "SHORTEST", "ANY CHEAPEST"] {
+        let statement =
+            format!("SELECT * FROM GRAPH_TABLE (g MATCH {sql} (a)-[e]->*(b) COLUMNS (b.id AS b))");
+        assert!(Parser::parse_sql(&PostgreSqlDialect {}, &statement).is_err(), "{sql}");
+    }
+}
+
 #[test]
 fn parse_offset_and_limit() {
     let sql = "SELECT foo FROM bar LIMIT 1 OFFSET 2";

@@ -4852,9 +4852,9 @@ pub struct GraphEdgeEndpoint {
 impl fmt::Display for GraphEdgeEndpoint {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if let Some(key) = &self.key {
-            write!(f, "{} ", key)?;
+            write!(f, "{} REFERENCES ", key)?;
         }
-        write!(f, "REFERENCES {}", self.references)?;
+        write!(f, "{}", self.references)?;
         if let Some(columns) = &self.referenced_columns {
             write!(f, "({})", display_comma_separated(columns))?;
         }

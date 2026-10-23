@@ -5363,6 +5363,27 @@ fn parse_alter_system_and_database() {
     );
 }
 
+/// PostgreSQL's `ALTER SYSTEM SET` takes `generic_set`, which has no
+/// `FROM CURRENT` form: `ALTER SYSTEM SET work_mem FROM CURRENT` is a syntax
+/// error at `FROM`. `ALTER DATABASE` and `ALTER ROLE` keep the form.
+#[test]
+fn alter_system_set_refuses_from_current() {
+    for sql in [
+        "ALTER SYSTEM SET work_mem FROM CURRENT",
+        "ALTER SYSTEM SET x FROM CURRENT",
+    ] {
+        assert_eq!(
+            pg().parse_sql_statements(sql).unwrap_err(),
+            ParserError::ParserError("Expected: TO or =, found: FROM".to_string()),
+            "{sql}"
+        );
+    }
+    pg().verified_stmt("ALTER SYSTEM SET work_mem TO DEFAULT");
+    pg().verified_stmt("ALTER SYSTEM SET search_path TO a, b");
+    pg().verified_stmt("ALTER DATABASE db SET work_mem FROM CURRENT");
+    pg().verified_stmt("ALTER ROLE r SET work_mem FROM CURRENT");
+}
+
 #[test]
 fn parse_delimited_identifiers() {
     // check that quoted identifiers in any position remain quoted after serialization

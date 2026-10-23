@@ -6810,12 +6810,6 @@ impl<'a> Parser<'a> {
         // Check if MATCH keyword is present (optional)
         let match_keyword_present = self.parse_keyword(Keyword::MATCH);
 
-        // Parse optional path finding (e.g., ANY SHORTEST)
-        let path_finding = self.parse_path_finding()?;
-
-        // Parse optional path mode
-        let path_mode = self.parse_path_mode()?;
-
         // Parse graph patterns
         let patterns = self.parse_graph_patterns()?;
 
@@ -6850,8 +6844,6 @@ impl<'a> Parser<'a> {
         Ok(GraphSubquery {
             distinct,
             match_keyword_present,
-            path_finding,
-            path_mode,
             patterns,
             where_clause,
             return_expr,
@@ -13271,13 +13263,19 @@ impl<'a> Parser<'a> {
         })
     }
 
+    /// `[KEY (columns) REFERENCES] vertex_table [(columns)]`: an endpoint
+    /// without a key names its vertex table alone and takes its key from the
+    /// edge table's foreign key to it. `REFERENCES` without a key is accepted
+    /// as well.
     fn parse_graph_edge_endpoint(&self) -> Result<GraphEdgeEndpoint, ParserError> {
         let key = if self.parse_keyword(Keyword::KEY) {
             Some(self.parse_graph_key_clause()?)
         } else {
             None
         };
-        self.expect_keyword(Keyword::REFERENCES)?;
+        if !self.parse_keyword(Keyword::REFERENCES) && key.is_some() {
+            return self.expected("REFERENCES", self.peek_token());
+        }
         let references = self.parse_object_name(false)?;
         let referenced_columns = if self.consume_token(&BorrowedToken::LParen) {
             let columns = self.parse_comma_separated(|parser| parser.parse_identifier())?;
@@ -23889,42 +23887,19 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// Parse MATCH [path_finding] [path_mode] [row_limiting] (pattern) [COST expr] [WHERE expr] [KEEP ...] COLUMNS (...)
+    /// Parse `MATCH <path patterns> [WHERE expr] [ONE ROW PER ...] [COLUMNS (...)]`.
     fn parse_graph_match_clause(&self) -> Result<GraphMatchClause, ParserError> {
-        // Parse optional path finding algorithm
-        let path_finding = self.parse_path_finding()?;
-
-        // Parse optional path mode
-        let path_mode = self.parse_path_mode()?;
-
-        // Parse optional row limiting
-        let row_limiting = self.parse_row_limiting()?;
-
-        // Parse graph patterns
         let patterns = self.parse_graph_patterns()?;
 
-        // Parse optional COST clause
-        let cost_expr = if self.parse_keyword(Keyword::COST) {
-            Some(self.parse_expr()?)
-        } else {
-            None
-        };
-
-        // Parse optional WHERE clause
         let where_clause = if self.parse_keyword(Keyword::WHERE) {
             Some(self.parse_expr()?)
         } else {
             None
         };
 
-        // Parse optional KEEP clause
-        let keep_clause = if self.parse_keyword(Keyword::KEEP) {
-            Some(self.parse_keep_clause()?)
-        } else {
-            None
-        };
+        let row_limiting = self.parse_row_limiting()?;
 
-        // Parse COLUMNS clause (optional in graph EXISTS predicates)
+        // COLUMNS is optional in graph EXISTS predicates.
         let columns = if self.parse_keyword(Keyword::COLUMNS) {
             Some(self.parse_graph_columns_clause_inner()?)
         } else {
@@ -23932,70 +23907,83 @@ impl<'a> Parser<'a> {
         };
 
         Ok(GraphMatchClause {
-            path_finding,
-            path_mode,
-            row_limiting,
             patterns,
-            cost_expr,
             where_clause,
-            keep_clause,
+            row_limiting,
             columns,
             // When called from GRAPH_TABLE, MATCH is always present
             match_keyword_present: true,
         })
     }
 
-    /// Parse path finding algorithm (ANY, ANY SHORTEST, ALL SHORTEST, etc.)
+    /// Parse a path search prefix: `ALL`, `ANY [k]`, `ANY SHORTEST`,
+    /// `ALL SHORTEST`, `SHORTEST k` or `SHORTEST [k] GROUP[S]`. The path mode
+    /// and `PATH`/`PATHS` that may follow are parsed by the caller; `GROUP[S]`
+    /// comes after them.
     fn parse_path_finding(&self) -> Result<Option<PathFinding>, ParserError> {
-        use crate::ast::{PathFinding, PathVariant};
-
         if self.parse_keyword(Keyword::ANY) {
             if self.parse_keyword(Keyword::SHORTEST) {
-                Ok(Some(PathFinding::AnyShortest))
-            } else if self.parse_keyword(Keyword::CHEAPEST) {
-                Ok(Some(PathFinding::AnyCheapest))
-            } else {
-                Ok(Some(PathFinding::Any))
+                return Ok(Some(PathFinding::AnyShortest));
             }
+            let k = self.maybe_parse_path_count()?;
+            Ok(Some(PathFinding::Any { k }))
         } else if self.parse_keyword(Keyword::ALL) {
             if self.parse_keyword(Keyword::SHORTEST) {
                 Ok(Some(PathFinding::AllShortest))
-            } else if self.parse_keyword(Keyword::CHEAPEST) {
-                Ok(Some(PathFinding::AllCheapest))
             } else {
                 Ok(Some(PathFinding::All))
             }
         } else if self.parse_keyword(Keyword::SHORTEST) {
-            let k = self.parse_literal_uint()?;
-            let variant = if self.parse_keyword(Keyword::PATH) {
-                if self.parse_keyword(Keyword::GROUPS) {
-                    Some(PathVariant::PathGroups)
-                } else {
-                    Some(PathVariant::Paths)
-                }
-            } else if self.parse_keyword(Keyword::PATHS) {
-                Some(PathVariant::Paths)
-            } else {
-                None
-            };
-            Ok(Some(PathFinding::Shortest { k, variant }))
-        } else if self.parse_keyword(Keyword::CHEAPEST) {
-            let k = self.parse_literal_uint()?;
-            let variant = if self.parse_keyword(Keyword::PATH) {
-                if self.parse_keyword(Keyword::GROUPS) {
-                    Some(PathVariant::PathGroups)
-                } else {
-                    Some(PathVariant::Paths)
-                }
-            } else if self.parse_keyword(Keyword::PATHS) {
-                Some(PathVariant::Paths)
-            } else {
-                None
-            };
-            Ok(Some(PathFinding::Cheapest { k, variant }))
+            let k = self.maybe_parse_path_count()?;
+            // `GROUP[S]` follows any path mode and `PATH[S]`; the caller
+            // turns this into `ShortestGroups` when it sees it.
+            match k {
+                Some(k) => Ok(Some(PathFinding::Shortest { k })),
+                None => Ok(Some(PathFinding::ShortestGroups { k: None })),
+            }
         } else {
             Ok(None)
         }
+    }
+
+    fn maybe_parse_path_count(&self) -> Result<Option<u64>, ParserError> {
+        if matches!(self.peek_token_ref().token, BorrowedToken::Number(_, _)) {
+            Ok(Some(self.parse_literal_uint()?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Parse a path pattern prefix: `[selector] [path mode] [PATH | PATHS]
+    /// [GROUP | GROUPS]`.
+    fn parse_path_pattern_prefix(
+        &self,
+    ) -> Result<(Option<PathFinding>, Option<PathMode>), ParserError> {
+        let path_finding = self.parse_path_finding()?;
+        let path_mode = self.parse_path_mode()?;
+        if path_finding.is_some() || path_mode.is_some() {
+            let _ = self.parse_one_of_keywords(&[Keyword::PATH, Keyword::PATHS]);
+        }
+        let groups = path_finding.is_some()
+            && self
+                .parse_one_of_keywords(&[Keyword::GROUP, Keyword::GROUPS])
+                .is_some();
+        let path_finding = match (path_finding, groups) {
+            (Some(PathFinding::Shortest { k }), true) => {
+                Some(PathFinding::ShortestGroups { k: Some(k) })
+            }
+            (Some(PathFinding::ShortestGroups { k }), _) => {
+                if !groups {
+                    return self.expected("a path count or GROUPS after SHORTEST", self.peek_token());
+                }
+                Some(PathFinding::ShortestGroups { k })
+            }
+            (Some(_), true) => {
+                return self.expected("SHORTEST before GROUPS", self.peek_token());
+            }
+            (path_finding, _) => path_finding,
+        };
+        Ok((path_finding, path_mode))
     }
 
     /// Parse path mode (WALK, TRAIL, ACYCLIC, SIMPLE)
@@ -24015,43 +24003,36 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Parse row limiting clause (ONE ROW PER MATCH/VERTEX/STEP)
+    /// Parse `ONE ROW PER MATCH`, `ONE ROW PER VERTEX (v)` or
+    /// `ONE ROW PER STEP (v1, e, v2)`.
     fn parse_row_limiting(&self) -> Result<Option<RowLimiting>, ParserError> {
         use crate::ast::RowLimiting;
 
-        if self.parse_keywords(&[Keyword::ONE, Keyword::ROW, Keyword::PER]) {
-            if self.parse_keyword(Keyword::MATCH) {
-                Ok(Some(RowLimiting::OneRowPerMatch))
-            } else if self.parse_keyword(Keyword::VERTEX) {
-                Ok(Some(RowLimiting::OneRowPerVertex))
-            } else if self.parse_keyword(Keyword::STEP) {
-                Ok(Some(RowLimiting::OneRowPerStep))
-            } else {
-                self.expected(
-                    "MATCH, VERTEX, or STEP after ONE ROW PER",
-                    self.peek_token(),
-                )
-            }
-        } else {
-            Ok(None)
+        if !self.parse_keywords(&[Keyword::ONE, Keyword::ROW, Keyword::PER]) {
+            return Ok(None);
         }
-    }
-
-    /// Parse KEEP clause (KEEP SHORTEST, KEEP CHEAPEST COST expr, KEEP FIRST k)
-    fn parse_keep_clause(&self) -> Result<KeepClause, ParserError> {
-        use crate::ast::KeepClause;
-
-        if self.parse_keyword(Keyword::SHORTEST) {
-            Ok(KeepClause::Shortest)
-        } else if self.parse_keyword(Keyword::CHEAPEST) {
-            self.expect_keyword(Keyword::COST)?;
-            let cost = self.parse_expr()?;
-            Ok(KeepClause::Cheapest { cost })
-        } else if self.parse_keyword(Keyword::FIRST) {
-            let k = self.parse_literal_uint()?;
-            Ok(KeepClause::First { k })
+        if self.parse_keyword(Keyword::MATCH) {
+            Ok(Some(RowLimiting::OneRowPerMatch))
+        } else if self.parse_keyword(Keyword::VERTEX) {
+            self.expect_token(&BorrowedToken::LParen)?;
+            let vertex = self.parse_identifier()?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            Ok(Some(RowLimiting::OneRowPerVertex { vertex }))
+        } else if self.parse_keyword(Keyword::STEP) {
+            self.expect_token(&BorrowedToken::LParen)?;
+            let source = self.parse_identifier()?;
+            self.expect_token(&BorrowedToken::Comma)?;
+            let edge = self.parse_identifier()?;
+            self.expect_token(&BorrowedToken::Comma)?;
+            let destination = self.parse_identifier()?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            Ok(Some(RowLimiting::OneRowPerStep {
+                source,
+                edge,
+                destination,
+            }))
         } else {
-            self.expected("SHORTEST, CHEAPEST, or FIRST after KEEP", self.peek_token())
+            self.expected("MATCH, VERTEX, or STEP after ONE ROW PER", self.peek_token())
         }
     }
 
@@ -24093,9 +24074,12 @@ impl<'a> Parser<'a> {
             None
         };
 
+        let (path_finding, path_mode) = self.parse_path_pattern_prefix()?;
         let expr = self.parse_graph_pattern_chain()?;
         Ok(GraphPattern {
             path_variable,
+            path_finding,
+            path_mode,
             expr,
         })
     }
@@ -24270,7 +24254,7 @@ impl<'a> Parser<'a> {
         let variable = if self.peek_token().token != BorrowedToken::Colon
             && self.peek_token().token != BorrowedToken::LBrace
             && self.peek_token().token != BorrowedToken::RParen
-            && !(self.dialect.is::<OracleDialect>() && self.peek_keyword(Keyword::IS))
+            && !self.peek_keyword(Keyword::IS)
             && !matches!(self.peek_token().token, BorrowedToken::Word(w) if w.keyword == Keyword::WHERE)
         {
             Some(self.parse_identifier()?)
@@ -24280,7 +24264,7 @@ impl<'a> Parser<'a> {
 
         // Parse labels (can be multiple, separated by :)
         let mut labels = vec![];
-        let is_label_syntax = self.dialect.is::<OracleDialect>() && self.parse_keyword(Keyword::IS);
+        let is_label_syntax = self.parse_keyword(Keyword::IS);
         if is_label_syntax {
             labels.push(self.parse_label_expression()?);
         } else {
@@ -24384,7 +24368,7 @@ impl<'a> Parser<'a> {
             && self.peek_token().token != BorrowedToken::Colon
             && self.peek_token().token != BorrowedToken::LBrace
             && self.peek_token().token != BorrowedToken::RBracket
-            && !(self.dialect.is::<OracleDialect>() && self.peek_keyword(Keyword::IS))
+            && !self.peek_keyword(Keyword::IS)
             && !matches!(self.peek_token().token, BorrowedToken::Word(w) if w.keyword == Keyword::WHERE)
         {
             Some(self.parse_identifier()?)
@@ -24394,7 +24378,7 @@ impl<'a> Parser<'a> {
 
         // Parse labels (can be multiple, separated by :)
         let mut labels = vec![];
-        let is_label_syntax = self.dialect.is::<OracleDialect>() && self.parse_keyword(Keyword::IS);
+        let is_label_syntax = self.parse_keyword(Keyword::IS);
         if is_label_syntax {
             labels.push(self.parse_label_expression()?);
         } else {

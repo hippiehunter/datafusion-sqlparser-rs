@@ -958,6 +958,21 @@ impl Parser<'_> {
         if !self.parse_keyword(Keyword::TO) && !self.consume_token(&BorrowedToken::Eq) {
             return self.expected("TO, =, or FROM CURRENT", self.peek_token());
         }
+        self.parse_set_config_assignment()
+    }
+
+    /// Parse PostgreSQL's `generic_set` value, `{ TO | = } { DEFAULT | value
+    /// [, ...] }`: the `SET` of `ALTER SYSTEM`, which has no `FROM CURRENT`
+    /// form.
+    pub(super) fn parse_generic_set_value(&self) -> Result<SetConfigValue, ParserError> {
+        if !self.parse_keyword(Keyword::TO) && !self.consume_token(&BorrowedToken::Eq) {
+            return self.expected("TO or =", self.peek_token());
+        }
+        self.parse_set_config_assignment()
+    }
+
+    /// The `DEFAULT | value [, ...]` after a `SET` clause's `TO` or `=`.
+    fn parse_set_config_assignment(&self) -> Result<SetConfigValue, ParserError> {
         if self.parse_keyword(Keyword::DEFAULT) {
             return Ok(SetConfigValue::Default);
         }

@@ -2511,6 +2511,10 @@ impl fmt::Display for GraphPatternExpr {
 pub struct GraphPattern {
     /// Optional path variable binding (e.g., `p` in `p = (a)-[]->(b)`)
     pub path_variable: Option<Ident>,
+    /// The path search prefix (selector) of this path pattern.
+    pub path_finding: Option<PathFinding>,
+    /// The path mode of this path pattern.
+    pub path_mode: Option<PathMode>,
     pub expr: GraphPatternExpr,
 }
 
@@ -2518,6 +2522,27 @@ impl fmt::Display for GraphPattern {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(var) = &self.path_variable {
             write!(f, "{var} = ")?;
+        }
+        // GROUPS follows the path mode: `SHORTEST 2 TRAIL GROUPS`.
+        match (&self.path_finding, &self.path_mode) {
+            (Some(PathFinding::ShortestGroups { k }), mode) => {
+                write!(f, "SHORTEST ")?;
+                if let Some(k) = k {
+                    write!(f, "{k} ")?;
+                }
+                if let Some(mode) = mode {
+                    write!(f, "{mode} ")?;
+                }
+                write!(f, "GROUPS ")?;
+            }
+            (path_finding, mode) => {
+                if let Some(path_finding) = path_finding {
+                    write!(f, "{path_finding} ")?;
+                }
+                if let Some(mode) = mode {
+                    write!(f, "{mode} ")?;
+                }
+            }
         }
         write!(f, "{}", self.expr)
     }
@@ -2563,76 +2588,40 @@ impl fmt::Display for GraphColumnsClause {
     }
 }
 
-/// Path finding algorithm for MATCH clause (SQL/PGQ)
+/// Path search prefix (selector) of a path pattern (SQL/PGQ, GQL).
+///
+/// A selector partitions a path pattern's matches by their first and last
+/// vertex and keeps the named paths of each partition.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub enum PathFinding {
-    /// ANY - any path
-    Any,
-    /// ANY SHORTEST - any shortest path
-    AnyShortest,
-    /// ALL SHORTEST - all shortest paths
-    AllShortest,
-    /// SHORTEST k [PATHS|PATH GROUPS]
-    Shortest {
-        k: u64,
-        variant: Option<PathVariant>,
-    },
-    /// ANY CHEAPEST - any cheapest path
-    AnyCheapest,
-    /// ALL CHEAPEST - all cheapest paths
-    AllCheapest,
-    /// CHEAPEST k [PATHS|PATH GROUPS]
-    Cheapest {
-        k: u64,
-        variant: Option<PathVariant>,
-    },
-    /// ALL - all paths
+    /// `ALL` - every path
     All,
+    /// `ANY [k]` - any one path, or any `k` paths
+    Any { k: Option<u64> },
+    /// `ANY SHORTEST` - one path of minimum length
+    AnyShortest,
+    /// `ALL SHORTEST` - every path of minimum length
+    AllShortest,
+    /// `SHORTEST k` - the `k` shortest paths
+    Shortest { k: u64 },
+    /// `SHORTEST [k] GROUP[S]` - every path whose length is among the `k`
+    /// smallest lengths (one when `k` is omitted)
+    ShortestGroups { k: Option<u64> },
 }
 
 impl fmt::Display for PathFinding {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            PathFinding::Any => write!(f, "ANY"),
+            PathFinding::All => write!(f, "ALL"),
+            PathFinding::Any { k: None } => write!(f, "ANY"),
+            PathFinding::Any { k: Some(k) } => write!(f, "ANY {k}"),
             PathFinding::AnyShortest => write!(f, "ANY SHORTEST"),
             PathFinding::AllShortest => write!(f, "ALL SHORTEST"),
-            PathFinding::Shortest { k, variant } => {
-                write!(f, "SHORTEST {k}")?;
-                if let Some(v) = variant {
-                    write!(f, " {v}")?;
-                }
-                Ok(())
-            }
-            PathFinding::AnyCheapest => write!(f, "ANY CHEAPEST"),
-            PathFinding::AllCheapest => write!(f, "ALL CHEAPEST"),
-            PathFinding::Cheapest { k, variant } => {
-                write!(f, "CHEAPEST {k}")?;
-                if let Some(v) = variant {
-                    write!(f, " {v}")?;
-                }
-                Ok(())
-            }
-            PathFinding::All => write!(f, "ALL"),
-        }
-    }
-}
-
-/// Variant for SHORTEST/CHEAPEST k
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum PathVariant {
-    Paths,
-    PathGroups,
-}
-
-impl fmt::Display for PathVariant {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PathVariant::Paths => write!(f, "PATHS"),
-            PathVariant::PathGroups => write!(f, "PATH GROUPS"),
+            PathFinding::Shortest { k } => write!(f, "SHORTEST {k}"),
+            PathFinding::ShortestGroups { k: None } => write!(f, "SHORTEST GROUPS"),
+            PathFinding::ShortestGroups { k: Some(k) } => write!(f, "SHORTEST {k} GROUPS"),
         }
     }
 }
@@ -2648,7 +2637,8 @@ pub enum PathMode {
     Trail,
     /// ACYCLIC - no repeated vertices
     Acyclic,
-    /// SIMPLE - no repeated vertices at all
+    /// SIMPLE - no repeated vertices, except that the last vertex may be
+    /// the first
     Simple,
 }
 
@@ -2663,48 +2653,35 @@ impl fmt::Display for PathMode {
     }
 }
 
-/// KEEP clause for filtering paths
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum KeepClause {
-    /// KEEP SHORTEST
-    Shortest,
-    /// KEEP CHEAPEST COST expr
-    Cheapest { cost: Expr },
-    /// KEEP FIRST k
-    First { k: u64 },
-}
-
-impl fmt::Display for KeepClause {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            KeepClause::Shortest => write!(f, "KEEP SHORTEST"),
-            KeepClause::Cheapest { cost } => write!(f, "KEEP CHEAPEST COST {cost}"),
-            KeepClause::First { k } => write!(f, "KEEP FIRST {k}"),
-        }
-    }
-}
-
-/// Row limiting mode for graph pattern matching results
+/// Row limiting mode for graph pattern matching results (`ONE ROW PER ...`)
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub enum RowLimiting {
-    /// ONE ROW PER MATCH - return one row per complete match
+    /// ONE ROW PER MATCH - one row per complete match
     OneRowPerMatch,
-    /// ONE ROW PER VERTEX - return one row per vertex in the path
-    OneRowPerVertex,
-    /// ONE ROW PER STEP - return one row per edge in the path
-    OneRowPerStep,
+    /// ONE ROW PER VERTEX (v) - one row per vertex of each match's path,
+    /// bound to the iterator variable `v`
+    OneRowPerVertex { vertex: Ident },
+    /// ONE ROW PER STEP (v1, e, v2) - one row per edge of each match's path,
+    /// with the edge and its two vertices bound to the iterator variables
+    OneRowPerStep {
+        source: Ident,
+        edge: Ident,
+        destination: Ident,
+    },
 }
 
 impl fmt::Display for RowLimiting {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             RowLimiting::OneRowPerMatch => write!(f, "ONE ROW PER MATCH"),
-            RowLimiting::OneRowPerVertex => write!(f, "ONE ROW PER VERTEX"),
-            RowLimiting::OneRowPerStep => write!(f, "ONE ROW PER STEP"),
+            RowLimiting::OneRowPerVertex { vertex } => write!(f, "ONE ROW PER VERTEX ({vertex})"),
+            RowLimiting::OneRowPerStep {
+                source,
+                edge,
+                destination,
+            } => write!(f, "ONE ROW PER STEP ({source}, {edge}, {destination})"),
         }
     }
 }
@@ -2714,13 +2691,9 @@ impl fmt::Display for RowLimiting {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct GraphMatchClause {
-    pub path_finding: Option<PathFinding>,
-    pub path_mode: Option<PathMode>,
-    pub row_limiting: Option<RowLimiting>,
     pub patterns: Vec<GraphPattern>,
-    pub cost_expr: Option<Expr>,
     pub where_clause: Option<Expr>,
-    pub keep_clause: Option<KeepClause>,
+    pub row_limiting: Option<RowLimiting>,
     pub columns: Option<GraphColumnsClause>,
     /// Whether the MATCH keyword was explicitly present (used in graph EXISTS predicates)
     pub match_keyword_present: bool,
@@ -2733,22 +2706,6 @@ impl fmt::Display for GraphMatchClause {
             write!(f, "MATCH ")?;
         }
 
-        // Path finding algorithm
-        if let Some(path_finding) = &self.path_finding {
-            write!(f, "{path_finding} ")?;
-        }
-
-        // Path mode
-        if let Some(path_mode) = &self.path_mode {
-            write!(f, "{path_mode} ")?;
-        }
-
-        // Row limiting
-        if let Some(row_limiting) = &self.row_limiting {
-            write!(f, "{row_limiting} ")?;
-        }
-
-        // Patterns
         for (i, pattern) in self.patterns.iter().enumerate() {
             if i > 0 {
                 write!(f, ", ")?;
@@ -2756,19 +2713,12 @@ impl fmt::Display for GraphMatchClause {
             write!(f, "{pattern}")?;
         }
 
-        // COST clause
-        if let Some(cost_expr) = &self.cost_expr {
-            write!(f, " COST {cost_expr}")?;
-        }
-
-        // WHERE clause
         if let Some(where_clause) = &self.where_clause {
             write!(f, " WHERE {where_clause}")?;
         }
 
-        // KEEP clause
-        if let Some(keep_clause) = &self.keep_clause {
-            write!(f, " {keep_clause}")?;
+        if let Some(row_limiting) = &self.row_limiting {
+            write!(f, " {row_limiting}")?;
         }
 
         // COLUMNS clause
@@ -2791,10 +2741,6 @@ pub struct GraphSubquery {
     pub distinct: bool,
     /// Whether the MATCH keyword was explicitly present
     pub match_keyword_present: bool,
-    /// Path finding algorithm (e.g., ANY SHORTEST)
-    pub path_finding: Option<PathFinding>,
-    /// Path mode
-    pub path_mode: Option<PathMode>,
     /// Graph patterns to match
     pub patterns: Vec<GraphPattern>,
     /// WHERE clause
@@ -2816,16 +2762,6 @@ impl fmt::Display for GraphSubquery {
         // Write MATCH keyword if it was present
         if self.match_keyword_present {
             write!(f, "MATCH ")?;
-        }
-
-        // Path finding algorithm
-        if let Some(path_finding) = &self.path_finding {
-            write!(f, "{path_finding} ")?;
-        }
-
-        // Path mode
-        if let Some(path_mode) = &self.path_mode {
-            write!(f, "{path_mode} ")?;
         }
 
         // Patterns
