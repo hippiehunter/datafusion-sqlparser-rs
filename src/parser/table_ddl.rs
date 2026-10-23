@@ -31,10 +31,11 @@ use crate::ast::table_ddl::{
     TypedTableElement, ViewCheckOption,
 };
 use crate::ast::{
-    AlterColumnOperation, AlterTableOperation, Box, ColumnDef, ColumnOption, ColumnOptionDef,
-    CreateTableLike, CreateTableLikeDefaults, CreateTableLikeOption, Expr, GeneratedAs, Ident,
-    ObjectName, ReferentialAction, SchemaElement, SequenceOptions, SqlMedOptionAction, SqlOption,
-    Statement, TableConstraint, TriggerGroup, UnaryOperator, UserDefinedTypeStorage,
+    AlterColumnOperation, AlterTableOperation, AttachedToken, Box, ColumnDef, ColumnOption,
+    ColumnOptionDef, CreateTableLike, CreateTableLikeDefaults, CreateTableLikeOption, Expr,
+    GeneratedAs, Ident, ObjectName, ReferentialAction, SchemaElement, SequenceOptions,
+    SqlMedOptionAction, SqlOption, Statement, TableConstraint, TriggerGroup, UnaryOperator,
+    UserDefinedTypeStorage,
 };
 use crate::dialect::PostgreSqlDialect;
 use crate::keywords::Keyword;
@@ -299,6 +300,7 @@ impl Parser<'_> {
     }
 
     fn parse_number_expr(&self) -> Result<Expr, ParserError> {
+        let minus_span = self.peek_token_ref().span;
         let negative = self.consume_token(&BorrowedToken::Minus);
         if !negative {
             let _ = self.consume_token(&BorrowedToken::Plus);
@@ -308,6 +310,7 @@ impl Parser<'_> {
             Ok(Expr::UnaryOp {
                 op: UnaryOperator::Minus,
                 expr: Box::new(Expr::Value(value)),
+                op_token: AttachedToken(minus_span, None),
             })
         } else {
             Ok(Expr::Value(value))

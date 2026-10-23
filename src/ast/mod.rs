@@ -109,7 +109,7 @@ pub use self::query::{
     GroupByExpr, GroupByWithModifier, IdentWithAlias, IlikeSelectItem, Interpolate,
     InterpolateExpr, Join, JoinConstraint, JoinOperator, JsonTableColumn,
     JsonTableColumnErrorHandling, JsonTableNamedColumn, JsonTableNestedColumn, KeepClause,
-    LabelExpression, LimitClause, LockClause, LockType, MatchRecognizePattern,
+    LabelExpression, LimitClause, LimitValue, LockClause, LockType, MatchRecognizePattern,
     MatchRecognizeSymbol, Measure, NamedWindowDefinition, NamedWindowExpr, NodePattern, NonBlock,
     Offset, OffsetRows, OpenJsonTableColumn, OracleFlashbackBoundary, OracleFlashbackVersionKind,
     OracleModelCellReferenceOptions, OracleModelCellSelector, OracleModelClause,
@@ -1209,6 +1209,8 @@ pub enum Expr {
     UnaryOp {
         op: UnaryOperator,
         expr: Box<Expr>,
+        /// The operator token (for span tracking)
+        op_token: AttachedToken,
     },
     /// CONVERT a value to a different data type or character encoding. e.g. `CONVERT(foo USING utf8mb4)`
     Convert {
@@ -2209,7 +2211,7 @@ impl fmt::Display for Expr {
                     if add_parens { ")" } else { "" },
                 )
             }
-            Expr::UnaryOp { op, expr } => {
+            Expr::UnaryOp { op, expr, .. } => {
                 if op == &UnaryOperator::PGPostfixFactorial {
                     write!(f, "{expr}{op}")
                 } else if matches!(
