@@ -5848,6 +5848,7 @@ impl<'a> Parser<'a> {
                     expr: Box::new(
                         self.parse_subexpr(self.dialect.prec_value(Precedence::MulDivModOp))?,
                     ),
+                    op_token: AttachedToken(span, None),
                 })
             }
             BorrowedToken::ExclamationMark if self.features.supports_bang_not_operator => {
@@ -5856,6 +5857,7 @@ impl<'a> Parser<'a> {
                     expr: Box::new(
                         self.parse_subexpr(self.dialect.prec_value(Precedence::UnaryNot))?,
                     ),
+                    op_token: AttachedToken(span, None),
                 })
             }
             tok @ BorrowedToken::DoubleExclamationMark
@@ -5876,11 +5878,13 @@ impl<'a> Parser<'a> {
                     expr: Box::new(
                         self.parse_subexpr(self.dialect.prec_value(Precedence::PlusMinus))?,
                     ),
+                    op_token: AttachedToken(span, None),
                 })
             }
             BorrowedToken::Tilde => Ok(Expr::UnaryOp {
                 op: UnaryOperator::BitwiseNot,
                 expr: Box::new(self.parse_subexpr(self.dialect.prec_value(Precedence::PlusMinus))?),
+                op_token: AttachedToken(span, None),
             }),
             tok @ BorrowedToken::Sharp
             | tok @ BorrowedToken::AtDashAt
@@ -5906,6 +5910,7 @@ impl<'a> Parser<'a> {
                     expr: Box::new(
                         self.parse_subexpr(self.dialect.prec_value(Precedence::PlusMinus))?,
                     ),
+                    op_token: AttachedToken(span, None),
                 })
             }
             BorrowedToken::EscapedStringLiteral(_) if dialect_is!(dialect is PostgreSqlDialect) => {
@@ -6019,6 +6024,27 @@ impl<'a> Parser<'a> {
                         ));
                         chain.push(AccessExpr::Dot(expr));
                         self.advance_token(); // The consumed string
+                    }
+                    // A qualified name calls these functions plainly: the
+                    // special argument syntax of `SUBSTRING (x FROM y)` and
+                    // its kin belongs to the unqualified keyword, as in
+                    // PostgreSQL's grammar (`pg_catalog.substr('abc', 2)`).
+                    BorrowedToken::Word(word)
+                        if Self::is_all_ident(&root, &chain)
+                            && self.peek_nth_token_ref(1).token == BorrowedToken::LParen
+                            && matches!(
+                                word.keyword,
+                                Keyword::SUBSTR
+                                    | Keyword::SUBSTRING
+                                    | Keyword::TRIM
+                                    | Keyword::POSITION
+                                    | Keyword::OVERLAY
+                            ) =>
+                    {
+                        let name =
+                            ObjectName::from(vec![self.word_to_ident(word.clone(), next_token.span)]);
+                        self.advance_token();
+                        chain.push(AccessExpr::Dot(Expr::Function(self.parse_function_call(name)?)));
                     }
                     BorrowedToken::Word(word)
                         if self.dialect.is::<OracleDialect>()
@@ -7502,7 +7528,9 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parse the operand of a prefix `NOT` whose keyword is the current token.
     pub fn parse_not(&self) -> Result<Expr, ParserError> {
+        let op_token = self.attached_token_from_current();
         match self.peek_token().token {
             BorrowedToken::Word(w) => match w.keyword {
                 Keyword::EXISTS => {
@@ -7515,11 +7543,13 @@ impl<'a> Parser<'a> {
                     expr: Box::new(
                         self.parse_subexpr(self.dialect.prec_value(Precedence::UnaryNot))?,
                     ),
+                    op_token,
                 }),
             },
             _ => Ok(Expr::UnaryOp {
                 op: UnaryOperator::Not,
                 expr: Box::new(self.parse_subexpr(self.dialect.prec_value(Precedence::UnaryNot))?),
+                op_token,
             }),
         }
     }
@@ -8555,6 +8585,7 @@ impl<'a> Parser<'a> {
             Ok(Expr::UnaryOp {
                 op: UnaryOperator::PGPostfixFactorial,
                 expr: Box::new(expr),
+                op_token: AttachedToken(span, None),
             })
         } else if BorrowedToken::LBracket == *tok && self.features.supports_partiql {
             self.prev_token();
@@ -19414,10 +19445,12 @@ impl<'a> Parser<'a> {
             BorrowedToken::Plus => Ok(Expr::UnaryOp {
                 op: UnaryOperator::Plus,
                 expr: Box::new(Expr::Value(self.parse_number_value()?)),
+                op_token: AttachedToken(next_token.span, None),
             }),
             BorrowedToken::Minus => Ok(Expr::UnaryOp {
                 op: UnaryOperator::Minus,
                 expr: Box::new(Expr::Value(self.parse_number_value()?)),
+                op_token: AttachedToken(next_token.span, None),
             }),
             _ => {
                 self.prev_token();
@@ -20322,39 +20355,35 @@ impl<'a> Parser<'a> {
             None
         };
 
-        let (limit, limit_by) = if self.parse_keyword(Keyword::LIMIT) {
-            let expr = self.parse_limit()?;
-
-            if self.features.supports_limit_comma
-                && offset.is_none()
-                && expr.is_some() // ALL not supported with comma
-                && self.consume_token(&BorrowedToken::Comma)
-            {
-                let offset = expr.ok_or_else(|| {
-                    ParserError::ParserError(
-                        "Missing offset for LIMIT <offset>, <limit>".to_string(),
-                    )
-                })?;
-                return Ok(Some(LimitClause::OffsetCommaLimit {
-                    offset,
-                    limit: self.parse_expr()?,
-                }));
+        let limit = if self.parse_keyword(Keyword::LIMIT) {
+            if self.parse_keyword(Keyword::ALL) {
+                Some(LimitValue::All(self.attached_token_from_current()))
+            } else {
+                let expr = self.parse_expr()?;
+                if self.features.supports_limit_comma
+                    && offset.is_none()
+                    && self.consume_token(&BorrowedToken::Comma)
+                {
+                    return Ok(Some(LimitClause::OffsetCommaLimit {
+                        offset: expr,
+                        limit: self.parse_expr()?,
+                    }));
+                }
+                Some(LimitValue::Expr(expr))
             }
-
-            (Some(expr), None)
         } else {
-            (None, None)
+            None
         };
 
         if offset.is_none() && limit.is_some() && self.parse_keyword(Keyword::OFFSET) {
             offset = Some(self.parse_offset()?);
         }
 
-        if offset.is_some() || (limit.is_some() && limit != Some(None)) || limit_by.is_some() {
+        if offset.is_some() || limit.is_some() {
             Ok(Some(LimitClause::LimitOffset {
-                limit: limit.unwrap_or_default(),
+                limit,
                 offset,
-                limit_by: limit_by.unwrap_or_default(),
+                limit_by: vec![],
             }))
         } else {
             Ok(None)
@@ -20763,10 +20792,11 @@ impl<'a> Parser<'a> {
         self.expect_token(&BorrowedToken::LParen)?;
         let items = self.parse_comma_separated(|p| {
             // `PERIOD name` references a period; a bare `period` is a column of that name.
-            let period_reference = matches!(
-                &p.peek_token_ref().token,
-                BorrowedToken::Word(w) if w.keyword == Keyword::PERIOD
-            ) && matches!(p.peek_nth_token_ref(1).token, BorrowedToken::Word(_));
+            let period_reference =
+                matches!(
+                    &p.peek_token_ref().token,
+                    BorrowedToken::Word(w) if w.keyword == Keyword::PERIOD
+                ) && matches!(p.peek_nth_token_ref(1).token, BorrowedToken::Word(_));
             if period_reference {
                 p.advance_token();
                 let period_name = p.parse_identifier()?;

@@ -863,7 +863,7 @@ fn parse_simple_select() {
     assert_eq!(3, select.projection.len());
     let select = verified_query(sql);
     let expected_limit_clause = LimitClause::LimitOffset {
-        limit: Some(Expr::value(number("5"))),
+        limit: Some(LimitValue::Expr(Expr::value(number("5")))),
         offset: None,
         limit_by: vec![],
     };
@@ -890,7 +890,7 @@ fn parse_limit_is_not_an_alias() {
     // In dialects supporting LIMIT it shouldn't be parsed as a table alias
     let ast = verified_query("SELECT id FROM customer LIMIT 1");
     let expected_limit_clause = LimitClause::LimitOffset {
-        limit: Some(Expr::value(number("1"))),
+        limit: Some(LimitValue::Expr(Expr::value(number("1")))),
         offset: None,
         limit_by: vec![],
     };
@@ -901,7 +901,7 @@ fn parse_limit_is_not_an_alias() {
 
     let ast = verified_query("SELECT 1 LIMIT 5");
     let expected_limit_clause = LimitClause::LimitOffset {
-        limit: Some(Expr::value(number("5"))),
+        limit: Some(LimitValue::Expr(Expr::value(number("5")))),
         offset: None,
         limit_by: vec![],
     };
@@ -1232,6 +1232,7 @@ fn parse_select_count_distinct() {
                 args: vec![FunctionArg::Unnamed(FunctionArgExpr::Expr(Expr::UnaryOp {
                     op: UnaryOperator::Plus,
                     expr: Box::new(Expr::Identifier(Ident::new("x"))),
+                    op_token: AttachedToken::empty(),
                 }))],
                 clauses: vec![],
                 close_paren_token: AttachedToken::empty(),
@@ -1492,11 +1493,13 @@ fn parse_unary_math_with_plus() {
             left: Box::new(UnaryOp {
                 op: UnaryOperator::Minus,
                 expr: Box::new(Identifier(Ident::new("a"))),
+                op_token: AttachedToken::empty(),
             }),
             op: BinaryOperator::Plus,
             right: Box::new(UnaryOp {
                 op: UnaryOperator::Minus,
                 expr: Box::new(Identifier(Ident::new("b"))),
+                op_token: AttachedToken::empty(),
             }),
         },
         verified_expr(sql)
@@ -1512,11 +1515,13 @@ fn parse_unary_math_with_multiply() {
             left: Box::new(UnaryOp {
                 op: UnaryOperator::Minus,
                 expr: Box::new(Identifier(Ident::new("a"))),
+                op_token: AttachedToken::empty(),
             }),
             op: BinaryOperator::Multiply,
             right: Box::new(UnaryOp {
                 op: UnaryOperator::Minus,
                 expr: Box::new(Identifier(Ident::new("b"))),
+                op_token: AttachedToken::empty(),
             }),
         },
         verified_expr(sql)
@@ -2006,6 +2011,7 @@ fn parse_not_precedence() {
                 low: Box::new(Expr::value(number("1"))),
                 high: Box::new(Expr::value(number("2"))),
             }),
+            op_token: AttachedToken::empty(),
         },
     );
 
@@ -2026,6 +2032,7 @@ fn parse_not_precedence() {
                 escape_char: None,
                 quantifier: None,
             }),
+            op_token: AttachedToken::empty(),
         },
     );
 
@@ -2043,6 +2050,7 @@ fn parse_not_precedence() {
                 negated: true,
                 close_paren_token: AttachedToken::empty(),
             }),
+            op_token: AttachedToken::empty(),
         },
     );
 }
@@ -2603,7 +2611,7 @@ fn parse_select_order_by_limit() {
         select.order_by.expect("ORDER BY expected").kind
     );
     let expected_limit_clause = LimitClause::LimitOffset {
-        limit: Some(Expr::value(number("2"))),
+        limit: Some(LimitValue::Expr(Expr::value(number("2")))),
         offset: None,
         limit_by: vec![],
     };
@@ -2696,7 +2704,7 @@ fn parse_select_order_by_nulls_order() {
         select.order_by.expect("ORDER BY expeccted").kind
     );
     let expected_limit_clause = LimitClause::LimitOffset {
-        limit: Some(Expr::value(number("2"))),
+        limit: Some(LimitValue::Expr(Expr::value(number("2")))),
         offset: None,
         limit_by: vec![],
     };
@@ -2840,19 +2848,62 @@ fn parse_select_having() {
 }
 
 #[test]
-fn parse_limit_accepts_all() {
-    one_statement_parses_to(
-        "SELECT id, fname, lname FROM customer WHERE id = 1 LIMIT ALL",
-        "SELECT id, fname, lname FROM customer WHERE id = 1",
+fn parse_limit_all_is_a_limit_clause() {
+    let query = verified_query("SELECT id FROM customer LIMIT ALL");
+    assert_eq!(
+        query.limit_clause.as_deref(),
+        Some(&LimitClause::LimitOffset {
+            limit: Some(LimitValue::All(AttachedToken::empty())),
+            offset: None,
+            limit_by: vec![],
+        })
     );
-    one_statement_parses_to(
-        "SELECT id, fname, lname FROM customer WHERE id = 1 LIMIT ALL OFFSET 1",
-        "SELECT id, fname, lname FROM customer WHERE id = 1 OFFSET 1",
+
+    let query = verified_query("SELECT id FROM customer LIMIT ALL OFFSET 1");
+    assert_eq!(
+        query.limit_clause.as_deref(),
+        Some(&LimitClause::LimitOffset {
+            limit: Some(LimitValue::All(AttachedToken::empty())),
+            offset: Some(Offset {
+                value: Expr::value(number("1")),
+                rows: OffsetRows::None,
+            }),
+            limit_by: vec![],
+        })
     );
+
     one_statement_parses_to(
-        "SELECT id, fname, lname FROM customer WHERE id = 1 OFFSET 1 LIMIT ALL",
-        "SELECT id, fname, lname FROM customer WHERE id = 1 OFFSET 1",
+        "SELECT id FROM customer OFFSET 1 LIMIT ALL",
+        "SELECT id FROM customer LIMIT ALL OFFSET 1",
     );
+
+    let query = verified_query("SELECT id FROM customer LIMIT NULL");
+    assert_eq!(
+        query.limit_clause.as_deref(),
+        Some(&LimitClause::LimitOffset {
+            limit: Some(LimitValue::Expr(Expr::Value(
+                Value::Null.with_empty_span()
+            ))),
+            offset: None,
+            limit_by: vec![],
+        })
+    );
+
+    let query = verified_query("SELECT id FROM customer OFFSET 1");
+    assert_eq!(
+        query.limit_clause.as_deref(),
+        Some(&LimitClause::LimitOffset {
+            limit: None,
+            offset: Some(Offset {
+                value: Expr::value(number("1")),
+                rows: OffsetRows::None,
+            }),
+            limit_by: vec![],
+        })
+    );
+
+    let query = verified_query("SELECT id FROM customer");
+    assert_eq!(query.limit_clause, None);
 }
 
 #[test]
@@ -3440,11 +3491,13 @@ fn gen_sign_number_case(value: &str, op: UnaryOperator) -> (Vec<String>, Vec<Sel
         SelectItem::UnnamedExpr(Expr::UnaryOp {
             op,
             expr: Box::new(Expr::value(number(value))),
+            op_token: AttachedToken::empty(),
         }),
         SelectItem::ExprWithAlias {
             expr: Expr::UnaryOp {
                 op,
                 expr: Box::new(Expr::value(number(value))),
+                op_token: AttachedToken::empty(),
             },
             alias: Ident::new("col_alias"),
         },
@@ -3452,6 +3505,7 @@ fn gen_sign_number_case(value: &str, op: UnaryOperator) -> (Vec<String>, Vec<Sel
             expr: Expr::UnaryOp {
                 op,
                 expr: Box::new(Expr::value(number(value))),
+                op_token: AttachedToken::empty(),
             },
             alias: Ident::new("col_alias"),
         },
@@ -5811,7 +5865,8 @@ fn parse_literal_integer() {
     assert_eq!(
         &UnaryOp {
             op: UnaryOperator::Minus,
-            expr: Box::new(Expr::value(number("10")))
+            expr: Box::new(Expr::value(number("10"))),
+            op_token: AttachedToken::empty(),
         },
         expr_from_projection(&select.projection[1]),
     );
@@ -5819,7 +5874,8 @@ fn parse_literal_integer() {
     assert_eq!(
         &UnaryOp {
             op: UnaryOperator::Plus,
-            expr: Box::new(Expr::value(number("20")))
+            expr: Box::new(Expr::value(number("20"))),
+            op_token: AttachedToken::empty(),
         },
         expr_from_projection(&select.projection[2]),
     )
@@ -10030,9 +10086,9 @@ fn test_placeholder() {
 
     let ast = dialects.verified_query("SELECT * FROM student LIMIT $1 OFFSET $2");
     let expected_limit_clause = LimitClause::LimitOffset {
-        limit: Some(Expr::Value(
+        limit: Some(LimitValue::Expr(Expr::Value(
             (Value::Placeholder("$1".into())).with_empty_span(),
-        )),
+        ))),
         offset: Some(Offset {
             value: Expr::Value((Value::Placeholder("$2".into())).with_empty_span()),
             rows: OffsetRows::None,
@@ -10303,7 +10359,7 @@ fn parse_graph_table_noise_words_and_group_counts() {
 fn parse_offset_and_limit() {
     let sql = "SELECT foo FROM bar LIMIT 1 OFFSET 2";
     let expected_limit_clause = Some(LimitClause::LimitOffset {
-        limit: Some(Expr::value(number("1"))),
+        limit: Some(LimitValue::Expr(Expr::value(number("1")))),
         offset: Some(Offset {
             value: Expr::value(number("2")),
             rows: OffsetRows::None,
@@ -10324,11 +10380,11 @@ fn parse_offset_and_limit() {
     let sql = "SELECT foo FROM bar LIMIT 1 + 2 OFFSET 3 * 4";
     let ast = verified_query(sql);
     let expected_limit_clause = LimitClause::LimitOffset {
-        limit: Some(Expr::BinaryOp {
+        limit: Some(LimitValue::Expr(Expr::BinaryOp {
             left: Box::new(Expr::value(number("1"))),
             op: BinaryOperator::Plus,
             right: Box::new(Expr::value(number("2"))),
-        }),
+        })),
         offset: Some(Offset {
             value: Expr::BinaryOp {
                 left: Box::new(Expr::value(number("3"))),
@@ -13082,6 +13138,7 @@ fn parse_explain_with_option_list() {
                     expr: Box::new(Expr::Value(
                         (Value::Number("10.1".parse().unwrap(), false)).with_empty_span(),
                     )),
+                    op_token: AttachedToken::empty(),
                 }),
             },
             UtilityOption {
@@ -13091,6 +13148,7 @@ fn parse_explain_with_option_list() {
                     expr: Box::new(Expr::Value(
                         (Value::Number("10.2".parse().unwrap(), false)).with_empty_span(),
                     )),
+                    op_token: AttachedToken::empty(),
                 }),
             },
         ]),
@@ -13120,6 +13178,7 @@ fn parse_explain_with_option_list() {
                 expr: Box::new(Expr::Value(
                     (Value::Number("100.1".parse().unwrap(), false)).with_empty_span(),
                 )),
+                op_token: AttachedToken::empty(),
             }),
         },
     ];
@@ -13650,7 +13709,8 @@ fn parse_factorial_operator() {
         assert_eq!(
             SelectItem::UnnamedExpr(Expr::UnaryOp {
                 op: UnaryOperator::PGPostfixFactorial,
-                expr
+                expr,
+                op_token: AttachedToken::empty(),
             }),
             projection[i]
         )
@@ -15658,6 +15718,7 @@ fn parse_generic_unary_ops() {
             UnnamedExpr(UnaryOp {
                 op: *op,
                 expr: Box::new(Identifier(Ident::new("expr"))),
+                op_token: AttachedToken::empty(),
             }),
             select.projection[0]
         );

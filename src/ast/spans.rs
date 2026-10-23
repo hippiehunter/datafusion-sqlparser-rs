@@ -36,20 +36,20 @@ use super::{
     FunctionArgumentList, FunctionArguments, GroupByExpr, HavingBound, IfStatement,
     IlikeSelectItem, IndexColumn, Insert, Interpolate, InterpolateExpr, IterateStatement, Join,
     JoinConstraint, JoinOperator, JsonOnBehavior, JsonPath, JsonPathElem, LeaveStatement,
-    LimitClause, LoopStatement, MatchRecognizePattern, MdArray, MdArrayDimension, Measure,
-    NamedParenthesizedList, NamedWindowDefinition, ObjectName, ObjectNamePart, Offset, OnConflict,
-    OnConflictAction, OnInsert, OpenStatement, OracleCreateLibrary, OracleCreatePackage,
-    OracleCreatePlSqlRoutine, OracleCreateTrigger, OracleCreateType, OracleIsPredicate, OrderBy,
-    OrderByExpr, OrderByKind, Partition, PerformStatement, PivotValueSource, PlSqlCollectionKind,
-    PlSqlDeclaration, PlSqlExecuteImmediate, PlSqlFetch, PlSqlForAll, PlSqlForAllBounds,
-    PlSqlUsingArgument, Pragma, Query, RaiseMessage, RaiseStatement, RaiseUsingItem,
-    ReferentialAction, RenameSelectItem, RepeatStatement, ReplaceSelectElement, ReplaceSelectItem,
-    ReturningClause, Select, SelectInto, SelectItem, SetExpr, SqlOption, SqlPsmAssignment,
-    SqlPsmDataType, SqlPsmDeclaration, SqlPsmQueryAssignment, Statement, Subscript,
-    SubsetDefinition, SymbolDefinition, TableAlias, TableAliasColumnDef, TableConstraint,
-    TableFactor, TableObject, TableOptionsClustered, TableWithJoins, Update, UpdateTableFromKind,
-    Use, Value, Values, ViewColumnDef, WhileStatement, WildcardAdditionalOptions, With, WithFill,
-    XmlRootVersion,
+    LimitClause, LimitValue, LoopStatement, MatchRecognizePattern, MdArray, MdArrayDimension,
+    Measure, NamedParenthesizedList, NamedWindowDefinition, ObjectName, ObjectNamePart, Offset,
+    OnConflict, OnConflictAction, OnInsert, OpenStatement, OracleCreateLibrary,
+    OracleCreatePackage, OracleCreatePlSqlRoutine, OracleCreateTrigger, OracleCreateType,
+    OracleIsPredicate, OrderBy, OrderByExpr, OrderByKind, Partition, PerformStatement,
+    PivotValueSource, PlSqlCollectionKind, PlSqlDeclaration, PlSqlExecuteImmediate, PlSqlFetch,
+    PlSqlForAll, PlSqlForAllBounds, PlSqlUsingArgument, Pragma, Query, RaiseMessage,
+    RaiseStatement, RaiseUsingItem, ReferentialAction, RenameSelectItem, RepeatStatement,
+    ReplaceSelectElement, ReplaceSelectItem, ReturningClause, Select, SelectInto, SelectItem,
+    SetExpr, SqlOption, SqlPsmAssignment, SqlPsmDataType, SqlPsmDeclaration, SqlPsmQueryAssignment,
+    Statement, Subscript, SubsetDefinition, SymbolDefinition, TableAlias, TableAliasColumnDef,
+    TableConstraint, TableFactor, TableObject, TableOptionsClustered, TableWithJoins, Update,
+    UpdateTableFromKind, Use, Value, Values, ViewColumnDef, WhileStatement,
+    WildcardAdditionalOptions, With, WithFill, XmlRootVersion,
 };
 
 /// Given an iterator of spans, return the [Span::union] of all spans.
@@ -140,6 +140,15 @@ impl Spanned for LimitClause {
                     .chain(limit_by.iter().map(|i| i.span())),
             ),
             LimitClause::OffsetCommaLimit { offset, limit } => offset.span().union(&limit.span()),
+        }
+    }
+}
+
+impl Spanned for LimitValue {
+    fn span(&self) -> Span {
+        match self {
+            LimitValue::All(token) => token.0,
+            LimitValue::Expr(expr) => expr.span(),
         }
     }
 }
@@ -1922,7 +1931,11 @@ impl Spanned for Expr {
                 compare_op: _,
                 right,
             } => left.span().union(&right.span()),
-            Expr::UnaryOp { op: _, expr } => expr.span(),
+            Expr::UnaryOp {
+                op: _,
+                expr,
+                op_token,
+            } => expr.span().union(&op_token.0),
             Expr::Convert {
                 expr,
                 data_type: _,
@@ -3480,5 +3493,82 @@ WHERE id = 1
 
         assert_eq!(stmt_span.start, (2, 7).into());
         assert_eq!(stmt_span.end, (4, 24).into());
+    }
+
+    fn first_order_by_expr(sql: &str) -> Expr {
+        let statements = Parser::parse_sql(&PostgreSqlDialect {}, sql).unwrap();
+        let Statement::Query(query) = &statements[0] else {
+            panic!("expected query; got {:?}", statements[0]);
+        };
+        let Some(OrderBy {
+            kind: OrderByKind::Expressions(exprs),
+            ..
+        }) = &query.order_by
+        else {
+            panic!("expected ORDER BY expressions; got {:?}", query.order_by);
+        };
+        exprs[0].expr.clone()
+    }
+
+    #[test]
+    fn test_unary_operator_span_starts_at_operator() {
+        let sql = "SELECT 1 ORDER BY -1";
+        let span = first_order_by_expr(sql).span();
+        assert_eq!(span, Span::new((1, 19).into(), (1, 21).into()));
+
+        let sql = "SELECT 1 ORDER BY - 1";
+        let span = first_order_by_expr(sql).span();
+        assert_eq!(span, Span::new((1, 19).into(), (1, 22).into()));
+
+        let sql = "SELECT 1 ORDER BY (-1)";
+        let Expr::Nested(inner) = first_order_by_expr(sql) else {
+            panic!("expected nested expression");
+        };
+        assert_eq!(inner.span(), Span::new((1, 20).into(), (1, 22).into()));
+
+        let sql = "SELECT 1\nORDER BY\n   -1";
+        let span = first_order_by_expr(sql).span();
+        assert_eq!(span, Span::new((3, 4).into(), (3, 6).into()));
+    }
+
+    #[test]
+    fn test_limit_all_span_is_its_keyword() {
+        let sql = "SELECT 1 LIMIT ALL";
+        let statements = Parser::parse_sql(&PostgreSqlDialect {}, sql).unwrap();
+        let Statement::Query(query) = &statements[0] else {
+            panic!("expected query; got {:?}", statements[0]);
+        };
+        let Some(LimitClause::LimitOffset {
+            limit: Some(limit), ..
+        }) = query.limit_clause.as_deref()
+        else {
+            panic!("expected LIMIT clause; got {:?}", query.limit_clause);
+        };
+        assert!(matches!(limit, LimitValue::All(_)));
+        assert_eq!(limit.span(), Span::new((1, 16).into(), (1, 19).into()));
+    }
+
+    #[test]
+    fn test_unary_operator_spans_cover_operator_token() {
+        let dialect = &PostgreSqlDialect {};
+        for (sql, source) in [
+            ("SELECT NOT a", "NOT a"),
+            ("SELECT ~ a", "~ a"),
+            ("SELECT @ a", "@ a"),
+            ("SELECT |/ a", "|/ a"),
+            ("SELECT a !", "a !"),
+            ("SELECT + 2", "+ 2"),
+        ] {
+            let test = SpanTest::new(dialect, sql);
+            let select = test.0.parse_select().unwrap();
+            let SelectItem::UnnamedExpr(expr) = &select.projection[0] else {
+                panic!(
+                    "expected unnamed expression; got {:?}",
+                    select.projection[0]
+                );
+            };
+            assert!(matches!(expr, Expr::UnaryOp { .. }), "{sql}: {expr:?}");
+            assert_eq!(test.get_source(expr.span()), source, "{sql}");
+        }
     }
 }

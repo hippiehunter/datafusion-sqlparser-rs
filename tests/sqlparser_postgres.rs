@@ -2928,6 +2928,7 @@ fn parse_pg_unary_ops() {
             SelectItem::UnnamedExpr(Expr::UnaryOp {
                 op: *op,
                 expr: Box::new(Expr::Identifier(Ident::new("a"))),
+                op_token: AttachedToken::empty(),
             }),
             select.projection[0]
         );
@@ -2944,6 +2945,7 @@ fn parse_pg_postfix_factorial() {
             SelectItem::UnnamedExpr(Expr::UnaryOp {
                 op: *op,
                 expr: Box::new(Expr::Identifier(Ident::new("a"))),
+                op_token: AttachedToken::empty(),
             }),
             select.projection[0]
         );
@@ -4765,6 +4767,7 @@ fn parse_is_distinct_from_binds_above_not() {
                 Box::new(Expr::Identifier(Ident::new("a"))),
                 Box::new(Expr::Identifier(Ident::new("b"))),
             )),
+            op_token: AttachedToken::empty(),
         },
         pg().verified_expr("NOT a IS DISTINCT FROM b")
     );
@@ -9026,4 +9029,21 @@ fn parse_quoted_window_frame_offsets_as_string_literals() {
         offset("SELECT sum(x) OVER (ORDER BY ts RANGE '1 day'::INTERVAL PRECEDING) FROM t"),
         Expr::Cast { .. }
     ));
+}
+
+#[test]
+fn parse_qualified_special_syntax_functions_as_plain_calls() {
+    for sql in [
+        "pg_catalog.substr('abc', 2)",
+        "pg_catalog.substring('abc', 2, 1)",
+        "pg_catalog.position('b', 'abc')",
+    ] {
+        match pg().verified_expr(sql) {
+            Expr::Function(function) => {
+                assert_eq!(function.name.0.len(), 2, "{sql}");
+                assert_eq!(function.name.0[0].to_string(), "pg_catalog", "{sql}");
+            }
+            other => panic!("{sql} parsed as {other:?}"),
+        }
+    }
 }

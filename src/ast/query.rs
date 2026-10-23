@@ -3776,8 +3776,8 @@ pub enum LimitClause {
     ///
     /// `LIMIT <limit> [BY <expr>,<expr>,...] [OFFSET <offset>]`
     LimitOffset {
-        /// `LIMIT { <N> | ALL }`
-        limit: Option<Expr>,
+        /// `LIMIT { <N> | ALL }`; `None` when only `OFFSET` is written.
+        limit: Option<LimitValue>,
         /// `OFFSET <N> [ { ROW | ROWS } ]`
         offset: Option<Offset>,
         /// `BY { <expr>,<expr>,... } }`
@@ -3815,6 +3815,47 @@ impl fmt::Display for LimitClause {
             LimitClause::OffsetCommaLimit { offset, limit } => {
                 write!(f, " LIMIT {offset}, {limit}")
             }
+        }
+    }
+}
+
+/// The row count of a `LIMIT` clause.
+///
+/// `LIMIT ALL` is a LIMIT clause that bounds nothing, as `LIMIT NULL` is; it
+/// is not the same statement as one without a LIMIT clause.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum LimitValue {
+    /// `LIMIT ALL`, with its `ALL` keyword (for span tracking)
+    All(AttachedToken),
+    /// `LIMIT <expr>`
+    Expr(Expr),
+}
+
+impl LimitValue {
+    /// The row count expression; `None` for `LIMIT ALL`.
+    pub fn expr(&self) -> Option<&Expr> {
+        match self {
+            LimitValue::All(_) => None,
+            LimitValue::Expr(expr) => Some(expr),
+        }
+    }
+
+    /// The row count expression; `None` for `LIMIT ALL`.
+    pub fn expr_mut(&mut self) -> Option<&mut Expr> {
+        match self {
+            LimitValue::All(_) => None,
+            LimitValue::Expr(expr) => Some(expr),
+        }
+    }
+}
+
+impl fmt::Display for LimitValue {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            LimitValue::All(_) => f.write_str("ALL"),
+            LimitValue::Expr(expr) => write!(f, "{expr}"),
         }
     }
 }
