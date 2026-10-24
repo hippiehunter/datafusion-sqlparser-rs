@@ -18817,8 +18817,17 @@ impl<'a> Parser<'a> {
         self.expect_keyword(Keyword::OPEN)?;
         let cursor_name = self.parse_identifier()?;
 
+        // PL/pgSQL: OPEN unbound_cursorvar [ [ NO ] SCROLL ] FOR ...
+        let scroll = if self.parse_keywords(&[Keyword::NO, Keyword::SCROLL]) {
+            Some(false)
+        } else if self.parse_keyword(Keyword::SCROLL) {
+            Some(true)
+        } else {
+            None
+        };
+
         // Check for open_for variants
-        let open_for = if self.consume_token(&BorrowedToken::LParen) {
+        let open_for = if scroll.is_none() && self.consume_token(&BorrowedToken::LParen) {
             // OPEN cursor_name(args) - bound cursor with arguments
             let args = self.parse_comma_separated(|parser| {
                 let named_operator = &parser.peek_nth_token_ref(1).token;
@@ -18876,12 +18885,15 @@ impl<'a> Parser<'a> {
                     Some(OpenFor::Query(query))
                 }
             }
+        } else if scroll.is_some() {
+            return self.expected("FOR after the cursor's SCROLL option", self.peek_token());
         } else {
             None
         };
 
         Ok(Statement::Open(OpenStatement {
             cursor_name,
+            scroll,
             open_for,
         }))
     }

@@ -14923,6 +14923,7 @@ fn test_open() {
         stmt,
         Statement::Open(OpenStatement {
             cursor_name: Ident::new("Employee_Cursor"),
+            scroll: None,
             open_for: None,
         })
     );

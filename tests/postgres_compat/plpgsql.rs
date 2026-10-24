@@ -25,10 +25,10 @@
 
 use crate::postgres_compat::common::*;
 use sqlparser::ast::{
-    ArgMode, AtomicBlock, BeginEndStatements, ConditionalStatements, CreateFunctionBody, DataType,
-    DiagnosticsItem, ExecuteInto, Expr, ForLoopVariant, FunctionBehavior, FunctionCalledOnNull,
-    FunctionParallel, GetDiagnosticsKind, OpenFor, PlSqlDeclaration, RoutineAttribute,
-    SqlPsmDataType, Statement,
+    ArgMode, AtomicBlock, BeginEndStatements, ConditionalStatements, CreateFunctionBody,
+    CursorScrollOption, DataType, DiagnosticsItem, ExecuteInto, Expr, ForLoopVariant,
+    FunctionBehavior, FunctionCalledOnNull, FunctionParallel, GetDiagnosticsKind, OpenFor,
+    PlSqlDeclaration, RoutineAttribute, SqlPsmDataType, Statement,
 };
 
 // =============================================================================
@@ -560,6 +560,49 @@ fn test_open_bound_cursor_accepts_postgresql_named_arguments() {
 }
 
 #[test]
+fn test_open_unbound_cursor_keeps_its_scroll_option() {
+    // https://www.postgresql.org/docs/current/plpgsql-cursors.html#PLPGSQL-CURSOR-OPENING
+    let block = do_block(
+        "DO $$ DECLARE c refcursor; BEGIN \
+         OPEN c SCROLL FOR SELECT 1; CLOSE c; \
+         OPEN c NO SCROLL FOR EXECUTE 'SELECT ' || 2; CLOSE c; \
+         OPEN c FOR SELECT 3; CLOSE c; END $$",
+    );
+    let opens: Vec<_> = block
+        .statements
+        .iter()
+        .filter_map(|statement| match statement {
+            Statement::Open(open) => Some(open),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(opens.len(), 3);
+    assert_eq!(opens[0].scroll, Some(true));
+    assert!(matches!(opens[0].open_for, Some(OpenFor::Query(_))));
+    assert_eq!(opens[0].to_string(), "OPEN c SCROLL FOR SELECT 1");
+    assert_eq!(opens[1].scroll, Some(false));
+    assert!(matches!(opens[1].open_for, Some(OpenFor::Execute { .. })));
+    assert_eq!(
+        opens[1].to_string(),
+        "OPEN c NO SCROLL FOR EXECUTE 'SELECT ' || 2"
+    );
+    assert_eq!(opens[2].scroll, None);
+    assert_eq!(opens[2].to_string(), "OPEN c FOR SELECT 3");
+}
+
+#[test]
+fn test_open_scroll_option_requires_for() {
+    // A bound cursor takes its scroll option from its declaration, so
+    // PostgreSQL accepts [ NO ] SCROLL only before FOR.
+    for sql in [
+        "DO $$ DECLARE c CURSOR FOR SELECT 1; BEGIN OPEN c SCROLL; END $$",
+        "DO $$ DECLARE c CURSOR (k int) FOR SELECT k; BEGIN OPEN c NO SCROLL (1); END $$",
+    ] {
+        assert!(try_parse_pg(sql).is_err(), "{sql}");
+    }
+}
+
+#[test]
 fn test_for_over_query() {
     let block = function_block(
         "CREATE FUNCTION f() RETURNS void LANGUAGE plpgsql \
@@ -827,15 +870,24 @@ fn test_declare_cursor_variants() {
          AS $$ DECLARE c1 CURSOR FOR SELECT 1; c2 NO SCROLL CURSOR FOR SELECT 2; \
          c3 SCROLL CURSOR(k INT) FOR SELECT k; BEGIN RETURN 1; END $$",
     );
-    assert_eq!(declarations.len(), 3);
-    for declaration in &declarations {
-        match declaration {
-            PlSqlDeclaration::Variable(declaration) => {
-                assert!(matches!(declaration.data_type, SqlPsmDataType::Cursor(_)))
-            }
+    let scroll_options: Vec<_> = declarations
+        .iter()
+        .map(|declaration| match declaration {
+            PlSqlDeclaration::Variable(declaration) => match &declaration.data_type {
+                SqlPsmDataType::Cursor(cursor) => cursor.scroll.clone(),
+                other => panic!("expected a cursor declaration, got {other:?}"),
+            },
             other => panic!("expected a cursor declaration, got {other:?}"),
-        }
-    }
+        })
+        .collect();
+    assert_eq!(
+        scroll_options,
+        vec![
+            CursorScrollOption::Unspecified,
+            CursorScrollOption::NoScroll,
+            CursorScrollOption::Scroll,
+        ]
+    );
 }
 
 #[test]

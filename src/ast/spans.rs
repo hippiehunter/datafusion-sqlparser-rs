@@ -3122,6 +3122,7 @@ impl Spanned for OpenStatement {
     fn span(&self) -> Span {
         let OpenStatement {
             cursor_name,
+            scroll: _,
             open_for,
         } = self;
         union_spans(iter::once(cursor_name.span).chain(open_for.iter().map(Spanned::span)))

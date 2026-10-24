@@ -18625,6 +18625,12 @@ impl fmt::Display for ExecuteInto {
 pub struct OpenStatement {
     /// Cursor name
     pub cursor_name: Ident,
+    /// PL/pgSQL `[ NO ] SCROLL` of an unbound cursor variable:
+    /// `Some(true)` for `SCROLL`, `Some(false)` for `NO SCROLL`, `None` when
+    /// absent. The parser accepts it only before `FOR`.
+    ///
+    /// <https://www.postgresql.org/docs/current/plpgsql-cursors.html#PLPGSQL-CURSOR-OPENING>
+    pub scroll: Option<bool>,
     /// Optional OPEN FOR clause
     pub open_for: Option<OpenFor>,
 }
@@ -18632,6 +18638,11 @@ pub struct OpenStatement {
 impl fmt::Display for OpenStatement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "OPEN {}", self.cursor_name)?;
+        match self.scroll {
+            Some(true) => write!(f, " SCROLL")?,
+            Some(false) => write!(f, " NO SCROLL")?,
+            None => {}
+        }
         if let Some(open_for) = &self.open_for {
             write!(f, "{}", open_for)?;
         }
