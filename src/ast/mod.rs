@@ -6745,18 +6745,17 @@ pub enum Set {
     /// However, we allow it for all dialects.
     SetTimeZone { local: bool, value: Expr },
     /// ```sql
-    /// SET NAMES 'charset_name' [COLLATE 'collation_name']
+    /// SET [ LOCAL | SESSION ] NAMES 'charset_name' [COLLATE 'collation_name']
     /// ```
     SetNames {
+        scope: Option<ContextModifier>,
         charset_name: Ident,
         collation_name: Option<String>,
     },
     /// ```sql
-    /// SET NAMES DEFAULT
+    /// SET [ LOCAL | SESSION ] NAMES DEFAULT
     /// ```
-    ///
-    /// Note: this is a MySQL-specific statement.
-    SetNamesDefault {},
+    SetNamesDefault { scope: Option<ContextModifier> },
     /// ```sql
     /// SET TRANSACTION ...
     /// ```
@@ -6828,10 +6827,15 @@ impl Display for Set {
                 write!(f, "TIME ZONE {value}")
             }
             Self::SetNames {
+                scope,
                 charset_name,
                 collation_name,
             } => {
-                write!(f, "SET NAMES {charset_name}")?;
+                f.write_str("SET ")?;
+                if let Some(scope) = scope {
+                    write!(f, "{scope}")?;
+                }
+                write!(f, "NAMES {charset_name}")?;
 
                 if let Some(collation) = collation_name {
                     f.write_str(" COLLATE ")?;
@@ -6840,10 +6844,12 @@ impl Display for Set {
 
                 Ok(())
             }
-            Self::SetNamesDefault {} => {
-                f.write_str("SET NAMES DEFAULT")?;
-
-                Ok(())
+            Self::SetNamesDefault { scope } => {
+                f.write_str("SET ")?;
+                if let Some(scope) = scope {
+                    write!(f, "{scope}")?;
+                }
+                f.write_str("NAMES DEFAULT")
             }
             Set::SingleAssignment {
                 scope,

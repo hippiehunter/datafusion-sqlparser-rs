@@ -5846,7 +5846,7 @@ impl<'a> Parser<'a> {
                 Ok(Expr::UnaryOp {
                     op,
                     expr: Box::new(
-                        self.parse_subexpr(self.dialect.prec_value(Precedence::MulDivModOp))?,
+                        self.parse_subexpr(self.dialect.prec_value(Precedence::UnaryPlusMinus))?,
                     ),
                     op_token: AttachedToken(span, None),
                 })
@@ -5959,7 +5959,13 @@ impl<'a> Parser<'a> {
             _ => self.expected_at("an expression", next_token_index),
         }?;
 
-        if !self.in_column_definition_state() && self.parse_keyword(Keyword::COLLATE) {
+        // PostgreSQL's COLLATE is an infix operator with its own precedence,
+        // so it applies to whatever the infix loop has built (`t.c0 COLLATE
+        // "C"`, `-x COLLATE "C"`), not to the bare prefix.
+        if !self.in_column_definition_state()
+            && !dialect_of!(self is PostgreSqlDialect)
+            && self.parse_keyword(Keyword::COLLATE)
+        {
             Ok(Expr::Collate {
                 expr: Box::new(expr),
                 collation: self.parse_object_name(false)?,
@@ -8500,9 +8506,8 @@ impl<'a> Parser<'a> {
                         suffix_token,
                     })
                 }
-                // A collation applied to an operator's result, `x::text
-                // COLLATE "C"`: a prefix expression takes its own COLLATE
-                // directly, so this arm only sees one that follows an infix.
+                // PostgreSQL's COLLATE operator, applied to everything that binds
+                // tighter than it: `t.c0 COLLATE "C"`, `x::text COLLATE "C"`.
                 Keyword::COLLATE => Ok(Expr::Collate {
                     expr: Box::new(expr),
                     collation: self.parse_object_name(false)?,
@@ -16767,9 +16772,40 @@ impl<'a> Parser<'a> {
     pub fn parse_constraint_characteristics(
         &self,
     ) -> Result<Option<ConstraintCharacteristics>, ParserError> {
+        self.parse_constraint_attributes(false)
+    }
+
+    /// Parse the attributes after a PRIMARY KEY, UNIQUE or EXCLUDE
+    /// constraint. PostgreSQL's grammar takes `NOT VALID` and `NO INHERIT`
+    /// among them, in any order, and refuses them only afterwards, so they
+    /// are kept for that refusal.
+    fn parse_index_constraint_characteristics(
+        &self,
+    ) -> Result<Option<ConstraintCharacteristics>, ParserError> {
+        self.parse_constraint_attributes(dialect_of!(self is PostgreSqlDialect))
+    }
+
+    fn parse_constraint_attributes(
+        &self,
+        validity_and_inheritance: bool,
+    ) -> Result<Option<ConstraintCharacteristics>, ParserError> {
         let mut cc = ConstraintCharacteristics::default();
 
         loop {
+            if validity_and_inheritance
+                && !cc.not_valid
+                && self.parse_keywords(&[Keyword::NOT, Keyword::VALID])
+            {
+                cc.not_valid = true;
+                continue;
+            }
+            if validity_and_inheritance
+                && !cc.no_inherit
+                && self.parse_keywords(&[Keyword::NO, Keyword::INHERIT])
+            {
+                cc.no_inherit = true;
+                continue;
+            }
             if cc.deferrable.is_none() && self.parse_keywords(&[Keyword::NOT, Keyword::DEFERRABLE])
             {
                 cc.deferrable = Some(false);
@@ -16794,7 +16830,7 @@ impl<'a> Parser<'a> {
             }
         }
 
-        if cc.deferrable.is_some() || cc.initially.is_some() || cc.enforced.is_some() {
+        if cc != ConstraintCharacteristics::default() {
             Ok(Some(cc))
         } else {
             Ok(None)
@@ -16827,7 +16863,7 @@ impl<'a> Parser<'a> {
                 let nulls_distinct_before = self.parse_optional_nulls_distinct()?;
 
                 if let Some(using_index) = self.parse_constraint_existing_index()? {
-                    let characteristics = self.parse_constraint_characteristics()?;
+                    let characteristics = self.parse_index_constraint_characteristics()?;
                     return Ok(Some(
                         UniqueConstraint {
                             name,
@@ -16867,7 +16903,7 @@ impl<'a> Parser<'a> {
 
                 let index_details = self.parse_index_constraint_details()?.into_option();
                 let index_options = self.parse_index_options()?;
-                let characteristics = self.parse_constraint_characteristics()?;
+                let characteristics = self.parse_index_constraint_characteristics()?;
                 Ok(Some(
                     UniqueConstraint {
                         name,
@@ -16889,7 +16925,7 @@ impl<'a> Parser<'a> {
                 self.expect_keyword_is(Keyword::KEY)?;
 
                 if let Some(using_index) = self.parse_constraint_existing_index()? {
-                    let characteristics = self.parse_constraint_characteristics()?;
+                    let characteristics = self.parse_index_constraint_characteristics()?;
                     return Ok(Some(
                         PrimaryKeyConstraint {
                             name,
@@ -16917,7 +16953,7 @@ impl<'a> Parser<'a> {
                     self.parse_primary_key_columns_with_overlaps()?;
                 let index_details = self.parse_index_constraint_details()?.into_option();
                 let index_options = self.parse_index_options()?;
-                let characteristics = self.parse_constraint_characteristics()?;
+                let characteristics = self.parse_index_constraint_characteristics()?;
                 Ok(Some(
                     PrimaryKeyConstraint {
                         name,
@@ -17043,8 +17079,17 @@ impl<'a> Parser<'a> {
                 let elements = self.parse_comma_separated(|p| {
                     let element = p.parse_create_index_expr()?;
                     p.expect_keyword(Keyword::WITH)?;
-                    let operator = p.next_token().to_string();
-                    Ok(ExcludeConstraintElement { element, operator })
+                    let ObjectName(mut parts) = p.parse_operator_name()?;
+                    let operator = match parts.pop() {
+                        Some(ObjectNamePart::Identifier(symbol)) => symbol.value,
+                        _ => return p.expected("an operator", p.peek_token()),
+                    };
+                    let operator_schema = (!parts.is_empty()).then(|| ObjectName(parts));
+                    Ok(ExcludeConstraintElement {
+                        element,
+                        operator_schema,
+                        operator,
+                    })
                 })?;
                 self.expect_token(&BorrowedToken::RParen)?;
                 let index_details = self.parse_index_constraint_details()?.into_option();
@@ -17056,7 +17101,7 @@ impl<'a> Parser<'a> {
                 } else {
                     None
                 };
-                let characteristics = self.parse_constraint_characteristics()?;
+                let characteristics = self.parse_index_constraint_characteristics()?;
                 Ok(Some(
                     ExcludeConstraint {
                         name,
@@ -22598,7 +22643,7 @@ impl<'a> Parser<'a> {
             }
         } else if self.features.supports_set_names && self.parse_keyword(Keyword::NAMES) {
             if self.parse_keyword(Keyword::DEFAULT) {
-                return Ok(wrap_set(Set::SetNamesDefault {}));
+                return Ok(wrap_set(Set::SetNamesDefault { scope }));
             }
             let charset_name = self.parse_identifier()?;
             let collation_name = if self.parse_one_of_keywords(&[Keyword::COLLATE]).is_some() {
@@ -22608,8 +22653,39 @@ impl<'a> Parser<'a> {
             };
 
             return Ok(wrap_set(Set::SetNames {
+                scope,
                 charset_name,
                 collation_name,
+            }));
+        } else if dialect_of!(self is PostgreSqlDialect)
+            && self.peek_keyword(Keyword::SCHEMA)
+            && matches!(
+                self.peek_nth_token_ref(1).token,
+                BorrowedToken::SingleQuotedString(_)
+            )
+        {
+            // PostgreSQL's `SET SCHEMA 'name'` is `SET search_path TO 'name'`.
+            self.expect_keyword_is(Keyword::SCHEMA)?;
+            return Ok(wrap_set(Set::SingleAssignment {
+                scope,
+                variable: ObjectName::from(vec![Ident::new("search_path")]),
+                values: vec![Expr::Value(self.parse_value()?)],
+            }));
+        } else if dialect_of!(self is PostgreSqlDialect)
+            && self.parse_keywords(&[Keyword::XML, Keyword::OPTION])
+        {
+            // PostgreSQL's `SET XML OPTION { DOCUMENT | CONTENT }` is
+            // `SET xmloption TO { DOCUMENT | CONTENT }`.
+            if self
+                .peek_one_of_keywords(&[Keyword::DOCUMENT, Keyword::CONTENT])
+                .is_none()
+            {
+                return self.expected("DOCUMENT or CONTENT", self.peek_token());
+            }
+            return Ok(wrap_set(Set::SingleAssignment {
+                scope,
+                variable: ObjectName::from(vec![Ident::new("xmloption")]),
+                values: vec![Expr::Identifier(self.parse_identifier()?)],
             }));
         } else if self.parse_keyword(Keyword::CHARACTERISTICS) {
             self.expect_keywords(&[Keyword::AS, Keyword::TRANSACTION])?;

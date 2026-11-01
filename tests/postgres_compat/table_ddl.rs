@@ -886,7 +886,11 @@ fn create_table_exclude_index_elements() {
             let first = &exclude.elements[0];
             assert_eq!(first.element.column.expr.to_string(), "(a + 1)");
             assert_eq!(
-                first.element.operator_class.as_ref().map(ToString::to_string),
+                first
+                    .element
+                    .operator_class
+                    .as_ref()
+                    .map(ToString::to_string),
                 Some("int4_ops".to_string())
             );
             assert_eq!(first.element.column.options.asc, Some(false));
@@ -895,6 +899,130 @@ fn create_table_exclude_index_elements() {
             assert_eq!(exclude.elements[2].operator, "&&");
         }
         other => panic!("expected EXCLUDE constraint, got {other:?}"),
+    }
+}
+
+#[test]
+fn create_table_exclude_qualified_operator() {
+    let create = create_table(
+        "CREATE TABLE t (a INT, b INT, EXCLUDE (a WITH OPERATOR(pg_catalog.=), b WITH OPERATOR(s.t.&&)))",
+    );
+    match &create.constraints[0] {
+        TableConstraint::Exclude(exclude) => {
+            let first = &exclude.elements[0];
+            assert_eq!(
+                first.operator_schema,
+                Some(ObjectName::from(vec![Ident::new("pg_catalog")]))
+            );
+            assert_eq!(first.operator, "=");
+            let second = &exclude.elements[1];
+            assert_eq!(
+                second.operator_schema,
+                Some(ObjectName::from(vec![Ident::new("s"), Ident::new("t")]))
+            );
+            assert_eq!(second.operator, "&&");
+        }
+        other => panic!("expected EXCLUDE constraint, got {other:?}"),
+    }
+    parses_to(
+        "CREATE TABLE t (a INT, EXCLUDE (a WITH pg_catalog.=))",
+        "CREATE TABLE t (a INT, EXCLUDE (a WITH OPERATOR(pg_catalog.=)))",
+    );
+    parses_to(
+        "CREATE TABLE t (a INT, EXCLUDE (a WITH OPERATOR(=)))",
+        "CREATE TABLE t (a INT, EXCLUDE (a WITH =))",
+    );
+}
+
+#[test]
+fn create_table_exclude_question_operators() {
+    for operator in ["?", "?|", "?&", "?-", "?-|", "?||", "?#"] {
+        let create = create_table(&format!(
+            "CREATE TABLE t (a JSONB, EXCLUDE USING gist (a WITH {operator}))"
+        ));
+        match &create.constraints[0] {
+            TableConstraint::Exclude(exclude) => {
+                assert_eq!(exclude.elements[0].operator, operator);
+                assert_eq!(exclude.elements[0].operator_schema, None);
+            }
+            other => panic!("expected EXCLUDE constraint, got {other:?}"),
+        }
+    }
+    let create = create_table("CREATE TABLE t (a JSONB, b INT, EXCLUDE (a WITH ?|, b WITH =))");
+    assert_eq!(create.constraints.len(), 1);
+}
+
+#[test]
+fn create_table_index_constraint_validity_and_inheritance() {
+    for (sql, not_valid, no_inherit, enforced) in [
+        (
+            "CREATE TABLE t (a INT, PRIMARY KEY (a) NOT VALID)",
+            true,
+            false,
+            None,
+        ),
+        (
+            "CREATE TABLE t (a INT, UNIQUE (a) NO INHERIT)",
+            false,
+            true,
+            None,
+        ),
+        (
+            "CREATE TABLE t (a INT, EXCLUDE (a WITH =) NOT ENFORCED)",
+            false,
+            false,
+            Some(false),
+        ),
+        (
+            "CREATE TABLE t (a INT, PRIMARY KEY (a) ENFORCED)",
+            false,
+            false,
+            Some(true),
+        ),
+        (
+            "CREATE TABLE t (a INT, PRIMARY KEY (a) DEFERRABLE NOT VALID NO INHERIT)",
+            true,
+            true,
+            None,
+        ),
+        (
+            "CREATE TABLE t (a INT, UNIQUE USING INDEX i NOT VALID)",
+            true,
+            false,
+            None,
+        ),
+    ] {
+        let create = create_table(sql);
+        let characteristics = match &create.constraints[0] {
+            TableConstraint::PrimaryKey(constraint) => constraint.characteristics,
+            TableConstraint::Unique(constraint) => constraint.characteristics,
+            TableConstraint::Exclude(constraint) => constraint.characteristics,
+            other => panic!("expected an index constraint, got {other:?}"),
+        }
+        .unwrap_or_else(|| panic!("{sql}: characteristics"));
+        assert_eq!(characteristics.not_valid, not_valid, "{sql}");
+        assert_eq!(characteristics.no_inherit, no_inherit, "{sql}");
+        assert_eq!(characteristics.enforced, enforced, "{sql}");
+    }
+    parses_to(
+        "CREATE TABLE t (a INT, PRIMARY KEY (a) NO INHERIT INITIALLY DEFERRED NOT VALID)",
+        "CREATE TABLE t (a INT, PRIMARY KEY (a) INITIALLY DEFERRED NOT VALID NO INHERIT)",
+    );
+    match alter_table_operations("ALTER TABLE t ADD PRIMARY KEY (a) NOT VALID").as_slice() {
+        [AlterTableOperation::AddConstraint {
+            constraint: TableConstraint::PrimaryKey(constraint),
+            not_valid: false,
+        }] => assert!(constraint.characteristics.is_some_and(|c| c.not_valid)),
+        other => panic!("expected ADD PRIMARY KEY, got {other:?}"),
+    }
+    match alter_table_operations("ALTER TABLE t ADD FOREIGN KEY (a) REFERENCES p(a) NOT VALID")
+        .as_slice()
+    {
+        [AlterTableOperation::AddConstraint {
+            constraint: TableConstraint::ForeignKey(constraint),
+            not_valid: true,
+        }] => assert!(constraint.characteristics.is_none()),
+        other => panic!("expected ADD FOREIGN KEY, got {other:?}"),
     }
 }
 

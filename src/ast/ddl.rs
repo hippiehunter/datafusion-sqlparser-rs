@@ -2092,9 +2092,12 @@ pub(crate) fn display_option_spaced<T: fmt::Display>(option: &Option<T>) -> impl
     display_option(" ", "", option)
 }
 
-/// `<constraint_characteristics> = [ DEFERRABLE | NOT DEFERRABLE ] [ INITIALLY DEFERRED | INITIALLY IMMEDIATE ] [ ENFORCED | NOT ENFORCED ]`
+/// `<constraint_characteristics> = [ DEFERRABLE | NOT DEFERRABLE ] [ INITIALLY DEFERRED | INITIALLY IMMEDIATE ] [ ENFORCED | NOT ENFORCED ] [ NOT VALID ] [ NO INHERIT ]`
 ///
 /// Used in UNIQUE and foreign key constraints. The individual settings may occur in any order.
+/// PostgreSQL's grammar accepts `NOT VALID` and `NO INHERIT` after a PRIMARY
+/// KEY, UNIQUE or EXCLUDE constraint and then refuses them, so the parser
+/// keeps them on those constraints for the refusal to name.
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Default, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -2105,6 +2108,10 @@ pub struct ConstraintCharacteristics {
     pub initially: Option<DeferrableInitial>,
     /// `[ ENFORCED | NOT ENFORCED ]`
     pub enforced: Option<bool>,
+    /// `NOT VALID`
+    pub not_valid: bool,
+    /// `NO INHERIT`
+    pub no_inherit: bool,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
@@ -2151,22 +2158,19 @@ impl ConstraintCharacteristics {
 
 impl fmt::Display for ConstraintCharacteristics {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let deferrable = self.deferrable_text();
-        let initially_immediate = self.initially_immediate_text();
-        let enforced = self.enforced_text();
-
-        match (deferrable, initially_immediate, enforced) {
-            (None, None, None) => Ok(()),
-            (None, None, Some(enforced)) => write!(f, "{enforced}"),
-            (None, Some(initial), None) => write!(f, "{initial}"),
-            (None, Some(initial), Some(enforced)) => write!(f, "{initial} {enforced}"),
-            (Some(deferrable), None, None) => write!(f, "{deferrable}"),
-            (Some(deferrable), None, Some(enforced)) => write!(f, "{deferrable} {enforced}"),
-            (Some(deferrable), Some(initial), None) => write!(f, "{deferrable} {initial}"),
-            (Some(deferrable), Some(initial), Some(enforced)) => {
-                write!(f, "{deferrable} {initial} {enforced}")
-            }
+        let words = [
+            self.deferrable_text(),
+            self.initially_immediate_text(),
+            self.enforced_text(),
+            self.not_valid.then_some("NOT VALID"),
+            self.no_inherit.then_some("NO INHERIT"),
+        ];
+        let mut separator = "";
+        for word in words.into_iter().flatten() {
+            write!(f, "{separator}{word}")?;
+            separator = " ";
         }
+        Ok(())
     }
 }
 

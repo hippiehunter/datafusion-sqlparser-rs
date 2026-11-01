@@ -3347,6 +3347,7 @@ fn parse_set_names() {
         Statement::Set(SetStatement {
             token: AttachedToken::empty(),
             inner: Set::SetNames {
+                scope: None,
                 charset_name: "utf8mb4".into(),
                 collation_name: None,
             }
@@ -3359,6 +3360,7 @@ fn parse_set_names() {
         Statement::Set(SetStatement {
             token: AttachedToken::empty(),
             inner: Set::SetNames {
+                scope: None,
                 charset_name: "utf8mb4".into(),
                 collation_name: Some("bogus".to_string()),
             }
@@ -3373,6 +3375,7 @@ fn parse_set_names() {
         vec![Statement::Set(SetStatement {
             token: AttachedToken::empty(),
             inner: Set::SetNames {
+                scope: None,
                 charset_name: "utf8mb4".into(),
                 collation_name: Some("bogus".to_string()),
             }
@@ -3384,7 +3387,7 @@ fn parse_set_names() {
         stmt,
         Statement::Set(SetStatement {
             token: AttachedToken::empty(),
-            inner: Set::SetNamesDefault {}
+            inner: Set::SetNamesDefault { scope: None }
         })
     );
 }

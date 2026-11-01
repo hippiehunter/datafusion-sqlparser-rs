@@ -2028,7 +2028,7 @@ impl<'a> Tokenizer<'a> {
                             }
                         }
                         Some('#') => self.consume_and_return(chars, Token::QuestionMarkSharp),
-                        _ => self.consume_and_return(chars, Token::Question),
+                        _ => Ok(Some(Token::Question)),
                     }
                 }
                 '?' => {
@@ -4771,6 +4771,38 @@ mod tests {
             Token::ExclamationMarkTildeAsterisk,
             Token::Whitespace(Whitespace::Space),
             Token::SingleQuotedString("^a".into()),
+        ];
+        compare(expected, tokens);
+    }
+
+    #[test]
+    fn tokenize_pg_question_operators() {
+        let dialect = PostgreSqlDialect {};
+        let tokens = Tokenizer::new(&dialect, "?)").tokenize().unwrap();
+        compare(vec![Token::Question, Token::RParen], tokens);
+
+        let tokens = Tokenizer::new(&dialect, "?'a'").tokenize().unwrap();
+        compare(
+            vec![Token::Question, Token::SingleQuotedString("a".into())],
+            tokens,
+        );
+
+        let sql = "?| ?& ?- ?-| ?|| ?# ?";
+        let tokens = Tokenizer::new(&dialect, sql).tokenize().unwrap();
+        let expected = vec![
+            Token::QuestionPipe,
+            Token::Whitespace(Whitespace::Space),
+            Token::QuestionAnd,
+            Token::Whitespace(Whitespace::Space),
+            Token::QuestionMarkDash,
+            Token::Whitespace(Whitespace::Space),
+            Token::QuestionMarkDashVerticalBar,
+            Token::Whitespace(Whitespace::Space),
+            Token::QuestionMarkDoubleVerticalBar,
+            Token::Whitespace(Whitespace::Space),
+            Token::QuestionMarkSharp,
+            Token::Whitespace(Whitespace::Space),
+            Token::Question,
         ];
         compare(expected, tokens);
     }

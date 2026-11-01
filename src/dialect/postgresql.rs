@@ -44,6 +44,10 @@ const PERIOD_PREC: u8 = 200;
 const DOUBLE_COLON_PREC: u8 = 140;
 const BRACKET_PREC: u8 = 130;
 const COLLATE_PREC: u8 = 120;
+// Unary minus binds tighter than COLLATE, AT TIME ZONE and `^`, and looser
+// than `[ ]`, `::` and `.`: `-x COLLATE "C"` is `(-x) COLLATE "C"` and
+// `-2 ^ 2` is 4. An operand parsed at this precedence stops at COLLATE.
+const UNARY_PLUS_MINUS_PREC: u8 = COLLATE_PREC;
 const AT_TZ_PREC: u8 = 110;
 const CARET_PREC: u8 = 100;
 const MUL_DIV_MOD_OP_PREC: u8 = 90;
@@ -194,6 +198,7 @@ impl Dialect for PostgreSqlDialect {
             Precedence::DoubleColon => DOUBLE_COLON_PREC,
             Precedence::AtTz => AT_TZ_PREC,
             Precedence::MulDivModOp => MUL_DIV_MOD_OP_PREC,
+            Precedence::UnaryPlusMinus => UNARY_PLUS_MINUS_PREC,
             Precedence::PlusMinus => PLUS_MINUS_PREC,
             Precedence::Xor => XOR_PREC,
             Precedence::Ampersand => PG_OTHER_PREC,

@@ -32,10 +32,10 @@
 //! - <https://www.postgresql.org/docs/current/sql-reset.html>
 
 use sqlparser::ast::{
-    Analyze, FetchDirection, Ident, PgLockTable, PgLockTableMode, PgRelationExpr,
-    PreparedTransactionAction, Query, Reset, ResetStatement, Set, SetExpr, Statement,
-    TransactionAccessMode, TransactionIsolationLevel, TransactionMode, VacuumOption,
-    VacuumOptionName, VacuumOptionValue, VacuumStatement, Value,
+    Analyze, ContextModifier, Expr, FetchDirection, Ident, ObjectName, PgLockTable,
+    PgLockTableMode, PgRelationExpr, PreparedTransactionAction, Query, Reset, ResetStatement, Set,
+    SetExpr, Statement, TransactionAccessMode, TransactionIsolationLevel, TransactionMode,
+    VacuumOption, VacuumOptionName, VacuumOptionValue, VacuumStatement, Value,
 };
 
 use crate::postgres_compat::common::{try_parse_pg, verified_pg_stmt};
@@ -754,5 +754,110 @@ fn refresh_materialized_view_takes_with_data() {
             }
             other => panic!("expected REFRESH for {sql}, got {other:?}"),
         }
+    }
+}
+
+fn set_inner(sql: &str, canonical: &str) -> Set {
+    match verified_to(sql, canonical) {
+        Statement::Set(set) => set.inner,
+        other => panic!("expected SET for {sql}, got {other:?}"),
+    }
+}
+
+#[test]
+fn set_schema_is_search_path() {
+    for (sql, canonical, scope) in [
+        ("SET SCHEMA 'app'", "SET search_path = 'app'", None),
+        (
+            "SET LOCAL SCHEMA 'app'",
+            "SET LOCAL search_path = 'app'",
+            Some(ContextModifier::Local),
+        ),
+        (
+            "SET SESSION SCHEMA 'app'",
+            "SET SESSION search_path = 'app'",
+            Some(ContextModifier::Session),
+        ),
+    ] {
+        match set_inner(sql, canonical) {
+            Set::SingleAssignment {
+                scope: parsed_scope,
+                variable,
+                values,
+            } => {
+                assert_eq!(scope, parsed_scope, "{sql}");
+                assert_eq!(ObjectName::from(vec![Ident::new("search_path")]), variable);
+                assert_eq!(
+                    vec![Expr::Value(
+                        Value::SingleQuotedString("app".to_string()).with_empty_span()
+                    )],
+                    values
+                );
+            }
+            other => panic!("expected an assignment for {sql}, got {other:?}"),
+        }
+    }
+    verified("SET schema = 'app'");
+}
+
+#[test]
+fn set_xml_option_is_xmloption() {
+    for (sql, canonical, scope, value) in [
+        (
+            "SET XML OPTION DOCUMENT",
+            "SET xmloption = document",
+            None,
+            "document",
+        ),
+        (
+            "SET LOCAL XML OPTION CONTENT",
+            "SET LOCAL xmloption = content",
+            Some(ContextModifier::Local),
+            "content",
+        ),
+        (
+            "SET SESSION XML OPTION document",
+            "SET SESSION xmloption = document",
+            Some(ContextModifier::Session),
+            "document",
+        ),
+    ] {
+        match set_inner(sql, canonical) {
+            Set::SingleAssignment {
+                scope: parsed_scope,
+                variable,
+                values,
+            } => {
+                assert_eq!(scope, parsed_scope, "{sql}");
+                assert_eq!(ObjectName::from(vec![Ident::new("xmloption")]), variable);
+                assert_eq!(vec![Expr::Identifier(Ident::new(value))], values);
+            }
+            other => panic!("expected an assignment for {sql}, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn set_names_keeps_scope() {
+    for (sql, scope) in [
+        ("SET NAMES 'UTF8'", None),
+        ("SET LOCAL NAMES 'UTF8'", Some(ContextModifier::Local)),
+        ("SET SESSION NAMES 'UTF8'", Some(ContextModifier::Session)),
+    ] {
+        match set_inner(sql, sql) {
+            Set::SetNames {
+                scope: parsed_scope,
+                charset_name,
+                collation_name: None,
+            } => {
+                assert_eq!(scope, parsed_scope, "{sql}");
+                assert_eq!("UTF8", charset_name.value);
+            }
+            other => panic!("expected SET NAMES for {sql}, got {other:?}"),
+        }
+    }
+    match set_inner("SET LOCAL NAMES DEFAULT", "SET LOCAL NAMES DEFAULT") {
+        Set::SetNamesDefault { scope } => assert_eq!(Some(ContextModifier::Local), scope),
+        other => panic!("expected SET NAMES DEFAULT, got {other:?}"),
     }
 }

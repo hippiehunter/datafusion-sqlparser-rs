@@ -290,13 +290,23 @@ impl crate::ast::Spanned for ExcludeConstraint {
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct ExcludeConstraintElement {
     pub element: IndexColumn,
-    /// The comparison operator, rendered as written (e.g. `=`, `&&`).
+    /// The schema qualifying the operator, from `WITH OPERATOR(schema.op)` or
+    /// `WITH schema.op`.
+    pub operator_schema: Option<ObjectName>,
+    /// The comparison operator's symbol, rendered as written (e.g. `=`, `&&`).
     pub operator: String,
 }
 
 impl fmt::Display for ExcludeConstraintElement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} WITH {}", self.element, self.operator)
+        match &self.operator_schema {
+            Some(schema) => write!(
+                f,
+                "{} WITH OPERATOR({schema}.{})",
+                self.element, self.operator
+            ),
+            None => write!(f, "{} WITH {}", self.element, self.operator),
+        }
     }
 }
 

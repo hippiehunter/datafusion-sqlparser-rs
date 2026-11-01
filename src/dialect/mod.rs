@@ -849,6 +849,7 @@ pub trait Dialect: Debug + Any {
             Precedence::DoubleColon => 50,
             Precedence::AtTz => 41,
             Precedence::MulDivModOp => 40,
+            Precedence::UnaryPlusMinus => 40,
             Precedence::PlusMinus => 30,
             Precedence::Xor => 24,
             Precedence::Ampersand => 23,
@@ -1523,6 +1524,9 @@ pub enum Precedence {
     DoubleColon,
     AtTz,
     MulDivModOp,
+    /// The operand of a prefix `+` or `-`: it takes every operator that binds
+    /// tighter than unary minus.
+    UnaryPlusMinus,
     PlusMinus,
     Xor,
     Ampersand,
