@@ -83,7 +83,7 @@ pub enum TableConstraint {
     /// `[ CONSTRAINT <name> ] CHECK (<expr>) [[NOT] ENFORCED]`
     Check(CheckConstraint),
     /// PostgreSQL [exclusion constraint][1]:
-    /// `[ CONSTRAINT <name> ] EXCLUDE [USING <index_method>] (<column> WITH <operator> [, ...])`
+    /// `[ CONSTRAINT <name> ] EXCLUDE [USING <index_method>] (<index element> WITH <operator> [, ...])`
     ///
     /// [1]: https://www.postgresql.org/docs/current/ddl-constraints.html#DDL-CONSTRAINTS-EXCLUSION
     Exclude(ExcludeConstraint),
@@ -282,25 +282,27 @@ impl crate::ast::Spanned for ExcludeConstraint {
     }
 }
 
-/// A single `<column> WITH <operator>` element of an exclusion constraint.
+/// A single `<index element> WITH <operator>` element of an exclusion
+/// constraint. The index element is the one `CREATE INDEX` takes: a column or
+/// parenthesized expression, an optional operator class, and an ordering.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct ExcludeConstraintElement {
-    pub column: Ident,
+    pub element: IndexColumn,
     /// The comparison operator, rendered as written (e.g. `=`, `&&`).
     pub operator: String,
 }
 
 impl fmt::Display for ExcludeConstraintElement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} WITH {}", self.column, self.operator)
+        write!(f, "{} WITH {}", self.element, self.operator)
     }
 }
 
 impl crate::ast::Spanned for ExcludeConstraintElement {
     fn span(&self) -> Span {
-        self.column.span
+        crate::ast::Spanned::span(&self.element)
     }
 }
 

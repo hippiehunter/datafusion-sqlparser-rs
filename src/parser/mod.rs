@@ -8493,6 +8493,20 @@ impl<'a> Parser<'a> {
                         suffix_token,
                     })
                 }
+                Keyword::ISNULL if self.features.supports_notnull_operator => {
+                    let suffix_token = self.attached_token_from_current();
+                    Ok(Expr::IsNull {
+                        expr: Box::new(expr),
+                        suffix_token,
+                    })
+                }
+                // A collation applied to an operator's result, `x::text
+                // COLLATE "C"`: a prefix expression takes its own COLLATE
+                // directly, so this arm only sees one that follows an infix.
+                Keyword::COLLATE => Ok(Expr::Collate {
+                    expr: Box::new(expr),
+                    collation: self.parse_object_name(false)?,
+                }),
                 Keyword::MEMBER => {
                     if self.parse_keyword(Keyword::OF) {
                         if self.dialect.is::<OracleDialect>() {
@@ -15616,6 +15630,14 @@ impl<'a> Parser<'a> {
             });
         }
 
+        // PostgreSQL writes INHERITS ahead of PARTITION BY, USING and the
+        // storage options.
+        let inherits = if self.parse_keyword(Keyword::INHERITS) {
+            Some(self.parse_parenthesized_qualified_column_list(IsOptional::Mandatory, false)?)
+        } else {
+            None
+        };
+
         // Parse PARTITION BY { RANGE | LIST | HASH } ( ... )
         // This can appear on both regular tables and PARTITION OF (sub-partitioning)
         let partition_by = if self.parse_keywords(&[Keyword::PARTITION, Keyword::BY]) {
@@ -15719,7 +15741,7 @@ impl<'a> Parser<'a> {
             .clone_clause(clone)
             .comment_after_column_def(comment_after_column_def)
             .on_commit(on_commit)
-            .inherits(create_table_config.inherits)
+            .inherits(inherits)
             .table_options(create_table_config.table_options)
             .without_oids(create_table_config.without_oids)
             .system_versioning(system_versioning)
@@ -15841,12 +15863,6 @@ impl<'a> Parser<'a> {
     /// [PostgreSQL](https://www.postgresql.org/docs/current/ddl-partitioning.html)
     /// [MySql](https://dev.mysql.com/doc/refman/8.4/en/create-table.html)
     fn parse_optional_create_table_config(&self) -> Result<CreateTableConfiguration, ParserError> {
-        let inherits = if self.parse_keyword(Keyword::INHERITS) {
-            Some(self.parse_parenthesized_qualified_column_list(IsOptional::Mandatory, false)?)
-        } else {
-            None
-        };
-
         let mut with_options = Vec::new();
         let mut table_properties = Vec::new();
         let mut plain_options = Vec::new();
@@ -15917,7 +15933,6 @@ impl<'a> Parser<'a> {
         };
 
         Ok(CreateTableConfiguration {
-            inherits,
             table_options,
             without_oids,
         })
@@ -17018,7 +17033,7 @@ impl<'a> Parser<'a> {
             }
             BorrowedToken::Word(w) if w.keyword == Keyword::EXCLUDE => {
                 // PostgreSQL exclusion constraint:
-                // EXCLUDE [USING <index_method>] (<column> WITH <operator> [, ...])
+                // EXCLUDE [USING <index_method>] (<index element> WITH <operator> [, ...])
                 let index_type = if self.parse_keyword(Keyword::USING) {
                     Some(self.parse_identifier()?)
                 } else {
@@ -17026,10 +17041,10 @@ impl<'a> Parser<'a> {
                 };
                 self.expect_token(&BorrowedToken::LParen)?;
                 let elements = self.parse_comma_separated(|p| {
-                    let column = p.parse_identifier()?;
+                    let element = p.parse_create_index_expr()?;
                     p.expect_keyword(Keyword::WITH)?;
                     let operator = p.next_token().to_string();
-                    Ok(ExcludeConstraintElement { column, operator })
+                    Ok(ExcludeConstraintElement { element, operator })
                 })?;
                 self.expect_token(&BorrowedToken::RParen)?;
                 let index_details = self.parse_index_constraint_details()?.into_option();

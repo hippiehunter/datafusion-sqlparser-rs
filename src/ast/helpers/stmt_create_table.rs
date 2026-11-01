@@ -429,7 +429,6 @@ impl TryFrom<Statement> for CreateTableBuilder {
 /// Helper return type when parsing configuration for a `CREATE TABLE` statement.
 #[derive(Default)]
 pub(crate) struct CreateTableConfiguration {
-    pub inherits: Option<Vec<ObjectName>>,
     pub table_options: CreateTableOptions,
     pub without_oids: bool,
 }

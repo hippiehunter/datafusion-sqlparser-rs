@@ -156,3 +156,21 @@ fn test_is_not_distinct_from() {
     pg_roundtrip_only!("SELECT a IS NOT DISTINCT FROM b FROM t");
     // TODO: Validate IS NOT DISTINCT FROM operator
 }
+
+#[test]
+fn test_postfix_isnull_after_infix() {
+    // https://www.postgresql.org/docs/current/functions-comparison.html
+    one_statement_parses_to_pg("SELECT (a::INT ISNULL)", "SELECT (a::INT IS NULL)");
+    one_statement_parses_to_pg(
+        "SELECT ((a + 1) ISNULL) IS NOT UNKNOWN",
+        "SELECT ((a + 1) IS NULL) IS NOT UNKNOWN",
+    );
+}
+
+#[test]
+fn test_collate_after_cast() {
+    // https://www.postgresql.org/docs/current/sql-expressions.html#SQL-SYNTAX-COLLATE-EXPRS
+    pg_roundtrip_only!("SELECT 'x'::TEXT COLLATE \"C\"");
+    pg_roundtrip_only!("SELECT (('x'::TEXT COLLATE \"C\") COLLATE \"C\")");
+    pg_roundtrip_only!("SELECT (1::INTEGER)::CHARACTER VARYING(795) COLLATE \"C\"");
+}

@@ -876,6 +876,36 @@ fn create_table_exclude_constraint_characteristics() {
 }
 
 #[test]
+fn create_table_exclude_index_elements() {
+    let create = create_table(
+        "CREATE TABLE t (a INT, b TEXT, EXCLUDE ((a + 1) int4_ops DESC NULLS LAST WITH =, b text_pattern_ops WITH =, a ASC WITH &&))",
+    );
+    match &create.constraints[0] {
+        TableConstraint::Exclude(exclude) => {
+            assert_eq!(exclude.elements.len(), 3);
+            let first = &exclude.elements[0];
+            assert_eq!(first.element.column.expr.to_string(), "(a + 1)");
+            assert_eq!(
+                first.element.operator_class.as_ref().map(ToString::to_string),
+                Some("int4_ops".to_string())
+            );
+            assert_eq!(first.element.column.options.asc, Some(false));
+            assert_eq!(first.element.column.options.nulls_first, Some(false));
+            assert_eq!(first.operator, "=");
+            assert_eq!(exclude.elements[2].operator, "&&");
+        }
+        other => panic!("expected EXCLUDE constraint, got {other:?}"),
+    }
+}
+
+#[test]
+fn create_table_inherits_precedes_partitioning_and_storage() {
+    verified("CREATE TABLE c (a INT) INHERITS (p) PARTITION BY RANGE (a)");
+    verified("CREATE TABLE c (a INT) INHERITS (p, q) USING heap WITH (fillfactor = 70)");
+    verified("CREATE TEMPORARY TABLE c (a INT) INHERITS (p) ON COMMIT DROP");
+}
+
+#[test]
 fn create_table_foreign_key_on_delete_column_list() {
     let create = create_table(
         "CREATE TABLE c (tid INT, fk_id INT, FOREIGN KEY (tid, fk_id) REFERENCES p ON DELETE SET NULL (fk_id))",

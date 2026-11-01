@@ -725,7 +725,8 @@ pub trait Dialect: Debug + Any {
                 }
             }
             BorrowedToken::Word(w)
-                if w.keyword == Keyword::NOTNULL && self.supports_notnull_operator() =>
+                if (w.keyword == Keyword::NOTNULL || w.keyword == Keyword::ISNULL)
+                    && self.supports_notnull_operator() =>
             {
                 Ok(p!(Is))
             }

@@ -3056,6 +3056,10 @@ impl fmt::Display for CreateTable {
             write!(f, " {bound}")?;
         }
 
+        if let Some(inherits) = &self.inherits {
+            write!(f, " INHERITS ({})", display_comma_separated(inherits))?;
+        }
+
         // PARTITION BY clause
         if let Some(partition_by) = &self.partition_by {
             write!(f, " {partition_by}")?;
@@ -3084,9 +3088,6 @@ impl fmt::Display for CreateTable {
             _ => (),
         }
 
-        if let Some(inherits) = &self.inherits {
-            write!(f, " INHERITS ({})", display_comma_separated(inherits))?;
-        }
         if self.without_oids {
             write!(f, " WITHOUT OIDS")?;
         }
