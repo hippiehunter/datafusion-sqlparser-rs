@@ -2243,7 +2243,9 @@ fn parse_similar_to() {
                 pattern: Box::new(Expr::Value(
                     (Value::SingleQuotedString("%a".to_string())).with_empty_span()
                 )),
-                escape_char: Some(Value::SingleQuotedString('^'.to_string())),
+                escape_char: Some(Box::new(Expr::Value(
+                    (Value::SingleQuotedString('^'.to_string())).with_empty_span()
+                ))),
             },
             Box::into_owned(select.selection.unwrap())
         );
@@ -2260,7 +2262,7 @@ fn parse_similar_to() {
                 pattern: Box::new(Expr::Value(
                     (Value::SingleQuotedString("%a".to_string())).with_empty_span()
                 )),
-                escape_char: Some(Value::Null),
+                escape_char: Some(Box::new(Expr::Value(Value::Null.with_empty_span()))),
             },
             Box::into_owned(select.selection.unwrap())
         );

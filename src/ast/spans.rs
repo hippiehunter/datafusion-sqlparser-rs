@@ -608,6 +608,7 @@ impl Spanned for Statement {
                 ..
             } => notify_token.0.union(&channel.span),
             Statement::LoadData { load_token, .. } => load_token.0,
+            Statement::Load { load_token, .. } => load_token.0,
             Statement::UNLISTEN {
                 unlisten_token,
                 channel,
@@ -1852,8 +1853,11 @@ impl Spanned for Expr {
                 negated: _,
                 expr,
                 pattern,
-                escape_char: _,
-            } => expr.span().union(&pattern.span()),
+                escape_char,
+            } => expr
+                .span()
+                .union(&pattern.span())
+                .union_opt(&escape_char.as_ref().map(|e| e.span())),
             Expr::Ceil { expr, field: _ } => expr.span(),
             Expr::Floor { expr, field: _ } => expr.span(),
             Expr::Position { expr, r#in } => expr.span().union(&r#in.span()),

@@ -1176,12 +1176,13 @@ pub enum Expr {
         pattern: Box<Expr>,
         escape_char: Option<Value>,
     },
-    /// SIMILAR TO regex
+    /// `[NOT] SIMILAR TO <pattern> [ESCAPE <escape>]`. PostgreSQL accepts any
+    /// expression as the escape (`ESCAPE c`, `ESCAPE $1`, `ESCAPE '#' || ''`).
     SimilarTo {
         negated: bool,
         expr: Box<Expr>,
         pattern: Box<Expr>,
-        escape_char: Option<Value>,
+        escape_char: Option<Box<Expr>>,
     },
     /// MySQL: RLIKE regex or REGEXP regex
     RLike {
@@ -7087,6 +7088,12 @@ pub enum AlterTablespaceOperation {
     RenameTo { name: Ident },
     /// `{ ONLINE | OFFLINE }`
     SetStatus { online: bool },
+    /// `OWNER TO { role | CURRENT_ROLE | CURRENT_USER | SESSION_USER }`
+    OwnerTo { new_owner: Owner },
+    /// `SET ( option = value [, ...] )`
+    SetOptions { options: Vec<SqlOption> },
+    /// `RESET ( option [, ...] )`
+    ResetOptions { options: Vec<Ident> },
 }
 
 impl fmt::Display for AlterTablespaceOperation {
@@ -7113,6 +7120,13 @@ impl fmt::Display for AlterTablespaceOperation {
             AlterTablespaceOperation::RenameTo { name } => write!(f, "RENAME TO {name}"),
             AlterTablespaceOperation::SetStatus { online } => {
                 f.write_str(if *online { "ONLINE" } else { "OFFLINE" })
+            }
+            AlterTablespaceOperation::OwnerTo { new_owner } => write!(f, "OWNER TO {new_owner}"),
+            AlterTablespaceOperation::SetOptions { options } => {
+                write!(f, "SET ({})", display_comma_separated(options))
+            }
+            AlterTablespaceOperation::ResetOptions { options } => {
+                write!(f, "RESET ({})", display_comma_separated(options))
             }
         }
     }
@@ -8824,6 +8838,17 @@ pub enum Statement {
         overwrite: bool,
         table_name: ObjectName,
         partitioned: Option<Vec<Expr>>,
+    },
+    /// ```sql
+    /// LOAD 'filename'
+    /// ```
+    /// PostgreSQL: loads a shared library file into the session.
+    ///
+    /// See <https://www.postgresql.org/docs/current/sql-load.html>
+    Load {
+        #[cfg_attr(feature = "visitor", visit(with = "visit_token"))]
+        load_token: AttachedToken,
+        filename: String,
     },
     /// ```sql
     /// Rename TABLE tbl_name TO new_tbl_name[, tbl_name2 TO new_tbl_name2] ...
@@ -11787,6 +11812,10 @@ impl fmt::Display for Statement {
                 }
                 Ok(())
             }
+            Statement::Load {
+                load_token: _,
+                filename,
+            } => write!(f, "LOAD '{}'", value::escape_single_quote_string(filename)),
             Statement::CreateIndex(create_index) => create_index.fmt(f),
             Statement::CreateExtension(create_extension) => write!(f, "{create_extension}"),
             Statement::DropExtension(drop_extension) => write!(f, "{drop_extension}"),

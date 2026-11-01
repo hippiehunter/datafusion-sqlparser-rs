@@ -9048,3 +9048,121 @@ fn parse_qualified_special_syntax_functions_as_plain_calls() {
         }
     }
 }
+
+#[test]
+fn parse_similar_to_escape_expressions() {
+    fn similar_escape(expr: Expr) -> (bool, Expr) {
+        match expr {
+            Expr::SimilarTo {
+                negated,
+                escape_char: Some(escape),
+                ..
+            } => (negated, Box::into_owned(escape)),
+            other => panic!("expected SIMILAR TO with an escape, got {other:?}"),
+        }
+    }
+
+    let (negated, escape) = similar_escape(pg().verified_expr("a SIMILAR TO 'x' ESCAPE c || 'y'"));
+    assert!(!negated);
+    assert_eq!(
+        escape,
+        Expr::BinaryOp {
+            left: Box::new(Expr::Identifier(Ident::new("c"))),
+            op: BinaryOperator::StringConcat,
+            right: Box::new(Expr::value(Value::SingleQuotedString("y".to_string()))),
+        }
+    );
+
+    match pg().verified_expr("a SIMILAR TO 'x' ESCAPE '#' AND b") {
+        Expr::BinaryOp {
+            left,
+            op: BinaryOperator::And,
+            right,
+        } => {
+            let (negated, escape) = similar_escape(Box::into_owned(left));
+            assert!(!negated);
+            assert_eq!(
+                escape,
+                Expr::value(Value::SingleQuotedString("#".to_string()))
+            );
+            assert_eq!(*right, Expr::Identifier(Ident::new("b")));
+        }
+        other => panic!("expected AND over SIMILAR TO, got {other:?}"),
+    }
+
+    let (negated, escape) =
+        similar_escape(pg().verified_expr("a NOT SIMILAR TO 'x' ESCAPE E'\\\\'"));
+    assert!(negated);
+    assert_eq!(
+        escape,
+        Expr::value(Value::EscapedStringLiteral("\\".to_string()))
+    );
+
+    let (negated, escape) = similar_escape(pg().verified_expr("a SIMILAR TO 'x' ESCAPE $1"));
+    assert!(!negated);
+    assert_eq!(escape, Expr::value(Value::Placeholder("$1".to_string())));
+}
+
+#[test]
+fn parse_alter_tablespace_owner_set_reset() {
+    fn operation(sql: &str) -> AlterTablespaceOperation {
+        match pg().verified_stmt(sql) {
+            Statement::AlterTablespace {
+                name, operation, ..
+            } => {
+                assert_eq!(name, Ident::new("ts"));
+                operation
+            }
+            other => panic!("expected ALTER TABLESPACE, got {other:?}"),
+        }
+    }
+
+    assert_eq!(
+        operation("ALTER TABLESPACE ts OWNER TO bob"),
+        AlterTablespaceOperation::OwnerTo {
+            new_owner: Owner::Ident(Ident::new("bob")),
+        }
+    );
+    assert_eq!(
+        operation("ALTER TABLESPACE ts OWNER TO CURRENT_USER"),
+        AlterTablespaceOperation::OwnerTo {
+            new_owner: Owner::CurrentUser,
+        }
+    );
+    match operation("ALTER TABLESPACE ts SET (seq_page_cost = 2, random_page_cost = 1.5)") {
+        AlterTablespaceOperation::SetOptions { options } => {
+            let names: Vec<String> = options
+                .iter()
+                .map(|option| match option {
+                    SqlOption::KeyValue { key, .. } => key.value.clone(),
+                    other => panic!("expected key = value, got {other:?}"),
+                })
+                .collect();
+            assert_eq!(names, vec!["seq_page_cost", "random_page_cost"]);
+        }
+        other => panic!("expected SET (...), got {other:?}"),
+    }
+    assert_eq!(
+        operation("ALTER TABLESPACE ts RESET (seq_page_cost, random_page_cost)"),
+        AlterTablespaceOperation::ResetOptions {
+            options: vec![Ident::new("seq_page_cost"), Ident::new("random_page_cost")],
+        }
+    );
+}
+
+#[test]
+fn parse_load_library() {
+    match pg().verified_stmt("LOAD 'plpgsql'") {
+        Statement::Load { filename, .. } => assert_eq!(filename, "plpgsql"),
+        other => panic!("expected LOAD, got {other:?}"),
+    }
+    match pg().verified_stmt("LOAD '$libdir/plugins/x'") {
+        Statement::Load { filename, .. } => assert_eq!(filename, "$libdir/plugins/x"),
+        other => panic!("expected LOAD, got {other:?}"),
+    }
+    match pg().one_statement_parses_to("LOAD E'plpgsql'", "LOAD 'plpgsql'") {
+        Statement::Load { filename, .. } => assert_eq!(filename, "plpgsql"),
+        other => panic!("expected LOAD, got {other:?}"),
+    }
+    assert!(pg().parse_sql_statements("LOAD plpgsql").is_err());
+}

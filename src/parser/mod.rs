@@ -5365,6 +5365,19 @@ impl<'a> Parser<'a> {
             AlterTablespaceOperation::RenameTo {
                 name: self.parse_identifier()?,
             }
+        } else if self.parse_keywords(&[Keyword::OWNER, Keyword::TO]) {
+            AlterTablespaceOperation::OwnerTo {
+                new_owner: self.parse_owner()?,
+            }
+        } else if self.peek_keyword(Keyword::SET) {
+            AlterTablespaceOperation::SetOptions {
+                options: self.parse_options_with_keywords(&[Keyword::SET])?,
+            }
+        } else if self.parse_keyword(Keyword::RESET) {
+            self.expect_token(&BorrowedToken::LParen)?;
+            let options = self.parse_comma_separated(|p| p.parse_identifier())?;
+            self.expect_token(&BorrowedToken::RParen)?;
+            AlterTablespaceOperation::ResetOptions { options }
         } else {
             match self.expect_one_of_keywords(&[Keyword::ONLINE, Keyword::OFFLINE])? {
                 Keyword::ONLINE => AlterTablespaceOperation::SetStatus { online: true },
@@ -8486,7 +8499,7 @@ impl<'a> Parser<'a> {
                             pattern: Box::new(
                                 self.parse_subexpr(self.dialect.prec_value(Precedence::Like))?,
                             ),
-                            escape_char: self.parse_escape_char()?,
+                            escape_char: self.parse_similar_escape()?,
                         })
                     } else {
                         self.expected("IN or BETWEEN after NOT", self.peek_token())
@@ -8618,12 +8631,12 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Parse the `ESCAPE CHAR` portion of `LIKE`, `ILIKE`, and `SIMILAR TO`
+    /// Parse the `ESCAPE CHAR` portion of `LIKE` and `ILIKE`
     pub fn parse_escape_char(&self) -> Result<Option<Value>, ParserError> {
         if self.parse_keyword(Keyword::ESCAPE) {
             let value = self.parse_value()?;
-            // The LIKE/SIMILAR escape must be a single character, so a cast on
-            // the escape literal — `ESCAPE '$'::bytea` for a bytea pattern —
+            // The LIKE escape must be a single character, so a cast on the
+            // escape literal — `ESCAPE '$'::bytea` for a bytea pattern —
             // carries nothing beyond the literal itself. Absorb the cast here;
             // otherwise the `::` would bind to the whole predicate and turn it
             // into a cast of the boolean result.
@@ -8631,6 +8644,20 @@ impl<'a> Parser<'a> {
                 let _ = self.parse_data_type()?;
             }
             Ok(Some(value.into()))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Parse the `ESCAPE <expr>` portion of `SIMILAR TO`. PostgreSQL's grammar
+    /// is `a_expr SIMILAR TO a_expr ESCAPE a_expr`, so the escape is any
+    /// expression binding tighter than `SIMILAR TO` itself: a column, a
+    /// parameter, a concatenation, or a cast literal.
+    pub fn parse_similar_escape(&self) -> Result<Option<Box<Expr>>, ParserError> {
+        if self.parse_keyword(Keyword::ESCAPE) {
+            Ok(Some(Box::new(self.parse_subexpr(
+                self.dialect.prec_value(Precedence::Like),
+            )?)))
         } else {
             Ok(None)
         }
@@ -28857,6 +28884,21 @@ impl<'a> Parser<'a> {
                 overwrite,
                 table_name,
                 partitioned,
+            })
+        } else if self.dialect.is::<PostgreSqlDialect>() {
+            // PostgreSQL's `LOAD file_name`, where file_name is a string
+            // constant in any of its spellings ('...', E'...', U&'...', $$...$$).
+            let filename_token = self.peek_token();
+            let filename = match self.parse_value()?.value {
+                Value::SingleQuotedString(s)
+                | Value::EscapedStringLiteral(s)
+                | Value::UnicodeStringLiteral(s) => s,
+                Value::DollarQuotedString(s) => s.value,
+                _ => return self.expected("a file name string after LOAD", filename_token),
+            };
+            Ok(Statement::Load {
+                load_token,
+                filename,
             })
         } else {
             self.expected("`DATA` after `LOAD`", self.peek_token())
