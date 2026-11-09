@@ -4731,10 +4731,11 @@ impl<'a> Parser<'a> {
         // `PERFORM expr` => `SELECT expr`
         // `PERFORM expr FROM t WHERE ...` => `SELECT expr FROM t WHERE ...`
         // `PERFORM SELECT ...` => pass through
+        // A parenthesis opens an expression: `PERFORM (-1)::t` is
+        // `SELECT (-1)::t`, and `PERFORM (SELECT 1)` a scalar sub-select.
         let query = if self.peek_keyword(Keyword::SELECT)
             || self.peek_keyword(Keyword::WITH)
             || self.peek_keyword(Keyword::VALUES)
-            || self.peek_token_ref().token == BorrowedToken::LParen
         {
             self.parse_query()?
         } else {
@@ -4784,17 +4785,9 @@ impl<'a> Parser<'a> {
             Some(lang) => Self::is_sql_psm_language(lang),
             None => true,
         };
-        let body = if should_reparse {
-            let raw = Self::extract_string_body(&body_expr);
-            if let Some(raw) = raw {
-                let rewritten = Self::rewrite_sql_psm_for_integer_ranges(&raw);
-                let parsed_block = self.reparse_as_sql_psm_block(&rewritten)?;
-                DoBody::Block(parsed_block)
-            } else {
-                DoBody::RawBody(body_expr)
-            }
-        } else {
-            DoBody::RawBody(body_expr)
+        let body = match Self::extract_string_body(&body_expr) {
+            Some(source) if should_reparse => DoBody::Block(self.parse_pl_block(source)?),
+            _ => DoBody::RawBody(body_expr),
         };
 
         Ok(Statement::Do(DoStatement {
@@ -10464,15 +10457,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Rewrite PL/pgSQL integer FOR-range syntax `lower .. upper` into
-    /// a parser-friendly `lower TO upper` form.
-    fn rewrite_sql_psm_for_integer_ranges(body: &str) -> String {
-        // The tokenizer now handles `..` correctly by not consuming the first
-        // dot into a preceding number literal when followed by another dot.
-        // No text rewriting is needed; return the body unchanged.
-        body.to_string()
-    }
-
     /// Parse a SQL/PSM label: <<label_name>>
     fn parse_sql_psm_label(&self) -> Result<Option<Ident>, ParserError> {
         if self.consume_token(&BorrowedToken::ShiftLeft) {
@@ -11581,15 +11565,17 @@ impl<'a> Parser<'a> {
         Ok(declarations)
     }
 
-    /// Create a sub-parser to parse SQL/PSM block content
-    fn reparse_as_sql_psm_block(&self, body: &str) -> Result<BeginEndStatements, ParserError> {
+    /// Parse the value of a string-constant routine or `DO` body as a PL/pgSQL
+    /// block, keeping the value itself as the body's source text.
+    fn parse_pl_block(&self, source: String) -> Result<PlBlock, ParserError> {
         let dialect = self.dialect;
-        let mut tokenizer = Tokenizer::new(dialect, body);
-        let tokens = tokenizer.tokenize_with_location()?;
-
-        let parser = Parser::new(dialect).with_tokens_with_locations(tokens);
-        let _procedural = parser.enter_procedural_body();
-        parser.parse_sql_psm_block()
+        let block = {
+            let tokens = Tokenizer::new(dialect, &source).tokenize_with_location()?;
+            let parser = Parser::new(dialect).with_tokens_with_locations(tokens);
+            let _procedural = parser.enter_procedural_body();
+            parser.parse_sql_psm_block()?
+        };
+        Ok(PlBlock { source, block })
     }
 
     /// Parse a full SQL/PSM block structure
@@ -11820,23 +11806,7 @@ impl<'a> Parser<'a> {
                 ensure_not_set(&body.support, "SUPPORT")?;
                 body.support = Some(self.parse_object_name(false)?);
             } else if self.parse_keyword(Keyword::SET) {
-                let config_name = self.parse_object_name(false)?;
-                let config_value = if self.parse_keywords(&[Keyword::FROM, Keyword::CURRENT]) {
-                    SetConfigValue::FromCurrent
-                } else if self.parse_keyword(Keyword::TO) || self.consume_token(&BorrowedToken::Eq)
-                {
-                    if self.parse_keyword(Keyword::DEFAULT) {
-                        SetConfigValue::Default
-                    } else {
-                        SetConfigValue::Value(self.parse_expr()?)
-                    }
-                } else {
-                    return self.expected("TO, =, or FROM CURRENT", self.peek_token());
-                };
-                body.set_options.push(ProcedureSetConfig {
-                    config_name,
-                    config_value,
-                });
+                body.set_options.push(self.parse_routine_set_config()?);
             } else if self.parse_keywords(&[Keyword::READS, Keyword::SQL, Keyword::DATA]) {
                 ensure_not_set(&body.sql_data_access, "SQL data access")?;
                 body.sql_data_access = Some(SqlDataAccess::ReadsSqlData);
@@ -11882,14 +11852,11 @@ impl<'a> Parser<'a> {
             }
         }
 
-        // Re-parse a string body as a SQL/PSM block when the language is a
-        // SQL/PSM variant (plpgsql, pgsql) or is absent. PostgreSQL defaults an
-        // unspecified language for a quoted body to PL/pgSQL; mirroring that here
-        // (as the CREATE PROCEDURE / DO paths already do) means a body written
-        // `AS 'BEGIN ... END'` reaches consumers as a structured AsBeginEnd block
-        // instead of an opaque AsBeforeOptions string. A `Some(non-PSM)` language
-        // (e.g. LANGUAGE sql/c) is intentionally left as AsBeforeOptions so the
-        // caller can reject it rather than have it coerced into a PSM block.
+        // Parse a string body as a PL/pgSQL block when the language is plpgsql
+        // or is absent: PostgreSQL defaults an unspecified language for a
+        // quoted body to PL/pgSQL, as the CREATE PROCEDURE and DO paths do. A
+        // body in any other language (e.g. LANGUAGE sql/c) stays an
+        // AsBeforeOptions string for the caller to interpret or reject.
         let should_reparse = match &body.language {
             Some(lang) => Self::is_sql_psm_language(lang),
             None => true,
@@ -11902,10 +11869,8 @@ impl<'a> Parser<'a> {
                     }
                     _ => None,
                 };
-                if let Some(raw_body) = body_str {
-                    let rewritten_body = Self::rewrite_sql_psm_for_integer_ranges(&raw_body);
-                    let parsed_block = self.reparse_as_sql_psm_block(&rewritten_body)?;
-                    *function_body = CreateFunctionBody::AsBeginEnd(parsed_block);
+                if let Some(source) = body_str {
+                    *function_body = CreateFunctionBody::PlBlock(self.parse_pl_block(source)?);
                 }
             }
         }
@@ -13202,6 +13167,7 @@ impl<'a> Parser<'a> {
                         expr: check.expr.clone(),
                         enforced: check.enforced,
                         no_inherit: check.no_inherit || constraint.no_inherit,
+                        not_valid: check.not_valid,
                     }))
                 }
                 _ => {}
@@ -15608,11 +15574,24 @@ impl<'a> Parser<'a> {
             }));
         }
 
-        // Check for PARTITION OF parent_table (must come before column list)
+        // `PARTITION OF parent [ ( element, ... ) ] { FOR VALUES ... | DEFAULT }`:
+        // the partition's columns are its parent's, so each column element
+        // only names one and attaches options to it, as a typed table's do.
+        let mut partition_columns = Vec::new();
+        let mut partition_constraints = Vec::new();
         let (partition_of, partition_bound) =
             if self.parse_keywords(&[Keyword::PARTITION, Keyword::OF]) {
                 let parent = self.parse_object_name(allow_unquoted_hyphen)?;
-                // Parse the bound spec (FOR VALUES ... or DEFAULT)
+                if self.peek_token().token == BorrowedToken::LParen {
+                    for element in self.parse_typed_table_elements()? {
+                        match element {
+                            TypedTableElement::Column(column) => partition_columns.push(column),
+                            TypedTableElement::Constraint(constraint) => {
+                                partition_constraints.push(constraint)
+                            }
+                        }
+                    }
+                }
                 let bound = self.parse_partition_bound_spec()?;
                 (Some(parent), Some(bound))
             } else {
@@ -15632,22 +15611,20 @@ impl<'a> Parser<'a> {
         };
 
         // parse optional column list (schema)
-        // For PARTITION OF, this parses constraint overrides if present
-        let (columns, constraints, like_elements, column_aliases) =
-            if partition_of.is_some() && self.peek_token().token != Token::LParen {
-                (vec![], vec![], vec![], vec![])
-            } else if dialect_of!(self is PostgreSqlDialect) {
-                match self.maybe_parse(|parser| parser.parse_create_table_column_aliases())? {
-                    Some(aliases) => (vec![], vec![], vec![], aliases),
-                    None => {
-                        let (columns, constraints, likes) = self.parse_pg_table_elements()?;
-                        (columns, constraints, likes, vec![])
-                    }
+        let (columns, constraints, like_elements, column_aliases) = if partition_of.is_some() {
+            (vec![], partition_constraints, vec![], vec![])
+        } else if dialect_of!(self is PostgreSqlDialect) {
+            match self.maybe_parse(|parser| parser.parse_create_table_column_aliases())? {
+                Some(aliases) => (vec![], vec![], vec![], aliases),
+                None => {
+                    let (columns, constraints, likes) = self.parse_pg_table_elements()?;
+                    (columns, constraints, likes, vec![])
                 }
-            } else {
-                let (columns, constraints) = self.parse_columns()?;
-                (columns, constraints, vec![], vec![])
-            };
+            }
+        } else {
+            let (columns, constraints) = self.parse_columns()?;
+            (columns, constraints, vec![], vec![])
+        };
         let comment_after_column_def = None;
 
         if self.dialect.is::<OracleDialect>() && self.parse_keyword(Keyword::ORGANIZATION) {
@@ -15780,6 +15757,7 @@ impl<'a> Parser<'a> {
             .partition_by(partition_by)
             .access_method(access_method)
             .partition_of(partition_of)
+            .partition_columns(partition_columns)
             .partition_bound(partition_bound)
             .clustering_by(clustering_by)
             .distribution(distribution)
@@ -16536,6 +16514,7 @@ impl<'a> Parser<'a> {
                     expr: Box::new(expr),
                     enforced: None, // Could be extended later to support MySQL ENFORCED/NOT ENFORCED
                     no_inherit,
+                    not_valid: false,
                 }
                 .into(),
             ))
@@ -16799,7 +16778,7 @@ impl<'a> Parser<'a> {
     pub fn parse_constraint_characteristics(
         &self,
     ) -> Result<Option<ConstraintCharacteristics>, ParserError> {
-        self.parse_constraint_attributes(false)
+        self.parse_constraint_attributes(false, false)
     }
 
     /// Parse the attributes after a PRIMARY KEY, UNIQUE or EXCLUDE
@@ -16809,24 +16788,25 @@ impl<'a> Parser<'a> {
     fn parse_index_constraint_characteristics(
         &self,
     ) -> Result<Option<ConstraintCharacteristics>, ParserError> {
-        self.parse_constraint_attributes(dialect_of!(self is PostgreSqlDialect))
+        let postgres = dialect_of!(self is PostgreSqlDialect);
+        self.parse_constraint_attributes(postgres, postgres)
     }
 
+    /// Parse constraint attributes in any order. `NOT VALID` and `NO
+    /// INHERIT` are read only when `not_valid` and `no_inherit` allow them.
     fn parse_constraint_attributes(
         &self,
-        validity_and_inheritance: bool,
+        not_valid: bool,
+        no_inherit: bool,
     ) -> Result<Option<ConstraintCharacteristics>, ParserError> {
         let mut cc = ConstraintCharacteristics::default();
 
         loop {
-            if validity_and_inheritance
-                && !cc.not_valid
-                && self.parse_keywords(&[Keyword::NOT, Keyword::VALID])
-            {
+            if not_valid && !cc.not_valid && self.parse_keywords(&[Keyword::NOT, Keyword::VALID]) {
                 cc.not_valid = true;
                 continue;
             }
-            if validity_and_inheritance
+            if no_inherit
                 && !cc.no_inherit
                 && self.parse_keywords(&[Keyword::NO, Keyword::INHERIT])
             {
@@ -16864,7 +16844,26 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parse a table constraint in a `CREATE [FOREIGN] TABLE` element list. In
+    /// PostgreSQL a CHECK or FOREIGN KEY constraint there takes a trailing
+    /// `NOT VALID` and records it on itself.
     pub fn parse_optional_table_constraint(&self) -> Result<Option<TableConstraint>, ParserError> {
+        self.parse_optional_constraint(dialect_of!(self is PostgreSqlDialect))
+    }
+
+    /// Parse the constraint of `ALTER TABLE ... ADD` or `ALTER DOMAIN ...
+    /// ADD`. Those operations record a trailing `NOT VALID` themselves, so a
+    /// CHECK or FOREIGN KEY constraint here leaves it unread.
+    fn parse_optional_added_constraint(&self) -> Result<Option<TableConstraint>, ParserError> {
+        self.parse_optional_constraint(false)
+    }
+
+    /// Parse a table constraint; `not_valid` says whether a CHECK or FOREIGN
+    /// KEY constraint reads a trailing `NOT VALID` as its own.
+    fn parse_optional_constraint(
+        &self,
+        not_valid: bool,
+    ) -> Result<Option<TableConstraint>, ParserError> {
         let name = if self.parse_keyword(Keyword::CONSTRAINT) {
             Some(self.parse_identifier()?)
         } else {
@@ -17024,7 +17023,7 @@ impl<'a> Parser<'a> {
                     }
                 }
 
-                let characteristics = self.parse_constraint_characteristics()?;
+                let characteristics = self.parse_constraint_attributes(not_valid, false)?;
 
                 Ok(Some(
                     ForeignKeyConstraint {
@@ -17070,18 +17069,27 @@ impl<'a> Parser<'a> {
                 let expr = Box::new(self.parse_expr()?);
                 self.expect_token(&BorrowedToken::RParen)?;
 
-                let mut no_inherit = self.parse_keywords(&[Keyword::NO, Keyword::INHERIT]);
-
-                let enforced = if self.parse_keyword(Keyword::ENFORCED) {
-                    Some(true)
-                } else if self.parse_keywords(&[Keyword::NOT, Keyword::ENFORCED]) {
-                    Some(false)
-                } else {
-                    None
-                };
-
-                if !no_inherit {
-                    no_inherit = self.parse_keywords(&[Keyword::NO, Keyword::INHERIT]);
+                // The attributes may come in any order, each at most once.
+                let mut no_inherit = false;
+                let mut enforced = None;
+                let mut check_not_valid = false;
+                loop {
+                    if !no_inherit && self.parse_keywords(&[Keyword::NO, Keyword::INHERIT]) {
+                        no_inherit = true;
+                    } else if enforced.is_none() && self.parse_keyword(Keyword::ENFORCED) {
+                        enforced = Some(true);
+                    } else if enforced.is_none()
+                        && self.parse_keywords(&[Keyword::NOT, Keyword::ENFORCED])
+                    {
+                        enforced = Some(false);
+                    } else if not_valid
+                        && !check_not_valid
+                        && self.parse_keywords(&[Keyword::NOT, Keyword::VALID])
+                    {
+                        check_not_valid = true;
+                    } else {
+                        break;
+                    }
                 }
 
                 Ok(Some(
@@ -17090,6 +17098,7 @@ impl<'a> Parser<'a> {
                         expr,
                         enforced,
                         no_inherit,
+                        not_valid: check_not_valid,
                     }
                     .into(),
                 ))
@@ -17492,7 +17501,7 @@ impl<'a> Parser<'a> {
                 let columns = self.parse_comma_separated(Parser::parse_column_def)?;
                 self.expect_token(&BorrowedToken::RParen)?;
                 AlterTableOperation::OracleAddColumns { columns }
-            } else if let Some(constraint) = self.parse_optional_table_constraint()? {
+            } else if let Some(constraint) = self.parse_optional_added_constraint()? {
                 let not_valid = self.parse_keywords(&[Keyword::NOT, Keyword::VALID]);
                 AlterTableOperation::AddConstraint {
                     constraint,
@@ -25790,6 +25799,8 @@ impl<'a> Parser<'a> {
                 Some(GrantObjects::PropertyGraphs(self.parse_comma_separated(
                     |p| p.parse_object_name_inner(false, true),
                 )?))
+            } else if let Some(routines) = self.parse_optional_grant_routines()? {
+                Some(routines)
             } else {
                 let object_type = self.parse_one_of_keywords(&[
                     Keyword::SEQUENCE,
@@ -25804,8 +25815,6 @@ impl<'a> Parser<'a> {
                     Keyword::INTEGRATION,
                     Keyword::USER,
                     Keyword::CONNECTION,
-                    Keyword::PROCEDURE,
-                    Keyword::FUNCTION,
                     Keyword::TYPE,
                     Keyword::DOMAIN,
                     Keyword::COLLATION,
@@ -25821,13 +25830,6 @@ impl<'a> Parser<'a> {
                     Some(Keyword::VIEW) => Some(GrantObjects::Views(objects?)),
                     Some(Keyword::USER) => Some(GrantObjects::Users(objects?)),
                     Some(Keyword::CONNECTION) => Some(GrantObjects::Connections(objects?)),
-                    kw @ (Some(Keyword::PROCEDURE) | Some(Keyword::FUNCTION)) => {
-                        if let Some(name) = objects?.first() {
-                            self.parse_grant_procedure_or_function(name, &kw)?
-                        } else {
-                            self.expected("procedure or function name", self.peek_token())?
-                        }
-                    }
                     Some(Keyword::TABLE) | None => Some(GrantObjects::Tables(objects?)),
                     Some(Keyword::TYPE) => Some(GrantObjects::Types(objects?)),
                     Some(Keyword::DOMAIN) => Some(GrantObjects::Domains(objects?)),
@@ -25842,29 +25844,29 @@ impl<'a> Parser<'a> {
         Ok((privileges, objects))
     }
 
-    fn parse_grant_procedure_or_function(
-        &self,
-        name: &ObjectName,
-        kw: &Option<Keyword>,
-    ) -> Result<Option<GrantObjects>, ParserError> {
-        let arg_types = if self.consume_token(&BorrowedToken::LParen) {
-            let list = self.parse_comma_separated0(Self::parse_data_type, BorrowedToken::RParen)?;
-            self.expect_token(&BorrowedToken::RParen)?;
-            list
-        } else {
-            vec![]
+    /// Parse `{ FUNCTION | PROCEDURE | ROUTINE } name [ ( [ [ argmode ] [
+    /// argname ] argtype [, ...] ] ) ] [, ...]` as the target of a GRANT or
+    /// REVOKE. The keyword starts a routine list only when a routine name
+    /// follows it; otherwise PostgreSQL reads it as a table name, as in
+    /// `GRANT SELECT ON routine TO r`.
+    fn parse_optional_grant_routines(&self) -> Result<Option<GrantObjects>, ParserError> {
+        let BorrowedToken::Word(keyword) = &self.peek_token_ref().token else {
+            return Ok(None);
         };
-        match kw {
-            Some(Keyword::PROCEDURE) => Ok(Some(GrantObjects::Procedure {
-                name: name.clone(),
-                arg_types,
-            })),
-            Some(Keyword::FUNCTION) => Ok(Some(GrantObjects::Function {
-                name: name.clone(),
-                arg_types,
-            })),
-            _ => self.expected("procedure or function keywords", self.peek_token())?,
+        let routines: fn(Vec<FunctionDesc>) -> GrantObjects = match keyword.keyword {
+            Keyword::FUNCTION => GrantObjects::Function,
+            Keyword::PROCEDURE => GrantObjects::Procedure,
+            Keyword::ROUTINE => GrantObjects::Routine,
+            _ => return Ok(None),
+        };
+        match &self.peek_nth_token_ref(1).token {
+            BorrowedToken::Word(name) if !matches!(name.keyword, Keyword::TO | Keyword::FROM) => {}
+            _ => return Ok(None),
         }
+        self.next_token();
+        Ok(Some(routines(
+            self.parse_comma_separated(Parser::parse_function_desc)?,
+        )))
     }
 
     /// The optional parenthesized column list that follows a column-level
@@ -27580,7 +27582,14 @@ impl<'a> Parser<'a> {
         {
             (None, false)
         } else {
-            let quantity = Expr::Value(self.parse_value()?);
+            // PostgreSQL's `select_fetch_first_value`: a signed numeric
+            // constant, or a `c_expr` (a literal, parameter, column reference,
+            // function call or parenthesized expression), which is the form
+            // `FETCH FIRST (n) ROWS WITH TIES` that pg_get_viewdef prints.
+            let quantity = match self.peek_token_ref().token {
+                BorrowedToken::Plus | BorrowedToken::Minus => self.parse_number()?,
+                _ => self.parse_prefix()?,
+            };
             let percent = self.parse_keyword(Keyword::PERCENT);
             let _ = self.parse_one_of_keywords(&[Keyword::ROW, Keyword::ROWS]);
             (Some(quantity), percent)
@@ -28752,9 +28761,17 @@ impl<'a> Parser<'a> {
                 into_table,
             }
         } else {
+            // As for INSERT, UPDATE and DELETE (`parse_returning_clause`), a
+            // procedural body may store the returned row with `INTO`.
+            let into = if self.in_procedural_body() && self.parse_keyword(Keyword::INTO) {
+                Some(self.parse_comma_separated(Parser::parse_expr)?)
+            } else {
+                None
+            };
             OutputClause::Returning {
                 select_items,
                 row_aliases,
+                into,
             }
         })
     }
@@ -29893,23 +29910,7 @@ impl<'a> Parser<'a> {
                     return self.expected("INVOKER or DEFINER after SECURITY", self.peek_token());
                 };
             } else if self.parse_keyword(Keyword::SET) {
-                let config_name = self.parse_object_name(false)?;
-                let config_value = if self.parse_keywords(&[Keyword::FROM, Keyword::CURRENT]) {
-                    SetConfigValue::FromCurrent
-                } else if self.parse_keyword(Keyword::TO) || self.consume_token(&BorrowedToken::Eq)
-                {
-                    if self.parse_keyword(Keyword::DEFAULT) {
-                        SetConfigValue::Default
-                    } else {
-                        SetConfigValue::Value(self.parse_expr()?)
-                    }
-                } else {
-                    return self.expected("TO, =, or FROM CURRENT", self.peek_token());
-                };
-                set_options.push(ProcedureSetConfig {
-                    config_name,
-                    config_value,
-                });
+                set_options.push(self.parse_routine_set_config()?);
             } else if self.parse_keyword(Keyword::AS) {
                 if has_as {
                     return Err(ParserError::ParserError(
@@ -29961,32 +29962,20 @@ impl<'a> Parser<'a> {
             }
         }
 
-        let mut body = if let Some(body) = body {
-            body
-        } else if raw_body.is_none() {
-            self.parse_conditional_statements(&[Keyword::END])?
-        } else {
-            // Placeholder body; replaced below after language-sensitive reparsing.
-            ConditionalStatements::Sequence { statements: vec![] }
+        let is_sql_language = language
+            .as_ref()
+            .is_some_and(|lang| lang.value.eq_ignore_ascii_case("sql"));
+        let body = match (body, raw_body) {
+            (Some(body), _) => ProcedureBody::Inline(body),
+            (None, Some(source)) if is_sql_language => ProcedureBody::SqlStatements {
+                statements: Parser::parse_sql(self.dialect, &source)?,
+                source,
+            },
+            (None, Some(source)) => ProcedureBody::PlBlock(self.parse_pl_block(source)?),
+            (None, None) => {
+                ProcedureBody::Inline(self.parse_conditional_statements(&[Keyword::END])?)
+            }
         };
-
-        if let Some(raw_body) = raw_body {
-            body = if let Some(lang) = language.as_ref() {
-                if lang.value.eq_ignore_ascii_case("sql") {
-                    // SQL-language procedures may contain raw SQL statements
-                    // rather than a BEGIN...END PL/pgSQL block.
-                    ConditionalStatements::Sequence {
-                        statements: Parser::parse_sql(self.dialect, &raw_body)?,
-                    }
-                } else {
-                    let rewritten_body = Self::rewrite_sql_psm_for_integer_ranges(&raw_body);
-                    ConditionalStatements::BeginEnd(self.reparse_as_sql_psm_block(&rewritten_body)?)
-                }
-            } else {
-                let rewritten_body = Self::rewrite_sql_psm_for_integer_ranges(&raw_body);
-                ConditionalStatements::BeginEnd(self.reparse_as_sql_psm_block(&rewritten_body)?)
-            };
-        }
 
         Ok(Statement::CreateProcedure {
             create_token,

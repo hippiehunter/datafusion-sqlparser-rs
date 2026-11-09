@@ -32,7 +32,7 @@ use crate::ast::{
     TriggerExecBodyType,
 };
 use crate::keywords::Keyword;
-use crate::tokenizer::{BorrowedToken, Token, TokenWithSpan};
+use crate::tokenizer::{operator_run_length, BorrowedToken, Token, TokenWithSpan};
 
 /// The characters PostgreSQL allows in an operator name.
 ///
@@ -691,23 +691,35 @@ impl Parser<'_> {
         }
     }
 
-    /// Read one operator symbol, joining the adjacent tokens PostgreSQL's
-    /// operator character set produces (`@+@` arrives as `@`, `+`, `@`).
+    /// Read one operator symbol. The tokenizer can split one PostgreSQL
+    /// operator into adjacent tokens (`+@` arrives as `+`, `@`), so the run of
+    /// adjacent operator tokens is joined and cut where PostgreSQL's lexer ends
+    /// its first operator: `+++` is three `+` operators.
     pub(super) fn parse_operator_symbol(&self) -> Result<String, ParserError> {
-        let token = self.next_token();
-        if !is_operator_symbol_token(&token) {
-            return self.expected("an operator symbol", token);
+        let first = self.next_token();
+        if !is_operator_symbol_token(&first) {
+            return self.expected("an operator symbol", first);
         }
-        let mut symbol = token.to_string();
-        let mut end = token.span.end;
+        let mut run = first.to_string();
+        let mut end = first.span.end;
+        let mut adjacent = 0;
         loop {
-            let next = self.peek_token_ref();
+            let next = self.peek_nth_token_ref(adjacent);
             if next.span.start != end || !is_operator_symbol_token(next) {
                 break;
             }
-            let next = self.next_token();
             end = next.span.end;
-            symbol.push_str(&next.to_string());
+            run.push_str(&next.to_string());
+            adjacent += 1;
+        }
+        let lead = run.chars().next().map_or(0, char::len_utf8);
+        let length = lead + operator_run_length(&run[..lead], &run[lead..]);
+        let mut symbol = first.to_string();
+        while symbol.len() < length {
+            symbol.push_str(&self.next_token().to_string());
+        }
+        if symbol.len() != length {
+            return self.expected("a single PostgreSQL operator", first);
         }
         Ok(symbol)
     }

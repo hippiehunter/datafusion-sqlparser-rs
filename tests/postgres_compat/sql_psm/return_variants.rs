@@ -20,7 +20,7 @@
 //! Reference: <https://www.postgresql.org/docs/current/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-RETURNING>
 
 use crate::postgres_compat::common::verified_pg_stmt;
-use sqlparser::ast::{CreateFunctionBody, ReturnStatementValue, Statement};
+use sqlparser::ast::{CreateFunctionBody, PlBlock, ReturnStatementValue, Statement};
 
 // These are supported forms, not permissive expected-error probes. Assert both
 // structured-body parsing and a real Display/reparse round trip for every case.
@@ -31,7 +31,7 @@ fn return_round_trip(sql: &str) -> Statement {
     };
     assert!(matches!(
         function.function_body,
-        Some(CreateFunctionBody::AsBeginEnd(_))
+        Some(CreateFunctionBody::PlBlock(_))
     ));
     assert_eq!(statement, verified_pg_stmt(&statement.to_string()));
     statement
@@ -53,7 +53,8 @@ fn test_return_implicit_select_clauses() {
         let Statement::CreateFunction(function) = return_round_trip(&sql) else {
             unreachable!()
         };
-        let Some(CreateFunctionBody::AsBeginEnd(block)) = function.function_body else {
+        let Some(CreateFunctionBody::PlBlock(PlBlock { block, .. })) = function.function_body
+        else {
             unreachable!()
         };
         let [Statement::Return(ret)] = block.statements.as_slice() else {
@@ -73,7 +74,7 @@ fn test_return_next_implicit_select_is_not_return_query() {
     let Statement::CreateFunction(function) = statement else {
         unreachable!()
     };
-    let Some(CreateFunctionBody::AsBeginEnd(block)) = function.function_body else {
+    let Some(CreateFunctionBody::PlBlock(PlBlock { block, .. })) = function.function_body else {
         unreachable!()
     };
     assert!(

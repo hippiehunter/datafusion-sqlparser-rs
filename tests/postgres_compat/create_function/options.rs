@@ -21,7 +21,8 @@
 
 use crate::postgres_compat::common::*;
 use sqlparser::ast::{
-    FunctionBehavior, FunctionCalledOnNull, FunctionParallel, ProcedureSecurity, Statement,
+    FunctionBehavior, FunctionCalledOnNull, FunctionParallel, ProcedureSecurity, SetConfigValue,
+    Statement,
 };
 
 // =============================================================================
@@ -343,6 +344,55 @@ fn test_create_function_set_from_current() {
             assert_eq!(cf.set_options[0].to_string(), "SET search_path FROM CURRENT");
         }
     );
+}
+
+#[test]
+fn set_value_list() {
+    // https://www.postgresql.org/docs/current/sql-createfunction.html
+    // `SET configuration_parameter { TO value | = value | FROM CURRENT }`,
+    // where a list-valued parameter such as search_path takes a list.
+    let statement = verified_pg_stmt(
+        "CREATE FUNCTION f() RETURNS INTEGER LANGUAGE sql \
+         SET search_path TO 'a', 'pg_temp' SET work_mem = '64MB' SET my.list = a, b \
+         SET application_name TO '' SET timezone FROM CURRENT AS $$ SELECT 1 $$",
+    );
+    let cf = extract_create_function(&statement);
+    assert_eq!(
+        cf.set_options
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        vec![
+            "SET search_path TO 'a', 'pg_temp'",
+            "SET work_mem TO '64MB'",
+            "SET my.list TO a, b",
+            "SET application_name TO ''",
+            "SET timezone FROM CURRENT",
+        ]
+    );
+    assert!(matches!(
+        &cf.set_options[0].config_value,
+        SetConfigValue::Values(values) if values.len() == 2
+    ));
+    assert_eq!(statement, verified_pg_stmt(&statement.to_string()));
+
+    // The form pg_dump writes for a function with a proconfig list.
+    let dumped = "CREATE FUNCTION app.secure() RETURNS INTEGER LANGUAGE plpgsql \
+                  SET search_path TO 'app', 'pg_temp' AS $$BEGIN RETURN 1; END$$";
+    assert_eq!(verified_pg_stmt(dumped).to_string(), dumped);
+
+    // The same clause on a procedure and in ALTER FUNCTION.
+    let statement = verified_pg_stmt(
+        "CREATE PROCEDURE app.p() LANGUAGE plpgsql \
+         SET search_path = app, pg_temp AS $$BEGIN NULL; END$$",
+    );
+    assert_eq!(
+        extract_create_procedure(&statement).set_options[0].to_string(),
+        "SET search_path TO app, pg_temp"
+    );
+    assert_eq!(statement, verified_pg_stmt(&statement.to_string()));
+    let altered = "ALTER FUNCTION app.secure() SET search_path TO app, pg_temp";
+    assert_eq!(verified_pg_stmt(altered).to_string(), altered);
 }
 
 // =============================================================================

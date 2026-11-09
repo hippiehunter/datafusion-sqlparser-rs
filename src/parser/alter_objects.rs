@@ -764,7 +764,7 @@ impl Parser<'_> {
                 });
             }
             self.rewind_to(start);
-            let Some(constraint) = self.parse_optional_table_constraint()? else {
+            let Some(constraint) = self.parse_optional_added_constraint()? else {
                 return self.expected("a domain constraint after ADD", self.peek_token());
             };
             return Ok(AlterDomainAction::AddConstraint {
@@ -932,11 +932,7 @@ impl Parser<'_> {
             return Ok(Some(RoutineOption::Support(self.parse_object_name(false)?)));
         }
         if self.parse_keyword(Keyword::SET) {
-            let config_name = self.parse_object_name(false)?;
-            return Ok(Some(RoutineOption::Set(ProcedureSetConfig {
-                config_name,
-                config_value: self.parse_set_config_value()?,
-            })));
+            return Ok(Some(RoutineOption::Set(self.parse_routine_set_config()?)));
         }
         if self.parse_keyword(Keyword::RESET) {
             if self.parse_keyword(Keyword::ALL) {
@@ -947,6 +943,18 @@ impl Parser<'_> {
             ))));
         }
         Ok(None)
+    }
+
+    /// Parse the clause after a routine's `SET` keyword, in `CREATE FUNCTION`,
+    /// `CREATE PROCEDURE` and `ALTER { FUNCTION | PROCEDURE | ROUTINE }`:
+    /// `configuration_parameter { TO | = } { DEFAULT | value [, ...] }` or
+    /// `configuration_parameter FROM CURRENT`.
+    pub(super) fn parse_routine_set_config(&self) -> Result<ProcedureSetConfig, ParserError> {
+        let config_name = self.parse_object_name(false)?;
+        Ok(ProcedureSetConfig {
+            config_name,
+            config_value: self.parse_set_config_value()?,
+        })
     }
 
     /// Parse the value of a `SET configuration_parameter` clause:
@@ -1109,7 +1117,7 @@ impl Parser<'_> {
             if self.parse_keywords(&[Keyword::SET, Keyword::STATISTICS]) {
                 return Ok(AlterMaterializedViewAction::AlterColumnSetStatistics {
                     column_name,
-                    statistics: self.parse_number()?,
+                    statistics: self.parse_set_statistics_value()?,
                 });
             }
             if self.parse_keywords(&[Keyword::SET, Keyword::STORAGE]) {

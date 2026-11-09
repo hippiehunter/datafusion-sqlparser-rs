@@ -28,7 +28,7 @@ use sqlparser::ast::{
     ArgMode, AtomicBlock, BeginEndStatements, ConditionalStatements, CreateFunctionBody,
     CursorScrollOption, DataType, DiagnosticsItem, ExecuteInto, Expr, ForLoopVariant,
     FunctionBehavior, FunctionCalledOnNull, FunctionParallel, GetDiagnosticsKind, OpenFor,
-    PlSqlDeclaration, RoutineAttribute, SqlPsmDataType, Statement,
+    PlBlock, PlSqlDeclaration, ProcedureBody, RoutineAttribute, SqlPsmDataType, Statement,
 };
 
 // =============================================================================
@@ -59,7 +59,7 @@ fn round_trip_exact(sql: &str) -> Statement {
 fn function_block(sql: &str) -> BeginEndStatements {
     let statement = round_trip(sql);
     match extract_create_function(&statement).function_body.clone() {
-        Some(CreateFunctionBody::AsBeginEnd(block)) => block,
+        Some(CreateFunctionBody::PlBlock(PlBlock { block, .. })) => block,
         other => panic!("expected a PL/pgSQL block body, got {other:?}"),
     }
 }
@@ -68,7 +68,7 @@ fn function_block(sql: &str) -> BeginEndStatements {
 fn do_block(sql: &str) -> BeginEndStatements {
     match round_trip(sql) {
         Statement::Do(statement) => match statement.body {
-            sqlparser::ast::DoBody::Block(block) => block,
+            sqlparser::ast::DoBody::Block(PlBlock { block, .. }) => block,
             other => panic!("expected a structured DO body, got {other:?}"),
         },
         other => panic!("expected Statement::Do, got {other:?}"),
@@ -854,11 +854,15 @@ fn test_declare_array_types() {
 #[test]
 fn test_declare_array_of_type_written_with_array_keyword() {
     // PostgreSQL ignores the declared dimensions, so `ARRAY[3]` is an array.
-    one_statement_parses_to_pg(
-        "CREATE FUNCTION f() RETURNS INT LANGUAGE plpgsql \
-         AS $$ DECLARE e t.id%TYPE ARRAY[3]; BEGIN RETURN 1; END $$",
-        "CREATE FUNCTION f() RETURNS INT LANGUAGE plpgsql \
-         AS $$ DECLARE e t.id%TYPE[]; BEGIN RETURN 1; END $$",
+    assert_eq!(
+        function_block(
+            "CREATE FUNCTION f() RETURNS INT LANGUAGE plpgsql \
+             AS $$ DECLARE e t.id%TYPE ARRAY[3]; BEGIN RETURN 1; END $$",
+        ),
+        function_block(
+            "CREATE FUNCTION f() RETURNS INT LANGUAGE plpgsql \
+             AS $$ DECLARE e t.id%TYPE[]; BEGIN RETURN 1; END $$",
+        ),
     );
 }
 
@@ -1034,7 +1038,9 @@ fn test_procedure_begin_atomic_body() {
     );
     match statement {
         Statement::CreateProcedure { body, .. } => match body {
-            ConditionalStatements::BeginAtomic(AtomicBlock { statements }) => {
+            ProcedureBody::Inline(ConditionalStatements::BeginAtomic(AtomicBlock {
+                statements,
+            })) => {
                 assert_eq!(statements.len(), 1)
             }
             other => panic!("expected a BEGIN ATOMIC body, got {other:?}"),
@@ -1314,6 +1320,8 @@ fn test_perform_query_forms_keep_structured_round_trips() {
         "ARRAY[1, 2, 3]",
         "1 UNION SELECT 2",
         "(SELECT 1)",
+        "(-1)::INT",
+        "(v + 1) * 2",
     ] {
         let block = function_block(&format!(
             "CREATE FUNCTION f(v INT) RETURNS VOID LANGUAGE plpgsql AS $$ BEGIN PERFORM {query}; END $$"

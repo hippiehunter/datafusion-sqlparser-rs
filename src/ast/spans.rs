@@ -720,6 +720,7 @@ impl Spanned for CreateTable {
             partition_by: _,
             access_method: _,
             partition_of: _,
+            partition_columns: _,
             partition_bound: _,
             clustering_by,
             distribution: _,

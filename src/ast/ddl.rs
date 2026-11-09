@@ -37,7 +37,7 @@ use sqlparser_derive::{Visit, VisitMut};
 use crate::ast::table_ddl::{
     AlterConstraint, ColumnCompression, ConstraintAttribute, CreateTableAsExecute,
     CreateTableWithData, DomainConstraint, IdentityColumnOption, SetAccessMethod,
-    SetStatisticsValue, TableLikeElement, TypedTableElement, ViewCheckOption,
+    SetStatisticsValue, TableLikeElement, TypedTableColumn, TypedTableElement, ViewCheckOption,
 };
 use crate::ast::value::escape_single_quote_string;
 use crate::ast::{
@@ -2904,6 +2904,10 @@ pub struct CreateTable {
     pub access_method: Option<Ident>,
     /// PostgreSQL `PARTITION OF parent_table`
     pub partition_of: Option<ObjectName>,
+    /// The columns a `PARTITION OF` element list names: each is a column of
+    /// the parent the partition attaches options to. Its table constraints
+    /// are in `constraints`.
+    pub partition_columns: Vec<TypedTableColumn>,
     /// PostgreSQL partition bound spec (`FOR VALUES ...` or `DEFAULT`)
     pub partition_bound: Option<PartitionBoundSpec>,
     /// Declarative physical organization requested for the table.
@@ -3007,6 +3011,17 @@ impl fmt::Display for CreateTable {
                 separate(f)?;
                 write!(f, "{constraint}")?;
             }
+            f.write_str(")")?;
+        } else if !self.partition_columns.is_empty() {
+            f.write_str(" (")?;
+            NewLine.fmt(f)?;
+            Indent(DisplayCommaSeparated(&self.partition_columns)).fmt(f)?;
+            if !self.constraints.is_empty() {
+                f.write_str(",")?;
+                SpaceOrNewline.fmt(f)?;
+            }
+            Indent(DisplayCommaSeparated(&self.constraints)).fmt(f)?;
+            NewLine.fmt(f)?;
             f.write_str(")")?;
         } else if !self.columns.is_empty() || !self.constraints.is_empty() {
             f.write_str(" (")?;
@@ -3428,17 +3443,20 @@ impl fmt::Display for CreateFunction {
                     CreateFunctionBody::AsReturnExpr(expr) => write!(f, " AS RETURN {expr}")?,
                     CreateFunctionBody::AsReturnSelect(select) => write!(f, " AS RETURN {select}")?,
                     CreateFunctionBody::AsBeginEnd(bes) => write!(f, " AS $$ {bes} $$")?,
+                    CreateFunctionBody::PlBlock(block) => write!(f, " AS {block}")?,
                     CreateFunctionBody::BeginAtomic(block) => write!(f, " {block}")?,
                     CreateFunctionBody::Multiple(_) => {}
                 }
             }
         }
+        if let Some(CreateFunctionBody::PlBlock(block)) = &self.function_body {
+            write!(f, " AS {block}")?;
+        }
         if let Some(CreateFunctionBody::AsBeginEnd(bes)) = &self.function_body {
-            // PL/pgSQL function bodies must always be dollar-quoted so the
-            // re-parse path goes through the PL/pgSQL rewriting pipeline
-            // (`:=` assignments, `..` integer ranges, alias declarations).
-            // Without dollar-quoting, `AS BEGIN...END` is parsed as plain SQL
-            // which doesn't handle these constructs.
+            // A PL/pgSQL body, or a block with declarations, a label or
+            // exception handlers, is written dollar-quoted: only a string body
+            // is parsed as a PL/pgSQL block, and the unquoted `AS BEGIN...END`
+            // form has no syntax for those parts.
             let is_plpgsql = self.language.as_ref().is_some_and(|l| {
                 l.value.eq_ignore_ascii_case("plpgsql") || l.value.eq_ignore_ascii_case("pgsql")
             });

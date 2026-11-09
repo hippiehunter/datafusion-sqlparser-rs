@@ -405,10 +405,10 @@ fn returning_into_is_scoped_to_procedural_bodies() {
     let Statement::CreateFunction(function) = pg().verified_stmt(sql) else {
         panic!("expected CREATE FUNCTION");
     };
-    let Some(CreateFunctionBody::AsBeginEnd(body)) = function.function_body else {
+    let Some(CreateFunctionBody::PlBlock(body)) = function.function_body else {
         panic!("expected structured procedural body");
     };
-    let Some(Statement::Update(update)) = body.statements.first() else {
+    let Some(Statement::Update(update)) = body.block.statements.first() else {
         panic!("expected UPDATE in procedural body");
     };
     assert_eq!(
@@ -427,6 +427,201 @@ fn returning_into_is_scoped_to_procedural_bodies() {
         )
         .is_err(),
         "RETURNING INTO must remain invalid in top-level PostgreSQL DML"
+    );
+}
+
+#[test]
+fn parse_merge_returning_into_in_procedural_body() {
+    // https://www.postgresql.org/docs/current/plpgsql-statements.html#PLPGSQL-STATEMENTS-SQL-ONEROW
+    let sql = "CREATE FUNCTION mrf(k INT) RETURNS INT LANGUAGE plpgsql AS $$DECLARE r INT; BEGIN \
+               MERGE INTO counters AS t USING (SELECT k AS id) AS s ON t.id = s.id \
+               WHEN MATCHED THEN UPDATE SET n = t.n + 1 \
+               WHEN NOT MATCHED THEN INSERT (id, n) VALUES (s.id, 1) \
+               RETURNING t.n INTO r; RETURN r; END$$";
+    let Statement::CreateFunction(function) = pg().verified_stmt(sql) else {
+        panic!("expected CREATE FUNCTION");
+    };
+    let Some(CreateFunctionBody::PlBlock(body)) = function.function_body else {
+        panic!("expected structured procedural body");
+    };
+    let Some(Statement::Merge {
+        output: Some(OutputClause::Returning {
+            select_items,
+            into,
+            ..
+        }),
+        ..
+    }) = body.block.statements.first()
+    else {
+        panic!("expected MERGE ... RETURNING in procedural body");
+    };
+    assert_eq!(select_items.len(), 1);
+    assert_eq!(
+        into.as_ref()
+            .map(|targets| targets.iter().map(ToString::to_string).collect::<Vec<_>>()),
+        Some(vec!["r".to_string()])
+    );
+
+    assert!(
+        Parser::parse_sql(
+            &PostgreSqlDialect {},
+            "MERGE INTO counters AS t USING src AS s ON t.id = s.id \
+             WHEN MATCHED THEN DELETE RETURNING t.n INTO r",
+        )
+        .is_err(),
+        "RETURNING INTO must remain invalid in a top-level MERGE"
+    );
+}
+
+#[test]
+fn parse_fetch_first_with_an_expression_quantity() {
+    // PostgreSQL's select_fetch_first_value: a c_expr or a signed numeric
+    // constant. pg_get_viewdef prints `FETCH FIRST (n) ROWS WITH TIES`.
+    let cases = [
+        (
+            "SELECT a FROM t ORDER BY a FETCH FIRST (2) ROWS WITH TIES",
+            "SELECT a FROM t ORDER BY a FETCH FIRST (2) ROWS WITH TIES",
+        ),
+        (
+            "SELECT a FROM t ORDER BY a FETCH FIRST (1 + 1) ROWS ONLY",
+            "SELECT a FROM t ORDER BY a FETCH FIRST (1 + 1) ROWS ONLY",
+        ),
+        (
+            "SELECT a FROM t FETCH FIRST $1 ROWS ONLY",
+            "SELECT a FROM t FETCH FIRST $1 ROWS ONLY",
+        ),
+        (
+            "SELECT a FROM t FETCH NEXT -1 ROWS ONLY",
+            "SELECT a FROM t FETCH FIRST -1 ROWS ONLY",
+        ),
+    ];
+    for (sql, canonical) in cases {
+        let statements = Parser::parse_sql(&PostgreSqlDialect {}, sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        assert_eq!(statements[0].to_string(), canonical);
+        assert_eq!(
+            Parser::parse_sql(&PostgreSqlDialect {}, canonical).unwrap(),
+            statements
+        );
+    }
+
+    let query = pg().verified_query("SELECT a FROM t ORDER BY a FETCH FIRST (2) ROWS WITH TIES");
+    let fetch = query.fetch.expect("FETCH clause");
+    assert!(fetch.with_ties);
+    assert!(matches!(fetch.quantity, Some(Expr::Nested(_))));
+
+    let query = pg().verified_query("SELECT a FROM t FETCH NEXT -1 ROWS ONLY");
+    assert!(matches!(
+        query.fetch.and_then(|fetch| fetch.quantity.clone()),
+        Some(Expr::UnaryOp {
+            op: UnaryOperator::Minus,
+            ..
+        })
+    ));
+
+    // An unparenthesized operator expression is not a c_expr.
+    assert!(Parser::parse_sql(&PostgreSqlDialect {}, "SELECT a FROM t FETCH FIRST 1 + 1 ROWS ONLY")
+        .is_err());
+}
+
+#[test]
+fn parse_create_table_check_and_fk_not_valid() {
+    // PostgreSQL accepts NOT VALID on a CHECK or FOREIGN KEY table constraint
+    // inside CREATE TABLE, in any order among the constraint's attributes.
+    let sql = "CREATE TABLE r (x INT, CONSTRAINT c1 CHECK (x > 0) NOT VALID, \
+               CONSTRAINT f1 FOREIGN KEY (x) REFERENCES t(a) NOT VALID)";
+    let Statement::CreateTable(table) = pg().verified_stmt(sql) else {
+        panic!("expected CREATE TABLE");
+    };
+    assert_eq!(table.to_string(), sql);
+    let [TableConstraint::Check(check), TableConstraint::ForeignKey(foreign_key)] =
+        table.constraints.as_slice()
+    else {
+        panic!("expected a CHECK and a FOREIGN KEY constraint");
+    };
+    assert!(check.not_valid);
+    assert!(foreign_key
+        .characteristics
+        .is_some_and(|characteristics| characteristics.not_valid));
+
+    for sql in [
+        "CREATE TABLE r4 (x INT, CHECK (x > 0) NOT VALID NO INHERIT)",
+        "CREATE TABLE r5 (x INT, CHECK (x > 0) NO INHERIT NOT VALID)",
+        "CREATE TABLE r6 (x INT, CHECK (x > 0) NOT ENFORCED NOT VALID)",
+    ] {
+        let Statement::CreateTable(table) = pg().verified_stmt(sql) else {
+            panic!("expected CREATE TABLE");
+        };
+        let [TableConstraint::Check(check)] = table.constraints.as_slice() else {
+            panic!("expected a CHECK constraint");
+        };
+        assert!(check.not_valid, "{sql}");
+    }
+
+    // A foreign table keeps its NOT VALID constraint unvalidated in
+    // PostgreSQL, so the flag must reach the AST there as well.
+    let Statement::CreateForeignTable(foreign_table) = pg().verified_stmt(
+        "CREATE FOREIGN TABLE ft (a INT, CONSTRAINT fc CHECK (a > 0) NOT VALID) SERVER sv",
+    ) else {
+        panic!("expected CREATE FOREIGN TABLE");
+    };
+    assert!(matches!(
+        foreign_table.constraints.as_slice(),
+        [TableConstraint::Check(check)] if check.not_valid
+    ));
+
+    // ALTER TABLE ... ADD records NOT VALID on the operation.
+    let Statement::AlterTable(alter) =
+        pg().verified_stmt("ALTER TABLE r ADD CONSTRAINT c2 CHECK (x > 1) NOT VALID")
+    else {
+        panic!("expected ALTER TABLE");
+    };
+    assert!(matches!(
+        alter.operations.as_slice(),
+        [AlterTableOperation::AddConstraint {
+            constraint: TableConstraint::Check(check),
+            not_valid: true,
+        }] if !check.not_valid
+    ));
+
+    // NOT VALID is a table-constraint attribute only; PostgreSQL rejects it
+    // on a column constraint.
+    assert!(
+        Parser::parse_sql(&PostgreSqlDialect {}, "CREATE TABLE t2 (a INT CHECK (a > 0) NOT VALID)")
+            .is_err()
+    );
+}
+
+#[test]
+fn operator_name_trailing_plus_is_trimmed_like_postgres() {
+    // PostgreSQL's lexer drops trailing `+`/`-` from a multi-character
+    // operator unless it contains one of ~ ! @ # % ^ & | ` ?. `+++` is
+    // therefore three `+` tokens, and PostgreSQL 18 rejects it as an
+    // operator name.
+    assert!(Parser::parse_sql(
+        &PostgreSqlDialect {},
+        "CREATE OPERATOR +++ (LEFTARG = INT, RIGHTARG = INT, FUNCTION = int4pl)",
+    )
+    .is_err());
+
+    for name in ["@+", "+@", "%-", "#-"] {
+        let Statement::CreateOperator(operator) = pg().verified_stmt(&format!(
+            "CREATE OPERATOR {name} (LEFTARG = INT, RIGHTARG = INT, FUNCTION = int4pl)"
+        )) else {
+            panic!("expected CREATE OPERATOR");
+        };
+        assert_eq!(operator.name.to_string(), name);
+    }
+
+    // `%` keeps a trailing `-` in the operator (PostgreSQL 18: operator does
+    // not exist: integer %- integer); `*` does not (5 *- 2 is -10).
+    assert_eq!(
+        pg().verified_only_select("SELECT 5 %- 2").projection[0].to_string(),
+        "5 %- 2"
+    );
+    assert_eq!(
+        pg().verified_only_select("SELECT 5 *- 2").projection[0].to_string(),
+        "5 * -2"
     );
 }
 
@@ -6517,6 +6712,7 @@ fn parse_create_domain() {
             name: None,
             option: ColumnOption::Check(CheckConstraint {
                 no_inherit: false,
+                not_valid: false,
                 name: None,
                 expr: Box::new(Expr::BinaryOp {
                     left: Box::new(Expr::Identifier(Ident::new("value"))),
@@ -6535,6 +6731,7 @@ fn parse_create_domain() {
         default: None,
         constraints: vec![CheckConstraint {
             no_inherit: false,
+            not_valid: false,
             name: None,
             expr: Box::new(Expr::BinaryOp {
                 left: Box::new(Expr::Identifier(Ident::new("value"))),
@@ -6555,6 +6752,7 @@ fn parse_create_domain() {
             name: None,
             option: ColumnOption::Check(CheckConstraint {
                 no_inherit: false,
+                not_valid: false,
                 name: None,
                 expr: Box::new(Expr::BinaryOp {
                     left: Box::new(Expr::Identifier(Ident::new("value"))),
@@ -6573,6 +6771,7 @@ fn parse_create_domain() {
         default: None,
         constraints: vec![CheckConstraint {
             no_inherit: false,
+            not_valid: false,
             name: None,
             expr: Box::new(Expr::BinaryOp {
                 left: Box::new(Expr::Identifier(Ident::new("value"))),
@@ -6593,6 +6792,7 @@ fn parse_create_domain() {
             name: None,
             option: ColumnOption::Check(CheckConstraint {
                 no_inherit: false,
+                not_valid: false,
                 name: None,
                 expr: Box::new(Expr::BinaryOp {
                     left: Box::new(Expr::Identifier(Ident::new("value"))),
@@ -6611,6 +6811,7 @@ fn parse_create_domain() {
         default: Some(Expr::Value(test_utils::number("1").into())),
         constraints: vec![CheckConstraint {
             no_inherit: false,
+            not_valid: false,
             name: None,
             expr: Box::new(Expr::BinaryOp {
                 left: Box::new(Expr::Identifier(Ident::new("value"))),
@@ -6632,6 +6833,7 @@ fn parse_create_domain() {
             name: None,
             option: ColumnOption::Check(CheckConstraint {
                 no_inherit: false,
+                not_valid: false,
                 name: None,
                 expr: Box::new(Expr::BinaryOp {
                     left: Box::new(Expr::Identifier(Ident::new("value"))),
@@ -6650,6 +6852,7 @@ fn parse_create_domain() {
         default: Some(Expr::Value(test_utils::number("1").into())),
         constraints: vec![CheckConstraint {
             no_inherit: false,
+            not_valid: false,
             name: None,
             expr: Box::new(Expr::BinaryOp {
                 left: Box::new(Expr::Identifier(Ident::new("value"))),
@@ -6671,6 +6874,7 @@ fn parse_create_domain() {
             name: Some(Ident::new("my_constraint")),
             option: ColumnOption::Check(CheckConstraint {
                 no_inherit: false,
+                not_valid: false,
                 name: None,
                 expr: Box::new(Expr::BinaryOp {
                     left: Box::new(Expr::Identifier(Ident::new("value"))),
@@ -6689,6 +6893,7 @@ fn parse_create_domain() {
         default: None,
         constraints: vec![CheckConstraint {
             no_inherit: false,
+            not_valid: false,
             name: Some(Ident::new("my_constraint")),
             expr: Box::new(Expr::BinaryOp {
                 left: Box::new(Expr::Identifier(Ident::new("value"))),
@@ -8859,6 +9064,27 @@ fn partition_of_table_displays_without_an_empty_column_list() {
     pg().verified_stmt("CREATE TABLE p2 PARTITION OF p FOR VALUES IN (1)");
     pg().verified_stmt("CREATE TABLE p3 PARTITION OF p DEFAULT");
     pg().verified_stmt("CREATE TABLE empty ()");
+}
+
+#[test]
+fn partition_of_element_list_precedes_the_bound() {
+    pg().verified_stmt(
+        "CREATE TABLE p1 PARTITION OF p (b WITH OPTIONS DEFAULT 5, c NOT NULL, CONSTRAINT p1_b CHECK (b > 0), PRIMARY KEY (a, b)) FOR VALUES IN (1)",
+    );
+    pg().verified_stmt("CREATE TABLE p2 PARTITION OF p (PRIMARY KEY (id)) DEFAULT");
+    let Statement::CreateTable(create) =
+        pg().verified_stmt("CREATE TABLE p3 PARTITION OF p (b DEFAULT 7 CHECK (b < 100), UNIQUE (b)) FOR VALUES FROM (0) TO (10)")
+    else {
+        panic!("expected CREATE TABLE");
+    };
+    assert!(create.columns.is_empty());
+    assert_eq!(create.partition_columns.len(), 1);
+    assert_eq!(create.partition_columns[0].name.value, "b");
+    assert_eq!(create.partition_columns[0].options.len(), 2);
+    assert_eq!(create.constraints.len(), 1);
+    assert!(pg()
+        .parse_sql_statements("CREATE TABLE p4 PARTITION OF p FOR VALUES IN (1) (b NOT NULL)")
+        .is_err());
 }
 
 #[test]

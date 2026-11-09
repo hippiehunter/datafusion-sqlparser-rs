@@ -20,7 +20,83 @@
 //! Reference: <https://www.postgresql.org/docs/current/sql-createfunction.html>
 
 use crate::postgres_compat::common::*;
-use sqlparser::ast::Statement;
+use sqlparser::ast::{CreateFunctionBody, DoBody, ProcedureBody, Statement};
+
+/// A PL/pgSQL body with comments, mixed case, `PERFORM` and a reversed
+/// stepped integer loop.
+const PL_SOURCE: &str = "\nDECLARE\n  Total Integer := 0; -- c\nBEGIN\n  /* b */ PERFORM 1;\n  FOR i IN REVERSE n..1 BY 2 LOOP\n    total := total + i;\n  END LOOP;\n  Return total;\nEND\n";
+
+#[test]
+fn string_body_source_is_verbatim() {
+    // https://www.postgresql.org/docs/current/catalog-pg-proc.html
+    // PostgreSQL stores a routine's string body as written (prosrc), and
+    // pg_dump writes that text back unchanged.
+    let sql = format!(
+        "CREATE FUNCTION f(n INTEGER) RETURNS INTEGER LANGUAGE plpgsql AS $${PL_SOURCE}$$"
+    );
+    let statement = verified_pg_stmt(&sql);
+    assert_eq!(statement.to_string(), sql);
+    let Some(CreateFunctionBody::PlBlock(body)) = &extract_create_function(&statement).function_body
+    else {
+        panic!("expected a PL/pgSQL body");
+    };
+    assert_eq!(body.source, PL_SOURCE);
+    assert_eq!(body.block.declarations.len(), 1);
+    assert_eq!(body.block.statements.len(), 3);
+
+    // A single-quoted body keeps the string's value; a value containing `$`
+    // is written back with a delimiter that does not occur in it, as pg_dump
+    // chooses one.
+    let quoted =
+        verified_pg_stmt("CREATE FUNCTION g() RETURNS TEXT LANGUAGE plpgsql AS 'BEGIN RETURN ''$$''; END'");
+    let Some(CreateFunctionBody::PlBlock(body)) = &extract_create_function(&quoted).function_body
+    else {
+        panic!("expected a PL/pgSQL body");
+    };
+    assert_eq!(body.source, "BEGIN RETURN '$$'; END");
+    assert_eq!(
+        quoted.to_string(),
+        "CREATE FUNCTION g() RETURNS TEXT LANGUAGE plpgsql AS $_$BEGIN RETURN '$$'; END$_$"
+    );
+    assert_eq!(quoted, verified_pg_stmt(&quoted.to_string()));
+
+    // CREATE PROCEDURE and DO keep their source the same way.
+    let procedure = format!("CREATE PROCEDURE p(n INTEGER) LANGUAGE plpgsql AS $${PL_SOURCE}$$");
+    let statement = verified_pg_stmt(&procedure);
+    assert_eq!(statement.to_string(), procedure);
+    let Statement::CreateProcedure {
+        body: ProcedureBody::PlBlock(body),
+        ..
+    } = &statement
+    else {
+        panic!("expected a PL/pgSQL procedure body");
+    };
+    assert_eq!(body.source, PL_SOURCE);
+
+    let sql_procedure = "CREATE PROCEDURE q() LANGUAGE sql AS $$ insert into t values (1); -- c\n$$";
+    let statement = verified_pg_stmt(sql_procedure);
+    assert_eq!(statement.to_string(), sql_procedure);
+    let Statement::CreateProcedure {
+        body: ProcedureBody::SqlStatements { source, statements },
+        ..
+    } = &statement
+    else {
+        panic!("expected a SQL procedure body");
+    };
+    assert_eq!(source, " insert into t values (1); -- c\n");
+    assert_eq!(statements.len(), 1);
+
+    let do_block = "DO $$\nBEGIN\n  /* b */ PERFORM 1; -- c\nEND\n$$";
+    let statement = verified_pg_stmt(do_block);
+    assert_eq!(statement.to_string(), do_block);
+    let Statement::Do(statement) = &statement else {
+        panic!("expected DO");
+    };
+    let DoBody::Block(body) = &statement.body else {
+        panic!("expected a PL/pgSQL DO body");
+    };
+    assert_eq!(body.source, "\nBEGIN\n  /* b */ PERFORM 1; -- c\nEND\n");
+}
 
 #[test]
 fn test_create_function_body_single_quotes() {

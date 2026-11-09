@@ -5995,8 +5995,8 @@ impl fmt::Display for DoStatement {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub enum DoBody {
-    /// A parsed SQL/PSM block structure with DECLARE, BEGIN...END, etc.
-    Block(BeginEndStatements),
+    /// A PL/pgSQL body, kept as written and parsed.
+    Block(PlBlock),
     /// A raw body expression (typically a dollar-quoted string that wasn't parsed)
     RawBody(Expr),
 }
@@ -6004,11 +6004,109 @@ pub enum DoBody {
 impl fmt::Display for DoBody {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            // A structured block is always written back dollar-quoted: `DO`
-            // takes a string, and re-parsing goes through the PL/pgSQL grammar
-            // only for a quoted body.
-            DoBody::Block(block) => write!(f, "$$ {} $$", block),
+            DoBody::Block(block) => write!(f, "{block}"),
             DoBody::RawBody(expr) => write!(f, "{}", expr),
+        }
+    }
+}
+
+/// A routine or `DO` body written as a string constant and parsed as a
+/// PL/pgSQL block.
+///
+/// PostgreSQL stores the constant's value, not a rendering of the parsed
+/// block, as the routine's source (`pg_proc.prosrc`), so `source` is what a
+/// catalog reports and what Display writes back.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct PlBlock {
+    /// The value of the string constant: for a dollar-quoted body, the exact
+    /// text between its delimiters.
+    pub source: String,
+    /// `source` parsed as a block.
+    pub block: BeginEndStatements,
+}
+
+impl fmt::Display for PlBlock {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", DollarQuoted(&self.source))
+    }
+}
+
+impl Spanned for PlBlock {
+    fn span(&self) -> Span {
+        self.block.span()
+    }
+}
+
+/// Writes text as a dollar-quoted string constant whose value is exactly that
+/// text. The delimiter is chosen as pg_dump chooses it: `$$`, extended with
+/// characters from `_XXXXXXX` until it does not occur in the text.
+struct DollarQuoted<'a>(&'a str);
+
+impl fmt::Display for DollarQuoted<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        const SUFFIXES: &[char] = &['_', 'X', 'X', 'X', 'X', 'X', 'X', 'X'];
+        let mut delimiter = String::from("$");
+        let mut next = 0;
+        while self.0.contains(delimiter.as_str()) {
+            delimiter.push(SUFFIXES[next]);
+            next = (next + 1) % SUFFIXES.len();
+        }
+        delimiter.push('$');
+        write!(f, "{delimiter}{}{delimiter}", self.0)
+    }
+}
+
+/// The body of a `CREATE PROCEDURE`.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum ProcedureBody {
+    /// A string-constant body in PL/pgSQL (the default language).
+    PlBlock(PlBlock),
+    /// A string-constant body of a `LANGUAGE sql` procedure: `source` is the
+    /// constant's value and `statements` is that value parsed.
+    SqlStatements {
+        source: String,
+        statements: Vec<Statement>,
+    },
+    /// A body written in the statement itself: `BEGIN ... END`,
+    /// `BEGIN ATOMIC ... END`, or a statement list.
+    Inline(ConditionalStatements),
+}
+
+impl ProcedureBody {
+    /// The top-level statements of the body.
+    pub fn statements(&self) -> &Vec<Statement> {
+        match self {
+            ProcedureBody::PlBlock(block) => &block.block.statements,
+            ProcedureBody::SqlStatements { statements, .. } => statements,
+            ProcedureBody::Inline(body) => body.statements(),
+        }
+    }
+}
+
+impl fmt::Display for ProcedureBody {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ProcedureBody::PlBlock(block) => write!(f, "{block}"),
+            ProcedureBody::SqlStatements { source, .. } => {
+                write!(f, "{}", DollarQuoted(source))
+            }
+            ProcedureBody::Inline(body) => write!(f, "{body}"),
+        }
+    }
+}
+
+impl Spanned for ProcedureBody {
+    fn span(&self) -> Span {
+        match self {
+            ProcedureBody::PlBlock(block) => block.span(),
+            ProcedureBody::SqlStatements { statements, .. } => {
+                Span::union_iter(statements.iter().map(|statement| statement.span()))
+            }
+            ProcedureBody::Inline(body) => body.span(),
         }
     }
 }
@@ -8338,7 +8436,7 @@ pub enum Statement {
         attributes: Vec<RoutineAttribute>,
         /// Whether AS keyword was used before the body
         has_as: bool,
-        body: ConditionalStatements,
+        body: ProcedureBody,
     },
     /// ```sql
     /// ASSERT <condition> [AS <message>]
@@ -11773,18 +11871,17 @@ impl fmt::Display for Statement {
                     write!(f, " {attribute}")?;
                 }
 
-                if *has_as {
-                    let is_plpgsql = language.as_ref().is_some_and(|l| {
-                        l.value.eq_ignore_ascii_case("plpgsql")
-                            || l.value.eq_ignore_ascii_case("pgsql")
-                    });
-                    if is_plpgsql {
-                        write!(f, " AS $$ {body} $$")
-                    } else {
-                        write!(f, " AS {body}")
+                if !*has_as {
+                    return write!(f, " {body}");
+                }
+                let is_plpgsql = language.as_ref().is_some_and(|l| {
+                    l.value.eq_ignore_ascii_case("plpgsql") || l.value.eq_ignore_ascii_case("pgsql")
+                });
+                match body {
+                    ProcedureBody::Inline(statements) if is_plpgsql => {
+                        write!(f, " AS $$ {statements} $$")
                     }
-                } else {
-                    write!(f, " {body}")
+                    _ => write!(f, " AS {body}"),
                 }
             }
             Statement::CreateView(create_view) => create_view.fmt(f),
@@ -13988,25 +14085,27 @@ pub enum GrantObjects {
     ReplicationGroup(Vec<ObjectName>),
     /// Grant privileges on external volumes
     ExternalVolumes(Vec<ObjectName>),
-    /// Grant privileges on a procedure. In dialects that
-    /// support overloading, the argument types must be specified.
+    /// Grant privileges on procedures, each named with an optional argument
+    /// list written as `DROP PROCEDURE` writes it: `[ argmode ] [ argname ]
+    /// argtype`.
     ///
     /// For example:
-    /// `GRANT USAGE ON PROCEDURE foo(varchar) TO ROLE role1`
-    Procedure {
-        name: ObjectName,
-        arg_types: Vec<DataType>,
-    },
+    /// `GRANT EXECUTE ON PROCEDURE p.pr(INOUT x integer, IN y integer) TO r`
+    Procedure(Vec<FunctionDesc>),
 
-    /// Grant privileges on a function. In dialects that
-    /// support overloading, the argument types must be specified.
+    /// Grant privileges on functions, each named with an optional argument
+    /// list written as `DROP FUNCTION` writes it.
     ///
     /// For example:
-    /// `GRANT USAGE ON FUNCTION foo(varchar) TO ROLE role1`
-    Function {
-        name: ObjectName,
-        arg_types: Vec<DataType>,
-    },
+    /// `GRANT ALL ON FUNCTION app.add(a integer, b integer), app.neg(integer) TO r`
+    Function(Vec<FunctionDesc>),
+
+    /// Grant privileges on routines of either kind, each named with an
+    /// optional argument list.
+    ///
+    /// For example:
+    /// `GRANT EXECUTE ON ROUTINE p.f(integer, text) TO r`
+    Routine(Vec<FunctionDesc>),
 
     /// Grant privileges on a type (SQL:2016)
     ///
@@ -14199,19 +14298,14 @@ impl fmt::Display for GrantObjects {
             GrantObjects::ExternalVolumes(objects) => {
                 write!(f, "EXTERNAL VOLUME {}", display_comma_separated(objects))
             }
-            GrantObjects::Procedure { name, arg_types } => {
-                write!(f, "PROCEDURE {name}")?;
-                if !arg_types.is_empty() {
-                    write!(f, "({})", display_comma_separated(arg_types))?;
-                }
-                Ok(())
+            GrantObjects::Procedure(procedures) => {
+                write!(f, "PROCEDURE {}", display_comma_separated(procedures))
             }
-            GrantObjects::Function { name, arg_types } => {
-                write!(f, "FUNCTION {name}")?;
-                if !arg_types.is_empty() {
-                    write!(f, "({})", display_comma_separated(arg_types))?;
-                }
-                Ok(())
+            GrantObjects::Function(functions) => {
+                write!(f, "FUNCTION {}", display_comma_separated(functions))
+            }
+            GrantObjects::Routine(routines) => {
+                write!(f, "ROUTINE {}", display_comma_separated(routines))
             }
             GrantObjects::Types(types) => {
                 write!(f, "TYPE {}", display_comma_separated(types))
@@ -17068,6 +17162,10 @@ pub enum OutputClause {
         /// PostgreSQL 18's `RETURNING WITH ( OLD AS o, NEW AS n )` aliases.
         #[cfg_attr(feature = "serde", serde(default))]
         row_aliases: Option<Vec<ReturningRowAlias>>,
+        /// The PL/pgSQL `INTO target [, ...]` of a `MERGE ... RETURNING`
+        /// inside a procedural body.
+        #[cfg_attr(feature = "serde", serde(default))]
+        into: Option<Vec<Expr>>,
     },
 }
 
@@ -17089,12 +17187,17 @@ impl fmt::Display for OutputClause {
             OutputClause::Returning {
                 select_items,
                 row_aliases,
+                into,
             } => {
                 f.write_str("RETURNING ")?;
                 if let Some(aliases) = row_aliases {
                     write!(f, "WITH ({}) ", display_comma_separated(aliases))?;
                 }
-                display_comma_separated(select_items).fmt(f)
+                display_comma_separated(select_items).fmt(f)?;
+                if let Some(targets) = into {
+                    write!(f, " INTO {}", display_comma_separated(targets))?;
+                }
+                Ok(())
             }
         }
     }
@@ -17536,6 +17639,17 @@ pub enum CreateFunctionBody {
     ///
     /// [MsSql]: https://learn.microsoft.com/en-us/sql/t-sql/statements/create-function-transact-sql
     AsBeginEnd(BeginEndStatements),
+    /// A string-constant body in [PostgreSQL] PL/pgSQL, kept as written and
+    /// parsed.
+    ///
+    /// Example:
+    /// ```sql
+    /// CREATE FUNCTION f(a INT) RETURNS INT LANGUAGE plpgsql
+    /// AS $$ BEGIN RETURN a + 1; END $$
+    /// ```
+    ///
+    /// [PostgreSQL]: https://www.postgresql.org/docs/current/plpgsql-structure.html
+    PlBlock(PlBlock),
     /// Function body expression using the 'RETURN' keyword.
     ///
     /// Example:

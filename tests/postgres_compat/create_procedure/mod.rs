@@ -77,7 +77,7 @@
 //!     params: Option<Vec<ProcedureParam>>,
 //!     language: Option<Ident>,
 //!     has_as: bool,
-//!     body: ConditionalStatements,
+//!     body: ProcedureBody,
 //! }
 //!
 //! pub struct ProcedureParam {

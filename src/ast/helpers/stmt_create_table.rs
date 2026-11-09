@@ -27,7 +27,9 @@ use serde::{Deserialize, Serialize};
 use sqlparser_derive::{Visit, VisitMut};
 
 use crate::ast::ddl::PartitionByClause;
-use crate::ast::table_ddl::{CreateTableAsExecute, CreateTableWithData, TableLikeElement};
+use crate::ast::table_ddl::{
+    CreateTableAsExecute, CreateTableWithData, TableLikeElement, TypedTableColumn,
+};
 use crate::ast::{
     ColumnDef, CommentDef, CreateTable, CreateTableLikeKind, CreateTableOptions,
     CreateTableSystemVersioning, Ident, ObjectName, OnCommit, OrderByExpr, PartitionBoundSpec,
@@ -91,6 +93,7 @@ pub struct CreateTableBuilder {
     pub partition_by: Option<PartitionByClause>,
     pub access_method: Option<Ident>,
     pub partition_of: Option<ObjectName>,
+    pub partition_columns: Vec<TypedTableColumn>,
     pub partition_bound: Option<PartitionBoundSpec>,
     pub clustering_by: Option<Vec<OrderByExpr>>,
     pub distribution: Option<TableDistribution>,
@@ -129,6 +132,7 @@ impl CreateTableBuilder {
             partition_by: None,
             access_method: None,
             partition_of: None,
+            partition_columns: vec![],
             partition_bound: None,
             clustering_by: None,
             distribution: None,
@@ -258,6 +262,11 @@ impl CreateTableBuilder {
         self
     }
 
+    pub fn partition_columns(mut self, partition_columns: Vec<TypedTableColumn>) -> Self {
+        self.partition_columns = partition_columns;
+        self
+    }
+
     pub fn partition_bound(mut self, partition_bound: Option<PartitionBoundSpec>) -> Self {
         self.partition_bound = partition_bound;
         self
@@ -329,6 +338,7 @@ impl CreateTableBuilder {
             partition_by: self.partition_by,
             access_method: self.access_method,
             partition_of: self.partition_of,
+            partition_columns: self.partition_columns,
             partition_bound: self.partition_bound,
             clustering_by: self.clustering_by,
             distribution: self.distribution,
@@ -375,6 +385,7 @@ impl TryFrom<Statement> for CreateTableBuilder {
                 partition_by,
                 access_method,
                 partition_of,
+                partition_columns,
                 partition_bound,
                 clustering_by,
                 distribution,
@@ -409,6 +420,7 @@ impl TryFrom<Statement> for CreateTableBuilder {
                 partition_by,
                 access_method,
                 partition_of,
+                partition_columns,
                 partition_bound,
                 clustering_by,
                 distribution,

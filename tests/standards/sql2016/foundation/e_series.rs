@@ -2129,8 +2129,8 @@ mod e081_basic_privileges {
                     } else {
                         panic!("Expected Actions privileges");
                     }
-                    if let Some(GrantObjects::Function { name, .. }) = objects {
-                        assert_eq!(name.to_string(), "calculate_bonus");
+                    if let Some(GrantObjects::Function(functions)) = objects {
+                        assert_eq!(functions[0].name.to_string(), "calculate_bonus");
                     } else {
                         panic!("Expected Function grant object");
                     }
@@ -2152,8 +2152,8 @@ mod e081_basic_privileges {
                     if let Privileges::Actions(actions) = privileges {
                         assert!(matches!(actions[0], Action::Execute));
                     }
-                    if let Some(GrantObjects::Procedure { name, .. }) = objects {
-                        assert_eq!(name.to_string(), "process_order");
+                    if let Some(GrantObjects::Procedure(procedures)) = objects {
+                        assert_eq!(procedures[0].name.to_string(), "process_order");
                     } else {
                         panic!("Expected Procedure grant object");
                     }

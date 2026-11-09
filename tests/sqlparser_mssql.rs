@@ -115,7 +115,7 @@ fn parse_create_procedure() {
             or_alter: true,
             or_replace: false,
             attributes: vec![],
-            body: ConditionalStatements::BeginEnd(BeginEndStatements {
+            body: ProcedureBody::Inline(ConditionalStatements::BeginEnd(BeginEndStatements {
                 begin_token: AttachedToken::empty(),
                 label: None,
                 declarations: vec![],
@@ -148,7 +148,7 @@ fn parse_create_procedure() {
                 exception_handlers: None,
                 end_token: AttachedToken::empty(),
                 end_label: None,
-            }),
+            })),
             params: Some(vec![
                 ProcedureParam {
                     name: Ident {
@@ -1964,6 +1964,7 @@ fn parse_create_table_with_valid_options() {
                 partition_by: None,
                 access_method: None,
                 partition_of: None,
+                partition_columns: vec![],
                 partition_bound: None,
                 clustering_by: None,
                 distribution: None,
@@ -2112,6 +2113,7 @@ fn parse_create_table_with_identity_column() {
                 partition_by: None,
                 access_method: None,
                 partition_of: None,
+                partition_columns: vec![],
                 partition_bound: None,
                 clustering_by: None,
                 distribution: None,

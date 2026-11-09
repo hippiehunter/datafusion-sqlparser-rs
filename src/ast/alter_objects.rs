@@ -1086,10 +1086,10 @@ impl fmt::Display for AlterTypeAction {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub enum AlterMaterializedViewAction {
-    /// `ALTER [ COLUMN ] column_name SET STATISTICS integer`
+    /// `ALTER [ COLUMN ] column_name SET STATISTICS { integer | DEFAULT }`
     AlterColumnSetStatistics {
         column_name: Ident,
-        statistics: Expr,
+        statistics: SetStatisticsValue,
     },
     /// `ALTER [ COLUMN ] column_name SET ( attribute_option = value [, ...] )`
     AlterColumnSetOptions {

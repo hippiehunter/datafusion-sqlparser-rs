@@ -3248,9 +3248,9 @@ impl<'a: 'b, 'b> Unescape<'a, 'b> {
 
 /// A PostgreSQL operator name may not end in `+` or `-` unless it also contains
 /// one of these characters, which is how `a=-1` stays an equality against a
-/// negative literal instead of becoming an `=-` operator.
+/// negative literal instead of becoming an `=-` operator (scan.l, `{operator}`).
 fn operator_char_forces_trailing_sign(ch: char) -> bool {
-    matches!(ch, '~' | '!' | '@' | '#' | '^' | '&' | '|' | '`' | '?')
+    matches!(ch, '~' | '!' | '@' | '#' | '%' | '^' | '&' | '|' | '`' | '?')
 }
 
 /// Given the operator characters already consumed (`prefix`) and the run of
@@ -3258,8 +3258,11 @@ fn operator_char_forces_trailing_sign(ch: char) -> bool {
 /// belong to the same operator name.
 ///
 /// PostgreSQL truncates the run at an embedded comment introducer and then
-/// drops trailing `+`/`-` characters until the name is legal.
-fn operator_run_length(prefix: &str, trailing: &str) -> usize {
+/// drops trailing `+`/`-` characters until the name is legal. With a
+/// one-character `prefix` and the rest of a run as `trailing`, `prefix.len()`
+/// plus the result is the length of the operator token PostgreSQL's lexer
+/// takes from the start of the run.
+pub(crate) fn operator_run_length(prefix: &str, trailing: &str) -> usize {
     let full: String = prefix.chars().chain(trailing.chars()).collect();
     let mut end = full.len();
     for start in 1..full.len().saturating_sub(1) {
@@ -3645,10 +3648,10 @@ mod tests {
         let Statement::CreateFunction(function) = &statements[0] else {
             panic!("expected function")
         };
-        let Some(CreateFunctionBody::AsBeginEnd(body)) = &function.function_body else {
+        let Some(CreateFunctionBody::PlBlock(body)) = &function.function_body else {
             panic!("expected parsed body")
         };
-        let Statement::Return(statement) = &body.statements[0] else {
+        let Statement::Return(statement) = &body.block.statements[0] else {
             panic!("expected return")
         };
         let Some(ReturnStatementValue::Expr(Expr::Value(value))) = &statement.value else {
@@ -3874,12 +3877,12 @@ mod tests {
         let crate::ast::Statement::CreateFunction(function) = &statements[0] else {
             panic!("expected function");
         };
-        let crate::ast::CreateFunctionBody::AsBeginEnd(body) =
+        let crate::ast::CreateFunctionBody::PlBlock(body) =
             function.function_body.as_ref().unwrap()
         else {
             panic!("expected parsed routine body");
         };
-        let crate::ast::Statement::Return(statement) = &body.statements[0] else {
+        let crate::ast::Statement::Return(statement) = &body.block.statements[0] else {
             panic!("expected return");
         };
         let Some(crate::ast::ReturnStatementValue::Expr(crate::ast::Expr::Value(value))) =
@@ -3904,11 +3907,11 @@ mod tests {
             let crate::ast::Statement::CreateFunction(function) = &statements[0] else {
                 panic!("expected function");
             };
-            let Some(crate::ast::CreateFunctionBody::AsBeginEnd(body)) = &function.function_body
+            let Some(crate::ast::CreateFunctionBody::PlBlock(body)) = &function.function_body
             else {
                 panic!("expected parsed routine body");
             };
-            let crate::ast::Statement::Return(statement) = &body.statements[0] else {
+            let crate::ast::Statement::Return(statement) = &body.block.statements[0] else {
                 panic!("expected return");
             };
             let Some(crate::ast::ReturnStatementValue::Expr(crate::ast::Expr::Value(value))) =

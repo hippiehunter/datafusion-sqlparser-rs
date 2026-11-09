@@ -199,6 +199,10 @@ pub struct CheckConstraint {
     pub enforced: Option<bool>,
     /// PostgreSQL `NO INHERIT`: the constraint is not copied to child tables.
     pub no_inherit: bool,
+    /// PostgreSQL `NOT VALID` written on the constraint inside `CREATE [FOREIGN] TABLE`.
+    /// `ALTER TABLE ... ADD` and `ALTER DOMAIN ... ADD` record it on the operation instead.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub not_valid: bool,
 }
 
 impl fmt::Display for CheckConstraint {
@@ -215,6 +219,9 @@ impl fmt::Display for CheckConstraint {
         }
         if let Some(b) = self.enforced {
             write!(f, " {}", if b { "ENFORCED" } else { "NOT ENFORCED" })?;
+        }
+        if self.not_valid {
+            write!(f, " NOT VALID")?;
         }
         Ok(())
     }

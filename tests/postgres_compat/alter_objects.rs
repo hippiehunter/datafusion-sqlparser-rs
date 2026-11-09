@@ -1148,11 +1148,17 @@ fn parse_alter_index_set_and_reset_storage_parameters() {
         }
         other => panic!("Expected SetOptions, got {other:?}"),
     }
-    match alter_index_operation("ALTER INDEX i RESET (fillfactor, toast.autovacuum_enabled, bad = 1)") {
+    match alter_index_operation(
+        "ALTER INDEX i RESET (fillfactor, toast.autovacuum_enabled, bad = 1)",
+    ) {
         AlterIndexOperation::ResetOptions { options } => {
             assert_eq!(options.len(), 3);
-            assert!(matches!(&options[0], SqlOption::Reloption(option) if option.name.to_string() == "fillfactor" && option.value.is_none()));
-            assert!(matches!(&options[1], SqlOption::Reloption(option) if option.name.to_string() == "toast.autovacuum_enabled"));
+            assert!(
+                matches!(&options[0], SqlOption::Reloption(option) if option.name.to_string() == "fillfactor" && option.value.is_none())
+            );
+            assert!(
+                matches!(&options[1], SqlOption::Reloption(option) if option.name.to_string() == "toast.autovacuum_enabled")
+            );
             assert!(matches!(options[2], SqlOption::KeyValue { .. }));
         }
         other => panic!("Expected ResetOptions, got {other:?}"),
@@ -1272,11 +1278,13 @@ fn parse_alter_materialized_view_column_actions() {
             actions,
             vec![AlterMaterializedViewAction::AlterColumnSetStatistics {
                 column_name: "a".into(),
-                statistics: Expr::Value(sqlparser::test_utils::number("100").into())
+                statistics: SetStatisticsValue::Value(100)
             }]
         ),
         other => panic!("Expected Actions, got {other:?}"),
     }
+    pg().verified_stmt("ALTER MATERIALIZED VIEW m ALTER COLUMN a SET STATISTICS DEFAULT");
+    pg().verified_stmt("ALTER MATERIALIZED VIEW m ALTER COLUMN a SET STATISTICS -1");
     pg().verified_stmt("ALTER MATERIALIZED VIEW m ALTER COLUMN a SET (n_distinct = 5)");
     pg().verified_stmt("ALTER MATERIALIZED VIEW m ALTER COLUMN a RESET (n_distinct)");
     pg().verified_stmt("ALTER MATERIALIZED VIEW m ALTER COLUMN a SET STORAGE plain");

@@ -3654,6 +3654,7 @@ fn parse_create_table() {
                                 name: None,
                                 option: ColumnOption::Check(CheckConstraint {
                                     no_inherit: false,
+                                    not_valid: false,
                                     name: None,
                                     expr: Box::new(verified_expr("constrained > 0")),
                                     enforced: None,
