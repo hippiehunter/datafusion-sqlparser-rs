@@ -30587,6 +30587,16 @@ impl<'a> Parser<'a> {
             self.prev_token();
             return true;
         }
+        // `VALUES (...)` is a query wherever SELECT is one (PostgreSQL's
+        // `select_with_parens`). `values` alone is an ordinary column name, so
+        // only the keyword followed by a row's opening parenthesis is a query.
+        // MySQL spells its row constructor `VALUES ROW(...)` and reads
+        // `VALUES(col)` as a function call.
+        if !dialect_of!(self is MySqlDialect) && self.parse_keyword(Keyword::VALUES) {
+            let starts_row = self.peek_token().token == Token::LParen;
+            self.prev_token();
+            return starts_row;
+        }
         false
     }
 

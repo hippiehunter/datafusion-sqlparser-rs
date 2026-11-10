@@ -13486,6 +13486,31 @@ fn test_any_some_all_comparison() {
 }
 
 #[test]
+fn test_values_is_a_subquery_in_quantified_and_membership_predicates() {
+    let dialects = TestedDialects::new(vec![std::boxed::Box::new(PostgreSqlDialect {})]);
+    for sql in [
+        "SELECT c1 FROM tbl WHERE c1 = ANY(VALUES (1), (2))",
+        "SELECT c1 FROM tbl WHERE c1 <> ALL(VALUES (1), (2))",
+        "SELECT c1 FROM tbl WHERE c1 < SOME(VALUES (1))",
+        "SELECT c1 FROM tbl WHERE c1 IN (VALUES (1), (2))",
+        "SELECT c1 FROM tbl WHERE EXISTS (VALUES (1))",
+        "SELECT (VALUES (1))",
+    ] {
+        let _ = dialects.verified_stmt(sql);
+    }
+    let select = dialects.verified_only_select("SELECT 1 = ANY(VALUES (1), (2))");
+    match expr_from_projection(&select.projection[0]) {
+        Expr::AnyOp { right, .. } => match right.as_ref() {
+            Expr::Subquery(query) => {
+                assert!(matches!(query.body.as_ref(), SetExpr::Values(_)))
+            }
+            other => panic!("expected a VALUES subquery, got {other:?}"),
+        },
+        other => panic!("expected ANY, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_alias_equal_expr() {
     let dialects = all_dialects_where(|d| d.supports_eq_alias_assignment());
     let sql = r#"SELECT some_alias = some_column FROM some_table"#;
