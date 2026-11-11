@@ -3491,13 +3491,13 @@ fn gen_sign_number_case(value: &str, op: UnaryOperator) -> (Vec<String>, Vec<Sel
     ];
     let expected = vec![
         SelectItem::UnnamedExpr(Expr::UnaryOp {
-            op,
+            op: op.clone(),
             expr: Box::new(Expr::value(number(value))),
             op_token: AttachedToken::empty(),
         }),
         SelectItem::ExprWithAlias {
             expr: Expr::UnaryOp {
-                op,
+                op: op.clone(),
                 expr: Box::new(Expr::value(number(value))),
                 op_token: AttachedToken::empty(),
             },
@@ -13723,58 +13723,26 @@ fn parse_notify_channel() {
 }
 
 #[test]
-fn parse_factorial_operator() {
-    let dialects = all_dialects_where(|d| d.supports_factorial_operator());
-    let sql = "SELECT a!, (b + c)!";
-    let Select { projection, .. } = dialects.verified_only_select(sql);
+fn parse_exclamation_mark_without_an_operator_reading() {
+    // `!` is an operator name in PostgreSQL and the `bang not` operator
+    // where a dialect has one; everywhere else it reads as nothing.
+    let dialects = all_dialects_where(|d| {
+        !d.is::<PostgreSqlDialect>() && !d.supports_bang_not_operator()
+    });
 
-    for (i, expr) in [
-        Box::new(Expr::Identifier(Ident::new("a"))),
-        Box::new(Expr::Nested(Box::new(Expr::BinaryOp {
-            left: Box::new(Expr::Identifier(Ident::new("b"))),
-            op: BinaryOperator::Plus,
-            right: Box::new(Expr::Identifier(Ident::new("c"))),
-        }))),
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        assert_eq!(
-            SelectItem::UnnamedExpr(Expr::UnaryOp {
-                op: UnaryOperator::PGPostfixFactorial,
-                expr,
-                op_token: AttachedToken::empty(),
-            }),
-            projection[i]
-        )
-    }
-
-    let sql_statements = ["SELECT !a", "SELECT !a b", "SELECT !a as b"];
-
-    for &sql in &sql_statements {
+    for sql in ["SELECT !a", "SELECT !a b", "SELECT !a as b"] {
         assert_eq!(
             dialects.parse_sql_statements(sql).unwrap_err(),
             ParserError::ParserError("Expected: an expression, found: !".to_string())
         );
     }
 
-    let sql_statements = ["SELECT a!", "SELECT a ! b", "SELECT a ! as b"];
-
-    // Due to the exclamation mark, which is both part of the `bang not` operator
-    // and the `factorial` operator,  additional filtering not supports
-    // `bang not` operator is required here.
-    let dialects =
-        all_dialects_where(|d| !d.supports_factorial_operator() && !d.supports_bang_not_operator());
-
-    for &sql in &sql_statements {
+    for sql in ["SELECT a!", "SELECT a ! b", "SELECT a ! as b"] {
         assert_eq!(
             dialects.parse_sql_statements(sql).unwrap_err(),
             ParserError::ParserError("No infix parser for token ExclamationMark".to_string())
         );
     }
-
-    // Note: There are no tested dialects that support bang_not but not factorial,
-    // so we skip that test case (would result in empty dialect list)
 }
 
 #[test]
@@ -15750,7 +15718,7 @@ fn parse_generic_unary_ops() {
         let select = verified_only_select(&format!("SELECT {}expr", str_op));
         assert_eq!(
             UnnamedExpr(UnaryOp {
-                op: *op,
+                op: op.clone(),
                 expr: Box::new(Identifier(Ident::new("expr"))),
                 op_token: AttachedToken::empty(),
             }),

@@ -5729,11 +5729,59 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// The prefix operator `op`, whose token is at `span`, applied to the
+    /// operand after it, read at `precedence`. [`Self::parse_prefix`] is on
+    /// the stack once for every level of expression nesting, so the
+    /// expression is built here and not in its frame.
+    fn parse_prefix_operator(
+        &self,
+        op: UnaryOperator,
+        precedence: Precedence,
+        span: Span,
+    ) -> Result<Expr, ParserError> {
+        Ok(Expr::UnaryOp {
+            op,
+            expr: Box::new(self.parse_subexpr(self.dialect.prec_value(precedence))?),
+            op_token: AttachedToken(span, None),
+        })
+    }
+
+    /// PostgreSQL's `OPERATOR(schema.name) operand`, from the `OPERATOR`
+    /// keyword.
+    fn parse_qualified_prefix_operator(&self) -> Result<Expr, ParserError> {
+        self.advance_token();
+        let span = self.get_current_token().span;
+        self.expect_token(&BorrowedToken::LParen)?;
+        let mut idents = vec![];
+        loop {
+            self.advance_token();
+            idents.push(self.get_current_token().to_string());
+            if !self.consume_token(&BorrowedToken::Period) {
+                break;
+            }
+        }
+        self.expect_token(&BorrowedToken::RParen)?;
+        self.parse_prefix_operator(
+            UnaryOperator::PGCustomUnaryOperator(idents),
+            Precedence::PgOther,
+            span,
+        )
+    }
+
     /// Parse an expression prefix.
     pub fn parse_prefix(&self) -> Result<Expr, ParserError> {
         // allow the dialect to override prefix parsing
         if let Some(prefix) = self.dialect.parse_prefix(self) {
             return prefix;
+        }
+
+        // PostgreSQL's `qual_Op a_expr` with a qualified operator name:
+        // `OPERATOR(schema.name) operand`.
+        if dialect_of!(self is PostgreSqlDialect)
+            && self.peek_keyword(Keyword::OPERATOR)
+            && self.peek_nth_token_ref(1).token == BorrowedToken::LParen
+        {
+            return self.parse_qualified_prefix_operator();
         }
 
         // PostgreSQL allows any string literal to be preceded by a type name, indicating that the
@@ -5822,6 +5870,15 @@ impl<'a> Parser<'a> {
                     // This word indicated an expression prefix and parsing was successful
                     Ok(Some(expr)) => Ok(expr),
 
+                    // PostgreSQL reserves the words that open the next clause,
+                    // so `SELECT a + FROM t` has no operand after the `+`.
+                    Ok(None)
+                        if dialect_is!(dialect is PostgreSqlDialect)
+                            && keywords::RESERVED_FOR_COLUMN_ALIAS.contains(&keyword)
+                            && keywords::POSTGRES_RESERVED_KEYWORDS.contains(&keyword) =>
+                    {
+                        self.expected_at("an expression", next_token_index)
+                    }
                     // No expression prefix associated with this word
                     Ok(None) => Ok(self.parse_expr_prefix_by_unreserved_word(&w, span)?),
 
@@ -5849,22 +5906,10 @@ impl<'a> Parser<'a> {
                 } else {
                     UnaryOperator::Minus
                 };
-                Ok(Expr::UnaryOp {
-                    op,
-                    expr: Box::new(
-                        self.parse_subexpr(self.dialect.prec_value(Precedence::UnaryPlusMinus))?,
-                    ),
-                    op_token: AttachedToken(span, None),
-                })
+                self.parse_prefix_operator(op, Precedence::UnaryPlusMinus, span)
             }
             BorrowedToken::ExclamationMark if self.features.supports_bang_not_operator => {
-                Ok(Expr::UnaryOp {
-                    op: UnaryOperator::BangNot,
-                    expr: Box::new(
-                        self.parse_subexpr(self.dialect.prec_value(Precedence::UnaryNot))?,
-                    ),
-                    op_token: AttachedToken(span, None),
-                })
+                self.parse_prefix_operator(UnaryOperator::BangNot, Precedence::UnaryNot, span)
             }
             tok @ BorrowedToken::DoubleExclamationMark
             | tok @ BorrowedToken::PGSquareRoot
@@ -5879,19 +5924,30 @@ impl<'a> Parser<'a> {
                     BorrowedToken::AtSign => UnaryOperator::PGAbs,
                     _ => unreachable!(),
                 };
-                Ok(Expr::UnaryOp {
-                    op,
-                    expr: Box::new(
-                        self.parse_subexpr(self.dialect.prec_value(Precedence::PlusMinus))?,
-                    ),
-                    op_token: AttachedToken(span, None),
-                })
+                self.parse_prefix_operator(op, Precedence::PlusMinus, span)
             }
-            BorrowedToken::Tilde => Ok(Expr::UnaryOp {
-                op: UnaryOperator::BitwiseNot,
-                expr: Box::new(self.parse_subexpr(self.dialect.prec_value(Precedence::PlusMinus))?),
-                op_token: AttachedToken(span, None),
-            }),
+            // PostgreSQL's `qual_Op a_expr`: any operator name is a prefix
+            // operator, binding as loosely as the generic binary operators,
+            // so `%% a - b` applies `%%` to `a - b` and `%% a || b`
+            // concatenates the result of `%% a`.
+            BorrowedToken::CustomBinaryOperator(operator)
+                if dialect_is!(dialect is PostgreSqlDialect) =>
+            {
+                let op = UnaryOperator::Custom(operator.clone());
+                self.parse_prefix_operator(op, Precedence::PgOther, span)
+            }
+            // `!` is an operator name like any other in PostgreSQL, which
+            // declares no operator of that name.
+            BorrowedToken::ExclamationMark if dialect_is!(dialect is PostgreSqlDialect) => {
+                self.parse_prefix_operator(
+                    UnaryOperator::Custom("!".to_string()),
+                    Precedence::PgOther,
+                    span,
+                )
+            }
+            BorrowedToken::Tilde => {
+                self.parse_prefix_operator(UnaryOperator::BitwiseNot, Precedence::PlusMinus, span)
+            }
             tok @ BorrowedToken::Sharp
             | tok @ BorrowedToken::AtDashAt
             | tok @ BorrowedToken::AtAt
@@ -5911,13 +5967,7 @@ impl<'a> Parser<'a> {
                         )));
                     }
                 };
-                Ok(Expr::UnaryOp {
-                    op,
-                    expr: Box::new(
-                        self.parse_subexpr(self.dialect.prec_value(Precedence::PlusMinus))?,
-                    ),
-                    op_token: AttachedToken(span, None),
-                })
+                self.parse_prefix_operator(op, Precedence::PlusMinus, span)
             }
             BorrowedToken::EscapedStringLiteral(_) if dialect_is!(dialect is PostgreSqlDialect) => {
                 self.prev_token();
@@ -5961,6 +6011,15 @@ impl<'a> Parser<'a> {
             BorrowedToken::LBrace => {
                 self.prev_token();
                 self.parse_lbrace_expr()
+            }
+            // PostgreSQL's `qual_Op a_expr` for the operator names read
+            // above only between two operands (`|| a`, `<@ a`).
+            tok if dialect_is!(dialect is PostgreSqlDialect) && is_infix_operator_name(tok) => {
+                self.parse_prefix_operator(
+                    UnaryOperator::Custom(tok.to_string()),
+                    Precedence::PgOther,
+                    span,
+                )
             }
             _ => self.expected_at("an expression", next_token_index),
         }?;
@@ -6417,11 +6476,19 @@ impl<'a> Parser<'a> {
     fn parse_function_call(&self, name: ObjectName) -> Result<Function, ParserError> {
         self.expect_token(&BorrowedToken::LParen)?;
 
-        let args = if self.peek_json_array_query(&name) {
-            self.parse_json_array_query_argument_list()?
-        } else {
-            self.parse_function_argument_list()?
+        // The parentheses end a column definition's restricted expression:
+        // `DEFAULT lower('a' COLLATE "C")` collates the argument.
+        let state = match self.state.get() {
+            ColumnDefinition => ParserState::Normal,
+            state => state,
         };
+        let args = self.with_state(state, |parser| {
+            if parser.peek_json_array_query(&name) {
+                parser.parse_json_array_query_argument_list()
+            } else {
+                parser.parse_function_argument_list()
+            }
+        })?;
         let parameters = FunctionArguments::None;
 
         let within_group = if self.parse_keywords(&[Keyword::WITHIN, Keyword::GROUP]) {
@@ -8031,6 +8098,18 @@ impl<'a> Parser<'a> {
                 Some(BinaryOperator::PGSearchJsonMatch)
             }
             BorrowedToken::CustomBinaryOperator(s) => Some(BinaryOperator::Custom(s.clone())),
+            // PostgreSQL's `a_expr Op a_expr`: an operator name with only a
+            // prefix spelling of its own is still an infix operator, which
+            // no declaration takes.
+            BorrowedToken::ExclamationMark
+            | BorrowedToken::DoubleExclamationMark
+            | BorrowedToken::PGSquareRoot
+            | BorrowedToken::PGCubeRoot
+            | BorrowedToken::AtDashAt
+                if dialect_is!(dialect is PostgreSqlDialect) =>
+            {
+                Some(BinaryOperator::Custom(tok.token.to_string()))
+            }
             BorrowedToken::DoubleSharp if self.features.supports_geometric_types => {
                 Some(BinaryOperator::DoubleHash)
             }
@@ -8603,14 +8682,6 @@ impl<'a> Parser<'a> {
                 expr: Box::new(expr),
                 data_type: self.parse_data_type()?,
                 format: None,
-            })
-        } else if BorrowedToken::ExclamationMark == *tok
-            && self.features.supports_factorial_operator
-        {
-            Ok(Expr::UnaryOp {
-                op: UnaryOperator::PGPostfixFactorial,
-                expr: Box::new(expr),
-                op_token: AttachedToken(span, None),
             })
         } else if BorrowedToken::LBracket == *tok && self.features.supports_partiql {
             self.prev_token();
@@ -30870,6 +30941,58 @@ impl<'a> Parser<'a> {
     }
 }
 
+/// Whether `token` spells a PostgreSQL operator name (the lexer's `Op`) that
+/// has a token of its own here and no prefix reading: PostgreSQL's grammar
+/// takes any `Op` before an operand as well as between two. The comparison
+/// and arithmetic operators and `=>` are not `Op`.
+fn is_infix_operator_name(token: &BorrowedToken<'_>) -> bool {
+    matches!(
+        token,
+        BorrowedToken::StringConcat
+            | BorrowedToken::DoubleEq
+            | BorrowedToken::Spaceship
+            | BorrowedToken::Ampersand
+            | BorrowedToken::Pipe
+            | BorrowedToken::DoubleSharp
+            | BorrowedToken::TildeAsterisk
+            | BorrowedToken::ExclamationMarkTilde
+            | BorrowedToken::ExclamationMarkTildeAsterisk
+            | BorrowedToken::DoubleTilde
+            | BorrowedToken::DoubleTildeAsterisk
+            | BorrowedToken::ExclamationMarkDoubleTilde
+            | BorrowedToken::ExclamationMarkDoubleTildeAsterisk
+            | BorrowedToken::CaretAt
+            | BorrowedToken::ShiftLeft
+            | BorrowedToken::ShiftRight
+            | BorrowedToken::Overlap
+            | BorrowedToken::Adjacent
+            | BorrowedToken::AmpersandLeftAngleBracket
+            | BorrowedToken::AmpersandRightAngleBracket
+            | BorrowedToken::AmpersandLeftAngleBracketVerticalBar
+            | BorrowedToken::VerticalBarAmpersandRightAngleBracket
+            | BorrowedToken::VerticalBarRightAngleBracket
+            | BorrowedToken::TwoWayArrow
+            | BorrowedToken::LeftAngleBracketCaret
+            | BorrowedToken::RightAngleBracketCaret
+            | BorrowedToken::QuestionMarkSharp
+            | BorrowedToken::QuestionMarkDashVerticalBar
+            | BorrowedToken::QuestionMarkDoubleVerticalBar
+            | BorrowedToken::TildeEqual
+            | BorrowedToken::ShiftLeftVerticalBar
+            | BorrowedToken::VerticalBarShiftRight
+            | BorrowedToken::Arrow
+            | BorrowedToken::LongArrow
+            | BorrowedToken::HashArrow
+            | BorrowedToken::HashLongArrow
+            | BorrowedToken::AtArrow
+            | BorrowedToken::ArrowAt
+            | BorrowedToken::HashMinus
+            | BorrowedToken::AtQuestion
+            | BorrowedToken::Question
+            | BorrowedToken::QuestionAnd
+    )
+}
+
 fn maybe_prefixed_expr(expr: Expr, prefix: Option<Ident>) -> Expr {
     if let Some(prefix) = prefix {
         Expr::Prefixed {
@@ -31705,7 +31828,7 @@ mod tests {
     fn test_replace_into_placeholders() {
         let sql = "REPLACE INTO t (a) VALUES (&a)";
 
-        assert!(Parser::parse_sql(&PostgreSqlDialect {}, sql).is_err());
+        assert!(Parser::parse_sql(&MySqlDialect {}, sql).is_err());
     }
 
     #[test]

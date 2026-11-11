@@ -164,6 +164,10 @@ impl Dialect for PostgreSqlDialect {
             | BorrowedToken::QuestionAnd
             | BorrowedToken::QuestionPipe
             | BorrowedToken::ExclamationMark
+            | BorrowedToken::DoubleExclamationMark
+            | BorrowedToken::PGSquareRoot
+            | BorrowedToken::PGCubeRoot
+            | BorrowedToken::AtDashAt
             | BorrowedToken::Overlap
             | BorrowedToken::Adjacent
             | BorrowedToken::CaretAt
@@ -258,11 +262,6 @@ impl Dialect for PostgreSqlDialect {
     }
 
     fn supports_tenant_maintenance_commands(&self) -> bool {
-        true
-    }
-
-    /// see <https://www.postgresql.org/docs/13/functions-math.html>
-    fn supports_factorial_operator(&self) -> bool {
         true
     }
 

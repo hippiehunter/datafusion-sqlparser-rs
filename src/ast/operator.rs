@@ -29,7 +29,7 @@ use sqlparser_derive::{Visit, VisitMut};
 use super::display_separated;
 
 /// Unary operators
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub enum UnaryOperator {
@@ -56,8 +56,6 @@ pub enum UnaryOperator {
     PGAbs,
     /// Cube root, e.g. `||/27` (PostgreSQL-specific)
     PGCubeRoot,
-    /// Factorial, e.g. `9!` (PostgreSQL-specific)
-    PGPostfixFactorial,
     /// Factorial, e.g. `!!9` (PostgreSQL-specific)
     PGPrefixFactorial,
     /// Square root, e.g. `|/9` (PostgreSQL-specific)
@@ -68,11 +66,21 @@ pub enum UnaryOperator {
     /// `?|` Is vertical? (PostgreSQL geometric operator)
     /// see <https://www.postgresql.org/docs/9.5/functions-geometry.html>
     QuestionPipe,
+    /// A prefix operator named by its spelling alone, e.g. `%% a`
+    /// (PostgreSQL-specific: any operator name may be a prefix operator)
+    Custom(String),
+    /// A schema-qualified prefix operator, e.g. `OPERATOR(public.%%) a`
+    /// (PostgreSQL-specific)
+    PGCustomUnaryOperator(Vec<String>),
 }
 
 impl fmt::Display for UnaryOperator {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(match self {
+            UnaryOperator::Custom(operator) => return f.write_str(operator),
+            UnaryOperator::PGCustomUnaryOperator(idents) => {
+                return write!(f, "OPERATOR({})", display_separated(idents, "."));
+            }
             UnaryOperator::AtDashAt => "@-@",
             UnaryOperator::BangNot => "!",
             UnaryOperator::BitwiseNot => "~",
@@ -82,7 +90,6 @@ impl fmt::Display for UnaryOperator {
             UnaryOperator::Not => "NOT",
             UnaryOperator::PGAbs => "@",
             UnaryOperator::PGCubeRoot => "||/",
-            UnaryOperator::PGPostfixFactorial => "!",
             UnaryOperator::PGPrefixFactorial => "!!",
             UnaryOperator::PGSquareRoot => "|/",
             UnaryOperator::Plus => "+",

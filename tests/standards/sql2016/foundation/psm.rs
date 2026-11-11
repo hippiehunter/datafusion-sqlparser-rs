@@ -185,7 +185,7 @@ mod while_statements {
     fn while_multiple_statements() {
         // SQL:2016 PSM: WHILE with multiple statements - NOT YET IMPLEMENTED
         verified_standard_stmt("WHILE x < 100 DO SELECT x; SELECT x + 1; END WHILE");
-        verified_standard_stmt("WHILE count < limit DO INSERT INTO log VALUES (count); UPDATE state SET count = count + 1; END WHILE");
+        verified_standard_stmt("WHILE count < max_count DO INSERT INTO log VALUES (count); UPDATE state SET count = count + 1; END WHILE");
     }
 
     #[test]

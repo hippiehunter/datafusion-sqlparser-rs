@@ -3564,7 +3564,7 @@ WHERE id = 1
             ("SELECT ~ a", "~ a"),
             ("SELECT @ a", "@ a"),
             ("SELECT |/ a", "|/ a"),
-            ("SELECT a !", "a !"),
+            ("SELECT !! a", "!! a"),
             ("SELECT + 2", "+ 2"),
         ] {
             let test = SpanTest::new(dialect, sql);

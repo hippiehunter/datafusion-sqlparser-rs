@@ -3121,7 +3121,7 @@ fn parse_pg_unary_ops() {
         let select = pg().verified_only_select(&format!("SELECT {}a", str_op));
         assert_eq!(
             SelectItem::UnnamedExpr(Expr::UnaryOp {
-                op: *op,
+                op: op.clone(),
                 expr: Box::new(Expr::Identifier(Ident::new("a"))),
                 op_token: AttachedToken::empty(),
             }),
@@ -3131,19 +3131,189 @@ fn parse_pg_unary_ops() {
 }
 
 #[test]
-fn parse_pg_postfix_factorial() {
-    let postfix_factorial = &[("!", UnaryOperator::PGPostfixFactorial)];
+fn parse_pg_custom_prefix_operators() {
+    let ident = |name: &str| Expr::Identifier(Ident::new(name));
+    let prefix = |op: UnaryOperator, operand: Expr| Expr::UnaryOp {
+        op,
+        expr: Box::new(operand),
+        op_token: AttachedToken::empty(),
+    };
+    let custom = |operator: &str| UnaryOperator::Custom(operator.to_string());
 
-    for (str_op, op) in postfix_factorial {
-        let select = pg().verified_only_select(&format!("SELECT a{}", str_op));
+    for operator in ["%%", "%#", "-%%", "^-"] {
         assert_eq!(
-            SelectItem::UnnamedExpr(Expr::UnaryOp {
-                op: *op,
-                expr: Box::new(Expr::Identifier(Ident::new("a"))),
+            pg().verified_expr(&format!("{operator} a")),
+            prefix(custom(operator), ident("a"))
+        );
+    }
+    assert_eq!(
+        pg().expr_parses_to("%%a", "%% a"),
+        prefix(custom("%%"), ident("a"))
+    );
+    assert_eq!(
+        pg().verified_expr("OPERATOR(public.%%) a"),
+        prefix(
+            UnaryOperator::PGCustomUnaryOperator(vec!["public".to_string(), "%%".to_string()]),
+            ident("a")
+        )
+    );
+    assert_eq!(
+        pg().verified_expr("OPERATOR(%#) a"),
+        prefix(
+            UnaryOperator::PGCustomUnaryOperator(vec!["%#".to_string()]),
+            ident("a")
+        )
+    );
+
+    // A prefix operator binds as loosely as the generic binary operators:
+    // arithmetic belongs to its operand, another generic operator and the
+    // comparisons apply to its result.
+    assert_eq!(
+        pg().verified_expr("%% a - b"),
+        prefix(
+            custom("%%"),
+            Expr::BinaryOp {
+                left: Box::new(ident("a")),
+                op: BinaryOperator::Minus,
+                right: Box::new(ident("b")),
+            }
+        )
+    );
+    assert_eq!(
+        pg().verified_expr("%% a || b"),
+        Expr::BinaryOp {
+            left: Box::new(prefix(custom("%%"), ident("a"))),
+            op: BinaryOperator::StringConcat,
+            right: Box::new(ident("b")),
+        }
+    );
+    assert_eq!(
+        pg().verified_expr("%% a = b"),
+        Expr::BinaryOp {
+            left: Box::new(prefix(custom("%%"), ident("a"))),
+            op: BinaryOperator::Eq,
+            right: Box::new(ident("b")),
+        }
+    );
+    assert_eq!(
+        pg().verified_expr("OPERATOR(public.%%) a - b || c"),
+        Expr::BinaryOp {
+            left: Box::new(prefix(
+                UnaryOperator::PGCustomUnaryOperator(vec![
+                    "public".to_string(),
+                    "%%".to_string()
+                ]),
+                Expr::BinaryOp {
+                    left: Box::new(ident("a")),
+                    op: BinaryOperator::Minus,
+                    right: Box::new(ident("b")),
+                }
+            )),
+            op: BinaryOperator::StringConcat,
+            right: Box::new(ident("c")),
+        }
+    );
+}
+
+#[test]
+fn parse_pg_operator_run_ending_in_a_sign() {
+    let ident = |name: &str| Expr::Identifier(Ident::new(name));
+    // `^-` is one operator name: a run holding `^` keeps a trailing sign.
+    assert_eq!(
+        pg().expr_parses_to("a^-b", "a ^- b"),
+        Expr::BinaryOp {
+            left: Box::new(ident("a")),
+            op: BinaryOperator::Custom("^-".to_string()),
+            right: Box::new(ident("b")),
+        }
+    );
+    assert_eq!(
+        pg().verified_expr("a ^ -b"),
+        Expr::BinaryOp {
+            left: Box::new(ident("a")),
+            op: BinaryOperator::PGExp,
+            right: Box::new(Expr::UnaryOp {
+                op: UnaryOperator::Minus,
+                expr: Box::new(ident("b")),
                 op_token: AttachedToken::empty(),
             }),
-            select.projection[0]
+        }
+    );
+    // A run of only `*`, `<` or `=` before the sign ends before it.
+    for (sql, canonical, op) in [
+        ("a*-b", "a * -b", BinaryOperator::Multiply),
+        ("a<-b", "a < -b", BinaryOperator::Lt),
+        ("a=-b", "a = -b", BinaryOperator::Eq),
+    ] {
+        assert_eq!(
+            pg().expr_parses_to(sql, canonical),
+            Expr::BinaryOp {
+                left: Box::new(ident("a")),
+                op,
+                right: Box::new(Expr::UnaryOp {
+                    op: UnaryOperator::Minus,
+                    expr: Box::new(ident("b")),
+                    op_token: AttachedToken::empty(),
+                }),
+            }
         );
+    }
+}
+
+/// PostgreSQL has no postfix operators: `!` and every other operator name
+/// is a prefix or an infix operator, whichever its position makes it.
+#[test]
+fn parse_pg_operator_names_without_a_declaration() {
+    let ident = |name: &str| Expr::Identifier(Ident::new(name));
+    let prefix = |operator: &str, operand: Expr| Expr::UnaryOp {
+        op: UnaryOperator::Custom(operator.to_string()),
+        expr: Box::new(operand),
+        op_token: AttachedToken::empty(),
+    };
+    let infix = |left: Expr, operator: &str, right: Expr| Expr::BinaryOp {
+        left: Box::new(left),
+        op: BinaryOperator::Custom(operator.to_string()),
+        right: Box::new(right),
+    };
+
+    for operator in ["!", "!!", "!-", "!!-", "~-", "@-", "|/", "||/", "@-@", "!=-"] {
+        assert_eq!(
+            pg().verified_expr(&format!("a {operator} b")),
+            infix(ident("a"), operator, ident("b"))
+        );
+    }
+    assert_eq!(
+        pg().expr_parses_to("a !-b", "a !- b"),
+        infix(ident("a"), "!-", ident("b"))
+    );
+    assert_eq!(
+        pg().expr_parses_to("a ! -b", "a ! -b"),
+        infix(
+            ident("a"),
+            "!",
+            Expr::UnaryOp {
+                op: UnaryOperator::Minus,
+                expr: Box::new(ident("b")),
+                op_token: AttachedToken::empty(),
+            }
+        )
+    );
+    for operator in ["!", "!-", "~-", "@-", "||", "<@", "&&", "->", "?", "~~"] {
+        assert_eq!(
+            pg().verified_expr(&format!("{operator} a")),
+            prefix(operator, ident("a"))
+        );
+    }
+    assert_eq!(
+        pg().verified_expr("a ! ! b"),
+        infix(ident("a"), "!", prefix("!", ident("b")))
+    );
+
+    for sql in ["SELECT a!", "SELECT a !", "SELECT (a !)", "SELECT a !, b", "SELECT a !!"] {
+        assert!(pg().parse_sql_statements(sql).is_err(), "{sql}");
+    }
+    for sql in ["SELECT = a", "SELECT < a", "SELECT => a"] {
+        assert!(pg().parse_sql_statements(sql).is_err(), "{sql}");
     }
 }
 

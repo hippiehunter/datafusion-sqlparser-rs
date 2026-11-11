@@ -112,9 +112,17 @@ fn test_string_concatenation_operator() {
 
 #[test]
 fn test_factorial_operator() {
-    // https://www.postgresql.org/docs/current/functions-math.html
-    pg_roundtrip_only!("SELECT 5!");
-    // TODO: Validate postfix factorial operator
+    // PostgreSQL 14 removed the postfix operators: `5!` reads `!` as an
+    // infix operator name with no right operand. `factorial` is the function.
+    let error = try_parse_pg("SELECT 5!")
+        .expect_err("PostgreSQL has no postfix operators");
+    assert!(
+        error
+            .to_string()
+            .contains("Expected: an expression, found: EOF"),
+        "{error}"
+    );
+    pg_roundtrip_only!("SELECT factorial(5)");
 }
 
 #[test]

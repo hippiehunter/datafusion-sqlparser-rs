@@ -2213,9 +2213,7 @@ impl fmt::Display for Expr {
                 )
             }
             Expr::UnaryOp { op, expr, .. } => {
-                if op == &UnaryOperator::PGPostfixFactorial {
-                    write!(f, "{expr}{op}")
-                } else if matches!(
+                if matches!(
                     op,
                     UnaryOperator::Not
                         | UnaryOperator::Hash
@@ -2223,6 +2221,8 @@ impl fmt::Display for Expr {
                         | UnaryOperator::DoubleAt
                         | UnaryOperator::QuestionDash
                         | UnaryOperator::QuestionPipe
+                        | UnaryOperator::Custom(_)
+                        | UnaryOperator::PGCustomUnaryOperator(_)
                 ) {
                     write!(f, "{op} {expr}")
                 } else {

@@ -1697,11 +1697,11 @@ impl<'a> Tokenizer<'a> {
                             self.tokenize_multiline_comment(chars)
                         }
                         // a regular '/' operator
-                        _ => Ok(Some(Token::Div)),
+                        _ => self.start_binop(chars, "/", Token::Div),
                     }
                 }
-                '+' => self.consume_and_return(chars, Token::Plus),
-                '*' => self.consume_and_return(chars, Token::Mul),
+                '+' => self.consume_for_binop(chars, "+", Token::Plus),
+                '*' => self.consume_for_binop(chars, "*", Token::Mul),
                 '%' => {
                     chars.next(); // advance past '%'
                     match chars.peek() {
@@ -1755,7 +1755,7 @@ impl<'a> Tokenizer<'a> {
                 '=' => {
                     chars.next(); // consume
                     match chars.peek() {
-                        Some('>') => self.consume_and_return(chars, Token::RArrow),
+                        Some('>') => self.consume_for_binop(chars, "=>", Token::RArrow),
                         Some('=') => {
                             chars.next(); // consume the second '='
                             self.start_binop(chars, "==", Token::DoubleEq)
@@ -1767,26 +1767,36 @@ impl<'a> Tokenizer<'a> {
                     chars.next(); // consume
                     match chars.peek() {
                         Some('=') => self.consume_for_binop(chars, "!=", Token::Neq),
-                        Some('!') => self.consume_and_return(chars, Token::DoubleExclamationMark),
+                        Some('!') => {
+                            self.consume_for_binop(chars, "!!", Token::DoubleExclamationMark)
+                        }
                         Some('~') => {
                             chars.next();
                             match chars.peek() {
-                                Some('*') => self
-                                    .consume_and_return(chars, Token::ExclamationMarkTildeAsterisk),
+                                Some('*') => self.consume_for_binop(
+                                    chars,
+                                    "!~*",
+                                    Token::ExclamationMarkTildeAsterisk,
+                                ),
                                 Some('~') => {
                                     chars.next();
                                     match chars.peek() {
-                                        Some('*') => self.consume_and_return(
+                                        Some('*') => self.consume_for_binop(
                                             chars,
+                                            "!~~*",
                                             Token::ExclamationMarkDoubleTildeAsterisk,
                                         ),
-                                        _ => Ok(Some(Token::ExclamationMarkDoubleTilde)),
+                                        _ => self.start_binop(
+                                            chars,
+                                            "!~~",
+                                            Token::ExclamationMarkDoubleTilde,
+                                        ),
                                     }
                                 }
-                                _ => Ok(Some(Token::ExclamationMarkTilde)),
+                                _ => self.start_binop(chars, "!~", Token::ExclamationMarkTilde),
                             }
                         }
-                        _ => Ok(Some(Token::ExclamationMark)),
+                        _ => self.start_binop(chars, "!", Token::ExclamationMark),
                     }
                 }
                 '<' => {
@@ -1830,10 +1840,7 @@ impl<'a> Tokenizer<'a> {
                                 chars.next(); // consume '-'
                                 self.consume_for_binop(chars, "<->", Token::TwoWayArrow)
                             } else {
-                                // Don't consume the '-'; return '<' as Lt directly
-                                // (bypass start_binop which would greedily consume '-'
-                                // as a custom operator part)
-                                Ok(Some(Token::Lt))
+                                self.start_binop(chars, "<", Token::Lt)
                             }
                         }
                         Some('^') if self.features.supports_geometric_types => {
@@ -1870,14 +1877,15 @@ impl<'a> Tokenizer<'a> {
                     chars.next(); // consume the '&'
                     match chars.peek() {
                         Some('>') if self.features.supports_geometric_types => {
-                            chars.next();
-                            self.consume_and_return(chars, Token::AmpersandRightAngleBracket)
+                            chars.next(); // consume the '>'
+                            self.start_binop(chars, "&>", Token::AmpersandRightAngleBracket)
                         }
                         Some('<') if self.features.supports_geometric_types => {
                             chars.next(); // consume
                             match chars.peek() {
-                                Some('|') => self.consume_and_return(
+                                Some('|') => self.consume_for_binop(
                                     chars,
+                                    "&<|",
                                     Token::AmpersandLeftAngleBracketVerticalBar,
                                 ),
                                 _ => {
@@ -1896,8 +1904,8 @@ impl<'a> Tokenizer<'a> {
                 '^' => {
                     chars.next(); // consume the '^'
                     match chars.peek() {
-                        Some('@') => self.consume_and_return(chars, Token::CaretAt),
-                        _ => Ok(Some(Token::Caret)),
+                        Some('@') => self.consume_for_binop(chars, "^@", Token::CaretAt),
+                        _ => self.start_binop(chars, "^", Token::Caret),
                     }
                 }
                 '{' => self.consume_and_return(chars, Token::LBrace),
@@ -1963,7 +1971,13 @@ impl<'a> Tokenizer<'a> {
                             match chars.peek() {
                                 Some('@') => {
                                     chars.next();
-                                    Ok(Some(Token::CustomBinaryOperator("@@@".to_string())))
+                                    self.start_binop_opt(
+                                        chars,
+                                        "@@@",
+                                        Some(BorrowedToken::CustomBinaryOperator(
+                                            "@@@".to_string(),
+                                        )),
+                                    )
                                 }
                                 Some(' ') => Ok(Some(Token::AtAt)),
                                 Some(tch) if self.dialect.is_identifier_start('@') => {
@@ -1971,18 +1985,18 @@ impl<'a> Tokenizer<'a> {
                                         ch.len_utf8() + '@'.len_utf8() + tch.len_utf8();
                                     self.tokenize_identifier_or_keyword(consumed_byte_len, chars)
                                 }
-                                _ => Ok(Some(Token::AtAt)),
+                                _ => self.start_binop(chars, "@@", Token::AtAt),
                             }
                         }
                         Some('-') if self.features.supports_geometric_types => {
                             chars.next();
                             match chars.peek() {
-                                Some('@') => self.consume_and_return(chars, Token::AtDashAt),
+                                Some('@') => self.consume_for_binop(chars, "@-@", Token::AtDashAt),
                                 _ => self.start_binop_opt(chars, "@-", None),
                             }
                         }
-                        Some('>') => self.consume_and_return(chars, Token::AtArrow),
-                        Some('?') => self.consume_and_return(chars, Token::AtQuestion),
+                        Some('>') => self.consume_for_binop(chars, "@>", Token::AtArrow),
+                        Some('?') => self.consume_for_binop(chars, "@?", Token::AtQuestion),
                         Some(' ') => Ok(Some(Token::AtSign)),
                         // We break on quotes here, because no dialect allows identifiers starting
                         // with @ and containing quotation marks (e.g. `@'foo'`) unless they are
@@ -2000,7 +2014,7 @@ impl<'a> Tokenizer<'a> {
                             let consumed_byte_len = ch.len_utf8() + sch.len_utf8();
                             self.tokenize_identifier_or_keyword(consumed_byte_len, chars)
                         }
-                        _ => Ok(Some(Token::AtSign)),
+                        _ => self.start_binop(chars, "@", Token::AtSign),
                     }
                 }
                 // Postgres uses ? for jsonb operators, not prepared statements
@@ -2010,25 +2024,29 @@ impl<'a> Tokenizer<'a> {
                         Some('|') => {
                             chars.next();
                             match chars.peek() {
-                                Some('|') => self.consume_and_return(
+                                Some('|') => self.consume_for_binop(
                                     chars,
+                                    "?||",
                                     Token::QuestionMarkDoubleVerticalBar,
                                 ),
-                                _ => Ok(Some(Token::QuestionPipe)),
+                                _ => self.start_binop(chars, "?|", Token::QuestionPipe),
                             }
                         }
 
-                        Some('&') => self.consume_and_return(chars, Token::QuestionAnd),
+                        Some('&') => self.consume_for_binop(chars, "?&", Token::QuestionAnd),
                         Some('-') => {
                             chars.next(); // consume
                             match chars.peek() {
-                                Some('|') => self
-                                    .consume_and_return(chars, Token::QuestionMarkDashVerticalBar),
-                                _ => Ok(Some(Token::QuestionMarkDash)),
+                                Some('|') => self.consume_for_binop(
+                                    chars,
+                                    "?-|",
+                                    Token::QuestionMarkDashVerticalBar,
+                                ),
+                                _ => self.start_binop(chars, "?-", Token::QuestionMarkDash),
                             }
                         }
-                        Some('#') => self.consume_and_return(chars, Token::QuestionMarkSharp),
-                        _ => Ok(Some(Token::Question)),
+                        Some('#') => self.consume_for_binop(chars, "?#", Token::QuestionMarkSharp),
+                        _ => self.start_binop(chars, "?", Token::Question),
                     }
                 }
                 '?' => {
@@ -2095,10 +2113,7 @@ impl<'a> Tokenizer<'a> {
         let take = operator_run_length(prefix, &trailing);
         match (take, default) {
             (0, Some(tok)) => Ok(Some(tok)),
-            (0, None) => self.tokenizer_error(
-                chars.location(),
-                format!("Expected a valid binary operator after '{prefix}'"),
-            ),
+            (0, None) => Ok(Token::CustomBinaryOperator(prefix.to_string()).into()),
             (take, _) => {
                 let mut custom = String::with_capacity(prefix.len() + take);
                 custom.push_str(prefix);
@@ -4578,7 +4593,7 @@ mod tests {
     #[test]
     fn tokenize_nested_multiline_comment() {
         all_dialects_where(|d| d.supports_nested_comments()).tokenizes_to(
-            "0/*multi-line\n* \n/* comment \n /*comment*/*/ */ /comment*/1",
+            "0/*multi-line\n* \n/* comment \n /*comment*/*/ */ /comment* /1",
             vec![
                 Token::Number("0".to_string(), false),
                 Token::Whitespace(Whitespace::MultiLineComment(
@@ -4592,6 +4607,7 @@ mod tests {
                     keyword: Keyword::COMMENT,
                 }),
                 Token::Mul,
+                Token::Whitespace(Whitespace::Space),
                 Token::Div,
                 Token::Number("1".to_string(), false),
             ],
@@ -4808,6 +4824,95 @@ mod tests {
             Token::Question,
         ];
         compare(expected, tokens);
+    }
+
+    #[test]
+    fn tokenize_pg_question_and_caret_prefixed_custom_operators() {
+        let dialect = PostgreSqlDialect {};
+        let sql = "?<@ ?@> ?~ ?@ ^<@ ^@> ^~ ^? ^@ ^";
+        let tokens = Tokenizer::new(&dialect, sql).tokenize().unwrap();
+        let custom = |operator: &str| Token::CustomBinaryOperator(operator.to_string());
+        let expected = vec![
+            custom("?<@"),
+            Token::Whitespace(Whitespace::Space),
+            custom("?@>"),
+            Token::Whitespace(Whitespace::Space),
+            custom("?~"),
+            Token::Whitespace(Whitespace::Space),
+            custom("?@"),
+            Token::Whitespace(Whitespace::Space),
+            custom("^<@"),
+            Token::Whitespace(Whitespace::Space),
+            custom("^@>"),
+            Token::Whitespace(Whitespace::Space),
+            custom("^~"),
+            Token::Whitespace(Whitespace::Space),
+            custom("^?"),
+            Token::Whitespace(Whitespace::Space),
+            Token::CaretAt,
+            Token::Whitespace(Whitespace::Space),
+            Token::Caret,
+        ];
+        compare(expected, tokens);
+    }
+
+    #[test]
+    fn tokenize_pg_operator_runs_ending_in_a_sign() {
+        let dialect = PostgreSqlDialect {};
+        let number = |digits: &str| Token::Number(digits.to_string(), false);
+        let custom = |operator: &str| Token::CustomBinaryOperator(operator.to_string());
+        for (sql, operator) in [
+            ("2^-3", vec![custom("^-")]),
+            ("2^+3", vec![custom("^+")]),
+            ("2@-3", vec![custom("@-")]),
+            ("2%%3", vec![custom("%%")]),
+            ("2%#3", vec![custom("%#")]),
+            ("2!-3", vec![custom("!-")]),
+            ("2!!-3", vec![custom("!!-")]),
+            ("2!=-3", vec![custom("!=-")]),
+            ("2!~-3", vec![custom("!~-")]),
+            ("2~-3", vec![custom("~-")]),
+            ("2|-3", vec![custom("|-")]),
+            ("2&-3", vec![custom("&-")]),
+            ("2%-3", vec![custom("%-")]),
+            ("2@+3", vec![custom("@+")]),
+            ("2@>-3", vec![custom("@>-")]),
+            ("2?&-3", vec![custom("?&-")]),
+            ("2+@3", vec![custom("+@")]),
+            ("2*@3", vec![custom("*@")]),
+            ("2/@3", vec![custom("/@")]),
+            ("2#-3", vec![Token::HashMinus]),
+            ("2?-3", vec![Token::QuestionMarkDash]),
+            ("2!3", vec![Token::ExclamationMark]),
+            ("2!!3", vec![Token::DoubleExclamationMark]),
+            ("2*/3", vec![custom("*/")]),
+            ("2*-3", vec![Token::Mul, Token::Minus]),
+            ("2/-3", vec![Token::Div, Token::Minus]),
+            ("2+-3", vec![Token::Plus, Token::Minus]),
+            ("2<-3", vec![Token::Lt, Token::Minus]),
+            ("2=-3", vec![Token::Eq, Token::Minus]),
+            ("2>=-3", vec![Token::GtEq, Token::Minus]),
+            ("2<>-3", vec![Token::Neq, Token::Minus]),
+            ("2=>-3", vec![Token::RArrow, Token::Minus]),
+        ] {
+            let tokens = Tokenizer::new(&dialect, sql).tokenize().unwrap();
+            let mut expected = vec![number("2")];
+            expected.extend(operator);
+            expected.push(number("3"));
+            compare(expected, tokens);
+        }
+        let tokens = Tokenizer::new(&dialect, "2 ^ -3").tokenize().unwrap();
+        compare(
+            vec![
+                number("2"),
+                Token::Whitespace(Whitespace::Space),
+                Token::Caret,
+                Token::Whitespace(Whitespace::Space),
+                Token::Minus,
+                number("3"),
+            ],
+            tokens,
+        );
     }
 
     #[test]

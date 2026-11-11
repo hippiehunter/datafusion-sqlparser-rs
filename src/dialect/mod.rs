@@ -949,11 +949,6 @@ pub trait Dialect: Debug + Any {
         false
     }
 
-    /// Returns true if the dialect supports `a!` expressions
-    fn supports_factorial_operator(&self) -> bool {
-        false
-    }
-
     /// Returns true if the dialect supports nested comments
     /// e.g. `/* /* nested */ */`
     fn supports_nested_comments(&self) -> bool {
@@ -1349,7 +1344,6 @@ pub trait Dialect: Debug + Any {
             interval_requires_literal_value: self.interval_requires_literal_value(),
             supports_explain_with_utility_options: self.supports_explain_with_utility_options(),
             supports_asc_desc_in_column_definition: self.supports_asc_desc_in_column_definition(),
-            supports_factorial_operator: self.supports_factorial_operator(),
             supports_nested_comments: self.supports_nested_comments(),
             supports_eq_alias_assignment: self.supports_eq_alias_assignment(),
             supports_try_convert: self.supports_try_convert(),
@@ -1468,7 +1462,6 @@ pub struct DialectFeatures {
     pub interval_requires_literal_value: bool,
     pub supports_explain_with_utility_options: bool,
     pub supports_asc_desc_in_column_definition: bool,
-    pub supports_factorial_operator: bool,
     pub supports_nested_comments: bool,
     pub supports_eq_alias_assignment: bool,
     pub supports_try_convert: bool,
@@ -1683,7 +1676,6 @@ impl<D: Dialect> Dialect for DelegatingDialect<D> {
         interval_requires_literal_value,
         supports_explain_with_utility_options,
         supports_asc_desc_in_column_definition,
-        supports_factorial_operator,
         supports_nested_comments,
         supports_eq_alias_assignment,
         supports_try_convert,
