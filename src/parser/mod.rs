@@ -71,17 +71,16 @@ pub enum ParserError {
     TokenizerError(String),
     ParserError(String),
     RecursionLimitExceeded,
-    /// Input the PostgreSQL grammar recognizes and then refuses with a
-    /// diagnostic of its own, rather than as an unexpected token.
+    /// A PostgreSQL grammar error with its diagnostic text and token location.
     GrammarRejection(GrammarRejection),
 }
 
 /// A refusal the PostgreSQL grammar raises itself, in PostgreSQL's words:
-/// its message and hint, and the location of the token it points at.
+/// its message, optional hint, and the location of the token it points at.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GrammarRejection {
     pub message: String,
-    pub hint: String,
+    pub hint: Option<String>,
     pub location: Location,
 }
 
@@ -13559,8 +13558,10 @@ impl<'a> Parser<'a> {
             _ => {
                 return Err(ParserError::GrammarRejection(GrammarRejection {
                     message: format!("unrecognized row security option \"{option}\""),
-                    hint: "Only PERMISSIVE or RESTRICTIVE policies are supported currently."
-                        .to_string(),
+                    hint: Some(
+                        "Only PERMISSIVE or RESTRICTIVE policies are supported currently."
+                            .to_string(),
+                    ),
                     location: token.span.start,
                 }));
             }
@@ -19666,6 +19667,16 @@ impl<'a> Parser<'a> {
         let next_token = self.next_token();
         match next_token.token {
             BorrowedToken::Number(s, _) => Self::parse::<u64>(s, next_token.span.start),
+            _ if dialect_of!(self is PostgreSqlDialect) => {
+                Err(ParserError::GrammarRejection(GrammarRejection {
+                    message: match next_token.token {
+                        BorrowedToken::EOF => "syntax error at end of input".to_string(),
+                        _ => format!("syntax error at or near \"{next_token}\""),
+                    },
+                    hint: None,
+                    location: next_token.span.start,
+                }))
+            }
             _ => self.expected("literal int", next_token),
         }
     }

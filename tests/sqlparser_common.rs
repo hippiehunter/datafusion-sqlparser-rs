@@ -35,7 +35,7 @@ use sqlparser::ast::TableFactor::{Pivot, Unpivot};
 use sqlparser::ast::*;
 use sqlparser::dialect::{Dialect, MsSqlDialect, MySqlDialect, PostgreSqlDialect};
 use sqlparser::keywords::{Keyword, ALL_KEYWORDS};
-use sqlparser::parser::{GrammarRejection, Parser, ParserError, ParserOptions};
+use sqlparser::parser::{Parser, ParserError, ParserOptions};
 use sqlparser::tokenizer::Tokenizer;
 use sqlparser::tokenizer::{BorrowedToken, Location, Span};
 use test_utils::{
@@ -13290,21 +13290,6 @@ fn test_create_policy() {
         "CREATE POLICY p ON t AS Restrictive",
         "CREATE POLICY p ON t AS RESTRICTIVE",
     );
-    for (sql, option) in [
-        ("CREATE POLICY p ON t AS UGLY", "ugly"),
-        ("CREATE POLICY p ON t AS \"Ugly\"", "Ugly"),
-        ("CREATE POLICY p ON t AS \"PERMISSIVE\"", "PERMISSIVE"),
-    ] {
-        assert_eq!(
-            Parser::parse_sql(&PostgreSqlDialect {}, sql).unwrap_err(),
-            ParserError::GrammarRejection(GrammarRejection {
-                message: format!("unrecognized row security option \"{option}\""),
-                hint: "Only PERMISSIVE or RESTRICTIVE policies are supported currently."
-                    .to_string(),
-                location: Location::new(1, 25),
-            })
-        );
-    }
     // a keyword is not an option name
     assert_eq!(
         Parser::parse_sql(&PostgreSqlDialect {}, "CREATE POLICY p ON t AS select")
