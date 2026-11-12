@@ -5930,21 +5930,19 @@ impl<'a> Parser<'a> {
             // operator, binding as loosely as the generic binary operators,
             // so `%% a - b` applies `%%` to `a - b` and `%% a || b`
             // concatenates the result of `%% a`.
-            BorrowedToken::CustomBinaryOperator(operator)
-                if dialect_is!(dialect is PostgreSqlDialect) =>
+            BorrowedToken::CustomBinaryOperator(operator) if dialect_is!(dialect is PostgreSqlDialect) =>
             {
                 let op = UnaryOperator::Custom(operator.clone());
                 self.parse_prefix_operator(op, Precedence::PgOther, span)
             }
             // `!` is an operator name like any other in PostgreSQL, which
             // declares no operator of that name.
-            BorrowedToken::ExclamationMark if dialect_is!(dialect is PostgreSqlDialect) => {
-                self.parse_prefix_operator(
+            BorrowedToken::ExclamationMark if dialect_is!(dialect is PostgreSqlDialect) => self
+                .parse_prefix_operator(
                     UnaryOperator::Custom("!".to_string()),
                     Precedence::PgOther,
                     span,
-                )
-            }
+                ),
             BorrowedToken::Tilde => {
                 self.parse_prefix_operator(UnaryOperator::BitwiseNot, Precedence::PlusMinus, span)
             }
@@ -6014,13 +6012,12 @@ impl<'a> Parser<'a> {
             }
             // PostgreSQL's `qual_Op a_expr` for the operator names read
             // above only between two operands (`|| a`, `<@ a`).
-            tok if dialect_is!(dialect is PostgreSqlDialect) && is_infix_operator_name(tok) => {
-                self.parse_prefix_operator(
+            tok if dialect_is!(dialect is PostgreSqlDialect) && is_infix_operator_name(tok) => self
+                .parse_prefix_operator(
                     UnaryOperator::Custom(tok.to_string()),
                     Precedence::PgOther,
                     span,
-                )
-            }
+                ),
             _ => self.expected_at("an expression", next_token_index),
         }?;
 
@@ -6112,10 +6109,13 @@ impl<'a> Parser<'a> {
                                     | Keyword::OVERLAY
                             ) =>
                     {
-                        let name =
-                            ObjectName::from(vec![self.word_to_ident(word.clone(), next_token.span)]);
+                        let name = ObjectName::from(vec![
+                            self.word_to_ident(word.clone(), next_token.span)
+                        ]);
                         self.advance_token();
-                        chain.push(AccessExpr::Dot(Expr::Function(self.parse_function_call(name)?)));
+                        chain.push(AccessExpr::Dot(Expr::Function(
+                            self.parse_function_call(name)?,
+                        )));
                     }
                     BorrowedToken::Word(word)
                         if self.dialect.is::<OracleDialect>()
@@ -12663,8 +12663,10 @@ impl<'a> Parser<'a> {
         if self.dialect.is::<OracleDialect>()
             && self.parse_keywords(&[Keyword::DEFAULT, Keyword::COLLATION])
         {
-            oracle.as_mut().expect("Oracle view options").default_collation =
-                Some(self.parse_identifier()?);
+            oracle
+                .as_mut()
+                .expect("Oracle view options")
+                .default_collation = Some(self.parse_identifier()?);
         }
 
         if self.dialect.is::<OracleDialect>() && materialized {
@@ -16877,9 +16879,7 @@ impl<'a> Parser<'a> {
                 cc.not_valid = true;
                 continue;
             }
-            if no_inherit
-                && !cc.no_inherit
-                && self.parse_keywords(&[Keyword::NO, Keyword::INHERIT])
+            if no_inherit && !cc.no_inherit && self.parse_keywords(&[Keyword::NO, Keyword::INHERIT])
             {
                 cc.no_inherit = true;
                 continue;
@@ -23469,6 +23469,21 @@ impl<'a> Parser<'a> {
                 let name = self.parse_object_name(false)?;
                 self.expect_token(&BorrowedToken::LParen)?;
                 let args = self.parse_optional_args()?;
+                if dialect_of!(self is PostgreSqlDialect) {
+                    let with_ordinality =
+                        self.parse_keywords(&[Keyword::WITH, Keyword::ORDINALITY]);
+                    let alias = self.maybe_parse_table_alias()?;
+                    return Ok(TableFactor::RowsFrom {
+                        lateral: true,
+                        rows_from: false,
+                        functions: vec![TableFunctionItem {
+                            function: table_function_call(name, Some(TableFunctionArgs { args })),
+                            column_defs: vec![],
+                        }],
+                        with_ordinality,
+                        alias,
+                    });
+                }
                 let alias = self.maybe_parse_table_alias()?;
                 Ok(TableFactor::Function {
                     lateral: true,
@@ -24214,7 +24229,8 @@ impl<'a> Parser<'a> {
             }
             (Some(PathFinding::ShortestGroups { k }), _) => {
                 if !groups {
-                    return self.expected("a path count or GROUPS after SHORTEST", self.peek_token());
+                    return self
+                        .expected("a path count or GROUPS after SHORTEST", self.peek_token());
                 }
                 Some(PathFinding::ShortestGroups { k })
             }
@@ -24272,7 +24288,10 @@ impl<'a> Parser<'a> {
                 destination,
             }))
         } else {
-            self.expected("MATCH, VERTEX, or STEP after ONE ROW PER", self.peek_token())
+            self.expected(
+                "MATCH, VERTEX, or STEP after ONE ROW PER",
+                self.peek_token(),
+            )
         }
     }
 
@@ -28307,18 +28326,17 @@ impl<'a> Parser<'a> {
                     target_timestamp = Some(self.parse_literal_string()?);
                 } else if self.parse_keyword(Keyword::HLC) {
                     let hlc_str = self.parse_literal_string()?;
-                    target_hlc =
-                        Some(hlc_str.parse::<u64>().map_err(|e| {
-                            ParserError::ParserError(format!("invalid HLC value: {e}"))
-                        })?);
+                    target_hlc = Some(hlc_str.parse::<u64>().map_err(|e| {
+                        ParserError::ParserError(format!("invalid HLC value: {e}"))
+                    })?);
                 } else if self.parse_keyword(Keyword::LSN) {
                     let value = if matches!(
                         self.peek_token_ref().token,
                         BorrowedToken::SingleQuotedString(_)
                     ) {
-                        self.parse_literal_string()?
-                            .parse::<u64>()
-                            .map_err(|e| ParserError::ParserError(format!("invalid LSN value: {e}")))?
+                        self.parse_literal_string()?.parse::<u64>().map_err(|e| {
+                            ParserError::ParserError(format!("invalid LSN value: {e}"))
+                        })?
                     } else {
                         self.parse_literal_uint()?
                     };
