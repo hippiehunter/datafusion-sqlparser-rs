@@ -16743,6 +16743,95 @@ fn parse_restore_table_and_database() {
 }
 
 #[test]
+fn parse_restore_clause_orders() {
+    for (scope, object_type, tenant, suffix, as_new_tenant) in [
+        ("DATABASE", None, None, "", None),
+        (
+            "TABLE public.orders",
+            Some(ObjectName::from(vec![Ident::new("public"), Ident::new("orders")])),
+            None,
+            " DRY RUN",
+            None,
+        ),
+        (
+            "TENANT acme",
+            None,
+            Some(Ident::new("acme")),
+            " AS NEW TENANT acme_copy DRY RUN",
+            Some(Ident::new("acme_copy")),
+        ),
+    ] {
+        for (target, timestamp, hlc, lsn) in [
+            ("TIMESTAMP '2026-07-01T00:00:00Z'", Some("2026-07-01T00:00:00Z"), None, None),
+            ("HLC '0'", None, Some(0), None),
+            ("HLC '18446744073709551615'", None, Some(u64::MAX), None),
+            ("LSN 0", None, None, Some(0)),
+            ("LSN 18446744073709551615", None, None, Some(u64::MAX)),
+            ("LSN '42'", None, None, Some(42)),
+        ] {
+            let canonical_target = if target == "LSN '42'" { "LSN 42" } else { target };
+            let canonical = format!(
+                "RESTORE {scope} FROM 's3://bucket/backups' TO {canonical_target}{suffix}"
+            );
+            let expected = Statement::Restore {
+                object_type: object_type.clone(),
+                tenant: tenant.clone(),
+                as_new_tenant: as_new_tenant.clone(),
+                location: Some("s3://bucket/backups".to_string()),
+                target_timestamp: timestamp.map(str::to_string),
+                target_hlc: hlc,
+                target_lsn: lsn,
+                dry_run: !suffix.is_empty(),
+            };
+            for clauses in [
+                format!("FROM 's3://bucket/backups' TO {target}"),
+                format!("TO {target} FROM 's3://bucket/backups'"),
+            ] {
+                let sql = format!("RESTORE {scope} {clauses}{suffix}");
+                assert_eq!(
+                    all_dialects().one_statement_parses_to(&sql, &canonical),
+                    expected,
+                    "{sql}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn parse_restore_clause_boundaries() {
+    for scope in ["DATABASE", "TABLE public.orders", "TENANT acme"] {
+        for clauses in [
+            "FROM 'a' FROM 'b'",
+            "TO LSN 1 TO LSN 2",
+            "TO TIMESTAMP '2026-07-01' TO HLC '1'",
+            "FROM 'a' TO LSN 1 FROM 'b'",
+            "TO HLC '1' FROM 'a' TO LSN 2",
+            "TO LSN 1 FROM",
+            "FROM 'a' TO",
+            "TO FROM 'a'",
+            "TO LSN -1 FROM 'a'",
+            "TO LSN 18446744073709551616 FROM 'a'",
+            "TO LSN '18446744073709551616' FROM 'a'",
+            "TO HLC '-1' FROM 'a'",
+            "TO HLC '18446744073709551616' FROM 'a'",
+            "TO HLC 'invalid' FROM 'a'",
+            "TO TIMESTAMP FROM 'a'",
+            "TO LSN 1 DRY RUN FROM 'a'",
+            "FROM 'a' DRY RUN TO LSN 1",
+            "TO LSN 1 FROM 'a' AS NEW TENANT",
+        ] {
+            let sql = format!("RESTORE {scope} {clauses}");
+            assert!(all_dialects().parse_sql_statements(&sql).is_err(), "{sql}");
+        }
+    }
+    for scope in ["DATABASE", "TABLE public.orders"] {
+        let sql = format!("RESTORE {scope} TO LSN 1 FROM 'a' AS NEW TENANT copy");
+        assert!(all_dialects().parse_sql_statements(&sql).is_err(), "{sql}");
+    }
+}
+
+#[test]
 fn parse_heap_reorganization() {
     let dialects = all_dialects_where(|dialect| dialect.is::<PostgreSqlDialect>());
     let statement = dialects.verified_stmt("ALTER TABLE public.orders REORGANIZE");

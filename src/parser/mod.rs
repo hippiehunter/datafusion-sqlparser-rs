@@ -28262,8 +28262,9 @@ impl<'a> Parser<'a> {
         Ok(reset_pitr_chain)
     }
 
-    /// Parse RESTORE {DATABASE | TABLE <name> | TENANT <name>} [FROM '<uri>']
-    /// TO {TIMESTAMP '<ts>' | HLC '<n>' | LSN <n>} [AS NEW TENANT <name>] [DRY RUN]
+    /// Parse RESTORE {DATABASE | TABLE <name> | TENANT <name>} with optional
+    /// FROM '<uri>' and TO {TIMESTAMP '<ts>' | HLC '<n>' | LSN <n>} in either order,
+    /// followed by [AS NEW TENANT <name>] [DRY RUN].
     pub fn parse_restore(&self) -> Result<Statement, ParserError> {
         let mut tenant = None;
         // A restore rewrites data; the statement names what it rewrites.
@@ -28283,41 +28284,52 @@ impl<'a> Parser<'a> {
             );
         };
 
-        let location = if self.parse_keyword(Keyword::FROM) {
-            Some(self.parse_literal_string()?)
-        } else {
-            None
-        };
-
+        let mut location = None;
         let mut target_timestamp = None;
         let mut target_hlc = None;
         let mut target_lsn = None;
 
-        if self.parse_keyword(Keyword::TO) {
-            if self.parse_keyword(Keyword::TIMESTAMP) {
-                target_timestamp = Some(self.parse_literal_string()?);
-            } else if self.parse_keyword(Keyword::HLC) {
-                let hlc_str = self.parse_literal_string()?;
-                target_hlc =
-                    Some(hlc_str.parse::<u64>().map_err(|e| {
-                        ParserError::ParserError(format!("invalid HLC value: {e}"))
-                    })?);
-            } else if self.parse_keyword(Keyword::LSN) {
-                let value = if matches!(
-                    self.peek_token_ref().token,
-                    BorrowedToken::SingleQuotedString(_)
-                ) {
-                    self.parse_literal_string()?
-                        .parse::<u64>()
-                        .map_err(|e| ParserError::ParserError(format!("invalid LSN value: {e}")))?
+        loop {
+            if self.parse_keyword(Keyword::FROM) {
+                if location.is_some() {
+                    return Err(ParserError::ParserError(
+                        "duplicate FROM clause in RESTORE".to_string(),
+                    ));
+                }
+                location = Some(self.parse_literal_string()?);
+            } else if self.parse_keyword(Keyword::TO) {
+                if target_timestamp.is_some() || target_hlc.is_some() || target_lsn.is_some() {
+                    return Err(ParserError::ParserError(
+                        "duplicate TO clause in RESTORE".to_string(),
+                    ));
+                }
+                if self.parse_keyword(Keyword::TIMESTAMP) {
+                    target_timestamp = Some(self.parse_literal_string()?);
+                } else if self.parse_keyword(Keyword::HLC) {
+                    let hlc_str = self.parse_literal_string()?;
+                    target_hlc =
+                        Some(hlc_str.parse::<u64>().map_err(|e| {
+                            ParserError::ParserError(format!("invalid HLC value: {e}"))
+                        })?);
+                } else if self.parse_keyword(Keyword::LSN) {
+                    let value = if matches!(
+                        self.peek_token_ref().token,
+                        BorrowedToken::SingleQuotedString(_)
+                    ) {
+                        self.parse_literal_string()?
+                            .parse::<u64>()
+                            .map_err(|e| ParserError::ParserError(format!("invalid LSN value: {e}")))?
+                    } else {
+                        self.parse_literal_uint()?
+                    };
+                    target_lsn = Some(value);
                 } else {
-                    self.parse_literal_uint()?
-                };
-                target_lsn = Some(value);
+                    return Err(ParserError::ParserError(
+                        "expected TIMESTAMP, HLC, or LSN after TO".to_string(),
+                    ));
+                }
             } else {
-                return Err(ParserError::ParserError(
-                    "expected TIMESTAMP, HLC, or LSN after TO".to_string(),
-                ));
+                break;
             }
         }
 
