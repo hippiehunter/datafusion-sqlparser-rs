@@ -23469,6 +23469,22 @@ impl<'a> Parser<'a> {
                 let name = self.parse_object_name(false)?;
                 self.expect_token(&BorrowedToken::LParen)?;
                 let args = self.parse_optional_args()?;
+                // `LATERAL f(...) WITH ORDINALITY` numbers the rows of its
+                // one function the way an unspelled single-function
+                // `ROWS FROM` does.
+                if self.parse_keywords(&[Keyword::WITH, Keyword::ORDINALITY]) {
+                    let alias = self.maybe_parse_table_alias()?;
+                    return Ok(TableFactor::RowsFrom {
+                        lateral: true,
+                        rows_from: false,
+                        functions: vec![TableFunctionItem {
+                            function: table_function_call(name, Some(TableFunctionArgs { args })),
+                            column_defs: vec![],
+                        }],
+                        with_ordinality: true,
+                        alias,
+                    });
+                }
                 let alias = self.maybe_parse_table_alias()?;
                 Ok(TableFactor::Function {
                     lateral: true,
