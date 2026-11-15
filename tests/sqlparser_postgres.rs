@@ -6676,6 +6676,29 @@ fn test_table_function_with_ordinality() {
 }
 
 #[test]
+fn test_lateral_table_function_with_ordinality() {
+    let select = pg().verified_only_select(
+        "SELECT * FROM t CROSS JOIN LATERAL read_acl(t.acl) WITH ORDINALITY AS a (grantee, n)",
+    );
+    match &select.from[0].joins[0].relation {
+        TableFactor::RowsFrom {
+            lateral: true,
+            rows_from: false,
+            functions,
+            with_ordinality: true,
+            alias: Some(alias),
+        } => {
+            assert_eq!(1, functions.len());
+            assert_eq!("read_acl(t.acl)", functions[0].function.to_string());
+            assert_eq!("a (grantee, n)", alias.to_string());
+        }
+        relation => panic!("Expecting one LATERAL function with ordinality, got {relation:?}"),
+    }
+    pg().verified_only_select("SELECT * FROM t, LATERAL generate_series(1, t.n) WITH ORDINALITY");
+    pg().verified_only_select("SELECT * FROM t, LATERAL f(t.x) AS g");
+}
+
+#[test]
 fn test_table_unnest_with_ordinality() {
     let from = pg_and_generic()
         .verified_only_select("SELECT * FROM UNNEST(ARRAY[10, 20, 30]) WITH ORDINALITY AS t")
