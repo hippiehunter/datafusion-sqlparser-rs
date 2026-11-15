@@ -82,9 +82,8 @@ pub use self::ddl::{
     NullsDistinctOption, OperatorArgTypes, OperatorClassItem, OperatorPurpose,
     OracleCreateMaterializedViewOptions, OracleCreateViewOptions, OracleMaterializedViewBuild,
     OracleModifyColumn, OracleObjectView, OraclePartitionDefinition, OracleViewConstraint, Owner,
-    Partition,
-    PartitionByClause, PartitionKeyDef, PartitionKeyExpr, PartitionStrategy, ProcedureParam,
-    ReferentialAction, RenameTableNameKind, ReplicaIdentity, SplitPartitionTarget,
+    Partition, PartitionByClause, PartitionKeyDef, PartitionKeyExpr, PartitionStrategy,
+    ProcedureParam, ReferentialAction, RenameTableNameKind, ReplicaIdentity, SplitPartitionTarget,
     TableDistribution, TriggerGroup, TriggerObjectKind, Truncate,
     UserDefinedTypeCompositeAttributeDef, UserDefinedTypeInternalLength,
     UserDefinedTypeRangeOption, UserDefinedTypeRepresentation, UserDefinedTypeSqlDefinitionOption,
@@ -108,10 +107,10 @@ pub use self::query::{
     GraphMatchClause, GraphPattern, GraphPatternElement, GraphPatternExpr, GraphSubquery,
     GroupByExpr, GroupByWithModifier, IdentWithAlias, IlikeSelectItem, Interpolate,
     InterpolateExpr, Join, JoinConstraint, JoinOperator, JsonTableColumn,
-    JsonTableColumnErrorHandling, JsonTableNamedColumn, JsonTableNestedColumn,
-    LabelExpression, LimitClause, LimitValue, LockClause, LockType, MatchRecognizePattern,
-    MatchRecognizeSymbol, Measure, NamedWindowDefinition, NamedWindowExpr, NodePattern, NonBlock,
-    Offset, OffsetRows, OpenJsonTableColumn, OracleFlashbackBoundary, OracleFlashbackVersionKind,
+    JsonTableColumnErrorHandling, JsonTableNamedColumn, JsonTableNestedColumn, LabelExpression,
+    LimitClause, LimitValue, LockClause, LockType, MatchRecognizePattern, MatchRecognizeSymbol,
+    Measure, NamedWindowDefinition, NamedWindowExpr, NodePattern, NonBlock, Offset, OffsetRows,
+    OpenJsonTableColumn, OracleFlashbackBoundary, OracleFlashbackVersionKind,
     OracleModelCellReferenceOptions, OracleModelCellSelector, OracleModelClause,
     OracleModelForLoopAssignment, OracleModelForLoopDirection, OracleModelForLoopSelectors,
     OracleModelIterate, OracleModelMultiColumnForLoop, OracleModelMultiColumnForLoopValues,
@@ -12152,14 +12151,15 @@ impl fmt::Display for Statement {
             Statement::ReassignOwned(reassign_owned) => reassign_owned.fmt(f),
             Statement::DropDomain(DropDomain {
                 if_exists,
-                name,
+                names,
                 drop_behavior,
                 ..
             }) => {
                 write!(
                     f,
-                    "DROP DOMAIN{} {name}",
+                    "DROP DOMAIN{} {}",
                     if *if_exists { " IF EXISTS" } else { "" },
+                    display_comma_separated(names),
                 )?;
                 if let Some(op) = drop_behavior {
                     write!(f, " {op}")?;
@@ -14665,8 +14665,8 @@ pub struct DropDomain {
     pub token: AttachedToken,
     /// Whether to drop the domain if it exists
     pub if_exists: bool,
-    /// The name of the domain to drop
-    pub name: ObjectName,
+    /// The names of the domains to drop
+    pub names: Vec<ObjectName>,
     /// The behavior to apply when dropping the domain
     pub drop_behavior: Option<DropBehavior>,
 }

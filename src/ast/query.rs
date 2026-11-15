@@ -1828,6 +1828,8 @@ impl fmt::Display for TableSampleModifier {
 pub struct TableSampleQuantity {
     pub parenthesized: bool,
     pub value: Expr,
+    /// Further method arguments, retained for semantic arity validation.
+    pub additional_arguments: Vec<Expr>,
     pub unit: Option<TableSampleUnit>,
 }
 
@@ -1837,6 +1839,9 @@ impl fmt::Display for TableSampleQuantity {
             write!(f, "(")?;
         }
         write!(f, "{}", self.value)?;
+        for argument in &self.additional_arguments {
+            write!(f, ", {argument}")?;
+        }
         if let Some(unit) = &self.unit {
             write!(f, " {unit}")?;
         }
@@ -1951,6 +1956,8 @@ impl fmt::Display for TableSample {
         }
         if let Some(quantity) = &self.quantity {
             write!(f, " {quantity}")?;
+        } else if self.bucket.is_none() {
+            write!(f, " ()")?;
         }
         if let Some(seed) = &self.seed {
             write!(f, " {seed}")?;

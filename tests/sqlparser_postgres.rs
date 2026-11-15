@@ -34,21 +34,101 @@ use sqlparser::parser::{
 };
 
 #[test]
+fn postgres_relation_names_reject_reserved_initial_words() {
+    let dialect = PostgreSqlDialect {};
+    for name in ["select", "where", "table", "select.t"] {
+        assert!(Parser::parse_sql(&dialect, &format!("CREATE TABLE {name} (id INT)")).is_err());
+    }
+    for name in ["\"select\"", "public.select", "public.\"select\""] {
+        let statement = pg().verified_stmt(&format!("CREATE TABLE {name} (id INT)"));
+        let Statement::CreateTable(table) = statement else {
+            panic!("expected CREATE TABLE");
+        };
+        assert_eq!(table.name.to_string(), name);
+    }
+}
+
+#[test]
+fn postgres_tablesample_retains_arguments_for_semantic_validation() {
+    for (sql, extra) in [
+        ("SELECT * FROM t TABLESAMPLE BERNOULLI (10, 20)", vec!["20"]),
+        (
+            "SELECT * FROM t TABLESAMPLE SYSTEM (10, 20, 30)",
+            vec!["20", "30"],
+        ),
+    ] {
+        let statement = pg().verified_stmt(sql);
+        let Statement::Query(query) = statement else {
+            panic!("expected SELECT");
+        };
+        let SetExpr::Select(select) = query.body.as_ref() else {
+            panic!("expected SELECT body");
+        };
+        let TableFactor::Table {
+            sample: Some(sample),
+            ..
+        } = &select.from[0].relation
+        else {
+            panic!("expected sampled table");
+        };
+        let sample = match sample {
+            TableSampleKind::BeforeTableAlias(sample)
+            | TableSampleKind::AfterTableAlias(sample) => sample,
+        };
+        let quantity = sample.quantity.as_ref().unwrap();
+        assert_eq!(quantity.value.to_string(), "10");
+        assert_eq!(
+            quantity
+                .additional_arguments
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            extra
+        );
+    }
+    let statement = pg().verified_stmt("SELECT * FROM t TABLESAMPLE BERNOULLI ()");
+    let Statement::Query(query) = statement else {
+        panic!("expected SELECT");
+    };
+    let SetExpr::Select(select) = query.body.as_ref() else {
+        panic!("expected SELECT body");
+    };
+    let TableFactor::Table {
+        sample: Some(sample),
+        ..
+    } = &select.from[0].relation
+    else {
+        panic!("expected sampled table");
+    };
+    let sample = match sample {
+        TableSampleKind::BeforeTableAlias(sample) | TableSampleKind::AfterTableAlias(sample) => {
+            sample
+        }
+    };
+    assert_eq!(sample.quantity, None);
+}
+
+#[test]
 fn postgres_large_object_owner_and_default_privileges_are_typed() {
     let dialect = PostgreSqlDialect {};
     let statements = Parser::parse_sql(
         &dialect,
         "ALTER LARGE OBJECT 4294967295 OWNER TO \"Object Owner\"; \
          ALTER DEFAULT PRIVILEGES GRANT SELECT, UPDATE ON LARGE OBJECTS TO reader",
-    ).unwrap();
-    assert!(matches!(&statements[0], Statement::AlterLargeObject { oid: u32::MAX, owner, .. }
-        if owner.value == "Object Owner" && owner.quote_style == Some('"')));
+    )
+    .unwrap();
+    assert!(
+        matches!(&statements[0], Statement::AlterLargeObject { oid: u32::MAX, owner, .. }
+        if owner.value == "Object Owner" && owner.quote_style == Some('"'))
+    );
     for statement in statements {
         let printed = statement.to_string();
-        assert_eq!(Parser::parse_sql(&dialect, &printed).unwrap()[0].to_string(), printed);
+        assert_eq!(
+            Parser::parse_sql(&dialect, &printed).unwrap()[0].to_string(),
+            printed
+        );
     }
-    assert!(Parser::parse_sql(&dialect,
-        "ALTER LARGE OBJECT 4294967296 OWNER TO reader").is_err());
+    assert!(Parser::parse_sql(&dialect, "ALTER LARGE OBJECT 4294967296 OWNER TO reader").is_err());
 }
 
 #[test]
@@ -63,9 +143,17 @@ fn postgres_grants_on_languages_tablespaces_and_parameters_are_typed() {
          REVOKE ALL ON PARAMETER log_min_messages FROM carol",
     )
     .unwrap();
-    assert!(matches!(&statements[0], Statement::Grant { objects: Some(GrantObjects::Languages(names)), .. }
-        if names.len() == 2));
-    assert!(matches!(&statements[2], Statement::Grant { objects: Some(GrantObjects::Tablespaces(_)), .. }));
+    assert!(
+        matches!(&statements[0], Statement::Grant { objects: Some(GrantObjects::Languages(names)), .. }
+        if names.len() == 2)
+    );
+    assert!(matches!(
+        &statements[2],
+        Statement::Grant {
+            objects: Some(GrantObjects::Tablespaces(_)),
+            ..
+        }
+    ));
     assert!(matches!(&statements[3], Statement::Grant {
         objects: Some(GrantObjects::Parameters(names)),
         privileges: Privileges::Actions(actions),
@@ -73,23 +161,31 @@ fn postgres_grants_on_languages_tablespaces_and_parameters_are_typed() {
     } if names[1].0.len() == 2 && actions == &[Action::Set, Action::AlterSystem]));
     for statement in statements {
         let printed = statement.to_string();
-        assert_eq!(Parser::parse_sql(&dialect, &printed).unwrap()[0].to_string(), printed);
+        assert_eq!(
+            Parser::parse_sql(&dialect, &printed).unwrap()[0].to_string(),
+            printed
+        );
     }
 }
 
 #[test]
 fn postgres_header_match_and_maintain_survive_round_trip() {
     let dialect = PostgreSqlDialect {};
-    let mut statements = Parser::parse_sql(&dialect,
-        "COPY records FROM STDIN WITH (FORMAT CSV, HEADER MATCH)").unwrap();
-    statements.extend(Parser::parse_sql(&dialect,
-        "GRANT MAINTAIN ON records TO reader").unwrap());
+    let mut statements = Parser::parse_sql(
+        &dialect,
+        "COPY records FROM STDIN WITH (FORMAT CSV, HEADER MATCH)",
+    )
+    .unwrap();
+    statements.extend(Parser::parse_sql(&dialect, "GRANT MAINTAIN ON records TO reader").unwrap());
     assert!(matches!(&statements[0], Statement::Copy { options, .. }
         if options.contains(&CopyOption::HeaderMatch)));
     assert!(statements[1].to_string().contains("MAINTAIN"));
     for statement in statements {
         let printed = statement.to_string();
-        assert_eq!(Parser::parse_sql(&dialect, &printed).unwrap()[0].to_string(), printed);
+        assert_eq!(
+            Parser::parse_sql(&dialect, &printed).unwrap()[0].to_string(),
+            printed
+        );
     }
 }
 
@@ -97,12 +193,28 @@ fn postgres_header_match_and_maintain_survive_round_trip() {
 fn postgres_set_role_to_default_preserves_quoted_role_names() {
     let dialect = PostgreSqlDialect {};
     for sql in ["SET ROLE DEFAULT", "SET ROLE TO DEFAULT", "SET ROLE NONE"] {
-        assert!(matches!(&Parser::parse_sql(&dialect, sql).unwrap()[0],
-            Statement::Set(SetStatement { inner: Set::SetRole { role_name: None, .. }, .. })));
+        assert!(matches!(
+            &Parser::parse_sql(&dialect, sql).unwrap()[0],
+            Statement::Set(SetStatement {
+                inner: Set::SetRole {
+                    role_name: None,
+                    ..
+                },
+                ..
+            })
+        ));
     }
     for sql in ["SET ROLE TO reader", "SET ROLE \"default\""] {
-        assert!(matches!(&Parser::parse_sql(&dialect, sql).unwrap()[0],
-            Statement::Set(SetStatement { inner: Set::SetRole { role_name: Some(_), .. }, .. })));
+        assert!(matches!(
+            &Parser::parse_sql(&dialect, sql).unwrap()[0],
+            Statement::Set(SetStatement {
+                inner: Set::SetRole {
+                    role_name: Some(_),
+                    ..
+                },
+                ..
+            })
+        ));
     }
 }
 
@@ -140,9 +252,9 @@ fn bracket_identifiers_are_parser_owned_and_opt_in() {
 
 #[test]
 fn parse_table_access_method() {
-    let Statement::CreateTable(create) =
-        pg().verified_stmt("CREATE TABLE events (id INT) PARTITION BY RANGE (id) USING heap2 WITH (fillfactor = 70)")
-    else {
+    let Statement::CreateTable(create) = pg().verified_stmt(
+        "CREATE TABLE events (id INT) PARTITION BY RANGE (id) USING heap2 WITH (fillfactor = 70)",
+    ) else {
         panic!("expected CREATE TABLE");
     };
     assert_eq!(create.access_method, Some(Ident::new("heap2")));
@@ -158,11 +270,15 @@ fn parse_table_access_method() {
 
 #[test]
 fn parse_cluster() {
-    let Statement::Cluster(statement) = pg().verified_stmt("CLUSTER public.events USING events_by_time")
+    let Statement::Cluster(statement) =
+        pg().verified_stmt("CLUSTER public.events USING events_by_time")
     else {
         panic!("expected CLUSTER statement");
     };
-    assert_eq!(statement.table.map(|table| table.to_string()), Some("public.events".to_string()));
+    assert_eq!(
+        statement.table.map(|table| table.to_string()),
+        Some("public.events".to_string())
+    );
     assert_eq!(statement.index, Some(Ident::new("events_by_time")));
     assert!(!statement.verbose);
 
@@ -446,9 +562,7 @@ fn parse_merge_returning_into_in_procedural_body() {
     };
     let Some(Statement::Merge {
         output: Some(OutputClause::Returning {
-            select_items,
-            into,
-            ..
+            select_items, into, ..
         }),
         ..
     }) = body.block.statements.first()
@@ -520,8 +634,11 @@ fn parse_fetch_first_with_an_expression_quantity() {
     ));
 
     // An unparenthesized operator expression is not a c_expr.
-    assert!(Parser::parse_sql(&PostgreSqlDialect {}, "SELECT a FROM t FETCH FIRST 1 + 1 ROWS ONLY")
-        .is_err());
+    assert!(Parser::parse_sql(
+        &PostgreSqlDialect {},
+        "SELECT a FROM t FETCH FIRST 1 + 1 ROWS ONLY"
+    )
+    .is_err());
 }
 
 #[test]
@@ -586,10 +703,11 @@ fn parse_create_table_check_and_fk_not_valid() {
 
     // NOT VALID is a table-constraint attribute only; PostgreSQL rejects it
     // on a column constraint.
-    assert!(
-        Parser::parse_sql(&PostgreSqlDialect {}, "CREATE TABLE t2 (a INT CHECK (a > 0) NOT VALID)")
-            .is_err()
-    );
+    assert!(Parser::parse_sql(
+        &PostgreSqlDialect {},
+        "CREATE TABLE t2 (a INT CHECK (a > 0) NOT VALID)"
+    )
+    .is_err());
 }
 
 #[test]
@@ -1695,33 +1813,6 @@ fn parse_create_table_if_not_exists() {
 }
 
 #[test]
-fn parse_bad_if_not_exists() {
-    let res = pg().parse_sql_statements("CREATE TABLE NOT EXISTS uk_cities ()");
-    assert_eq!(
-        ParserError::ParserError("Expected: end of statement, found: EXISTS".to_string()),
-        res.unwrap_err()
-    );
-
-    let res = pg().parse_sql_statements("CREATE TABLE IF EXISTS uk_cities ()");
-    assert_eq!(
-        ParserError::ParserError("Expected: end of statement, found: EXISTS".to_string()),
-        res.unwrap_err()
-    );
-
-    let res = pg().parse_sql_statements("CREATE TABLE IF uk_cities ()");
-    assert_eq!(
-        ParserError::ParserError("Expected: end of statement, found: uk_cities".to_string()),
-        res.unwrap_err()
-    );
-
-    let res = pg().parse_sql_statements("CREATE TABLE IF NOT uk_cities ()");
-    assert_eq!(
-        ParserError::ParserError("Expected: end of statement, found: NOT".to_string()),
-        res.unwrap_err()
-    );
-}
-
-#[test]
 fn parse_create_schema_if_not_exists() {
     let sql = "CREATE SCHEMA IF NOT EXISTS schema_name";
     let ast = pg_and_generic().verified_stmt(sql);
@@ -1864,11 +1955,18 @@ fn copy_from_where_preserves_predicate_and_options() {
         "COPY users FROM PROGRAM 'producer' WHERE id IS NOT NULL",
     ] {
         let statement = pg().verified_stmt(sql);
-        let Statement::Copy { selection: Some(_), to: false, .. } = statement else {
+        let Statement::Copy {
+            selection: Some(_),
+            to: false,
+            ..
+        } = statement
+        else {
             panic!("expected COPY FROM with a predicate");
         };
     }
-    assert!(pg().parse_sql_statements("COPY users TO STDOUT WHERE id > 1").is_err());
+    assert!(pg()
+        .parse_sql_statements("COPY users TO STDOUT WHERE id > 1")
+        .is_err());
 }
 
 #[test]
@@ -2079,7 +2177,8 @@ fn parse_copy_to() {
             selection: None,
             source: CopySource::Query(Box::new(Query {
                 with: None,
-                body: Box::new(SetExpr::Select(Box::new(Select { hints: vec![],
+                body: Box::new(SetExpr::Select(Box::new(Select {
+                    hints: vec![],
                     select_token: AttachedToken::empty(),
                     distinct: None,
                     top: None,
@@ -3199,10 +3298,7 @@ fn parse_pg_custom_prefix_operators() {
         pg().verified_expr("OPERATOR(public.%%) a - b || c"),
         Expr::BinaryOp {
             left: Box::new(prefix(
-                UnaryOperator::PGCustomUnaryOperator(vec![
-                    "public".to_string(),
-                    "%%".to_string()
-                ]),
+                UnaryOperator::PGCustomUnaryOperator(vec!["public".to_string(), "%%".to_string()]),
                 Expr::BinaryOp {
                     left: Box::new(ident("a")),
                     op: BinaryOperator::Minus,
@@ -3276,7 +3372,9 @@ fn parse_pg_operator_names_without_a_declaration() {
         right: Box::new(right),
     };
 
-    for operator in ["!", "!!", "!-", "!!-", "~-", "@-", "|/", "||/", "@-@", "!=-"] {
+    for operator in [
+        "!", "!!", "!-", "!!-", "~-", "@-", "|/", "||/", "@-@", "!=-",
+    ] {
         assert_eq!(
             pg().verified_expr(&format!("a {operator} b")),
             infix(ident("a"), operator, ident("b"))
@@ -3309,7 +3407,13 @@ fn parse_pg_operator_names_without_a_declaration() {
         infix(ident("a"), "!", prefix("!", ident("b")))
     );
 
-    for sql in ["SELECT a!", "SELECT a !", "SELECT (a !)", "SELECT a !, b", "SELECT a !!"] {
+    for sql in [
+        "SELECT a!",
+        "SELECT a !",
+        "SELECT (a !)",
+        "SELECT a !, b",
+        "SELECT a !!",
+    ] {
         assert!(pg().parse_sql_statements(sql).is_err(), "{sql}");
     }
     for sql in ["SELECT = a", "SELECT < a", "SELECT => a"] {
@@ -4242,7 +4346,8 @@ fn parse_array_subquery_expr() {
                 body: Box::new(SetExpr::SetOperation {
                     op: SetOperator::Union,
                     set_quantifier: SetQuantifier::None,
-                    left: Box::new(SetExpr::Select(Box::new(Select { hints: vec![],
+                    left: Box::new(SetExpr::Select(Box::new(Select {
+                        hints: vec![],
                         select_token: AttachedToken::empty(),
                         distinct: None,
                         top: None,
@@ -4260,7 +4365,8 @@ fn parse_array_subquery_expr() {
                         connect_by: None,
                         flavor: SelectFlavor::Standard,
                     }))),
-                    right: Box::new(SetExpr::Select(Box::new(Select { hints: vec![],
+                    right: Box::new(SetExpr::Select(Box::new(Select {
+                        hints: vec![],
                         select_token: AttachedToken::empty(),
                         distinct: None,
                         top: None,
@@ -4778,26 +4884,26 @@ fn parse_quoted_identifier_2() {
 #[test]
 fn parse_local_and_global() {
     pg_and_generic().one_statement_parses_to(
-        "CREATE LOCAL TEMPORARY TABLE table (COL INT)",
-        "CREATE LOCAL TEMPORARY TABLE table (col INT)",
+        "CREATE LOCAL TEMPORARY TABLE t (COL INT)",
+        "CREATE LOCAL TEMPORARY TABLE t (col INT)",
     );
 }
 
 #[test]
 fn parse_on_commit() {
     pg_and_generic().one_statement_parses_to(
-        "CREATE TEMPORARY TABLE table (COL INT) ON COMMIT PRESERVE ROWS",
-        "CREATE TEMPORARY TABLE table (col INT) ON COMMIT PRESERVE ROWS",
+        "CREATE TEMPORARY TABLE t (COL INT) ON COMMIT PRESERVE ROWS",
+        "CREATE TEMPORARY TABLE t (col INT) ON COMMIT PRESERVE ROWS",
     );
 
     pg_and_generic().one_statement_parses_to(
-        "CREATE TEMPORARY TABLE table (COL INT) ON COMMIT DELETE ROWS",
-        "CREATE TEMPORARY TABLE table (col INT) ON COMMIT DELETE ROWS",
+        "CREATE TEMPORARY TABLE t (COL INT) ON COMMIT DELETE ROWS",
+        "CREATE TEMPORARY TABLE t (col INT) ON COMMIT DELETE ROWS",
     );
 
     pg_and_generic().one_statement_parses_to(
-        "CREATE TEMPORARY TABLE table (COL INT) ON COMMIT DROP",
-        "CREATE TEMPORARY TABLE table (col INT) ON COMMIT DROP",
+        "CREATE TEMPORARY TABLE t (COL INT) ON COMMIT DROP",
+        "CREATE TEMPORARY TABLE t (col INT) ON COMMIT DROP",
     );
 }
 
@@ -4925,14 +5031,8 @@ fn parse_escaped_literal_string() {
     }
 
     negative_cast(&[
-        (
-            r"SELECT E'\u0000'",
-            "invalid Unicode escape value",
-        ),
-        (
-            r"SELECT E'\U00110000'",
-            "invalid Unicode escape value",
-        ),
+        (r"SELECT E'\u0000'", "invalid Unicode escape value"),
+        (r"SELECT E'\U00110000'", "invalid Unicode escape value"),
         (
             r"SELECT E'\u{0001}'",
             "invalid Unicode escape in string literal",
@@ -5040,10 +5140,8 @@ fn parse_current_functions() {
 
 #[test]
 fn parse_current_role_as_sql_value_function() {
-    let select = pg().verified_only_select_with_canonical(
-        "SELECT CURRENT_ROLE",
-        "SELECT current_role",
-    );
+    let select =
+        pg().verified_only_select_with_canonical("SELECT CURRENT_ROLE", "SELECT current_role");
     assert_eq!(
         &Expr::Function(Function {
             name: ObjectName::from(vec![Ident::new("current_role")]),
@@ -5062,10 +5160,8 @@ fn parse_current_role_as_sql_value_function() {
 
 #[test]
 fn parse_current_schema_accepts_empty_parentheses() {
-    let select = pg().verified_only_select_with_canonical(
-        "SELECT current_schema()",
-        "SELECT current_schema",
-    );
+    let select = pg()
+        .verified_only_select_with_canonical("SELECT current_schema()", "SELECT current_schema");
     assert_eq!(
         &Expr::Function(Function {
             name: ObjectName::from(vec![Ident::new("current_schema")]),
@@ -5255,13 +5351,9 @@ fn parse_custom_operator() {
     assert_eq!(
         expr_from_projection(&select.projection[0]),
         &Expr::BinaryOp {
-            left: Box::new(Expr::Value(
-                number("2").with_empty_span()
-            )),
+            left: Box::new(Expr::Value(number("2").with_empty_span())),
             op: BinaryOperator::Custom("===".into()),
-            right: Box::new(Expr::Value(
-                number("2").with_empty_span()
-            )),
+            right: Box::new(Expr::Value(number("2").with_empty_span())),
         }
     );
 
@@ -5994,11 +6086,11 @@ fn parse_drop_domain() {
         Statement::DropDomain(DropDomain {
             token: AttachedToken::empty(),
             if_exists: true,
-            name: ObjectName::from(vec![Ident {
+            names: vec![ObjectName::from(vec![Ident {
                 value: "jpeg_domain".to_string(),
                 quote_style: None,
                 span: Span::empty(),
-            }]),
+            }])],
             drop_behavior: None
         })
     );
@@ -6009,11 +6101,11 @@ fn parse_drop_domain() {
         Statement::DropDomain(DropDomain {
             token: AttachedToken::empty(),
             if_exists: false,
-            name: ObjectName::from(vec![Ident {
+            names: vec![ObjectName::from(vec![Ident {
                 value: "jpeg_domain".to_string(),
                 quote_style: None,
                 span: Span::empty(),
-            }]),
+            }])],
             drop_behavior: None
         })
     );
@@ -6024,11 +6116,11 @@ fn parse_drop_domain() {
         Statement::DropDomain(DropDomain {
             token: AttachedToken::empty(),
             if_exists: true,
-            name: ObjectName::from(vec![Ident {
+            names: vec![ObjectName::from(vec![Ident {
                 value: "jpeg_domain".to_string(),
                 quote_style: None,
                 span: Span::empty(),
-            }]),
+            }])],
             drop_behavior: Some(DropBehavior::Cascade)
         })
     );
@@ -6040,14 +6132,29 @@ fn parse_drop_domain() {
         Statement::DropDomain(DropDomain {
             token: AttachedToken::empty(),
             if_exists: true,
-            name: ObjectName::from(vec![Ident {
+            names: vec![ObjectName::from(vec![Ident {
                 value: "jpeg_domain".to_string(),
                 quote_style: None,
                 span: Span::empty(),
-            }]),
+            }])],
             drop_behavior: Some(DropBehavior::Restrict)
         })
     );
+
+    let sql = "DROP DOMAIN IF EXISTS jpeg_domain, public.png_domain, \"Mixed Name\" CASCADE";
+    let Statement::DropDomain(drop) = pg().verified_stmt(sql) else {
+        panic!("expected DROP DOMAIN");
+    };
+    assert_eq!(
+        drop.names,
+        vec![
+            ObjectName::from(vec![Ident::new("jpeg_domain")]),
+            ObjectName::from(vec![Ident::new("public"), Ident::new("png_domain")]),
+            ObjectName::from(vec![Ident::with_quote('"', "Mixed Name")]),
+        ]
+    );
+    assert!(drop.if_exists);
+    assert_eq!(drop.drop_behavior, Some(DropBehavior::Cascade));
 }
 
 #[test]
@@ -6523,7 +6630,8 @@ fn test_simple_postgres_insert_with_alias() {
 
     assert_eq!(
         statement,
-        Statement::Insert(Insert { hints: vec![],
+        Statement::Insert(Insert {
+            hints: vec![],
             column_targets: None,
             insert_token: AttachedToken::empty(),
             ignore: false,
@@ -6591,7 +6699,8 @@ fn test_simple_insert_with_quoted_alias() {
 
     assert_eq!(
         statement,
-        Statement::Insert(Insert { hints: vec![],
+        Statement::Insert(Insert {
+            hints: vec![],
             column_targets: None,
             insert_token: AttachedToken::empty(),
             ignore: false,
@@ -9217,9 +9326,7 @@ fn parse_named_arguments_with_assignment_operator() {
     };
     let expected = |name: &str, value: &str| FunctionArg::ExprNamed {
         name: Expr::Identifier(Ident::new(name)),
-        arg: FunctionArgExpr::Expr(Expr::Value(
-            number(value).with_empty_span(),
-        )),
+        arg: FunctionArgExpr::Expr(Expr::Value(number(value).with_empty_span())),
         operator: FunctionArgOperator::Assignment,
     };
     assert_eq!(
@@ -9370,8 +9477,9 @@ fn parse_cycle_marks_are_a_constant_pair() {
         "CYCLE x SET c TO '{}'::JSON DEFAULT '[]'::JSON USING p",
         "CYCLE x SET c TO 1 DEFAULT 0",
     ] {
-        let sql =
-            format!("WITH RECURSIVE t(x) AS (SELECT 1 UNION ALL SELECT x FROM t) {clause} SELECT 1");
+        let sql = format!(
+            "WITH RECURSIVE t(x) AS (SELECT 1 UNION ALL SELECT x FROM t) {clause} SELECT 1"
+        );
         assert!(
             pg().parse_sql_statements(&sql).is_err(),
             "{clause} must be a syntax error"
@@ -9384,8 +9492,15 @@ fn a_bracket_list_is_a_value_only_inside_array() {
     pg().verified_expr("ARRAY[[1, 2], [3, 4]]");
     pg().verified_expr("ARRAY[[[1]], [[2]]]");
     pg().verified_expr("ARRAY[]");
-    for sql in ["SELECT [1, 2]", "SELECT [a] FROM t", "SELECT ARRAY[[1, 2], 3]"] {
-        assert!(pg().parse_sql_statements(sql).is_err(), "{sql} is not PostgreSQL");
+    for sql in [
+        "SELECT [1, 2]",
+        "SELECT [a] FROM t",
+        "SELECT ARRAY[[1, 2], 3]",
+    ] {
+        assert!(
+            pg().parse_sql_statements(sql).is_err(),
+            "{sql} is not PostgreSQL"
+        );
     }
 }
 

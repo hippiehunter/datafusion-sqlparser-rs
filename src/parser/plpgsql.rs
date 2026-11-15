@@ -32,8 +32,8 @@ use crate::{
         AtomicBlock, AttachedToken, Box, ConditionalStatementBlock, ConditionalStatements,
         CreateFunctionBody, DataType, DiagnosticsItem, ExecuteInto, Expr, ForLoopVariant,
         FunctionBehavior, FunctionCalledOnNull, FunctionParallel, Ident, ObjectName, PlpgsqlAssert,
-        Query, ReturnStatementValue, RoutineAttribute, SqlPsmAssignment, SqlPsmDataType,
-        SqlPsmQueryAssignment, Statement,
+        Query, ReturnStatementValue, RoutineAttribute, SelectInto, SetExpr, SqlPsmAssignment,
+        SqlPsmDataType, SqlPsmQueryAssignment, Statement,
     },
     dialect::Precedence,
     keywords::Keyword,
@@ -45,6 +45,32 @@ use crate::{
 type CaseWhenArms = (Vec<ConditionalStatementBlock>, Vec<Option<Vec<Expr>>>);
 
 impl Parser<'_> {
+    pub(super) fn parse_procedural_select_into(
+        &self,
+        into: &mut Option<SelectInto>,
+    ) -> Result<(), ParserError> {
+        if self.features.supports_plpgsql
+            && self.in_procedural_body()
+            && self.parse_keyword(Keyword::INTO)
+        {
+            if into.is_some() {
+                return self.expected("a single INTO clause", self.peek_token());
+            }
+            *into = Some(self.parse_select_into()?);
+        }
+        Ok(())
+    }
+
+    pub(super) fn parse_procedural_query_into(
+        &self,
+        body: &mut SetExpr,
+    ) -> Result<(), ParserError> {
+        if let SetExpr::Select(select) = body {
+            self.parse_procedural_select_into(&mut select.into)?;
+        }
+        Ok(())
+    }
+
     /// Parse a statement introduced by a PL/pgSQL `<<label>>`.
     ///
     /// A label before `DECLARE` or `BEGIN` labels the block itself and is

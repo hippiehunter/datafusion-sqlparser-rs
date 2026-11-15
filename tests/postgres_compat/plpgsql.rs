@@ -27,8 +27,8 @@ use crate::postgres_compat::common::*;
 use sqlparser::ast::{
     ArgMode, AtomicBlock, BeginEndStatements, ConditionalStatements, CreateFunctionBody,
     CursorScrollOption, DataType, DiagnosticsItem, ExecuteInto, Expr, ForLoopVariant,
-    FunctionBehavior, FunctionCalledOnNull, FunctionParallel, GetDiagnosticsKind, OpenFor,
-    PlBlock, PlSqlDeclaration, ProcedureBody, RoutineAttribute, SqlPsmDataType, Statement,
+    FunctionBehavior, FunctionCalledOnNull, FunctionParallel, GetDiagnosticsKind, OpenFor, PlBlock,
+    PlSqlDeclaration, ProcedureBody, RoutineAttribute, SetExpr, SqlPsmDataType, Statement,
 };
 
 // =============================================================================
@@ -404,11 +404,62 @@ fn test_execute_without_into_or_using() {
 }
 
 #[test]
-fn test_select_into_strict_target() {
-    // https://www.postgresql.org/docs/current/plpgsql-statements.html#PLPGSQL-STATEMENTS-SQL-ONEROW
-    function_block(
-        "CREATE FUNCTION f() RETURNS INT LANGUAGE plpgsql \
-         AS $$ DECLARE v INT; BEGIN SELECT id INTO STRICT v FROM t; RETURN v; END $$",
+fn select_into_placements_preserve_projection_and_targets() {
+    for sql in [
+        "SELECT INTO STRICT x, y a, b FROM t ORDER BY b",
+        "SELECT a, b INTO STRICT x, y FROM t ORDER BY b",
+        "SELECT a, b FROM t INTO STRICT x, y ORDER BY b",
+        "SELECT a, b FROM t ORDER BY b INTO STRICT x, y",
+    ] {
+        let statement = only_body_statement(&format!(
+            "CREATE FUNCTION f() RETURNS void LANGUAGE plpgsql \
+             AS $$ DECLARE x INT; y TEXT; BEGIN {sql}; END $$"
+        ));
+        let Statement::Query(query) = statement else {
+            panic!("expected SELECT");
+        };
+        let SetExpr::Select(select) = query.body.as_ref() else {
+            panic!("expected SELECT body");
+        };
+        let into = select.into.as_ref().unwrap();
+        assert!(into.strict);
+        assert_eq!(into.name.to_string(), "x");
+        assert_eq!(
+            into.additional_targets
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            ["y"]
+        );
+        assert_eq!(
+            select
+                .projection
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            ["a", "b"]
+        );
+        assert_eq!(select.from[0].relation.to_string(), "t");
+        assert_eq!(query.order_by.as_ref().unwrap().to_string(), "ORDER BY b");
+    }
+    let statement = only_body_statement(
+        "CREATE FUNCTION f() RETURNS void LANGUAGE plpgsql \
+         AS $$ DECLARE r RECORD; BEGIN SELECT INTO r 5, 10, 15; END $$",
+    );
+    let Statement::Query(query) = statement else {
+        panic!("expected SELECT");
+    };
+    let SetExpr::Select(select) = query.body.as_ref() else {
+        panic!("expected SELECT body");
+    };
+    assert_eq!(select.into.as_ref().unwrap().name.to_string(), "r");
+    assert_eq!(
+        select
+            .projection
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        ["5", "10", "15"]
     );
 }
 

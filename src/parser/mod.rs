@@ -45,7 +45,7 @@ use crate::ast::helpers::{
 use crate::ast::Statement::CreatePolicy;
 use crate::ast::*;
 use crate::dialect::*;
-use crate::keywords::Keyword;
+use crate::keywords::{Keyword, POSTGRES_RESERVED_KEYWORDS};
 use crate::optimizer_hints::{parse_hint_content, OptimizerHint};
 use crate::tokenizer::*;
 use core::cell::{Cell, RefCell};
@@ -14708,16 +14708,16 @@ impl<'a> Parser<'a> {
     }
 
     /// ```sql
-    /// DROP DOMAIN [ IF EXISTS ] name [ CASCADE | RESTRICT ]
+    /// DROP DOMAIN [ IF EXISTS ] name [, ...] [ CASCADE | RESTRICT ]
     /// ```
     fn parse_drop_domain(&self, token: AttachedToken) -> Result<Statement, ParserError> {
         let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
-        let name = self.parse_object_name(false)?;
+        let names = self.parse_comma_separated(|parser| parser.parse_object_name(false))?;
         let drop_behavior = self.parse_optional_drop_behavior();
         Ok(Statement::DropDomain(DropDomain {
             token,
             if_exists,
-            name,
+            names,
             drop_behavior,
         }))
     }
@@ -15609,6 +15609,16 @@ impl<'a> Parser<'a> {
     ) -> Result<Statement, ParserError> {
         let allow_unquoted_hyphen = false;
         let if_not_exists = self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
+        if self.dialect.is::<PostgreSqlDialect>()
+            && matches!(
+                self.peek_token().token,
+                BorrowedToken::Word(word)
+                    if word.quote_style.is_none()
+                        && POSTGRES_RESERVED_KEYWORDS.contains(&word.keyword)
+            )
+        {
+            return self.expected("table name", self.peek_token());
+        }
         let table_name = self.parse_object_name(allow_unquoted_hyphen)?;
 
         if self.parse_keyword(Keyword::OF) {
@@ -17901,7 +17911,15 @@ impl<'a> Parser<'a> {
                 let generated_as = if self.parse_keyword(Keyword::ALWAYS) {
                     Some(GeneratedAs::Always)
                 } else if self.parse_keywords(&[Keyword::BY, Keyword::DEFAULT]) {
-                    Some(GeneratedAs::ByDefault)
+                    Some(
+                        if self.dialect.is::<OracleDialect>()
+                            && self.parse_keywords(&[Keyword::ON, Keyword::NULL])
+                        {
+                            GeneratedAs::ByDefaultOnNull
+                        } else {
+                            GeneratedAs::ByDefault
+                        },
+                    )
                 } else {
                     None
                 };
@@ -21582,17 +21600,20 @@ impl<'a> Parser<'a> {
             }
             .into())
         } else {
-            let body = self.parse_query_body(self.dialect.prec_unknown())?;
+            let mut body = self.parse_query_body(self.dialect.prec_unknown())?;
 
             let order_by = self.parse_optional_order_by()?;
+            self.parse_procedural_query_into(&mut body)?;
 
             let limit_clause = self.parse_optional_limit_clause()?.map(Box::new);
+            self.parse_procedural_query_into(&mut body)?;
 
             let fetch = if self.parse_keyword(Keyword::FETCH) {
                 Some(Box::new(self.parse_fetch()?))
             } else {
                 None
             };
+            self.parse_procedural_query_into(&mut body)?;
 
             let mut for_clause = None;
             let mut locks = Vec::new();
@@ -21604,6 +21625,7 @@ impl<'a> Parser<'a> {
                     locks.push(self.parse_lock()?);
                 }
             }
+            self.parse_procedural_query_into(&mut body)?;
             Ok(Query {
                 with,
                 body,
@@ -22391,6 +22413,15 @@ impl<'a> Parser<'a> {
             }
         }
 
+        let mut into = if self.features.supports_plpgsql
+            && self.in_procedural_body()
+            && self.parse_keyword(Keyword::INTO)
+        {
+            Some(self.parse_select_into()?)
+        } else {
+            None
+        };
+
         let projection =
             if self.features.supports_empty_projections && self.peek_empty_target_list() {
                 vec![]
@@ -22398,16 +22429,17 @@ impl<'a> Parser<'a> {
                 self.parse_projection()?
             };
 
-        let mut into = if self.parse_keyword(Keyword::INTO) {
-            Some(self.parse_select_into()?)
+        if self.parse_keyword(Keyword::INTO) {
+            if into.is_some() {
+                return self.expected("a single INTO clause", self.peek_token());
+            }
+            into = Some(self.parse_select_into()?);
         } else if self.dialect.is::<OracleDialect>() && self.parse_keyword(Keyword::BULK) {
             self.expect_keywords(&[Keyword::COLLECT, Keyword::INTO])?;
-            let mut into = self.parse_select_into()?;
-            into.bulk_collect = true;
-            Some(into)
-        } else {
-            None
-        };
+            let mut target = self.parse_select_into()?;
+            target.bulk_collect = true;
+            into = Some(target);
+        }
 
         // Note that for keywords to be properly handled here, they need to be
         // added to `RESERVED_FOR_COLUMN_ALIAS` / `RESERVED_FOR_TABLE_ALIAS`,
@@ -22421,22 +22453,26 @@ impl<'a> Parser<'a> {
         } else {
             (vec![], false)
         };
+        self.parse_procedural_select_into(&mut into)?;
 
         let selection = if self.parse_keyword(Keyword::WHERE) {
             Some(Box::new(self.parse_expr()?))
         } else {
             None
         };
+        self.parse_procedural_select_into(&mut into)?;
 
         let group_by = self
             .parse_optional_group_by()?
             .unwrap_or_else(|| GroupByExpr::Expressions(vec![], vec![]));
+        self.parse_procedural_select_into(&mut into)?;
 
         let having = if self.parse_keyword(Keyword::HAVING) {
             Some(Box::new(self.parse_expr()?))
         } else {
             None
         };
+        self.parse_procedural_select_into(&mut into)?;
 
         let qualify = if self.dialect.is::<OracleDialect>() && self.parse_keyword(Keyword::QUALIFY)
         {
@@ -23893,7 +23929,12 @@ impl<'a> Parser<'a> {
 
         let parenthesized = self.consume_token(&BorrowedToken::LParen);
 
-        let (quantity, bucket) = if parenthesized && self.parse_keyword(Keyword::BUCKET) {
+        let (quantity, bucket) = if parenthesized
+            && self.dialect.is::<PostgreSqlDialect>()
+            && self.peek_token().token == BorrowedToken::RParen
+        {
+            (None, None)
+        } else if parenthesized && self.parse_keyword(Keyword::BUCKET) {
             let selected_bucket = self.parse_number_value()?.value;
             self.expect_keywords(&[Keyword::OUT, Keyword::OF])?;
             let total = self.parse_number_value()?.value;
@@ -23927,6 +23968,14 @@ impl<'a> Parser<'a> {
                     }
                 }
             };
+            let additional_arguments = if parenthesized
+                && self.dialect.is::<PostgreSqlDialect>()
+                && self.consume_token(&BorrowedToken::Comma)
+            {
+                self.parse_comma_separated(Parser::parse_expr)?
+            } else {
+                Vec::new()
+            };
             let unit = if self.parse_keyword(Keyword::ROWS) {
                 Some(TableSampleUnit::Rows)
             } else if self.parse_keyword(Keyword::PERCENT) {
@@ -23938,6 +23987,7 @@ impl<'a> Parser<'a> {
                 Some(TableSampleQuantity {
                     parenthesized,
                     value,
+                    additional_arguments,
                     unit,
                 }),
                 None,

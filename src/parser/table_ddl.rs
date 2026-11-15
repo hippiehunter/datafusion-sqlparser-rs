@@ -37,7 +37,7 @@ use crate::ast::{
     SqlMedOptionAction, SqlOption, Statement, TableConstraint, TriggerGroup, UnaryOperator,
     UserDefinedTypeStorage,
 };
-use crate::dialect::PostgreSqlDialect;
+use crate::dialect::{OracleDialect, PostgreSqlDialect};
 use crate::keywords::Keyword;
 use crate::tokenizer::{BorrowedToken, Span};
 
@@ -266,7 +266,13 @@ impl Parser<'_> {
                 options.push(IdentityColumnOption::Restart { with, value });
             } else if self.parse_keywords(&[Keyword::SET, Keyword::GENERATED]) {
                 let generated_as = if self.parse_keywords(&[Keyword::BY, Keyword::DEFAULT]) {
-                    GeneratedAs::ByDefault
+                    if self.dialect.is::<OracleDialect>()
+                        && self.parse_keywords(&[Keyword::ON, Keyword::NULL])
+                    {
+                        GeneratedAs::ByDefaultOnNull
+                    } else {
+                        GeneratedAs::ByDefault
+                    }
                 } else {
                     self.expect_keyword(Keyword::ALWAYS)?;
                     GeneratedAs::Always
