@@ -49,6 +49,7 @@ pub enum OptimizerHintDirective {
     SortMergeJoin { tables: Vec<String> },
     NoHashJoin { tables: Vec<String> },
     NoNestedLoop { tables: Vec<String> },
+    NoSortMergeJoin { tables: Vec<String> },
     NoParallel,
     Parallel { dop: u16 },
     Leading { tables: Vec<String> },
@@ -69,6 +70,7 @@ impl OptimizerHintDirective {
             Self::SortMergeJoin { .. } => "SORT_MERGE_JOIN",
             Self::NoHashJoin { .. } => "NO_HASH_JOIN",
             Self::NoNestedLoop { .. } => "NO_NESTED_LOOP",
+            Self::NoSortMergeJoin { .. } => "NO_SORT_MERGE_JOIN",
             Self::NoParallel => "NO_PARALLEL",
             Self::Parallel { .. } => "PARALLEL",
             Self::Leading { .. } => "LEADING",
@@ -91,6 +93,7 @@ impl fmt::Display for OptimizerHintDirective {
             | Self::SortMergeJoin { tables }
             | Self::NoHashJoin { tables }
             | Self::NoNestedLoop { tables }
+            | Self::NoSortMergeJoin { tables }
             | Self::Leading { tables } => write!(f, "({})", tables.join(" ")),
             Self::Parallel { dop } => write!(f, "({dop})"),
             Self::NoParallel | Self::NoPlanCache | Self::Reoptimize => Ok(()),
@@ -306,6 +309,7 @@ fn parse_directive(name: &str, args: Vec<HintArgument>) -> OptimizerHintDirectiv
         "SORT_MERGE_JOIN" => OptimizerHintDirective::SortMergeJoin { tables: names },
         "NO_HASH_JOIN" => OptimizerHintDirective::NoHashJoin { tables: names },
         "NO_NESTED_LOOP" => OptimizerHintDirective::NoNestedLoop { tables: names },
+        "NO_SORT_MERGE_JOIN" => OptimizerHintDirective::NoSortMergeJoin { tables: names },
         "NO_PARALLEL" => OptimizerHintDirective::NoParallel,
         "PARALLEL" => OptimizerHintDirective::Parallel {
             dop: names
@@ -357,6 +361,32 @@ mod tests {
         let rendered = Statement::Insert(parsed.clone()).to_string();
         let reparsed = insert_of(parse_one(&rendered));
         assert_eq!(reparsed.hints, parsed.hints);
+    }
+
+    #[test]
+    fn every_join_method_has_its_negation() {
+        let statement = parse_one(
+            "INSERT /*+ NO_HASH_JOIN(a b) NO_NESTED_LOOP(a b) NO_SORT_MERGE_JOIN(a b) */ \
+             INTO t VALUES (1)",
+        );
+        let tables = vec!["a".to_string(), "b".to_string()];
+        let directives: Vec<OptimizerHintDirective> = insert_of(statement)
+            .hints
+            .into_iter()
+            .map(|hint| hint.directive)
+            .collect();
+        assert_eq!(
+            directives,
+            vec![
+                OptimizerHintDirective::NoHashJoin {
+                    tables: tables.clone()
+                },
+                OptimizerHintDirective::NoNestedLoop {
+                    tables: tables.clone()
+                },
+                OptimizerHintDirective::NoSortMergeJoin { tables },
+            ]
+        );
     }
 
     #[test]
