@@ -6166,6 +6166,9 @@ impl<'a> Parser<'a> {
             ))
         } else if self.maybe_parse_outer_join_operator() {
             if !Self::is_all_ident(&root, &chain) {
+                if self.dialect.is::<OracleDialect>() {
+                    return parser_err!("ORA-00936: missing expression", root.span().start);
+                }
                 return self.expected_at("column identifier before (+)", tok_index);
             };
             let expr = if chain.is_empty() {

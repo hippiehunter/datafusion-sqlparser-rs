@@ -55,6 +55,8 @@ parse with `OracleDialect` and be rejected by `PostgreSqlDialect`.
 - Flashback and partition-extension clauses
 - Complete hierarchical-query grammar
 - Partitioned outer joins and `APPLY`
+- Legacy `(+)` applies to column references; an expression operand is rejected
+  with `ORA-00936` in Oracle mode.
 - `MODEL`, `PIVOT`, `UNPIVOT`, and `MATCH_RECOGNIZE`
 - Row-limiting, `QUALIFY`, and `FOR UPDATE`
 - Oracle aggregate, analytic, object, collection, XML, JSON, graph, domain,
