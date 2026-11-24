@@ -119,6 +119,13 @@ impl Dialect for OracleDialect {
         true
     }
 
+    /// The array constructor and subscripts already parse here; the type of
+    /// such a value has to as well, or a statement that casts one renders to
+    /// text this dialect cannot read back.
+    fn supports_array_typedef_with_brackets(&self) -> bool {
+        true
+    }
+
     fn get_next_precedence(&self, parser: &Parser) -> Option<Result<u8, ParserError>> {
         match (
             &parser.peek_token_ref().token,

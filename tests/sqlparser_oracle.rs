@@ -243,6 +243,19 @@ fn oracle_binary_float_suffixes_belong_to_the_literal_not_an_alias() {
 }
 
 #[test]
+fn oracle_array_typed_casts_parse_back_from_their_rendering() {
+    for sql in [
+        "SELECT CAST(ARRAY[1, 2] AS NUMBER[]) FROM DUAL",
+        "SELECT (CAST(ARRAY[ARRAY[1], ARRAY[2]] AS NUMBER[][]))[1][1] FROM DUAL",
+        "SELECT CAST(NULL AS TIMESTAMP(6)[]) FROM DUAL",
+    ] {
+        let rendered = parse_one(sql).to_string();
+        assert_eq!(rendered, sql);
+        assert_eq!(parse_one(&rendered).to_string(), sql);
+    }
+}
+
+#[test]
 fn oracle_long_and_long_raw_are_distinct_typed_data_types() {
     let statement = parse_one("CREATE TABLE legacy_values (text_value LONG, raw_value LONG RAW)");
     let Statement::CreateTable(create) = statement else {

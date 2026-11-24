@@ -13486,6 +13486,29 @@ fn test_any_some_all_comparison() {
 }
 
 #[test]
+fn test_quantified_comparison_over_a_query_that_opens_with_a_parenthesis() {
+    for sql in [
+        "SELECT c1 FROM tbl WHERE c1 = ANY((SELECT c2 FROM tbl) UNION (SELECT c3 FROM tbl))",
+        "SELECT c1 FROM tbl WHERE c1 < ALL((SELECT c2 FROM tbl) EXCEPT SELECT c3 FROM tbl ORDER BY 1 LIMIT 2)",
+        "SELECT c1 FROM tbl WHERE c1 <> SOME((SELECT c2 FROM tbl))",
+    ] {
+        let select = verified_only_select(sql);
+        let Some(Expr::AnyOp { right, .. } | Expr::AllOp { right, .. }) = select.selection.as_deref()
+        else {
+            panic!("expected a quantified comparison: {sql}");
+        };
+        assert!(matches!(**right, Expr::Subquery(_)), "{sql}: {right:?}");
+    }
+    // A parenthesized query that does not run to the closing parenthesis is
+    // one operand of the expression the quantifier is applied to.
+    let select = verified_only_select("SELECT c1 FROM tbl WHERE c1 = ANY((SELECT c2 FROM tbl) || c3)");
+    let Some(Expr::AnyOp { right, .. }) = select.selection.as_deref() else {
+        panic!("expected a quantified comparison");
+    };
+    assert!(matches!(**right, Expr::BinaryOp { .. }), "{right:?}");
+}
+
+#[test]
 fn test_values_is_a_subquery_in_quantified_and_membership_predicates() {
     let dialects = TestedDialects::new(vec![std::boxed::Box::new(PostgreSqlDialect {})]);
     for sql in [

@@ -8206,6 +8206,18 @@ impl<'a> Parser<'a> {
                     // use the parenthesis for parsing the subquery as an expression.
                     self.prev_token(); // LParen
                     self.parse_subexpr(precedence)?
+                } else if let Some(query) = self.maybe_parse(|parser| {
+                    // A query that opens with a parenthesis: a parenthesized
+                    // query, alone or as an operand of a set operation. It is
+                    // the quantified subquery only if it runs to the closing
+                    // parenthesis; `((SELECT 1) + 1)` is an expression.
+                    parser.expect_token(&BorrowedToken::LParen)?;
+                    parser.prev_token();
+                    let query = parser.parse_query()?;
+                    parser.expect_token(&BorrowedToken::RParen)?;
+                    Ok(query)
+                })? {
+                    Expr::Subquery(query)
                 } else {
                     // Non-subquery expression
                     let right = self.parse_subexpr(precedence)?;
